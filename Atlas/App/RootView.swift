@@ -37,6 +37,8 @@ struct RootView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .background(AtlasTheme.Colors.bgBase)
+        .toolbar(removing: .sidebarToggle)
+        .background(WindowConfigurator())
         .atlasCaptureOverlay()   // ⌘⇧K quick-capture pill
         .atlasCommandPalette()   // ⌘K search / command palette
     }
