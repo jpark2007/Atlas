@@ -16,6 +16,9 @@ final class AppState: ObservableObject {
     /// Quick-capture pill presentation (toggled by the ⌘ hotkey / Tasks card).
     @Published var presentCapture: Bool = false
 
+    /// ⌘K command palette / search presentation.
+    @Published var presentSearch: Bool = false
+
     /// Which spaces are expanded in the sidebar.
     @Published var expandedSpaces: Set<UUID> = []
 
