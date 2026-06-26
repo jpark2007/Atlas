@@ -40,3 +40,6 @@ Config/Secrets.xcconfig
 .vscode/
 .idea/
 *.swp
+
+# Agent worktrees (isolated, never commit)
+.claude/worktrees/
