@@ -12,6 +12,6 @@ struct AtlasApp: App {
                 .preferredColorScheme(.dark)
         }
         .windowStyle(.hiddenTitleBar)
-        .windowToolbarStyle(.unifiedCompact)
+        .windowResizability(.contentMinSize)
     }
 }

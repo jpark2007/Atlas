@@ -26,23 +26,44 @@ struct Project: Identifiable {
     var backlinks: [Backlink] = []
 }
 
-/// A schedule block shown on the dashboard / calendar.
-struct ScheduleEntry: Identifiable {
+/// A calendar event — the single source of truth shared by the Dashboard
+/// schedule and the Calendar screen. Backed by real `Date`s so the Calendar
+/// can lay it out on a time grid and so drag-to-schedule has something concrete.
+struct CalendarEvent: Identifiable {
     let id = UUID()
-    var time: String
     var title: String
     var subtitle: String
-    var duration: String
+    var start: Date
+    var end: Date
     var color: Color
+    var spaceName: String
+
+    /// "9 AM" / "6:30 PM" — start time formatted for compact rows.
+    var timeLabel: String {
+        let f = DateFormatter()
+        f.dateFormat = Calendar.current.component(.minute, from: start) == 0 ? "h a" : "h:mm a"
+        return f.string(from: start)
+    }
+
+    /// "1h 15m" / "1h" / "45m" — human duration.
+    var durationLabel: String {
+        let minutes = max(0, Int(end.timeIntervalSince(start) / 60))
+        let h = minutes / 60, m = minutes % 60
+        if h > 0 && m > 0 { return "\(h)h \(m)m" }
+        if h > 0 { return "\(h)h" }
+        return "\(m)m"
+    }
 }
 
-/// A task / to-do.
+/// A task / to-do. `scheduledAt` is nil until it's dragged onto the calendar.
 struct TaskItem: Identifiable {
     let id = UUID()
     var title: String
     var dueLabel: String
     var status: TaskStatus = .open
     var done: Bool = false
+    var scheduledAt: Date? = nil
+    var spaceColor: Color = AtlasTheme.Colors.accent
 }
 
 enum TaskStatus {
@@ -63,6 +84,17 @@ struct NoteRef: Identifiable {
     var title: String
     var subtitle: String
     var isExternal: Bool = false   // Google Doc, etc.
+}
+
+/// A full note with an editable body — the source of truth for the Notes editor
+/// and ⌘K search. Attachable to a space/project; `[[mentions]]` create backlinks.
+struct Note: Identifiable {
+    let id = UUID()
+    var title: String
+    var body: String
+    var spaceName: String? = nil
+    var updatedAt: Date = Date()
+    var isExternal: Bool = false   // links out to a Google Doc / Apple Note
 }
 
 /// A pinned external resource (paste-a-URL: repo, video, playlist).

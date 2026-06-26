@@ -4,6 +4,7 @@ import SwiftUI
 enum Route: Hashable {
     case dashboard
     case calendar
+    case focus
     case project(UUID)
 }
 
@@ -21,6 +22,8 @@ struct RootView: View {
                     DashboardView()
                 case .calendar:
                     PlaceholderView(title: "Calendar", systemImage: "calendar")
+                case .focus:
+                    PlaceholderView(title: "Focus", systemImage: "timer")
                 case .project(let id):
                     if let project = state.project(id) {
                         ProjectDetailView(project: project)

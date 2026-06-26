@@ -9,7 +9,7 @@ struct DashboardView: View {
                 header
 
                 HStack(alignment: .top, spacing: 18) {
-                    ScheduleCard(entries: state.schedule)
+                    ScheduleCard(entries: state.todaysEvents)
                         .frame(maxWidth: .infinity)
 
                     VStack(spacing: 18) {
@@ -59,7 +59,10 @@ struct DashboardView: View {
 // MARK: - Schedule card
 
 struct ScheduleCard: View {
-    let entries: [ScheduleEntry]
+    @EnvironmentObject var state: AppState
+    let entries: [CalendarEvent]
+
+    private let rowHeight: CGFloat = 52
 
     var body: some View {
         AtlasCard {
@@ -69,35 +72,44 @@ struct ScheduleCard: View {
                         .font(AtlasTheme.Font.cardTitle())
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Spacer()
-                    HStack(spacing: 4) {
-                        Text("Open calendar")
-                        Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+                    Button { state.route = .calendar } label: {
+                        HStack(spacing: 4) {
+                            Text("Open calendar")
+                            Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+                        }
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AtlasTheme.Colors.accent)
                     }
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(AtlasTheme.Colors.accent)
+                    .buttonStyle(.plain)
                 }
-                .padding(.bottom, 14)
+                .padding(.bottom, 6)
 
-                ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                    scheduleRow(entry)
-                    if index < entries.count - 1 {
-                        Divider().overlay(AtlasTheme.Colors.border).padding(.leading, 64)
+                if entries.isEmpty {
+                    Text("Nothing scheduled today.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .padding(.vertical, 18)
+                } else {
+                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                        scheduleRow(entry)
+                        if index < entries.count - 1 {
+                            Divider().overlay(AtlasTheme.Colors.border).padding(.leading, 64)
+                        }
                     }
                 }
             }
         }
     }
 
-    private func scheduleRow(_ entry: ScheduleEntry) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            Text(entry.time)
+    private func scheduleRow(_ entry: CalendarEvent) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            Text(entry.timeLabel)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .frame(width: 50, alignment: .leading)
             RoundedRectangle(cornerRadius: 2)
                 .fill(entry.color)
-                .frame(width: 3)
-                .frame(maxHeight: .infinity)
+                .frame(width: 3, height: 30)
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.title)
                     .font(.system(size: 13, weight: .semibold))
@@ -107,12 +119,11 @@ struct ScheduleCard: View {
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             Spacer()
-            Text(entry.duration)
+            Text(entry.durationLabel)
                 .font(.system(size: 11))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
-        .frame(minHeight: 40)
-        .padding(.vertical, 7)
+        .frame(height: rowHeight)
     }
 }
 
