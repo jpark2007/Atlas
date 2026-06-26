@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #100e0c; }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  @keyframes atlasPop { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
+  @keyframes pillIn { from { opacity: 0; transform: translateX(-50%) translateY(20px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+</style>
+</helmet>
+
+<div style="font-family: -apple-system, 'SF Pro Text', 'SF Pro Display', system-ui, sans-serif; width: 1280px; height: 832px; margin: 0 auto; background: #16130f; border-radius: 12px; overflow: hidden; box-shadow: 0 40px 120px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06); display: flex; flex-direction: column; position: relative; color: #f3ede4; -webkit-font-smoothing: antialiased;">
+
+  <!-- Title bar -->
+  <div style="height: 38px; flex: none; display: flex; align-items: center; padding: 0 16px; gap: 8px; background: rgba(255,255,255,0.02); border-bottom: 1px solid rgba(255,255,255,0.05);">
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <div style="width: 12px; height: 12px; border-radius: 50%; background: #ff5f57;"></div>
+      <div style="width: 12px; height: 12px; border-radius: 50%; background: #febc2e;"></div>
+      <div style="width: 12px; height: 12px; border-radius: 50%; background: #28c840;"></div>
+    </div>
+    <div style="flex: 1; text-align: center; font-size: 12.5px; font-weight: 600; color: rgba(243,237,228,0.55); letter-spacing: 0.2px;">Atlas</div>
+    <div style="width: 52px;"></div>
+  </div>
+
+  <div style="flex: 1; display: flex; min-height: 0;">
+
+    <!-- Sidebar -->
+    <div style="width: 248px; flex: none; background: rgba(255,255,255,0.022); border-right: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; padding: 14px 12px; min-height: 0;">
+      <div style="display: flex; align-items: center; gap: 9px; padding: 4px 8px 14px;">
+        <div style="width: 26px; height: 26px; border-radius: 8px; background: #ff6b1a; display: flex; align-items: center; justify-content: center;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1a140f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M16 8l-2 6-6 2 2-6z"></path></svg>
+        </div>
+        <span style="font-size: 16px; font-weight: 700; letter-spacing: -0.2px;">Atlas</span>
+      </div>
+
+      <!-- Search -->
+      <div style="position: relative; margin-bottom: 14px;">
+        <svg style="position: absolute; left: 9px; top: 50%; transform: translateY(-50%); opacity: 0.4;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f3ede4" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+        <input value="{{ searchQuery }}" onInput="{{ onSearch }}" onFocus="{{ onSearchFocus }}" placeholder="Search notes, classes…" style="width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 7px 8px 7px 30px; color: #f3ede4; font-size: 12.5px; font-family: inherit; outline: none;" />
+        <kbd style="position: absolute; right: 7px; top: 50%; transform: translateY(-50%); font-size: 10px; color: rgba(243,237,228,0.35); background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.06); border-radius: 4px; padding: 1px 5px; font-family: inherit;">⌘K</kbd>
+      </div>
+
+      <!-- Primary nav -->
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <div onClick="{{ goDashboard }}" style="{{ navDashStyle }}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+          <span>Dashboard</span>
+        </div>
+        <div onClick="{{ goCalendar }}" style="{{ navCalStyle }}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M3 9h18M8 2v4M16 2v4"></path></svg>
+          <span>Calendar</span>
+          <span style="margin-left: auto; font-size: 10.5px; color: rgba(243,237,228,0.4);">Today</span>
+        </div>
+      </div>
+
+      <!-- Spaces -->
+      <div style="margin-top: 18px; flex: 1; overflow-y: auto; min-height: 0;">
+        <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: rgba(243,237,228,0.32); padding: 0 8px 8px;">Spaces</div>
+        <sc-for list="{{ spaces }}" as="space" hint-placeholder-count="3">
+          <div style="margin-bottom: 4px;">
+            <div onClick="{{ space.toggle }}" style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 600;">
+              <span style="width: 8px; height: 8px; border-radius: 3px; background: {{ space.color }}; flex: none;"></span>
+              <span>{{ space.name }}</span>
+              <svg style="margin-left: auto; transition: transform .18s; transform: rotate({{ space.caret }}deg); opacity: 0.4;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 6l6 6-6 6"></path></svg>
+            </div>
+            <sc-if value="{{ space.open }}" hint-placeholder-val="{{ true }}">
+              <div style="display: flex; flex-direction: column; gap: 1px; margin: 2px 0 2px 14px; padding-left: 9px; border-left: 1px solid rgba(255,255,255,0.07);">
+                <sc-for list="{{ space.projects }}" as="proj" hint-placeholder-count="3">
+                  <div onClick="{{ proj.open }}" style="{{ proj.style }}">
+                    <span style="opacity: 0.55;">{{ proj.glyph }}</span>
+                    <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ proj.name }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- Focus button -->
+      <div onClick="{{ openFocus }}" style="margin-top: 10px; display: flex; align-items: center; gap: 9px; padding: 9px 11px; border-radius: 9px; cursor: pointer; background: rgba(255,107,26,0.1); border: 1px solid rgba(255,107,26,0.22); color: #ffb37a; font-size: 13px; font-weight: 600;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+        <span>Focus timer</span>
+      </div>
+    </div>
+
+    <!-- Main view -->
+    <div style="flex: 1; min-width: 0; min-height: 0; position: relative;">
+      <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ true }}">
+        <div ref="{{ dashRef }}" style="height: 100%; overflow-y: auto; padding: 26px 30px 40px;">
+          <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 22px;">
+            <div>
+              <div style="font-size: 12.5px; font-weight: 600; color: #ff8c42; letter-spacing: 0.3px; margin-bottom: 4px;">{{ todayLabel }}</div>
+              <div style="font-size: 27px; font-weight: 700; letter-spacing: -0.6px;">{{ greeting }}</div>
+            </div>
+            <div style="display: flex; gap: 16px;">
+              <div style="text-align: right;"><div style="font-size: 23px; font-weight: 700;">{{ statTasks }}</div><div style="font-size: 11px; color: rgba(243,237,228,0.45);">tasks today</div></div>
+              <div style="width: 1px; background: rgba(255,255,255,0.08);"></div>
+              <div style="text-align: right;"><div style="font-size: 23px; font-weight: 700; color: #ff8c42;">{{ statFree }}</div><div style="font-size: 11px; color: rgba(243,237,228,0.45);">free hours</div></div>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1.55fr 1fr; gap: 18px; align-items: start;">
+
+            <!-- Today's schedule -->
+            <div style="background: rgba(255,255,255,0.018); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 18px 18px 8px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+                <span style="font-size: 14.5px; font-weight: 700;">Today's schedule</span>
+                <span onClick="{{ goCalendar }}" style="font-size: 12px; color: #ff8c42; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 3px;">Open calendar
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"></path></svg>
+                </span>
+              </div>
+              <sc-for list="{{ todaySchedule }}" as="ev" hint-placeholder-count="5">
+                <div onClick="{{ ev.open }}" style="display: flex; gap: 13px; padding: 9px 6px; border-radius: 9px; cursor: pointer; align-items: center;" style-hover="background: rgba(255,255,255,0.04);">
+                  <div style="width: 50px; flex: none; text-align: right; font-size: 12px; font-weight: 600; color: rgba(243,237,228,0.6); font-variant-numeric: tabular-nums;">{{ ev.time }}</div>
+                  <div style="width: 3px; align-self: stretch; border-radius: 2px; background: {{ ev.color }};"></div>
+                  <div style="flex: 1; min-width: 0;">
+                    <div style="font-size: 13.5px; font-weight: 600;">{{ ev.title }}</div>
+                    <div style="font-size: 11.5px; color: rgba(243,237,228,0.42);">{{ ev.meta }}</div>
+                  </div>
+                  <div style="font-size: 11px; color: rgba(243,237,228,0.4); font-variant-numeric: tabular-nums;">{{ ev.dur }}</div>
+                </div>
+              </sc-for>
+            </div>
+
+            <!-- Right column -->
+            <div style="display: flex; flex-direction: column; gap: 18px;">
+
+              <!-- Tasks -->
+              <div style="background: rgba(255,255,255,0.018); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 16px 16px 8px;">
+                <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 12px;">
+                  <span style="font-size: 14px; font-weight: 700;">Tasks</span>
+                  <span style="font-size: 11px; font-weight: 600; color: rgba(243,237,228,0.4);">{{ dashTaskCount }}</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid rgba(255,255,255,0.08); border-radius: 9px; margin-bottom: 10px;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(243,237,228,0.45)" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+                  <input value="{{ dashTaskText }}" onInput="{{ onDashTask }}" onKeyDown="{{ onDashTaskKey }}" placeholder="Add a task — Atlas files it for you" style="flex: 1; background: transparent; border: none; outline: none; color: #f3ede4; font-size: 13px; font-family: inherit;" />
+                  <kbd style="font-size: 10px; color: rgba(243,237,228,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 4px; padding: 1px 5px; font-family: inherit;">⏎</kbd>
+                </div>
+                <div style="max-height: 196px; overflow-y: auto; margin: 0 -4px;">
+                  <sc-for list="{{ dashTasks }}" as="t" hint-placeholder-count="4">
+                    <div style="display: flex; align-items: center; gap: 11px; padding: 8px 4px;">
+                      <div onClick="{{ t.complete }}" style="{{ t.boxStyle }}" style-hover="border-color: #5fb98e; background: rgba(95,185,142,0.15);"></div>
+                      <span style="{{ t.dotStyle }}"></span>
+                      <span style="flex: 1; min-width: 0; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ t.title }}</span>
+                      <sc-if value="{{ t.hasDue }}" hint-placeholder-val="{{ false }}"><span style="font-size: 11px; color: #ff8c42; font-weight: 600; flex: none;">{{ t.due }}</span></sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+
+              <!-- Pomodoro shortcut -->
+              <div onClick="{{ openFocus }}" style="background: rgba(255,255,255,0.018); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 15px 16px; cursor: pointer; transition: border-color .15s;" style-hover="border-color: rgba(255,107,26,0.45);">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <div style="width: 38px; height: 38px; border-radius: 10px; background: rgba(255,107,26,0.12); display: flex; align-items: center; justify-content: center;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff8c42" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2.5 1.5M9 2h6"></path></svg>
+                  </div>
+                  <div style="flex: 1;">
+                    <div style="font-size: 13.5px; font-weight: 600;">Focus session</div>
+                    <div style="font-size: 11.5px; color: rgba(243,237,228,0.5);">25 min · Pomodoro</div>
+                  </div>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(243,237,228,0.4)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"></path></svg>
+                </div>
+              </div>
+
+              <!-- Long-term goals -->
+              <div style="background: rgba(255,255,255,0.018); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 17px;">
+                <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 14px;">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ff8c42" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="4.5"></circle><circle cx="12" cy="12" r="0.5" fill="#ff8c42"></circle></svg>
+                  <span style="font-size: 14px; font-weight: 700;">Long-term goals</span>
+                </div>
+                <sc-for list="{{ goals }}" as="g" hint-placeholder-count="3">
+                  <div style="margin-bottom: 13px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                      <span style="font-size: 12.5px; font-weight: 600;">{{ g.name }}</span>
+                      <span style="font-size: 11px; color: rgba(243,237,228,0.45); font-variant-numeric: tabular-nums;">{{ g.label }}</span>
+                    </div>
+                    <div style="height: 6px; border-radius: 4px; background: rgba(255,255,255,0.07); overflow: hidden;">
+                      <div style="height: 100%; width: {{ g.pct }}%; border-radius: 4px; background: #ff6b1a;"></div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isCalendar }}" hint-placeholder-val="{{ false }}">
+        <div style="height: 100%; display: flex; flex-direction: column; min-height: 0;">
+
+          <!-- Calendar header -->
+          <div style="flex: none; padding: 20px 26px 14px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 14px;">
+              <span style="font-size: 21px; font-weight: 700; letter-spacing: -0.4px;">{{ calDateLabel }}</span>
+              <div style="display: flex; gap: 2px; margin-left: 4px;">
+                <div style="width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: rgba(255,255,255,0.05); color: rgba(243,237,228,0.6);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 6l-6 6 6 6"></path></svg></div>
+                <div style="width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: rgba(255,255,255,0.05); color: rgba(243,237,228,0.6);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 6l6 6-6 6"></path></svg></div>
+              </div>
+              <div style="margin-left: auto; display: flex; padding: 3px; background: rgba(255,255,255,0.05); border-radius: 9px; gap: 2px;">
+                <div onClick="{{ setDay }}" style="{{ dayToggleStyle }}">Day</div>
+                <div onClick="{{ setWeek }}" style="{{ weekToggleStyle }}">Week</div>
+              </div>
+            </div>
+
+            <!-- NL capture -->
+            <div style="display: flex; gap: 9px; align-items: center; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 8px 8px 8px 13px;">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#ff8c42" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 4.6L18 9l-4.4 1.4L12 15l-1.6-4.6L6 9l4.4-1.4z"></path><path d="M19 14l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"></path></svg>
+              <input value="{{ nlText }}" onInput="{{ onNlInput }}" onKeyDown="{{ onNlKey }}" placeholder="Brain-dump in plain English — e.g. essay due Thursday, gym at 5pm, dinner with mom Sunday" style="flex: 1; background: transparent; border: none; outline: none; color: #f3ede4; font-size: 13px; font-family: inherit;" />
+              <button onClick="{{ nlParse }}" style="background: #ff6b1a; color: #16130f; border: none; border-radius: 8px; padding: 7px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 5px;">Capture
+                <kbd style="font-size: 10px; opacity: 0.6;">⌘⏎</kbd>
+              </button>
+            </div>
+
+            <!-- NL review -->
+            <sc-if value="{{ hasReview }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 11px; padding: 11px 13px; animation: atlasPop .2s ease;">
+                <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 9px;">
+                  <span style="font-size: 11px; font-weight: 700; color: #ff8c42; letter-spacing: 0.4px;">THE BRAIN PARSED</span>
+                  <span style="font-size: 11px; color: rgba(243,237,228,0.4);">Review before adding</span>
+                  <div style="margin-left: auto; display: flex; gap: 7px;">
+                    <span onClick="{{ nlClear }}" style="font-size: 11.5px; color: rgba(243,237,228,0.5); cursor: pointer; padding: 3px 9px;">Discard</span>
+                    <span onClick="{{ nlConfirmAll }}" style="font-size: 11.5px; font-weight: 700; color: #1a140f; background: #ff8c42; cursor: pointer; padding: 4px 11px; border-radius: 7px;">Add all</span>
+                  </div>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                  <sc-for list="{{ nlReview }}" as="r" hint-placeholder-count="3">
+                    <div style="display: flex; align-items: center; gap: 9px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 9px; padding: 7px 9px 7px 11px;">
+                      <div>
+                        <div style="font-size: 12.5px; font-weight: 600; margin-bottom: 3px;">{{ r.title }}</div>
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                          <span style="{{ r.chipStyle }}">{{ r.spaceName }}</span>
+                          <span style="font-size: 10.5px; color: rgba(243,237,228,0.45);">{{ r.typeLabel }} · {{ r.when }}</span>
+                        </div>
+                      </div>
+                      <div onClick="{{ r.confirm }}" style="width: 24px; height: 24px; border-radius: 50%; background: rgba(95,185,142,0.2); color: #5fb98e; display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg></div>
+                      <div onClick="{{ r.dismiss }}" style="width: 24px; height: 24px; border-radius: 50%; background: rgba(255,255,255,0.06); color: rgba(243,237,228,0.5); display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"></path></svg></div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+
+          <!-- Body: timeline + tray -->
+          <div style="flex: 1; display: flex; min-height: 0;">
+
+            <!-- DAY timeline -->
+            <sc-if value="{{ isDay }}" hint-placeholder-val="{{ true }}">
+              <div ref="{{ tlRef }}" onDragOver="{{ onTimelineDragOver }}" onDrop="{{ onTimelineDrop }}" style="flex: 1; overflow-y: auto; position: relative; min-width: 0;">
+                <div style="position: relative; height: {{ dayHeight }}px; margin: 8px 0 30px;">
+                  <sc-for list="{{ hours }}" as="hr" hint-placeholder-count="16">
+                    <div style="position: absolute; left: 0; right: 0; top: {{ hr.top }}px; height: 0; border-top: 1px solid rgba(255,255,255,0.045);">
+                      <span style="position: absolute; left: 10px; top: -8px; font-size: 10.5px; color: rgba(243,237,228,0.35); font-variant-numeric: tabular-nums; background: transparent;">{{ hr.label }}</span>
+                    </div>
+                  </sc-for>
+
+                  <!-- now line -->
+                  <div style="position: absolute; left: 52px; right: 14px; top: {{ nowTop }}px; height: 0; border-top: 1.5px solid #ff6b1a; z-index: 5;">
+                    <span style="position: absolute; left: -44px; top: -8px; font-size: 10px; font-weight: 700; color: #ff6b1a; background: rgba(17,14,11,0.9); padding: 1px 3px; border-radius: 3px;">{{ nowLabel }}</span>
+                    <span style="position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: #ff6b1a; box-shadow: 0 0 8px #ff6b1a;"></span>
+                  </div>
+
+                  <!-- blocks -->
+                  <sc-for list="{{ dayBlocks }}" as="b" hint-placeholder-count="5">
+                    <div draggable="true" onDragStart="{{ b.onDragStart }}" onClick="{{ b.open }}" style="{{ b.wrapStyle }}">
+                      <div style="display: flex; align-items: flex-start; gap: 6px;">
+                        <div style="flex: 1; min-width: 0;">
+                          <div style="font-size: 12.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff;">{{ b.title }}</div>
+                          <sc-if value="{{ b.tall }}" hint-placeholder-val="{{ true }}">
+                            <div style="font-size: 11px; color: rgba(255,255,255,0.62); margin-top: 1px;">{{ b.time }} · {{ b.meta }}</div>
+                          </sc-if>
+                        </div>
+                        <div onClick="{{ b.unschedule }}" title="Send back to tray" style="width: 18px; height: 18px; border-radius: 5px; flex: none; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.25); color: rgba(255,255,255,0.7); cursor: pointer;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"></path></svg></div>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+
+            <!-- WEEK overview -->
+            <sc-if value="{{ isWeek }}" hint-placeholder-val="{{ false }}">
+              <div style="flex: 1; overflow: auto; padding: 12px 16px; min-width: 0;">
+                <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; height: 100%;">
+                  <sc-for list="{{ weekDays }}" as="d" hint-placeholder-count="7">
+                    <div style="{{ d.colStyle }}">
+                      <div style="text-align: center; padding-bottom: 9px; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 8px;">
+                        <div style="font-size: 10.5px; color: rgba(243,237,228,0.4); font-weight: 600; letter-spacing: 0.4px;">{{ d.dow }}</div>
+                        <div style="{{ d.numStyle }}">{{ d.num }}</div>
+                      </div>
+                      <div style="display: flex; flex-direction: column; gap: 5px;">
+                        <sc-for list="{{ d.events }}" as="e" hint-placeholder-count="2">
+                          <div style="{{ e.style }}">
+                            <div style="font-size: 10px; font-weight: 600; opacity: 0.75;">{{ e.time }}</div>
+                            <div style="font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ e.title }}</div>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+
+            <!-- Tray -->
+            <div style="width: 268px; flex: none; border-left: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; min-height: 0; background: rgba(255,255,255,0.012);">
+              <div style="padding: 16px 16px 10px;">
+                <div style="display: flex; align-items: center; gap: 7px;">
+                  <span style="font-size: 13.5px; font-weight: 700;">Unscheduled</span>
+                  <span style="font-size: 11px; font-weight: 700; color: #ff8c42; background: rgba(255,107,26,0.14); border-radius: 20px; padding: 1px 8px;">{{ trayCount }}</span>
+                </div>
+                <div style="font-size: 11px; color: rgba(243,237,228,0.4); margin-top: 3px;">Drag a task onto the timeline to schedule it.</div>
+              </div>
+              <div style="flex: 1; overflow-y: auto; padding: 4px 12px 16px; display: flex; flex-direction: column; gap: 8px;">
+                <sc-for list="{{ tray }}" as="t" hint-placeholder-count="5">
+                  <div draggable="true" onDragStart="{{ t.onDragStart }}" style="background: rgba(255,255,255,0.045); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 10px 11px; cursor: grab;" style-hover="border-color: rgba(255,107,26,0.4); background: rgba(255,255,255,0.06);">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 7px;">
+                      <span style="{{ t.dotStyle }}"></span>
+                      <span style="font-size: 13px; font-weight: 600; flex: 1; min-width: 0;">{{ t.title }}</span>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(243,237,228,0.3)" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1.4"></circle><circle cx="15" cy="6" r="1.4"></circle><circle cx="9" cy="12" r="1.4"></circle><circle cx="15" cy="12" r="1.4"></circle><circle cx="9" cy="18" r="1.4"></circle><circle cx="15" cy="18" r="1.4"></circle></svg>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 7px; font-size: 10.5px; color: rgba(243,237,228,0.45);">
+                      <span>{{ t.dur }}</span>
+                      <sc-if value="{{ t.hasDue }}" hint-placeholder-val="{{ false }}"><span style="color: #ff8c42; font-weight: 600;">· due {{ t.due }}</span></sc-if>
+                      <sc-if value="{{ t.isCanvas }}" hint-placeholder-val="{{ false }}"><span style="margin-left: auto; font-size: 9.5px; font-weight: 700; letter-spacing: 0.3px; color: #5b9bd5; background: rgba(91,155,213,0.15); padding: 1px 6px; border-radius: 5px;">CANVAS</span></sc-if>
+                      <sc-if value="{{ t.isBrain }}" hint-placeholder-val="{{ false }}"><span style="margin-left: auto; font-size: 9.5px; font-weight: 700; letter-spacing: 0.3px; color: #ff8c42; background: rgba(255,107,26,0.15); padding: 1px 6px; border-radius: 5px;">BRAIN</span></sc-if>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isProject }}" hint-placeholder-val="{{ false }}">
+        <div style="height: 100%; overflow-y: auto;">
+          <!-- Cover header -->
+          <div style="padding: 26px 32px 20px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+              <span style="{{ project.spaceTagStyle }}">
+                <span style="width: 7px; height: 7px; border-radius: 2px; background: {{ project.spaceColor }};"></span>
+                {{ project.spaceName }}
+              </span>
+              <span style="font-size: 11.5px; font-weight: 600; color: rgba(243,237,228,0.45); border: 1px solid rgba(255,255,255,0.1); border-radius: 7px; padding: 3px 9px;">{{ project.kindLabel }}</span>
+              <sc-if value="{{ project.isClass }}" hint-placeholder-val="{{ true }}">
+                <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.3px; color: #5b9bd5; background: rgba(91,155,213,0.15); padding: 3px 8px; border-radius: 6px;">CANVAS SYNCED</span>
+              </sc-if>
+            </div>
+            <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px;">
+              <sc-if value="{{ project.hasCode }}" hint-placeholder-val="{{ true }}">
+                <span style="font-size: 14px; font-weight: 700; color: {{ project.spaceColor }};">{{ project.code }}</span>
+              </sc-if>
+              <h1 style="font-size: 28px; font-weight: 700; letter-spacing: -0.6px; margin: 0;">{{ project.name }}</h1>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 18px; font-size: 12.5px; color: rgba(243,237,228,0.55);">
+              <sc-if value="{{ project.hasMeeting }}" hint-placeholder-val="{{ true }}">
+                <span style="display: flex; align-items: center; gap: 6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M3 9h18M8 2v4M16 2v4"></path></svg>{{ project.meeting }}</span>
+                <span style="display: flex; align-items: center; gap: 6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 21s-7-5.7-7-11a7 7 0 0114 0c0 5.3-7 11-7 11z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>{{ project.room }}</span>
+              </sc-if>
+              <sc-if value="{{ project.hasInstructor }}" hint-placeholder-val="{{ false }}">
+                <span style="display: flex; align-items: center; gap: 6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 20a7 7 0 0114 0"></path></svg>{{ project.instructor }}</span>
+              </sc-if>
+              <span style="display: flex; align-items: center; gap: 6px; color: #ff8c42; font-weight: 600; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"></path></svg>{{ project.driveLabel }}</span>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 24px; padding: 24px 32px 40px;">
+            <!-- Left: note + assignments -->
+            <div style="display: flex; flex-direction: column; gap: 24px;">
+              <!-- Overview -->
+              <div>
+                <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.7px; color: rgba(243,237,228,0.4); text-transform: uppercase; margin-bottom: 10px;">Overview</div>
+                <div style="font-size: 14.5px; line-height: 1.7; color: rgba(243,237,228,0.85);">
+                  <sc-for list="{{ project.noteSegments }}" as="seg" hint-placeholder-count="5"><sc-if value="{{ seg.isText }}" hint-placeholder-val="{{ true }}"><span>{{ seg.text }}</span></sc-if><sc-if value="{{ seg.isLink }}" hint-placeholder-val="{{ false }}"><span onClick="{{ seg.go }}" style="{{ seg.linkStyle }}">{{ seg.label }}</span></sc-if></sc-for>
+                </div>
+              </div>
+
+              <!-- Notes & docs -->
+              <div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                  <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.7px; color: rgba(243,237,228,0.4); text-transform: uppercase;">Notes &amp; docs</span>
+                  <span style="font-size: 11px; font-weight: 600; color: rgba(243,237,228,0.35);">{{ project.noteCount }}</span>
+                  <div style="margin-left: auto; position: relative;">
+                    <div onClick="{{ project.toggleNoteMenu }}" style="display: flex; align-items: center; gap: 5px; border: 1px solid rgba(255,255,255,0.12); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: #ff8c42; cursor: pointer;">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>New
+                    </div>
+                    <sc-if value="{{ project.newNoteMenu }}" hint-placeholder-val="{{ false }}">
+                      <div style="position: absolute; right: 0; top: calc(100% + 6px); width: 184px; background: #211d18; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 5px; box-shadow: 0 14px 40px rgba(0,0,0,0.5); z-index: 30; animation: atlasPop .16s ease;">
+                        <div onClick="{{ project.addTextNote }}" style="display: flex; align-items: center; gap: 10px; padding: 8px 9px; border-radius: 7px; cursor: pointer;" style-hover="background: rgba(255,255,255,0.05);">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f3ede4" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h9l5 5v13H5z"></path><path d="M14 3v5h5M8 13h8M8 17h6"></path></svg>
+                          <div><div style="font-size: 12.5px; font-weight: 600;">Text note</div><div style="font-size: 10px; color: rgba(243,237,228,0.4);">Edit inside Atlas</div></div>
+                        </div>
+                        <div onClick="{{ project.addGDoc }}" style="display: flex; align-items: center; gap: 10px; padding: 8px 9px; border-radius: 7px; cursor: pointer;" style-hover="background: rgba(255,255,255,0.05);">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5b9bd5" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h9l5 5v13H5z"></path><path d="M14 3v5h5M8 13h8M8 17h6"></path></svg>
+                          <div><div style="font-size: 12.5px; font-weight: 600;">Google Doc</div><div style="font-size: 10px; color: rgba(243,237,228,0.4);">Linked to Drive</div></div>
+                        </div>
+                        <div onClick="{{ project.addANote }}" style="display: flex; align-items: center; gap: 10px; padding: 8px 9px; border-radius: 7px; cursor: pointer;" style-hover="background: rgba(255,255,255,0.05);">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#febc2e" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h9l5 5v13H5z"></path><path d="M14 3v5h5M8 13h8M8 17h6"></path></svg>
+                          <div><div style="font-size: 12.5px; font-weight: 600;">Apple Note</div><div style="font-size: 10px; color: rgba(243,237,228,0.4);">Linked to Notes.app</div></div>
+                        </div>
+                      </div>
+                    </sc-if>
+                  </div>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <sc-for list="{{ project.notes }}" as="n" hint-placeholder-count="2">
+                    <div style="background: rgba(255,255,255,0.022); border: 1px solid rgba(255,255,255,0.07); border-radius: 11px; overflow: hidden;">
+                      <div onClick="{{ n.open }}" style="display: flex; align-items: center; gap: 11px; padding: 11px 13px; cursor: pointer;">
+                        <div style="{{ n.iconWrapStyle }}">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{{ n.iconColor }}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h9l5 5v13H5z"></path><path d="M14 3v5h5M8 13h8M8 17h6"></path></svg>
+                        </div>
+                        <div style="flex: 1; min-width: 0;">
+                          <div style="font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ n.title }}</div>
+                          <div style="font-size: 11px; color: rgba(243,237,228,0.42); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ n.meta }}</div>
+                        </div>
+                        <sc-if value="{{ n.isExternal }}" hint-placeholder-val="{{ false }}">
+                          <span style="display: flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600; color: #ff8c42; flex: none;">Open<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"></path></svg></span>
+                        </sc-if>
+                        <sc-if value="{{ n.isText }}" hint-placeholder-val="{{ true }}">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(243,237,228,0.4)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex: none;"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"></path></svg>
+                        </sc-if>
+                        <div onClick="{{ n.del }}" style="width: 22px; height: 22px; border-radius: 6px; flex: none; display: flex; align-items: center; justify-content: center; color: rgba(243,237,228,0.35); cursor: pointer;" style-hover="background: rgba(255,255,255,0.06); color: rgba(255,120,120,0.9);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"></path></svg></div>
+                      </div>
+                      <sc-if value="{{ n.editing }}" hint-placeholder-val="{{ false }}">
+                        <div style="padding: 0 13px 13px; border-top: 1px solid rgba(255,255,255,0.06);">
+                          <input value="{{ n.title }}" onInput="{{ n.onTitle }}" placeholder="Note title" style="width: 100%; background: transparent; border: none; outline: none; color: #f3ede4; font-size: 15px; font-weight: 700; padding: 12px 0 6px; font-family: inherit;" />
+                          <textarea value="{{ n.body }}" onInput="{{ n.onBody }}" placeholder="Start writing… reference items with [[ ]]" style="width: 100%; min-height: 110px; background: transparent; border: none; outline: none; resize: vertical; color: rgba(243,237,228,0.82); font-size: 13.5px; line-height: 1.65; font-family: inherit;"></textarea>
+                          <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px;">
+                            <span style="font-size: 11px; color: rgba(243,237,228,0.35);">Saved in Atlas · backlinks live</span>
+                            <div onClick="{{ n.done }}" style="margin-left: auto; font-size: 12px; font-weight: 600; color: #16130f; background: #ff6b1a; border-radius: 7px; padding: 5px 13px; cursor: pointer;">Done</div>
+                          </div>
+                        </div>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+
+              <!-- Assignments -->
+              <div>
+                <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.7px; color: rgba(243,237,228,0.4); text-transform: uppercase; margin-bottom: 10px;">Assignments &amp; tasks</div>
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 13px; overflow: hidden;">
+                  <sc-for list="{{ project.assignments }}" as="a" hint-placeholder-count="3">
+                    <div style="display: flex; align-items: center; gap: 12px; padding: 12px 15px; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                      <div style="{{ a.boxStyle }}"><sc-if value="{{ a.done }}" hint-placeholder-val="{{ false }}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#1a140f" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg></sc-if></div>
+                      <span style="{{ a.titleStyle }}; flex: 1; min-width: 0;">{{ a.title }}</span>
+                      <span style="font-size: 11.5px; color: rgba(243,237,228,0.4); font-variant-numeric: tabular-nums;">{{ a.due }}</span>
+                      <span style="{{ a.statusStyle }}; min-width: 72px; text-align: right;">{{ a.status }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+
+              <!-- Resources -->
+              <sc-if value="{{ project.hasResources }}" hint-placeholder-val="{{ false }}">
+                <div>
+                  <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.7px; color: rgba(243,237,228,0.4); text-transform: uppercase; margin-bottom: 10px;">Pinned resources</div>
+                  <div style="display: flex; flex-wrap: wrap; gap: 9px;">
+                    <sc-for list="{{ project.resources }}" as="r" hint-placeholder-count="3">
+                      <div style="display: flex; align-items: center; gap: 9px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 9px 13px 9px 11px; cursor: pointer;">
+                        <div style="width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.06);">
+                          <sc-if value="{{ r.isRepo }}" hint-placeholder-val="{{ false }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f3ede4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"></path></svg></sc-if>
+                          <sc-if value="{{ r.isVideo }}" hint-placeholder-val="{{ false }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="#ff5f57" stroke="none"><path d="M8 5v14l11-7z"></path></svg></sc-if>
+                          <sc-if value="{{ r.isAudio }}" hint-placeholder-val="{{ false }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5fb98e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="17" cy="16" r="3"></circle></svg></sc-if>
+                          <sc-if value="{{ r.isLink }}" hint-placeholder-val="{{ true }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#b48ad9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1"></path><path d="M14 11a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1"></path></svg></sc-if>
+                        </div>
+                        <div><div style="font-size: 12.5px; font-weight: 600;">{{ r.label }}</div><div style="font-size: 10.5px; color: rgba(243,237,228,0.4);">{{ r.sub }}</div></div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+
+            <!-- Right: backlinks -->
+            <div>
+              <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 10px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(243,237,228,0.5)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1"></path><path d="M14 11a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1"></path></svg>
+                <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.7px; color: rgba(243,237,228,0.4); text-transform: uppercase;">Linked references</span>
+                <span style="font-size: 11px; font-weight: 700; color: rgba(243,237,228,0.4); background: rgba(255,255,255,0.06); border-radius: 20px; padding: 1px 8px;">{{ project.backlinkCount }}</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <sc-for list="{{ project.backlinks }}" as="b" hint-placeholder-count="3">
+                  <div onClick="{{ b.go }}" style="display: flex; gap: 10px; align-items: flex-start; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 11px; padding: 11px 13px; cursor: pointer;" style-hover="border-color: rgba(255,107,26,0.35); background: rgba(255,255,255,0.05);">
+                    <span style="width: 8px; height: 8px; border-radius: 50%; flex: none; margin-top: 4px; background: {{ b.dotColor }};"></span>
+                    <div style="flex: 1; min-width: 0;">
+                      <div style="font-size: 13px; font-weight: 600; margin-bottom: 2px;">{{ b.title }}</div>
+                      <div style="font-size: 11px; color: rgba(243,237,228,0.42);">{{ b.meta }}</div>
+                    </div>
+                    <svg style="opacity: 0.3; margin-top: 3px;" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"></path></svg>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="margin-top: 16px; font-size: 11.5px; color: rgba(243,237,228,0.35); line-height: 1.6;">
+                Every task, event, and note that mentions this {{ project.kindLabel }} appears here automatically.
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+
+  <!-- Floating Pomodoro pill -->
+  <sc-if value="{{ pomoOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 14px; padding: 11px 14px 11px 16px; border-radius: 18px; background: rgba(34,28,23,0.72); backdrop-filter: blur(28px) saturate(1.4); border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 18px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08); animation: pillIn .28s cubic-bezier(.2,.9,.3,1);">
+      <!-- progress ring -->
+      <div style="position: relative; width: 42px; height: 42px; border-radius: 50%; {{ pomoRingStyle }} display: flex; align-items: center; justify-content: center; flex: none;">
+        <div style="position: absolute; inset: 4px; border-radius: 50%; background: #1c1814; display: flex; align-items: center; justify-content: center;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ff8c42" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2.5 1.5M9 2h6"></path></svg>
+        </div>
+      </div>
+
+      <div style="min-width: 124px;">
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.5px; color: #ff8c42; text-transform: uppercase; margin-bottom: 1px;">Focus · {{ pomoPct }}%</div>
+        <div style="font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">{{ pomoTask }}</div>
+      </div>
+
+      <div style="font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; min-width: 66px; text-align: center;">{{ pomoTime }}</div>
+
+      <div style="display: flex; gap: 6px;">
+        <div onClick="{{ togglePomo }}" style="width: 38px; height: 38px; border-radius: 11px; background: #ff6b1a; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+          <sc-if value="{{ pomoRunning }}" hint-placeholder-val="{{ false }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="#1a140f" stroke="none"><rect x="6" y="5" width="4" height="14" rx="1"></rect><rect x="14" y="5" width="4" height="14" rx="1"></rect></svg></sc-if>
+          <sc-if value="{{ pomoPaused }}" hint-placeholder-val="{{ true }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="#1a140f" stroke="none"><path d="M8 5v14l11-7z"></path></svg></sc-if>
+        </div>
+        <div onClick="{{ resetPomo }}" style="width: 38px; height: 38px; border-radius: 12px; background: rgba(255,255,255,0.07); display: flex; align-items: center; justify-content: center; cursor: pointer; color: rgba(243,237,228,0.7);">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 109-9 9 9 0 00-6.4 2.6L3 8"></path><path d="M3 3v5h5"></path></svg>
+        </div>
+        <div onClick="{{ closePomo }}" style="width: 38px; height: 38px; border-radius: 12px; background: rgba(255,255,255,0.07); display: flex; align-items: center; justify-content: center; cursor: pointer; color: rgba(243,237,228,0.55);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1280, &quot;height&quot;: 832}}">
+class Component extends DCLogic {
+  state = {
+    view: 'dashboard',
+    activeProjectId: 'cs201',
+    openSpaces: { school: true, personal: true, side: false },
+    searchQuery: '',
+    calView: 'day',
+    blocks: [],
+    tray: [],
+    nlText: '',
+    nlReview: [],
+    pomo: { open: false, running: false, secLeft: 25 * 60, total: 25 * 60, task: 'Finish DS problem set' },
+    drag: null,
+    dashTaskText: '',
+    notes: {},
+    newNoteMenu: false,
+    editingNoteId: null,
+  };
+
+  SPACES = {
+    school: { name: 'School', color: '#5b9bd5', glow: 'rgba(91,155,213,0.55)' },
+    personal: { name: 'Personal', color: '#5fb98e', glow: 'rgba(95,185,142,0.55)' },
+    side: { name: 'Side Project', color: '#b48ad9', glow: 'rgba(180,138,217,0.55)' },
+  };
+
+  PROJECTS = [
+    { id: 'cs201', space: 'school', name: 'CS 201 · Data Structures', glyph: '◇', kind: 'class' },
+    { id: 'calc2', space: 'school', name: 'Calculus II', glyph: '◇', kind: 'class' },
+    { id: 'hist', space: 'school', name: 'World History', glyph: '◇', kind: 'class' },
+    { id: 'fitness', space: 'personal', name: 'Fitness', glyph: '○', kind: 'normal' },
+    { id: 'errands', space: 'personal', name: 'Errands', glyph: '○', kind: 'normal' },
+    { id: 'trailhead', space: 'side', name: 'Trailhead App', glyph: '△', kind: 'normal' },
+  ];
+
+  componentDidMount() {
+    this.setState({
+      blocks: [
+        { id: 'b1', title: 'CS 201 Lecture', space: 'school', proj: 'cs201', start: 9 * 60, dur: 75, meta: 'Tisch Hall 204' },
+        { id: 'b2', title: 'Calculus II', space: 'school', proj: 'calc2', start: 11 * 60, dur: 60, meta: 'Recitation' },
+        { id: 'b3', title: 'Lunch w/ Dev team', space: 'side', proj: 'trailhead', start: 13 * 60, dur: 60, meta: 'Trailhead standup' },
+        { id: 'b4', title: 'Gym — push day', space: 'personal', proj: 'fitness', start: 16 * 60, dur: 60, meta: 'Recreation center' },
+        { id: 'b5', title: 'Dinner with mom', space: 'personal', proj: null, start: 18 * 60 + 30, dur: 90, meta: 'Personal' },
+      ],
+      tray: [
+        { id: 't1', title: 'Finish DS problem set', space: 'school', proj: 'cs201', dur: 90, due: 'Thu', src: 'canvas' },
+        { id: 't2', title: 'Calc practice problems', space: 'school', proj: 'calc2', dur: 45, due: 'Wed', src: 'canvas' },
+        { id: 't3', title: 'Read History ch. 7', space: 'school', proj: 'hist', dur: 60, due: 'Fri', src: 'canvas' },
+        { id: 't4', title: 'Design onboarding screens', space: 'side', proj: 'trailhead', dur: 120, due: null, src: 'manual' },
+        { id: 't5', title: 'Grocery run', space: 'personal', proj: 'errands', dur: 45, due: null, src: 'manual' },
+      ],
+      notes: {
+        cs201: [
+          { id: 'n-cs1', type: 'text', title: 'Midterm study plan', body: 'Cover trees, heaps, and graph traversal. Re-derive Dijkstra by hand. Pull worked examples from Problem Set 3 and 4.\n\nWeak spots: amortized analysis, union-find.' },
+          { id: 'n-cs2', type: 'gdoc', title: 'Lecture notes (shared)', body: '' },
+        ],
+        calc2: [ { id: 'n-c1', type: 'text', title: 'Series cheat sheet', body: 'Ratio test, root test, integral test. Memorize the common Taylor expansions.' } ],
+        trailhead: [
+          { id: 'n-t1', type: 'text', title: 'Onboarding copy draft', body: 'Screen 1: "Find your next trail." Keep it to three steps. Ask for location last.' },
+          { id: 'n-t2', type: 'anote', title: 'Design feedback (Apple Notes)', body: '' },
+        ],
+      },
+    });
+    this._timer = setInterval(() => {
+      const p = this.state.pomo;
+      if (p.running && p.secLeft > 0) this.setState({ pomo: { ...p, secLeft: p.secLeft - 1 } });
+      else if (p.running && p.secLeft <= 0) this.setState({ pomo: { ...p, running: false } });
+    }, 1000);
+  }
+  componentWillUnmount() { clearInterval(this._timer); }
+
+  spaceOf(id) { return this.SPACES[id] || this.SPACES.personal; }
+
+  go(view, projId) {
+    const s = { view };
+    if (projId) s.activeProjectId = projId;
+    this.setState(s);
+  }
+
+  fmtTime(mins) {
+    let h = Math.floor(mins / 60), m = mins % 60;
+    const ap = h >= 12 ? 'PM' : 'AM';
+    let hh = h % 12; if (hh === 0) hh = 12;
+    return hh + (m ? ':' + String(m).padStart(2, '0') : '') + ' ' + ap;
+  }
+  fmtDur(d) { return d >= 60 ? (d % 60 ? (Math.floor(d/60) + 'h ' + (d%60) + 'm') : Math.floor(d/60) + 'h') : d + 'm'; }
+
+  DAY_START = 420; DAY_END = 1380; PXMIN = 1; // 7AM–11PM, 1px = 1min
+
+  tlRef() { this._tl = this._tl || React.createRef(); return this._tl; }
+
+  onTrayDragStart(taskId, e) {
+    this._drag = { type: 'tray', id: taskId };
+    if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', taskId); }
+  }
+  onBlockDragStart(blockId, e) {
+    const b = this.state.blocks.find(x => x.id === blockId);
+    const rect = e.currentTarget.getBoundingClientRect();
+    this._drag = { type: 'block', id: blockId, grab: e.clientY - rect.top };
+    if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', blockId); }
+  }
+  dropMinutes(e) {
+    const el = this.tlRef().current; if (!el) return this.DAY_START;
+    const rect = el.getBoundingClientRect();
+    let y = e.clientY - rect.top + el.scrollTop - (this._drag && this._drag.grab ? this._drag.grab : 0);
+    let m = this.DAY_START + Math.round(y / this.PXMIN);
+    m = Math.round(m / 15) * 15;
+    return Math.max(this.DAY_START, Math.min(this.DAY_END - 15, m));
+  }
+  onTimelineDrop(e) {
+    e.preventDefault();
+    const d = this._drag; if (!d) return;
+    const start = this.dropMinutes(e);
+    if (d.type === 'tray') {
+      const t = this.state.tray.find(x => x.id === d.id); if (!t) return;
+      const nb = { id: 'b' + Date.now(), title: t.title, space: t.space, proj: t.proj, start, dur: t.dur || 60, meta: t.src === 'canvas' ? 'From Canvas' : 'Scheduled', fromTask: true };
+      this.setState({ blocks: [...this.state.blocks, nb], tray: this.state.tray.filter(x => x.id !== d.id) });
+    } else if (d.type === 'block') {
+      this.setState({ blocks: this.state.blocks.map(b => b.id === d.id ? { ...b, start } : b) });
+    }
+    this._drag = null;
+  }
+  unschedule(blockId) {
+    const b = this.state.blocks.find(x => x.id === blockId); if (!b) return;
+    const back = { id: 't' + Date.now(), title: b.title, space: b.space, proj: b.proj, dur: b.dur, due: null, src: b.fromTask ? 'manual' : 'manual' };
+    this.setState({ blocks: this.state.blocks.filter(x => x.id !== blockId), tray: [...this.state.tray, back] });
+  }
+
+  guessSpace(t) {
+    const s = t.toLowerCase();
+    if (/gym|run|workout|dinner|mom|dad|grocer|lunch|laundry|clean|errand|call |birthday|friend/.test(s)) return 'personal';
+    if (/essay|read|chapter|ch\.|homework|hw|problem set|pset|exam|quiz|lecture|class|study|assignment|paper|lab|calc|cs |history/.test(s)) return 'school';
+    if (/design|ship|deploy|feature|bug|standup|launch|app|prototype|trailhead|sprint/.test(s)) return 'side';
+    return 'personal';
+  }
+  parseTime(s) {
+    const m = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+    if (!m) return null;
+    let h = parseInt(m[1], 10); const min = m[2] ? parseInt(m[2], 10) : 0;
+    const ap = m[3].toLowerCase();
+    if (ap === 'pm' && h < 12) h += 12; if (ap === 'am' && h === 12) h = 0;
+    return h * 60 + min;
+  }
+  nlParse() {
+    const raw = this.state.nlText.trim(); if (!raw) return;
+    const chunks = raw.split(/,|\band\b|\n|;/i).map(c => c.trim()).filter(Boolean);
+    const review = chunks.map((c, i) => {
+      const time = this.parseTime(c);
+      const isTask = /due|finish|read|write|submit|study|prep|review|todo|need to/i.test(c) && time === null;
+      const space = this.guessSpace(c);
+      const dueM = c.match(/\b(mon|tue|wed|thu|fri|sat|sun)\w*\b/i);
+      let title = c.replace(/\b(at|on|by|due)\b.*$/i, '').replace(/\b\d{1,2}(?::\d{2})?\s*(am|pm)\b/i, '').trim();
+      title = title.charAt(0).toUpperCase() + title.slice(1);
+      return { id: 'nl' + i, title: title || c, type: isTask ? 'task' : (time !== null ? 'event' : 'task'), space, time, due: dueM ? dueM[0].slice(0,3).replace(/^\w/, ch=>ch.toUpperCase()) : null, dur: 60 };
+    });
+    this.setState({ nlReview: review });
+  }
+  nlConfirm(item) {
+    if (item.type === 'event' && item.time !== null) {
+      this.setState({ blocks: [...this.state.blocks, { id: 'b' + Date.now() + Math.random(), title: item.title, space: item.space, proj: null, start: item.time, dur: item.dur, meta: 'From the Brain', fromTask: false }] });
+    } else {
+      this.setState({ tray: [...this.state.tray, { id: 't' + Date.now() + Math.random(), title: item.title, space: item.space, proj: null, dur: item.dur, due: item.due, src: 'brain' }] });
+    }
+    this.setState({ nlReview: this.state.nlReview.filter(x => x.id !== item.id) });
+  }
+  nlConfirmAll() { this.state.nlReview.slice().forEach(it => this.nlConfirm(it)); this.setState({ nlText: '', nlReview: [] }); }
+  nlDismiss(id) { this.setState({ nlReview: this.state.nlReview.filter(x => x.id !== id) }); }
+
+  // ---- Dashboard tasks ----
+  addDashTask() {
+    const txt = this.state.dashTaskText.trim(); if (!txt) return;
+    const space = this.guessSpace(txt);
+    this.setState({ tray: [{ id: 't' + Date.now(), title: txt, space, proj: null, dur: 60, due: null, src: 'manual' }, ...this.state.tray], dashTaskText: '' });
+  }
+  completeTask(id) { this.setState({ tray: this.state.tray.filter(x => x.id !== id) }); }
+
+  // ---- Notes & docs ----
+  notesFor(pid) { return this.state.notes[pid] || []; }
+  addNote(type) {
+    const pid = this.state.activeProjectId;
+    const id = 'n' + Date.now();
+    const title = type === 'gdoc' ? 'Untitled doc' : type === 'anote' ? 'Untitled note' : 'Untitled note';
+    const list = [...this.notesFor(pid), { id, type, title, body: '' }];
+    this.setState({ notes: { ...this.state.notes, [pid]: list }, newNoteMenu: false, editingNoteId: type === 'text' ? id : null });
+  }
+  updateNote(id, field, val) {
+    const pid = this.state.activeProjectId;
+    const list = this.notesFor(pid).map(n => n.id === id ? { ...n, [field]: val } : n);
+    this.setState({ notes: { ...this.state.notes, [pid]: list } });
+  }
+  deleteNote(id) {
+    const pid = this.state.activeProjectId;
+    this.setState({ notes: { ...this.state.notes, [pid]: this.notesFor(pid).filter(n => n.id !== id) }, editingNoteId: this.state.editingNoteId === id ? null : this.state.editingNoteId });
+  }
+
+  PDETAIL = {
+    cs201: {
+      code: 'CS 201', meeting: 'MWF · 10:00–11:15 AM', room: 'Tisch Hall 204', instructor: 'Prof. Alvarez',
+      note: [
+        { t: 'Core class for the algorithms track. The complexity-analysis unit pairs tightly with ' },
+        { l: 'calc2', label: 'Calculus II' },
+        { t: ' — review limits before the midterm. Keep every worked problem in the ' },
+        { l: null, label: 'Finish DS problem set', task: true },
+        { t: ' task. The priority-queue reference implementation lives in the ' },
+        { l: 'trailhead', label: 'Trailhead App' },
+        { t: ' repo since we reuse it there.' },
+      ],
+      assignments: [
+        { title: 'Problem Set 4 — Graphs', due: 'Thu, Jun 26', status: 'Due soon', done: false },
+        { title: 'Reading: Ch. 7 Traversal', due: 'Mon, Jun 30', status: 'Upcoming', done: false },
+        { title: 'Project: Hash-map impl', due: 'Jul 10', status: 'Upcoming', done: false },
+        { title: 'Problem Set 3 — Heaps', due: 'Jun 19', status: 'Submitted', done: true },
+      ],
+      resources: [
+        { type: 'repo', label: 'cs201-psets', sub: 'github.com/jordan' },
+        { type: 'video', label: 'Lecture 12 — Dijkstra', sub: 'youtube.com' },
+        { type: 'audio', label: 'Deep Focus', sub: 'Spotify playlist' },
+      ],
+      backlinks: [
+        { type: 'task', title: 'Finish DS problem set', meta: 'Task · School · due Thu', go: 'calendar' },
+        { type: 'event', title: 'CS 201 Lecture', meta: 'Event · Today 9:00 AM', go: 'calendar' },
+        { type: 'note', title: 'Midterm study plan', meta: 'Note · references this class', go: null },
+        { type: 'class', title: 'Calculus II', meta: 'Class · shared complexity notes', go: 'calc2' },
+      ],
+    },
+    calc2: { code: 'MATH 152', meeting: 'TuTh · 1:00–2:15 PM', room: 'Science 110', instructor: 'Prof. Nguyen',
+      note: [ { t: 'Integration techniques and series. The complexity-analysis overlap with ' }, { l: 'cs201', label: 'CS 201 · Data Structures' }, { t: ' shows up in the midterm. Practice sets are tracked as tasks.' } ],
+      assignments: [ { title: 'WebAssign Set 9', due: 'Wed, Jun 25', status: 'Due soon', done: false }, { title: 'Series convergence quiz', due: 'Jul 1', status: 'Upcoming', done: false } ],
+      resources: [ { type: 'video', label: 'Khan: Taylor series', sub: 'khanacademy.org' } ],
+      backlinks: [ { type: 'task', title: 'Calc practice problems', meta: 'Task · School · due Wed', go: 'calendar' }, { type: 'class', title: 'CS 201 · Data Structures', meta: 'Class · shared notes', go: 'cs201' } ],
+    },
+    hist: { code: 'HIST 110', meeting: 'MWF · 1:00–1:50 PM', room: 'Humanities 3', instructor: 'Prof. Okafor',
+      note: [ { t: 'Survey of the modern era. Essay #2 covers industrialization — outline lives in the ' }, { l: null, label: 'Read History ch. 7', task: true }, { t: ' task notes.' } ],
+      assignments: [ { title: 'Read Ch. 7 — Industrial Age', due: 'Fri, Jun 27', status: 'Upcoming', done: false }, { title: 'Essay #2 outline', due: 'Jul 3', status: 'Upcoming', done: false } ],
+      resources: [], backlinks: [ { type: 'task', title: 'Read History ch. 7', meta: 'Task · School · due Fri', go: 'calendar' } ],
+    },
+    fitness: { code: null, meeting: 'Mon / Wed / Fri', room: 'Recreation center', instructor: null,
+      note: [ { t: 'Push/pull/legs split. Goal block ' }, { l: null, label: 'Get fit', goal: true }, { t: ' tracks weekly sessions — Atlas suggests open slots.' } ],
+      assignments: [ { title: 'Push day', due: 'Today', status: 'Scheduled', done: false }, { title: 'Pull day', due: 'Sat', status: 'Upcoming', done: false } ],
+      resources: [ { type: 'audio', label: 'Gym Hype', sub: 'Spotify playlist' } ],
+      backlinks: [ { type: 'event', title: 'Gym — push day', meta: 'Event · Today 4:00 PM', go: 'calendar' } ],
+    },
+    errands: { code: null, meeting: null, room: null, instructor: null,
+      note: [ { t: 'Loose personal to-dos that don\u2019t belong to a class or project.' } ],
+      assignments: [ { title: 'Grocery run', due: 'This week', status: 'Unscheduled', done: false }, { title: 'Return library books', due: 'Jul 2', status: 'Upcoming', done: false } ],
+      resources: [], backlinks: [ { type: 'task', title: 'Grocery run', meta: 'Task · Personal · unscheduled', go: 'calendar' } ],
+    },
+    trailhead: { code: null, meeting: 'Daily standup · 1:00 PM', room: 'Remote', instructor: null,
+      note: [ { t: 'Hiking companion app — solo side project. Reuses the priority queue from ' }, { l: 'cs201', label: 'CS 201 · Data Structures' }, { t: '. Current sprint: onboarding + trail search.' } ],
+      assignments: [ { title: 'Design onboarding screens', due: 'This week', status: 'In progress', done: false }, { title: 'Trail search API', due: 'Jul 5', status: 'Upcoming', done: false }, { title: 'TestFlight build', due: 'Jul 12', status: 'Upcoming', done: false } ],
+      resources: [ { type: 'repo', label: 'trailhead-ios', sub: 'github.com/jordan' }, { type: 'link', label: 'Figma — Onboarding', sub: 'figma.com' } ],
+      backlinks: [ { type: 'event', title: 'Lunch w/ Dev team', meta: 'Event · Today 1:00 PM', go: 'calendar' }, { type: 'class', title: 'CS 201 · Data Structures', meta: 'Class · shared PQ code', go: 'cs201' } ],
+    },
+  };
+
+  projectView() {
+    const id = this.state.activeProjectId;
+    const p = this.PROJECTS.find(x => x.id === id) || this.PROJECTS[0];
+    const sp = this.spaceOf(p.space);
+    const d = this.PDETAIL[id] || { code: null, note: [{ t: 'No notes yet.' }], assignments: [], resources: [], backlinks: [] };
+    const statusColor = (s) => s === 'Due soon' ? '#ff8c42' : s === 'Submitted' ? '#5fb98e' : s === 'In progress' ? '#b48ad9' : 'rgba(243,237,228,0.45)';
+    const typeIcon = { task: 'check', event: 'clock', note: 'doc', class: 'book', goal: 'target' };
+    return {
+      name: p.name.replace('CS 201 · ', ''), code: d.code, hasCode: !!d.code,
+      isClass: p.kind === 'class', kindLabel: p.kind === 'class' ? 'Class' : 'Project',
+      spaceName: sp.name, spaceColor: sp.color, spaceGlow: sp.glow,
+      spaceTagStyle: 'display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:7px;background:' + sp.color + '1f;color:' + sp.color + ';',
+      meeting: d.meeting, hasMeeting: !!d.meeting, room: d.room, instructor: d.instructor, hasInstructor: !!d.instructor,
+      driveLabel: p.kind === 'class' ? 'Canvas + Drive' : 'Drive folder',
+      noteSegments: d.note.map((s, i) => {
+        if (s.t) return { id: 'seg' + i, isText: true, text: s.t };
+        const target = s.l;
+        return {
+          id: 'seg' + i, isText: false, isLink: true, label: s.label,
+          linkStyle: 'color:' + (s.task ? '#5b9bd5' : s.goal ? '#5fb98e' : '#ff8c42') + ';font-weight:600;cursor:pointer;border-bottom:1px dashed ' + (s.task ? '#5b9bd566' : s.goal ? '#5fb98e66' : '#ff8c4266') + ';',
+          go: () => { if (target) this.go('project', target); },
+        };
+      }),
+      assignments: d.assignments.map((a, i) => ({
+        id: 'a' + i, title: a.title, due: a.due, status: a.status, done: a.done,
+        statusStyle: 'font-size:11px;font-weight:600;color:' + statusColor(a.status) + ';',
+        boxStyle: 'width:18px;height:18px;border-radius:6px;flex:none;display:flex;align-items:center;justify-content:center;border:1.5px solid ' + (a.done ? sp.color : 'rgba(243,237,228,0.25)') + ';background:' + (a.done ? sp.color : 'transparent') + ';',
+        titleStyle: 'font-size:13.5px;font-weight:600;' + (a.done ? 'color:rgba(243,237,228,0.4);text-decoration:line-through;' : ''),
+      })),
+      hasResources: d.resources.length > 0,
+      resources: d.resources.map((r, i) => ({ id: 'r' + i, label: r.label, sub: r.sub, kind: r.type,
+        isRepo: r.type==='repo', isVideo: r.type==='video', isAudio: r.type==='audio', isLink: r.type==='link' || r.type==='doc' })),
+      backlinks: d.backlinks.map((b, i) => ({
+        id: 'bl' + i, title: b.title, meta: b.meta, isTask: b.type==='task', isEvent: b.type==='event', isNote: b.type==='note', isClass: b.type==='class',
+        dotColor: b.type==='task' ? '#5b9bd5' : b.type==='event' ? '#ff8c42' : b.type==='class' ? sp.color : 'rgba(243,237,228,0.5)',
+        go: () => { if (b.go === 'calendar') this.go('calendar'); else if (b.go) this.go('project', b.go); },
+      })),
+      backlinkCount: d.backlinks.length,
+
+      newNoteMenu: this.state.newNoteMenu,
+      toggleNoteMenu: () => this.setState({ newNoteMenu: !this.state.newNoteMenu }),
+      addTextNote: () => this.addNote('text'),
+      addGDoc: () => this.addNote('gdoc'),
+      addANote: () => this.addNote('anote'),
+      notes: this.notesFor(id).map(n => {
+        const editing = this.state.editingNoteId === n.id;
+        const meta = n.type === 'gdoc' ? 'Google Doc · linked' : n.type === 'anote' ? 'Apple Notes · linked' : (n.body ? n.body.replace(/\n+/g, ' ').slice(0, 60) + (n.body.length > 60 ? '…' : '') : 'Empty note');
+        return {
+          id: n.id, type: n.type, title: n.title, body: n.body, editing,
+          isText: n.type === 'text', isGDoc: n.type === 'gdoc', isANote: n.type === 'anote', isExternal: n.type !== 'text',
+          meta,
+          iconColor: n.type === 'gdoc' ? '#5b9bd5' : n.type === 'anote' ? '#febc2e' : '#a89b8a',
+          iconWrapStyle: 'width:30px;height:30px;border-radius:8px;flex:none;display:flex;align-items:center;justify-content:center;background:' + (n.type === 'gdoc' ? 'rgba(91,155,213,0.14)' : n.type === 'anote' ? 'rgba(254,188,46,0.14)' : 'rgba(255,255,255,0.06)') + ';',
+          open: () => { if (n.type === 'text') this.setState({ editingNoteId: editing ? null : n.id }); },
+          onTitle: (e) => this.updateNote(n.id, 'title', e.target.value),
+          onBody: (e) => this.updateNote(n.id, 'body', e.target.value),
+          done: (e) => { if (e) e.stopPropagation(); this.setState({ editingNoteId: null }); },
+          del: (e) => { e.stopPropagation(); this.deleteNote(n.id); },
+        };
+      }),
+      noteCount: this.notesFor(id).length,
+    };
+  }
+
+  renderVals() {
+    const v = this.state.view;
+    const navItem = (active) => 'display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:background .15s;' +
+      (active ? 'background:rgba(255,107,26,0.14);color:#ff8c42;' : 'color:rgba(243,237,228,0.78);');
+
+    const spaces = Object.keys(this.SPACES).map(sid => {
+      const sp = this.SPACES[sid];
+      const open = !!this.state.openSpaces[sid];
+      return {
+        name: sp.name, color: sp.color, glow: sp.glow,
+        open, caret: open ? 90 : 0,
+        toggle: () => this.setState({ openSpaces: { ...this.state.openSpaces, [sid]: !open } }),
+        projects: this.PROJECTS.filter(p => p.space === sid).map(p => ({
+          name: p.name.replace('CS 201 · ', '').replace(' · ', ' '), glyph: p.glyph,
+          open: () => this.go('project', p.id),
+          style: 'display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12.5px;font-weight:500;color:' +
+            (this.state.activeProjectId === p.id && v === 'project' ? '#ff8c42;background:rgba(255,107,26,0.1);' : 'rgba(243,237,228,0.62);'),
+        })),
+      };
+    });
+
+    const sched = [...this.state.blocks].sort((a, b) => a.start - b.start).map(b => {
+      const sp = this.spaceOf(b.space);
+      return {
+        time: this.fmtTime(b.start), title: b.title, meta: b.meta, color: sp.color, glow: sp.glow,
+        dur: this.fmtDur(b.dur),
+        open: () => { if (b.proj) this.go('project', b.proj); else this.go('calendar'); },
+      };
+    });
+
+    const busy = this.state.blocks.reduce((a, b) => a + b.dur, 0);
+    const freeH = Math.max(0, Math.round((16 * 60 - busy) / 60));
+
+    return {
+      isDashboard: v === 'dashboard', isCalendar: v === 'calendar', isProject: v === 'project',
+      goDashboard: () => this.go('dashboard'),
+      goCalendar: () => this.go('calendar'),
+      navDashStyle: navItem(v === 'dashboard'),
+      navCalStyle: navItem(v === 'calendar'),
+      searchQuery: this.state.searchQuery,
+      onSearch: (e) => this.setState({ searchQuery: e.target.value }),
+      onSearchFocus: () => {},
+      spaces,
+      openFocus: () => this.setState({ pomo: { ...this.state.pomo, open: true } }),
+      todayLabel: 'THURSDAY · JUNE 26',
+      greeting: 'Good morning, Jordan',
+      statTasks: this.state.tray.length + this.state.blocks.length,
+      statFree: freeH,
+      todaySchedule: sched,
+      goals: [
+        { name: 'Get fit', label: '2 / 3 this week', pct: 66 },
+        { name: 'Learn Spanish', label: '1 / 3 blocks', pct: 33 },
+        { name: 'Ship Trailhead v1', label: '60%', pct: 60 },
+      ],
+      dashRef: null,
+      project: this.projectView(),
+
+      // ---- Dashboard tasks ----
+      dashTaskText: this.state.dashTaskText,
+      onDashTask: (e) => this.setState({ dashTaskText: e.target.value }),
+      onDashTaskKey: (e) => { if (e.key === 'Enter') this.addDashTask(); },
+      addDashTask: () => this.addDashTask(),
+      dashTaskCount: this.state.tray.length,
+      dashTasks: this.state.tray.map(t => {
+        const sp = this.spaceOf(t.space);
+        return {
+          title: t.title, hasDue: !!t.due, due: t.due, spaceName: sp.name,
+          dotStyle: 'width:7px;height:7px;border-radius:2px;flex:none;background:' + sp.color + ';',
+          boxStyle: 'width:18px;height:18px;border-radius:6px;flex:none;cursor:pointer;border:1.5px solid rgba(243,237,228,0.25);transition:all .12s;',
+          complete: () => this.completeTask(t.id),
+        };
+      }),
+
+      // ---- Pomodoro ----
+      pomoOpen: this.state.pomo.open,
+      pomoTask: this.state.pomo.task,
+      pomoRunning: this.state.pomo.running,
+      pomoPaused: !this.state.pomo.running,
+      pomoTime: (() => { const s = this.state.pomo.secLeft; return String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0'); })(),
+      pomoPct: Math.round((1 - this.state.pomo.secLeft / this.state.pomo.total) * 100),
+      pomoRingStyle: (() => { const pct = (1 - this.state.pomo.secLeft / this.state.pomo.total) * 100; return 'background: conic-gradient(#ff6b1a ' + pct + '%, rgba(255,255,255,0.12) ' + pct + '%);'; })(),
+      togglePomo: () => this.setState({ pomo: { ...this.state.pomo, running: !this.state.pomo.running } }),
+      resetPomo: () => this.setState({ pomo: { ...this.state.pomo, secLeft: this.state.pomo.total, running: false } }),
+      closePomo: () => this.setState({ pomo: { ...this.state.pomo, open: false, running: false } }),
+
+      // ---- Calendar ----
+      calView: this.state.calView,
+      isDay: this.state.calView === 'day',
+      isWeek: this.state.calView === 'week',
+      setDay: () => this.setState({ calView: 'day' }),
+      setWeek: () => this.setState({ calView: 'week' }),
+      dayToggleStyle: 'padding:5px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer;' + (this.state.calView === 'day' ? 'background:rgba(255,107,26,0.9);color:#1a140f;' : 'color:rgba(243,237,228,0.6);'),
+      weekToggleStyle: 'padding:5px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer;' + (this.state.calView === 'week' ? 'background:rgba(255,107,26,0.9);color:#1a140f;' : 'color:rgba(243,237,228,0.6);'),
+      weekDays: (() => {
+        const dows = ['MON','TUE','WED','THU','FRI','SAT','SUN'];
+        const nums = [22,23,24,25,26,27,28];
+        const todayIdx = 3;
+        const seed = {
+          0: [{t:'CS 201 Lecture',sp:'school',m:9*60},{t:'Calculus II',sp:'school',m:11*60}],
+          1: [{t:'World History',sp:'school',m:10*60},{t:'Trailhead sync',sp:'side',m:15*60}],
+          2: [{t:'CS 201 Lecture',sp:'school',m:9*60},{t:'Gym',sp:'personal',m:17*60}],
+          3: this.state.blocks.map(b=>({t:b.title,sp:b.space,m:b.start})),
+          4: [{t:'CS 201 Lecture',sp:'school',m:9*60},{t:'History essay due',sp:'school',m:13*60}],
+          5: [{t:'Long run',sp:'personal',m:8*60},{t:'Design review',sp:'side',m:14*60}],
+          6: [{t:'Dinner with mom',sp:'personal',m:18*60},{t:'Spanish block',sp:'personal',m:11*60}],
+        };
+        return dows.map((dow, i) => {
+          const isToday = i === todayIdx;
+          return {
+            dow, num: nums[i], colStyle: 'border-radius:11px;padding:11px 8px;min-height:100%;' + (isToday ? 'background:rgba(255,107,26,0.07);border:1px solid rgba(255,107,26,0.22);' : 'background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);'),
+            numStyle: 'font-size:17px;font-weight:700;margin-top:2px;' + (isToday ? 'color:#ff8c42;' : 'color:#f3ede4;'),
+            events: (seed[i]||[]).sort((a,b)=>a.m-b.m).map(e => {
+              const sp = this.spaceOf(e.sp);
+              return { title: e.t, time: this.fmtTime(e.m), style: 'border-radius:7px;padding:5px 7px;border-left:2.5px solid ' + sp.color + ';background:' + sp.color + '1f;color:' + sp.color + ';' };
+            }),
+          };
+        });
+      })(),
+      calDateLabel: 'Thu, June 26',
+      tlRef: this.tlRef(),
+      onTimelineDragOver: (e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; },
+      onTimelineDrop: (e) => this.onTimelineDrop(e),
+      hours: (() => { const a = []; for (let h = 7; h <= 23; h++) { let hh = h % 12; if (hh === 0) hh = 12; a.push({ label: hh + (h < 12 ? ' AM' : ' PM'), top: (h * 60 - this.DAY_START) }); } return a; })(),
+      dayHeight: this.DAY_END - this.DAY_START,
+      nowTop: (() => { const n = new Date(); let m = n.getHours() * 60 + n.getMinutes(); if (m < this.DAY_START || m > this.DAY_END) m = 615; return m - this.DAY_START; })(),
+      nowLabel: (() => { const n = new Date(); let m = n.getHours() * 60 + n.getMinutes(); if (m < this.DAY_START || m > this.DAY_END) m = 615; return this.fmtTime(Math.round(m/5)*5); })(),
+      dayBlocks: [...this.state.blocks].sort((a,b)=>a.start-b.start).map(b => {
+        const sp = this.spaceOf(b.space);
+        return {
+          title: b.title, meta: b.meta, dur: this.fmtDur(b.dur), time: this.fmtTime(b.start),
+          color: sp.color, glow: sp.glow,
+          wrapStyle: 'position:absolute;left:58px;right:14px;top:' + (b.start - this.DAY_START) + 'px;height:' + (b.dur - 3) + 'px;border-radius:8px;padding:7px 10px;cursor:grab;overflow:hidden;background:' + sp.color + '1a;border-left:2.5px solid ' + sp.color + ';',
+          onDragStart: (e) => this.onBlockDragStart(b.id, e),
+          unschedule: (e) => { e.stopPropagation(); this.unschedule(b.id); },
+          open: () => { if (b.proj) this.go('project', b.proj); },
+          tall: b.dur >= 50,
+        };
+      }),
+      tray: this.state.tray.map(t => {
+        const sp = this.spaceOf(t.space);
+        return {
+          title: t.title, dur: this.fmtDur(t.dur), due: t.due, hasDue: !!t.due,
+          color: sp.color, spaceName: sp.name, src: t.src, isCanvas: t.src === 'canvas', isBrain: t.src === 'brain',
+          onDragStart: (e) => this.onTrayDragStart(t.id, e),
+          dotStyle: 'width:7px;height:7px;border-radius:2px;flex:none;background:' + sp.color + ';',
+        };
+      }),
+      trayCount: this.state.tray.length,
+      nlText: this.state.nlText,
+      onNlInput: (e) => this.setState({ nlText: e.target.value }),
+      onNlKey: (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) this.nlParse(); },
+      nlParse: () => this.nlParse(),
+      hasReview: this.state.nlReview.length > 0,
+      nlConfirmAll: () => this.nlConfirmAll(),
+      nlClear: () => this.setState({ nlText: '', nlReview: [] }),
+      nlReview: this.state.nlReview.map(it => {
+        const sp = this.spaceOf(it.space);
+        return {
+          title: it.title, isTask: it.type === 'task', typeLabel: it.type === 'task' ? 'Task' : 'Event',
+          spaceName: sp.name, color: sp.color,
+          chipStyle: 'display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:6px;background:' + sp.color + '22;color:' + sp.color + ';',
+          when: it.time !== null ? this.fmtTime(it.time) : (it.due ? 'due ' + it.due : 'unscheduled'),
+          confirm: () => this.nlConfirm(it),
+          dismiss: () => this.nlDismiss(it.id),
+        };
+      }),
+    };
+  }
+}
+</script>
+</body>
+</html>
