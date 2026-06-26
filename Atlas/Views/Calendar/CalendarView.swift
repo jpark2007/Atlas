@@ -170,12 +170,13 @@ struct CalendarView: View {
                   Calendar.current.isDate(at, inSameDayAs: date) else { return nil }
             let end = Calendar.current.date(byAdding: .minute, value: 60, to: at) ?? at
             return CalendarEvent(
+                id: task.id,                       // stable identity → no per-render flicker
                 title: task.title,
                 subtitle: "Scheduled",
                 start: at,
                 end: end,
                 color: task.spaceColor,
-                spaceName: state.calendarSpaceName(matching: task.spaceColor)
+                spaceName: task.spaceName           // direct, not a fragile Color reverse-map
             )
         }
     }

@@ -16,11 +16,11 @@ enum MockData {
     ]
 
     static let tasks: [TaskItem] = [
-        .init(title: "Finish DS problem set",     dueLabel: "Thu", spaceColor: AtlasTheme.Colors.school),
-        .init(title: "Calc practice problems",    dueLabel: "Wed", spaceColor: AtlasTheme.Colors.school),
-        .init(title: "Read History ch. 7",        dueLabel: "Fri", spaceColor: AtlasTheme.Colors.school),
-        .init(title: "Design onboarding screens", dueLabel: "",    spaceColor: AtlasTheme.Colors.side),
-        .init(title: "Grocery run",               dueLabel: "",    spaceColor: AtlasTheme.Colors.personal),
+        .init(title: "Finish DS problem set",     dueLabel: "Thu", spaceColor: AtlasTheme.Colors.school,   spaceName: "School"),
+        .init(title: "Calc practice problems",    dueLabel: "Wed", spaceColor: AtlasTheme.Colors.school,   spaceName: "School"),
+        .init(title: "Read History ch. 7",        dueLabel: "Fri", spaceColor: AtlasTheme.Colors.school,   spaceName: "School"),
+        .init(title: "Design onboarding screens", dueLabel: "",    spaceColor: AtlasTheme.Colors.side,     spaceName: "Side Project"),
+        .init(title: "Grocery run",               dueLabel: "",    spaceColor: AtlasTheme.Colors.personal, spaceName: "Personal"),
     ]
 
     static let notes: [Note] = [

@@ -71,7 +71,7 @@ struct CommandPaletteOverlay: View {
             }
         }
         .animation(.easeOut(duration: 0.16), value: state.presentSearch)
-        .onChange(of: state.presentSearch) { presented in
+        .onChange(of: state.presentSearch) { _, presented in
             if presented {
                 query = ""
                 selection = 0
@@ -121,7 +121,7 @@ struct CommandPaletteOverlay: View {
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .focused($fieldFocused)
                 .onSubmit { activate() }
-                .onChange(of: query) { _ in selection = 0 }
+                .onChange(of: query) { selection = 0 }
             Text("esc")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
@@ -149,7 +149,7 @@ struct CommandPaletteOverlay: View {
                 }
                 .padding(8)
             }
-            .onChange(of: selection) { value in
+            .onChange(of: selection) { _, value in
                 withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(value, anchor: .center) }
             }
         }
@@ -211,21 +211,30 @@ struct CommandPaletteOverlay: View {
 
     // MARK: Search
 
+    /// Normalized query; empty when the user hasn't typed anything meaningful.
+    /// Guards every result list so an empty query yields NO results (otherwise
+    /// `contains("")` matches everything and Enter would navigate at random).
+    private var trimmedQuery: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
     private var projects: [Project] {
-        let all = state.spaces.flatMap(\.projects)
-        let q = query.lowercased()
-        return all.filter {
+        let q = trimmedQuery
+        guard !q.isEmpty else { return [] }
+        return state.spaces.flatMap(\.projects).filter {
             $0.name.lowercased().contains(q) || ($0.code?.lowercased().contains(q) ?? false)
         }
     }
 
     private var tasks: [TaskItem] {
-        let q = query.lowercased()
+        let q = trimmedQuery
+        guard !q.isEmpty else { return [] }
         return state.tasks.filter { $0.title.lowercased().contains(q) }
     }
 
     private var notes: [Note] {
-        let q = query.lowercased()
+        let q = trimmedQuery
+        guard !q.isEmpty else { return [] }
         return state.notes.filter { $0.title.lowercased().contains(q) }
     }
 

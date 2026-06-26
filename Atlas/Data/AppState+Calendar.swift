@@ -10,10 +10,4 @@ extension AppState {
     func calendarSpaceColor(named name: String) -> Color {
         spaces.first { $0.name == name }?.color ?? AtlasTheme.Colors.accent
     }
-
-    /// Reverse-map a space color back to its name (used to give a just-scheduled
-    /// task a `spaceName` so the space filter still applies to it).
-    func calendarSpaceName(matching color: Color) -> String {
-        spaces.first { $0.color == color }?.name ?? ""
-    }
 }

@@ -30,7 +30,7 @@ struct Project: Identifiable {
 /// schedule and the Calendar screen. Backed by real `Date`s so the Calendar
 /// can lay it out on a time grid and so drag-to-schedule has something concrete.
 struct CalendarEvent: Identifiable {
-    let id = UUID()
+    var id: UUID = UUID()
     var title: String
     var subtitle: String
     var start: Date
@@ -64,6 +64,7 @@ struct TaskItem: Identifiable {
     var done: Bool = false
     var scheduledAt: Date? = nil
     var spaceColor: Color = AtlasTheme.Colors.accent
+    var spaceName: String = ""
 }
 
 enum TaskStatus {

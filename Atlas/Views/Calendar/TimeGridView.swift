@@ -52,6 +52,7 @@ struct DayColumnView: View {
                 }
             }
             .frame(width: geo.size.width, height: CalendarLayout.totalHeight, alignment: .topLeading)
+            .clipped()   // keep events outside 7AM–10PM from bleeding past the column
             .contentShape(Rectangle())
             .dropDestination(for: DraggableTaskID.self) { items, location in
                 guard let first = items.first else { return false }

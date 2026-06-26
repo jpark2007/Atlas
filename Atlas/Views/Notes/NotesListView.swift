@@ -45,7 +45,10 @@ struct NotesListView: View {
     }
 
     private func newNote() {
-        editingNote = state.addNote()
+        // Open an UNSAVED draft. NoteEditorView.commit() persists via
+        // updateNote (which inserts on no-match), so dismissing without Done
+        // leaves no stray "Untitled note" behind.
+        editingNote = Note(title: "", body: "")
     }
 
     private func row(_ note: Note) -> some View {
