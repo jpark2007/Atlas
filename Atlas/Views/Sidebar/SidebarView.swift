@@ -15,6 +15,7 @@ struct SidebarView: View {
 
                 navRow(title: "Dashboard", icon: "square.grid.2x2.fill", route: .dashboard, trailing: nil)
                 navRow(title: "Calendar", icon: "calendar", route: .calendar, trailing: "Today")
+                navRow(title: "Focus", icon: "timer", route: .focus, trailing: nil)
 
                 Text("SPACES")
                     .font(AtlasTheme.Font.sectionLabel())

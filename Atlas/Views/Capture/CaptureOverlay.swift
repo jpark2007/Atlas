@@ -43,11 +43,7 @@ struct AtlasCaptureOverlayModifier: ViewModifier {
                             _ = state.addTask(title: title)
                         }
                     )
-                    .padding(.top, 96)
-                    .transition(
-                        .move(edge: .top)
-                        .combined(with: .opacity)
-                    )
+                    .transition(.opacity)
                     .zIndex(1_000)
                 }
             }
@@ -94,13 +90,20 @@ struct CaptureCommandBar: View {
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture { dismiss() }
-                .transition(.opacity)
 
             bar
                 .frame(width: barWidth)
+                .padding(.top, 96)
         }
-        // Esc dismisses.
+        // Esc dismisses — `.onExitCommand` plus a hidden cancelAction button so
+        // Escape still fires while the TextField holds first responder on macOS.
         .onExitCommand { dismiss() }
+        .background(
+            Button("", action: dismiss)
+                .keyboardShortcut(.cancelAction)
+                .opacity(0)
+                .accessibilityHidden(true)
+        )
         .onAppear {
             // Focus on the next runloop tick so the field is in the hierarchy.
             DispatchQueue.main.async { fieldFocused = true }

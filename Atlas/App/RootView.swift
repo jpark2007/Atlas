@@ -21,9 +21,9 @@ struct RootView: View {
                 case .dashboard:
                     DashboardView()
                 case .calendar:
-                    PlaceholderView(title: "Calendar", systemImage: "calendar")
+                    CalendarView()
                 case .focus:
-                    PlaceholderView(title: "Focus", systemImage: "timer")
+                    FocusView()
                 case .project(let id):
                     if let project = state.project(id) {
                         ProjectDetailView(project: project)
@@ -37,6 +37,8 @@ struct RootView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .background(AtlasTheme.Colors.bgBase)
+        .atlasCaptureOverlay()   // ⌘⇧K quick-capture pill
+        .atlasCommandPalette()   // ⌘K search / command palette
     }
 }
 

@@ -7,6 +7,7 @@ import Combine
 /// plain `ObservableObject` countdown around a `Foundation.Timer`. It does NOT
 /// touch `AppState`, SwiftData, or any AppKit/menu-bar code — purely the timing
 /// logic for a 25-minute work / 5-minute break cycle.
+@MainActor
 final class FocusViewModel: ObservableObject {
 
     /// Which side of the Pomodoro cycle we are on.
@@ -99,11 +100,13 @@ final class FocusViewModel: ObservableObject {
 
     private func startTimer() {
         stopTimer()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            self?.tick()
+        // Build the timer non-scheduled and register it once in `.common` so it
+        // keeps ticking through menu tracking / scrolling without double-adding.
+        let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
         }
-        // Keep ticking while menus/scrolling are active.
-        if let timer { RunLoop.main.add(timer, forMode: .common) }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
     private func stopTimer() {
