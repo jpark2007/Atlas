@@ -2,8 +2,9 @@ import SwiftUI
 import AppKit
 
 /// Strips the default macOS title-bar / toolbar chrome so Atlas's dark content
-/// runs edge-to-edge to the very top — no gray strip, no stray toolbar button.
-/// The traffic-light buttons still appear (on hover) over the transparent bar.
+/// runs edge-to-edge to the very top — no gray strip, no stray toolbar button —
+/// while explicitly keeping the standard traffic-light controls (close / minimize
+/// / zoom) visible over the transparent bar.
 ///
 /// NavigationSplitView re-adds its toolbar after our first pass, so we re-assert
 /// the configuration a few times to win the race.
@@ -20,6 +21,8 @@ struct WindowConfigurator: NSViewRepresentable {
     }
 
     private func configure(_ window: NSWindow) {
+        // Keep the window titled so the standard traffic-light controls exist.
+        window.styleMask.insert(.titled)
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.styleMask.insert(.fullSizeContentView)
@@ -29,6 +32,13 @@ struct WindowConfigurator: NSViewRepresentable {
         window.toolbar = nil
         // Hide the 1px separator line under the (now transparent) titlebar.
         window.titlebarSeparatorStyle = .none
+
+        // Explicitly restore the standard macOS window controls (red/yellow/green).
+        // Removing the toolbar / hiding the title bar can leave these hidden, so we
+        // un-hide them every pass to guarantee close / minimize / zoom are present.
+        window.standardWindowButton(.closeButton)?.isHidden = false
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = false
+        window.standardWindowButton(.zoomButton)?.isHidden = false
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
