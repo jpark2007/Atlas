@@ -2,7 +2,12 @@
 
 **Read this first in a new chat to resume work.** Snapshot of where we are, what's left, and a ready-to-run sub-agent/workflow plan.
 
-_Last updated: 2026-06-27 — auth + all screens shipped; next up: AI brain, real data, calendar overhaul._
+_Last updated: 2026-06-27 — **Daily-driver v1 built on branch `feat/daily-driver-v1`** (real data + AI capture + calendar overhaul + editable hotkeys + metrics + Settings→Calendars/EventKit). 45/45 tests, build green, reviewed. Not merged/pushed. Plan: `docs/superpowers/plans/2026-06-27-atlas-daily-driver-v1.md`. Ledger: `.superpowers/sdd/progress.md`._
+
+> ## Session 3 — Daily-driver v1: DONE (branch `feat/daily-driver-v1`, 16 commits)
+> **Built + reviewed (adversarial per-task + a 4-dimension whole-branch review):** Supabase Postgres persistence (DTO layer, RLS, load/seed/write-through, offline keeps mock) · AI ⌘⇧K capture (edge function + client, auto-sort, plain-task fallback) · calendar overhaul (week redesign, create/edit, right-click menu, click-to-source) · editable keyboard shortcuts (Settings→Shortcuts) · Metrics (card + page + ⌘K popup) · Settings→Calendars + EventKit read-only aggregate.
+> **YOU must do before it works live:** (1) run `supabase/migrations/0001_init.sql` in the Supabase SQL editor; (2) `supabase functions deploy capture` (+ confirm `OPENROUTER_API_KEY` function secret) — until then capture falls back to a plain task; (3) Apple/Google provider config for those sign-ins; (4) Apple Calendar aggregation needs you to grant calendar access at the macOS prompt.
+> **Deferred to v2 (intentionally):** Google/Canvas calendar fetch + write-back, EventKit write-back, global system-wide hotkey, social, email capture, iOS target, Drive folders. Plus hardening: move the Canvas token to Keychain; a bootstrap-clobber edge case (item added during initial load reappears next reload).
 
 ---
 
