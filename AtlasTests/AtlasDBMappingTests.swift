@@ -143,7 +143,8 @@ final class AtlasDBMappingTests: XCTestCase {
             body: "BFS vs DFS — track visited set.",
             spaceName: "School",
             updatedAt: refDate,
-            isExternal: true
+            isExternal: true,
+            googleDocId: "doc-abc-123"
         )
         let row = NoteRow(domain: note)
         let data = try encoder.encode(row)
@@ -156,6 +157,7 @@ final class AtlasDBMappingTests: XCTestCase {
         XCTAssertEqual(result.spaceName, note.spaceName)
         XCTAssertEqual(result.updatedAt, note.updatedAt)
         XCTAssertEqual(result.isExternal, note.isExternal)
+        XCTAssertEqual(result.googleDocId, "doc-abc-123")
     }
 
     func testNoteRowNilSpaceName() throws {

@@ -85,7 +85,26 @@ final class GoogleAuthServiceTests: XCTestCase {
     }
 
     func testScopesConfiguredForCalendarEvents() {
-        XCTAssertEqual(GoogleOAuthConfig.scopes, ["https://www.googleapis.com/auth/calendar.events"])
+        // WS-5 calendar scope plus the WS-10 Docs/Drive scopes.
+        XCTAssertEqual(GoogleOAuthConfig.scopes, [
+            "https://www.googleapis.com/auth/calendar.events",
+            "https://www.googleapis.com/auth/documents",
+            "https://www.googleapis.com/auth/drive.file",
+        ])
+    }
+
+    func testAuthorizationURLRequestsDocsAndDriveScopes() throws {
+        let url = GoogleOAuth.authorizationURL(
+            clientID: "id",
+            redirectURI: "http://127.0.0.1:9",
+            scopes: GoogleOAuthConfig.scopes,
+            codeChallenge: "c",
+            state: "s"
+        )
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let scope = try XCTUnwrap((components.queryItems ?? []).first { $0.name == "scope" }?.value)
+        XCTAssertTrue(scope.contains("https://www.googleapis.com/auth/documents"), "scope was \(scope)")
+        XCTAssertTrue(scope.contains("https://www.googleapis.com/auth/drive.file"), "scope was \(scope)")
     }
 
     // MARK: - Token request bodies (decode back — never string-compare)

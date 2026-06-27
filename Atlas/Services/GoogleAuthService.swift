@@ -16,9 +16,15 @@ enum GoogleOAuthConfig {
     static let authorizationEndpoint = URL(string: "https://accounts.google.com/o/oauth2/v2/auth")!
     static let tokenEndpoint = URL(string: "https://oauth2.googleapis.com/token")!
 
-    /// Read+write events on the user's calendars (two-way sync). WS-10 will add
-    /// `documents` + `drive.file` for Notes ↔ Google Docs.
-    static let scopes = ["https://www.googleapis.com/auth/calendar.events"]
+    /// Read+write events on the user's calendars (two-way sync, WS-5) plus the
+    /// Google Docs + Drive scopes for Notes ↔ Google Docs (WS-10):
+    ///   • `documents`  — read/write the backing Doc's content + structure.
+    ///   • `drive.file` — create/locate the Docs Atlas itself owns.
+    static let scopes = [
+        "https://www.googleapis.com/auth/calendar.events",
+        "https://www.googleapis.com/auth/documents",
+        "https://www.googleapis.com/auth/drive.file",
+    ]
 
     static var clientID: String {
         (Bundle.main.object(forInfoDictionaryKey: "GoogleOAuthClientID") as? String) ?? ""

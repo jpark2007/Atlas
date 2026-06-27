@@ -308,31 +308,35 @@ struct NoteRow: Codable {
     var body: String
     var updatedAt: Date
     var isExternal: Bool
+    var googleDocId: String?
 
     enum CodingKeys: String, CodingKey {
         case id
-        case userId     = "user_id"
-        case spaceName  = "space_name"
-        case projectId  = "project_id"
+        case userId      = "user_id"
+        case spaceName   = "space_name"
+        case projectId   = "project_id"
         case title
         case body
-        case updatedAt  = "updated_at"
-        case isExternal = "is_external"
+        case updatedAt   = "updated_at"
+        case isExternal  = "is_external"
+        case googleDocId = "google_doc_id"
     }
 
     init(domain n: Note) {
-        self.id         = n.id
-        self.spaceName  = n.spaceName
-        self.projectId  = nil // no projectId on Note yet; map to nil
-        self.title      = n.title
-        self.body       = n.body
-        self.updatedAt  = n.updatedAt
-        self.isExternal = n.isExternal
+        self.id          = n.id
+        self.spaceName   = n.spaceName
+        self.projectId   = nil // no projectId on Note yet; map to nil
+        self.title       = n.title
+        self.body        = n.body
+        self.updatedAt   = n.updatedAt
+        self.isExternal  = n.isExternal
+        self.googleDocId = n.googleDocId
     }
 
     func toDomain() -> Note {
         Note(id: id, title: title, body: body,
-             spaceName: spaceName, updatedAt: updatedAt, isExternal: isExternal)
+             spaceName: spaceName, updatedAt: updatedAt, isExternal: isExternal,
+             googleDocId: googleDocId)
     }
 }
 

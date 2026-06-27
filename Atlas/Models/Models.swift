@@ -135,6 +135,14 @@ struct Note: Identifiable {
     var spaceName: String? = nil
     var updatedAt: Date = Date()
     var isExternal: Bool = false   // links out to a Google Doc / Apple Note
+
+    /// The backing Google Doc id, once this note is linked (WS-10). `nil` until
+    /// the note is paired with a Doc. The Doc is the styling master; Atlas edits
+    /// the constrained subset (see `RichDoc`).
+    var googleDocId: String? = nil
+    /// When the note last reconciled with its Google Doc — drives last-write
+    /// reconciliation (`NoteSync.reconcile`) so neither side is silently lost.
+    var docSyncedAt: Date? = nil
 }
 
 /// A pinned external resource (paste-a-URL: repo, video, playlist).
