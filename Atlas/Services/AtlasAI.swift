@@ -18,12 +18,22 @@ struct CaptureResult: Codable {
 
 // MARK: - Context payload
 
-/// One of the user's real Spaces + its project names, sent to the edge function
-/// so the model routes each captured item into an actual bucket (instead of the
-/// generic School/Work/Personal default list).
+/// A single project inside a context space — name plus the routing hints the
+/// model uses to place an ambiguous capture: an optional short code and an
+/// optional SHORT description (the project's overview, truncated). The richer
+/// the description, the more confidently the AI routes.
+struct CaptureContextProject: Codable, Equatable {
+    let name: String
+    let code: String?
+    let overview: String?
+}
+
+/// One of the user's real Spaces + its projects (with descriptions), sent to the
+/// edge function so the model routes each captured item into an actual bucket
+/// (instead of the generic School/Work/Personal default list).
 struct CaptureContextSpace: Codable, Equatable {
     let name: String
-    let projects: [String]
+    let projects: [CaptureContextProject]
 }
 
 /// Request body for the `capture` function. `spaces` is omitted entirely when
@@ -113,11 +123,33 @@ final class AtlasAI {
     // MARK: - Testable seams (pure functions — no network)
 
     /// Map the user's live `Space` list into the lightweight context payload.
+    /// Each project carries its name, optional code, and a SHORT description
+    /// (overview truncated via `shortOverview`) so routing has real context.
     static func context(from spaces: [Space]) -> [CaptureContextSpace] {
         spaces.map { space in
-            CaptureContextSpace(name: space.name,
-                                projects: space.projects.map { $0.name })
+            CaptureContextSpace(
+                name: space.name,
+                projects: space.projects.map { p in
+                    let trimmedCode = p.code?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return CaptureContextProject(
+                        name: p.name,
+                        code: (trimmedCode?.isEmpty == false) ? trimmedCode : nil,
+                        overview: shortOverview(p.overview)
+                    )
+                }
+            )
         }
+    }
+
+    /// Trim and truncate an overview to ~`limit` chars for the routing payload.
+    /// Returns `nil` for blank input so the key is omitted entirely. When longer
+    /// than `limit`, keeps the first `limit` characters and appends an ellipsis.
+    static func shortOverview(_ text: String, limit: Int = 160) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard trimmed.count > limit else { return trimmed }
+        let cut = trimmed.prefix(limit).trimmingCharacters(in: .whitespacesAndNewlines)
+        return cut + "…"
     }
 
     /// Encode the POST body. `spaces` is dropped when empty so callers without

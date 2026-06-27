@@ -2,7 +2,11 @@
  * Atlas — capture Edge Function (Deno)
  *
  * POST /functions/v1/capture
- * Body:   { text: string, spaces?: [{ name: string, projects: string[] }] }
+ * Body:   { text: string,
+ *           spaces?: [{ name: string,
+ *                       projects: (string | { name: string, code?: string, overview?: string })[] }] }
+ *          Projects may be bare names (legacy) or objects whose code + short
+ *          overview give the model description-aware routing context.
  * Returns: JSON ARRAY of capture items:
  *   [{ kind, title, spaceName, projectName?, dueISO?, startISO?, durationMin?, notes? }, ...]
  *
@@ -24,14 +28,40 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-type ContextSpace = { name: string; projects: string[] };
+// A project is either a bare name (legacy clients) or an object carrying an
+// optional short code and description used for description-aware routing.
+type ContextProject = string | { name: string; code?: string; overview?: string };
+type ContextSpace = { name: string; projects: ContextProject[] };
 
 const DEFAULT_SPACES = ["School", "Work", "Personal", "Health", "Finance", "Other"];
 
 /**
+ * Render one project line for the routing block. Tolerant of both the legacy
+ * string shape and the rich object shape ({ name, code?, overview? }). The code
+ * and description are context for routing only — never part of `projectName`.
+ * Returns null for malformed/blank entries so they're dropped.
+ */
+function projectLabel(p: ContextProject): string | null {
+  if (typeof p === "string") {
+    const name = p.trim();
+    return name.length ? `"${name}"` : null;
+  }
+  if (p && typeof p === "object" && typeof p.name === "string" && p.name.trim().length) {
+    const name = p.name.trim();
+    const code = typeof p.code === "string" && p.code.trim().length
+      ? ` [${p.code.trim()}]` : "";
+    const desc = typeof p.overview === "string" && p.overview.trim().length
+      ? ` — ${p.overview.trim()}` : "";
+    return `"${name}"${code}${desc}`;
+  }
+  return null;
+}
+
+/**
  * Render the Space/Project routing block. When the client sends real buckets we
- * use those; otherwise we fall back to the generic default list so old clients
- * (and direct callers) still work.
+ * use those (with each project's code + description as routing context);
+ * otherwise we fall back to the generic default list so old clients (and direct
+ * callers) still work.
  */
 function spacesBlock(spaces: ContextSpace[] | undefined): string {
   const valid = (spaces ?? []).filter(
@@ -41,19 +71,23 @@ function spacesBlock(spaces: ContextSpace[] | undefined): string {
     return `- "spaceName": one of: ${DEFAULT_SPACES.map((s) => `"${s}"`).join(", ")}.`;
   }
   const lines = valid.map((s) => {
-    const projects = (s.projects ?? []).filter(
-      (p) => typeof p === "string" && p.trim().length > 0,
-    );
-    const proj = projects.length
-      ? ` (projects: ${projects.map((p) => `"${p}"`).join(", ")})`
-      : "";
-    return `    • "${s.name}"${proj}`;
+    const projects = (s.projects ?? [])
+      .map(projectLabel)
+      .filter((p): p is string => p !== null);
+    if (!projects.length) {
+      return `    • "${s.name}"`;
+    }
+    const projLines = projects.map((p) => `        - ${p}`).join("\n");
+    return `    • "${s.name}"\n${projLines}`;
   });
   return `- "spaceName": choose the single best match from the user's actual spaces below. \
-Use the EXACT name as written. If nothing fits, use the closest one.
+Use the EXACT name as written. If nothing fits, use the closest one. Each project below \
+may include a [CODE] and a — description; use them to route ambiguous items confidently, \
+but never copy the code or description into any field.
 ${lines.join("\n")}
-- "projectName": when an item clearly belongs to one of that space's listed projects, \
-set it to the EXACT project name shown above. Otherwise omit it.`;
+- "projectName": when an item clearly belongs to one of that space's listed projects \
+(match on the name, code, or description), set it to the EXACT project name shown above \
+(without the code/description). Otherwise omit it.`;
 }
 
 function buildSystemPrompt(spaces: ContextSpace[] | undefined): string {

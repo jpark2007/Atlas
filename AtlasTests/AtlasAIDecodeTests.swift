@@ -146,7 +146,8 @@ final class AtlasAIDecodeTests: XCTestCase {
             color: .blue,
             projects: [
                 Project(name: "CS101", code: "CS 101", isClass: true,
-                        spaceName: "School", spaceColor: .blue),
+                        spaceName: "School", spaceColor: .blue,
+                        overview: "Intro to programming and data structures."),
                 Project(name: "Writing Seminar", code: nil, isClass: true,
                         spaceName: "School", spaceColor: .blue),
             ]
@@ -157,15 +158,41 @@ final class AtlasAIDecodeTests: XCTestCase {
 
         XCTAssertEqual(ctx.count, 2)
         XCTAssertEqual(ctx[0].name, "School")
-        XCTAssertEqual(ctx[0].projects, ["CS101", "Writing Seminar"])
+        XCTAssertEqual(ctx[0].projects.map(\.name), ["CS101", "Writing Seminar"])
+
+        // Code + overview carried through for routing.
+        XCTAssertEqual(ctx[0].projects[0].code, "CS 101")
+        XCTAssertEqual(ctx[0].projects[0].overview, "Intro to programming and data structures.")
+
+        // No code / no overview → nil (key omitted on the wire).
+        XCTAssertNil(ctx[0].projects[1].code)
+        XCTAssertNil(ctx[0].projects[1].overview)
+
         XCTAssertEqual(ctx[1].name, "Personal")
         XCTAssertTrue(ctx[1].projects.isEmpty)
+    }
+
+    func testShortOverviewTruncatesLongTextAndKeepsPrefix() {
+        let long = String(repeating: "a", count: 400)
+        let short = try! XCTUnwrap(AtlasAI.shortOverview(long, limit: 160))
+        XCTAssertTrue(short.hasPrefix(String(repeating: "a", count: 160)))
+        XCTAssertLessThanOrEqual(short.count, 161) // 160 + ellipsis
+        XCTAssertTrue(short.hasSuffix("…"))
+    }
+
+    func testShortOverviewPassesThroughShortTextAndDropsBlank() {
+        XCTAssertEqual(AtlasAI.shortOverview("  Tidy goal.  "), "Tidy goal.")
+        XCTAssertNil(AtlasAI.shortOverview("    "))
+        XCTAssertNil(AtlasAI.shortOverview(""))
     }
 
     // MARK: - Request body building (decode back — never string-compare)
 
     func testRequestBodyIncludesContextWhenPresent() throws {
-        let spaces = [CaptureContextSpace(name: "Work", projects: ["Atlas"])]
+        let spaces = [CaptureContextSpace(
+            name: "Work",
+            projects: [CaptureContextProject(name: "Atlas", code: "ATL",
+                                             overview: "Life manager app")])]
         let data = try AtlasAI.requestBody(text: "ship it", spaces: spaces)
 
         let round = try decoder.decode(CaptureRequest.self, from: data)
