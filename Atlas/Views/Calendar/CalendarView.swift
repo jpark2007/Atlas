@@ -168,14 +168,16 @@ struct CalendarView: View {
                 date: selectedDate,
                 events: filteredEvents(on: selectedDate),
                 onDropTask: handleDrop,
-                onTapEmpty: handleTapEmpty
+                onTapEmpty: handleTapEmpty,
+                onTapEvent: openSource(for:)
             )
         case .week:
             WeekGridView(
                 days: weekDays,
                 eventsProvider: { filteredEvents(on: $0) },
                 onDropTask: handleDrop,
-                onTapEmpty: handleTapEmpty
+                onTapEmpty: handleTapEmpty,
+                onTapEvent: openSource(for:)
             )
         }
     }
@@ -288,6 +290,22 @@ struct CalendarView: View {
             spaceName: spaceName
         )
         state.presentEventEditor = true
+    }
+
+    // MARK: - Source navigation
+
+    /// Left-click / "Open Source" resolver.
+    ///
+    /// If the event is linked to a project that still exists, navigates the
+    /// sidebar to `.project(id)`. Otherwise falls back to opening the editor
+    /// so a click on any tile is never a dead end.
+    func openSource(for event: CalendarEvent) {
+        if let projectID = event.projectID, state.project(projectID) != nil {
+            state.route = .project(projectID)
+        } else {
+            state.eventEditorSeed = event
+            state.presentEventEditor = true
+        }
     }
 
     // MARK: - Header helpers

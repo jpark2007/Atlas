@@ -37,6 +37,8 @@ struct DayColumnView: View {
     /// Called when the user taps an empty area of the grid (not on an EventTile).
     /// `hour` is a fractional clock hour (e.g. 9.5 = 9:30 AM).
     var onTapEmpty: ((Date, Double) -> Void)? = nil
+    /// Called when the user left-clicks an event tile. Feeds into `CalendarView.openSource(for:)`.
+    var onTapEvent: ((CalendarEvent) -> Void)? = nil
 
     @State private var isTargeted = false
 
@@ -118,11 +120,14 @@ struct DayColumnView: View {
         let gap: CGFloat = 3
         let laneWidth = (columnWidth - CGFloat(item.laneCount - 1) * gap) / CGFloat(item.laneCount)
         let x = CGFloat(item.lane) * (laneWidth + gap)
+        // Build a captured closure so the compiler can close over `ev` cleanly.
+        let openSourceClosure: (() -> Void)? = onTapEvent.map { handler in { handler(ev) } }
         return EventTile(event: ev, compact: height < 44)
-            // Swallow left-click so the ZStack's tap-to-create gesture doesn't
-            // fire when the user clicks on an existing tile. Task 6 will replace
-            // this no-op with a context-menu / tap-to-edit action.
-            .onTapGesture {}
+            // Left-click: open source (navigates to project, or opens editor if none linked).
+            // Swallows the tap so the parent ZStack's tap-to-create doesn't fire.
+            .onTapGesture { onTapEvent?(ev) }
+            // Right-click: context menu with Edit / Change Duration / Open Source / Delete.
+            .eventContextMenu(event: ev, onOpenSource: openSourceClosure)
             .frame(width: max(0, laneWidth - 2), height: height, alignment: .topLeading)
             .offset(x: x, y: y)
     }
@@ -173,6 +178,7 @@ struct DayCalendarView: View {
     let events: [CalendarEvent]
     let onDropTask: (UUID, Date, Double) -> Bool
     var onTapEmpty: ((Date, Double) -> Void)? = nil
+    var onTapEvent: ((CalendarEvent) -> Void)? = nil
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -184,7 +190,8 @@ struct DayCalendarView: View {
                         events: events,
                         isToday: Calendar.current.isDateInToday(date),
                         onDropTask: onDropTask,
-                        onTapEmpty: onTapEmpty
+                        onTapEmpty: onTapEmpty,
+                        onTapEvent: onTapEvent
                     )
                 }
                 .id("dayGrid")
@@ -207,6 +214,7 @@ struct WeekGridView: View {
     let eventsProvider: (Date) -> [CalendarEvent]
     let onDropTask: (UUID, Date, Double) -> Bool
     var onTapEmpty: ((Date, Double) -> Void)? = nil
+    var onTapEvent: ((CalendarEvent) -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -237,7 +245,8 @@ struct WeekGridView: View {
                                     events: eventsProvider(day),
                                     isToday: Calendar.current.isDateInToday(day),
                                     onDropTask: onDropTask,
-                                    onTapEmpty: onTapEmpty
+                                    onTapEmpty: onTapEmpty,
+                                    onTapEvent: onTapEvent
                                 )
                                 .frame(width: columnWidth)
                                 if index < days.count - 1 {
