@@ -392,13 +392,18 @@ final class AtlasDB {
         return s
     }
 
-    /// GET `<restBase>/<table>?select=*` and decode the JSON array.
-    private func getAll<T: Decodable>(_ table: String) async throws -> [T] {
+    /// GET `<restBase>/<table>?select=*&order=<column>` and decode the JSON array.
+    /// Pass `order` to ensure stable, deterministic row ordering across launches.
+    private func getAll<T: Decodable>(_ table: String, order: String? = nil) async throws -> [T] {
         let sess = try requireSession()
         var comps = URLComponents(
             url: SupabaseConfig.restBase.appendingPathComponent(table),
             resolvingAgainstBaseURL: false)!
-        comps.queryItems = [URLQueryItem(name: "select", value: "*")]
+        var queryItems = [URLQueryItem(name: "select", value: "*")]
+        if let order = order {
+            queryItems.append(URLQueryItem(name: "order", value: order))
+        }
+        comps.queryItems = queryItems
 
         var req = URLRequest(url: comps.url!)
         req.httpMethod = "GET"
@@ -453,12 +458,13 @@ final class AtlasDB {
     /// Load all tables for the signed-in user. RLS scopes rows automatically.
     /// Returns a flat `AtlasSnapshot`; spaces have `projects: []` — re-nesting is Task 2's job.
     func loadAll() async throws -> AtlasSnapshot {
-        async let spaceRows:   [SpaceRow]   = getAll("spaces")
-        async let projectRows: [ProjectRow] = getAll("projects")
-        async let taskRows:    [TaskRow]    = getAll("tasks")
-        async let eventRows:   [EventRow]   = getAll("events")
-        async let noteRows:    [NoteRow]    = getAll("notes")
-        async let goalRows:    [GoalRow]    = getAll("goals")
+        // Stable ordering per table so sidebar/list order is deterministic across launches.
+        async let spaceRows:   [SpaceRow]   = getAll("spaces",   order: "sort")
+        async let projectRows: [ProjectRow] = getAll("projects", order: "id")
+        async let taskRows:    [TaskRow]    = getAll("tasks",    order: "id")
+        async let eventRows:   [EventRow]   = getAll("events",   order: "start_at")
+        async let noteRows:    [NoteRow]    = getAll("notes",    order: "id")
+        async let goalRows:    [GoalRow]    = getAll("goals",    order: "id")
 
         let (sr, pr, tr, er, nr, gr) = try await (spaceRows, projectRows, taskRows, eventRows, noteRows, goalRows)
 
@@ -475,7 +481,7 @@ final class AtlasDB {
     /// Seed all tables from a snapshot (first-run). Upserts each row so it is safe
     /// to call if some rows already exist.
     func seedInitial(_ snapshot: AtlasSnapshot) async throws {
-        for space   in snapshot.spaces   { try await upsertSpace(space) }
+        for (index, space) in snapshot.spaces.enumerated() { try await upsertSpace(space, sort: index) }
         for project in snapshot.projects { try await upsertProject(project) }
         for task    in snapshot.tasks    { try await upsertTask(task) }
         for event   in snapshot.events   { try await upsertEvent(event) }
@@ -485,12 +491,12 @@ final class AtlasDB {
 
     // MARK: Spaces / Projects
 
-    func upsertSpace(_ s: Space) async throws {
+    func upsertSpace(_ s: Space, sort: Int = 0) async throws {
         let sess = try requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
-        var row = SpaceRow(domain: s)
+        var row = SpaceRow(domain: s, sort: sort)
         row.userId = userId
         let body = try isoEncoder.encode(row)
         try await send(method: "POST", table: "spaces",

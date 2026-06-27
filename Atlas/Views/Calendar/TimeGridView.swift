@@ -44,7 +44,10 @@ struct DayColumnView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let positioned = packEventsIntoLanes(events)
+            // Exclude all-day events from timed packing — they corrupt lane widths
+            // and render off-screen at negative Y. Week mode shows them in AllDayRowView;
+            // day mode omits them from the grid (acceptable for v1).
+            let positioned = packEventsIntoLanes(events.filter { !$0.isAllDay })
             ZStack(alignment: .topLeading) {
                 // Subtle today-column background tint — first layer so everything renders on top
                 if isToday {

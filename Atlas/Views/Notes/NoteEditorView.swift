@@ -71,7 +71,7 @@ struct NoteEditorView: View {
                 Button(action: commit) {
                     Text("Done")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AtlasTheme.Colors.bgDeep)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 7)
                         .background(AtlasTheme.Colors.accent)

@@ -17,12 +17,25 @@ struct EventContextMenuModifier: ViewModifier {
 
     @EnvironmentObject private var state: AppState
 
+    /// True when this event is a synthetic tile derived from a scheduled TaskItem.
+    /// These share the task's UUID as their id; writing them back to the DB would
+    /// create a ghost CalendarEvent row keyed by the task's UUID.
+    private var isTaskDerived: Bool {
+        state.tasks.contains { $0.id == event.id }
+    }
+
     func body(content: Content) -> some View {
         content.contextMenu {
             if event.isReadOnly {
                 // ── Read-only external event — no edit, no delete ─────────
                 Button {} label: {
                     Label("Read-only (Apple Calendar)", systemImage: "lock.fill")
+                }
+                .disabled(true)
+            } else if isTaskDerived {
+                // ── Synthetic task tile — editing would ghost-duplicate in DB ─
+                Button {} label: {
+                    Label("Scheduled task — edit from Tasks", systemImage: "checkmark.circle")
                 }
                 .disabled(true)
             } else {

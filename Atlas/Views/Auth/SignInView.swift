@@ -22,7 +22,7 @@ struct SignInView: View {
                     field(icon: "lock", placeholder: "Password", text: $password, secure: true)
 
                     if let error = auth.errorMessage {
-                        message(error, color: .red)
+                        message(error, color: AtlasTheme.Colors.danger)
                     }
                     if let info = auth.infoMessage {
                         message(info, color: AtlasTheme.Colors.accent)
@@ -112,7 +112,7 @@ struct SignInView: View {
         } label: {
             Text(mode == .signIn ? "Sign in" : "Create account")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.black)
+                .foregroundStyle(AtlasTheme.Colors.bgDeep)
                 .frame(maxWidth: .infinity).padding(.vertical, 12)
                 .background(LinearGradient(colors: [AtlasTheme.Colors.accent, AtlasTheme.Colors.accentDeep],
                                            startPoint: .leading, endPoint: .trailing))

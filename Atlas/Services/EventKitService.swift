@@ -39,6 +39,29 @@ final class EventKitService {
         EKEventStore.authorizationStatus(for: .event)
     }
 
+    // MARK: - Stable ID derivation
+
+    /// Derives a deterministic UUID from an EKEvent identifier using FNV-1a.
+    /// Avoids per-fetch `UUID()` calls that cause re-render flicker.
+    private func stableUUID(from identifier: String) -> UUID {
+        var h: UInt64 = 14695981039346656037
+        for byte in identifier.utf8 {
+            h ^= UInt64(byte)
+            h = h &* 1099511628211
+        }
+        let h2 = h.byteSwapped
+        return UUID(uuid: (
+            UInt8((h >> 56) & 0xFF), UInt8((h >> 48) & 0xFF),
+            UInt8((h >> 40) & 0xFF), UInt8((h >> 32) & 0xFF),
+            UInt8((h >> 24) & 0xFF), UInt8((h >> 16) & 0xFF),
+            UInt8((h >>  8) & 0xFF), UInt8( h         & 0xFF),
+            UInt8((h2 >> 56) & 0xFF), UInt8((h2 >> 48) & 0xFF),
+            UInt8((h2 >> 40) & 0xFF), UInt8((h2 >> 32) & 0xFF),
+            UInt8((h2 >> 24) & 0xFF), UInt8((h2 >> 16) & 0xFF),
+            UInt8((h2 >>  8) & 0xFF), UInt8( h2         & 0xFF)
+        ))
+    }
+
     // MARK: - Fetch
 
     /// Fetches Apple Calendar events in the given date range and maps them to
@@ -52,14 +75,14 @@ final class EventKitService {
     /// - Returns: Mapped events, or `[]` when access is denied / unavailable.
     func fetchEvents(start: Date, end: Date, defaultSpaceName: String) async -> [CalendarEvent] {
         let status = authorizationStatus()
-        guard status == .fullAccess || status == .authorized else { return [] }
+        guard status == .fullAccess else { return [] }
 
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
         let ekEvents = store.events(matching: predicate)
 
         return ekEvents.map { ekEvent in
             CalendarEvent(
-                id: UUID(),
+                id: stableUUID(from: ekEvent.eventIdentifier ?? UUID().uuidString),
                 title: ekEvent.title ?? "Untitled",
                 subtitle: ekEvent.calendar?.title ?? "",
                 start: ekEvent.startDate,

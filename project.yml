@@ -24,6 +24,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         INFOPLIST_KEY_NSCalendarsUsageDescription: "Atlas reads your Apple Calendar events to display them alongside your Atlas schedule. No events are modified."
+        INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription: "Atlas reads your Apple Calendar events to show them alongside your schedule. Atlas never modifies your calendars."
   AtlasTests:
     type: bundle.unit-test
     platform: macOS

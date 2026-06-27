@@ -18,6 +18,9 @@ final class AppState: ObservableObject {
     /// fire write-through Tasks without crossing Swift's file-private boundary.
     var db: AtlasDB?
 
+    /// Guards against double-bootstrap if `bootstrap(db:)` is called more than once.
+    private var didBootstrap = false
+
     /// Quick-capture pill presentation (toggled by the ⌘ hotkey / Tasks card).
     @Published var presentCapture: Bool = false
 
@@ -29,9 +32,6 @@ final class AppState: ObservableObject {
 
     /// Metrics popup sheet.
     @Published var presentMetrics: Bool = false
-
-    /// Calendar sync settings sheet (wired in Task 9).
-    @Published var presentCalendarSync: Bool = false
 
     /// External (read-only) events aggregated from Apple Calendar. Never persisted.
     @Published var externalEvents: [CalendarEvent] = []
@@ -54,6 +54,8 @@ final class AppState: ObservableObject {
     /// first run (empty DB). On any failure keeps the existing in-memory MockData
     /// so the UI is never left blank. Stores the `db` reference for write-through.
     func bootstrap(db: AtlasDB) async {
+        guard !didBootstrap else { return }
+        didBootstrap = true
         self.db = db
         do {
             var snapshot = try await db.loadAll()
@@ -82,6 +84,13 @@ final class AppState: ObservableObject {
             var nestedSpaces = snapshot.spaces
             for i in nestedSpaces.indices {
                 nestedSpaces[i].projects = projectsBySpace[nestedSpaces[i].name] ?? []
+            }
+
+            // Debug: log any projects whose spaceName has no matching loaded space.
+            let loadedSpaceNames = Set(nestedSpaces.map(\.name))
+            let orphanCount = snapshot.projects.filter { !loadedSpaceNames.contains($0.spaceName) }.count
+            if orphanCount > 0 {
+                print("[AtlasDB] \(orphanCount) project(s) have spaceName that matches no loaded space — they will not appear in the sidebar.")
             }
 
             // Assign to @Published properties (already on @MainActor).

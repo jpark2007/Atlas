@@ -33,7 +33,7 @@ struct WeekColumnHeader: View {
                 .foregroundStyle(isToday ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
             Text("\(dayNum)")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(isToday ? .white : AtlasTheme.Colors.textPrimary)
+                .foregroundStyle(isToday ? AtlasTheme.Colors.bgDeep : AtlasTheme.Colors.textPrimary)
                 .frame(width: 26, height: 26)
                 .background(
                     Circle().fill(isToday ? AtlasTheme.Colors.accent : .clear)

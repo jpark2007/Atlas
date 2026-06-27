@@ -90,18 +90,18 @@ struct SettingsView: View {
                 row(icon: "checkmark.seal.fill", tint: AtlasTheme.Colors.green,
                     title: "Connected as \(name)", subtitle: canvas.host)
                 Button("Disconnect") { canvas.disconnect() }
-                    .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(.red)
+                    .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(AtlasTheme.Colors.danger)
             default:
                 input("school.instructure.com", text: Binding(get: { canvas.host }, set: { canvas.host = $0 }))
                 input("Canvas access token", text: $canvasToken, secure: true)
                 if case .failed(let msg) = canvas.status {
-                    Text(msg).font(.system(size: 11)).foregroundStyle(.red)
+                    Text(msg).font(.system(size: 11)).foregroundStyle(AtlasTheme.Colors.danger)
                 }
                 Button {
                     Task { await canvas.connect(host: canvas.host, token: canvasToken) }
                 } label: {
                     Text(canvas.status == .connecting ? "Connecting…" : "Connect Canvas")
-                        .font(.system(size: 13, weight: .medium)).foregroundStyle(.black)
+                        .font(.system(size: 13, weight: .medium)).foregroundStyle(AtlasTheme.Colors.bgDeep)
                         .frame(maxWidth: .infinity).padding(.vertical, 9)
                         .background(AtlasTheme.Colors.accent)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -217,7 +217,7 @@ struct SettingsView: View {
                             Text("Connected as \(name)")
                                 .foregroundStyle(AtlasTheme.Colors.green)
                         } else {
-                            Text("Not connected — configure above")
+                            Text("Not connected — event import deferred (v2)")
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                         }
                     }
@@ -267,7 +267,7 @@ struct SettingsView: View {
                     Text("Main calendar")
                         .font(.system(size: 13))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text("New events are written here")
+                    Text("Atlas-native events only — write-back to Apple/Google deferred (v2)")
                         .font(.system(size: 11))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
@@ -332,7 +332,7 @@ struct SettingsView: View {
 
     private func refreshAppleAccessStatus() {
         let status = ekService.authorizationStatus()
-        appleAccessGranted = (status == .fullAccess || status == .authorized)
+        appleAccessGranted = (status == .fullAccess)
         if !appleAccessGranted && appleCalendarEnabled {
             appleCalendarEnabled = false
         }
@@ -550,7 +550,7 @@ struct SettingsView: View {
     }
 
     private func label(_ t: String) -> some View {
-        Text(t).font(.system(size: 11, weight: .semibold)).tracking(1.2)
+        Text(t).font(AtlasTheme.Font.sectionLabel()).tracking(1.2)
             .foregroundStyle(AtlasTheme.Colors.textMuted)
     }
 

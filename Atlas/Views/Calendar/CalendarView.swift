@@ -39,9 +39,14 @@ struct CalendarView: View {
         .background(AtlasTheme.Colors.bgBase)
         .onAppear { loadAppleEventsIfNeeded() }
         .onChange(of: selectedDate) { _, _ in loadAppleEventsIfNeeded() }
+        .onChange(of: mode) { _, _ in loadAppleEventsIfNeeded() }
         .onChange(of: appleCalendarEnabled) { _, enabled in
-            if enabled { loadAppleEventsIfNeeded() }
-            else { state.externalEvents = [] }
+            if enabled {
+                Task {
+                    _ = await ekService.requestAccess()
+                    await MainActor.run { loadAppleEventsIfNeeded() }
+                }
+            } else { state.externalEvents = [] }
         }
         .sheet(isPresented: $state.presentEventEditor, onDismiss: {
             state.eventEditorSeed = nil
@@ -101,7 +106,7 @@ struct CalendarView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(AtlasTheme.Colors.accent)
-            .foregroundStyle(AtlasTheme.Colors.bgBase)
+            .foregroundStyle(AtlasTheme.Colors.bgDeep)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -244,13 +249,13 @@ struct CalendarView: View {
             return
         }
         let status = ekService.authorizationStatus()
-        guard status == .fullAccess || status == .authorized else {
+        guard status == .fullAccess else {
             state.externalEvents = []
             return
         }
 
         let cal = Calendar.current
-        // Fetch the full visible week (or ±3 days for day mode) to cover navigation.
+        // Fetch a single day in day mode; the full visible week in week mode.
         let rangeStart: Date
         let rangeEnd: Date
         switch mode {
