@@ -151,6 +151,46 @@ final class AppState: ObservableObject {
         return nil
     }
 
+    // MARK: - Projects (WS-8)
+
+    /// Create a Project inside the Space named `spaceName` and persist it.
+    /// The new project mirrors the parent space's `spaceName`/`spaceColor` so it
+    /// renders and re-derives correctly. Returns `nil` (and appends nowhere) if
+    /// no space matches `spaceName`.
+    @discardableResult
+    func addProject(toSpaceNamed spaceName: String,
+                    name: String,
+                    code: String? = nil,
+                    isClass: Bool = false,
+                    overview: String = "") -> Project? {
+        guard let si = spaces.firstIndex(where: { $0.name == spaceName }) else { return nil }
+        let trimmedCode = code?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let project = Project(
+            name: name,
+            code: (trimmedCode?.isEmpty == true) ? nil : trimmedCode,
+            isClass: isClass,
+            spaceName: spaceName,
+            spaceColor: spaces[si].color,
+            overview: overview
+        )
+        spaces[si].projects.append(project)
+        Task { try? await self.db?.upsertProject(project) }
+        return project
+    }
+
+    /// Update a project's overview/description in place and persist it.
+    /// Searches every space; no-op if the id matches nothing.
+    func updateProjectOverview(projectID: UUID, overview: String) {
+        for si in spaces.indices {
+            if let pi = spaces[si].projects.firstIndex(where: { $0.id == projectID }) {
+                spaces[si].projects[pi].overview = overview
+                let updated = spaces[si].projects[pi]
+                Task { try? await self.db?.upsertProject(updated) }
+                return
+            }
+        }
+    }
+
     func toggleSpace(_ id: UUID) {
         if expandedSpaces.contains(id) {
             expandedSpaces.remove(id)

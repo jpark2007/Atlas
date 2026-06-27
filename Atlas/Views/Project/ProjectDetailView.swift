@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct ProjectDetailView: View {
+    @EnvironmentObject var state: AppState
     let project: Project
+
+    @State private var isEditingOverview = false
+    @State private var draftOverview = ""
 
     var body: some View {
         ScrollView {
@@ -10,7 +14,7 @@ struct ProjectDetailView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     badges
                     titleBlock
-                    if !project.overview.isEmpty { overview }
+                    overview
                     if !project.assignments.isEmpty { assignments }
                     if !project.pinned.isEmpty { pinned }
                 }
@@ -79,11 +83,92 @@ struct ProjectDetailView: View {
 
     private var overview: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionLabel("OVERVIEW")
-            Text(project.overview)
-                .font(.system(size: 13))
-                .lineSpacing(4)
-                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+            HStack(spacing: 8) {
+                sectionLabel("OVERVIEW")
+                Spacer()
+                if !isEditingOverview {
+                    Button {
+                        draftOverview = project.overview
+                        isEditingOverview = true
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 11))
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Edit overview")
+                }
+            }
+
+            if isEditingOverview {
+                overviewEditor
+            } else if project.overview.isEmpty {
+                Button {
+                    draftOverview = ""
+                    isEditingOverview = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11))
+                        Text("Add an overview…")
+                            .font(.system(size: 13))
+                    }
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text(project.overview)
+                    .font(.system(size: 13))
+                    .lineSpacing(4)
+                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
+            }
+        }
+    }
+
+    private var overviewEditor: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ZStack(alignment: .topLeading) {
+                if draftOverview.isEmpty {
+                    Text("What is this project about?")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $draftOverview)
+                    .font(.system(size: 13))
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .scrollContentBackground(.hidden)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .frame(minHeight: 90)
+            }
+            .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
+            .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
+                    .stroke(AtlasTheme.Colors.border, lineWidth: 1)
+            )
+
+            HStack(spacing: 12) {
+                Spacer()
+                Button("Cancel") { isEditingOverview = false }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    state.updateProjectOverview(
+                        projectID: project.id,
+                        overview: draftOverview.trimmingCharacters(in: .whitespacesAndNewlines))
+                    isEditingOverview = false
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(AtlasTheme.Colors.accent)
+                .keyboardShortcut(.return, modifiers: .command)
+            }
         }
     }
 

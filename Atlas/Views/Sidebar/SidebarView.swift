@@ -3,6 +3,9 @@ import SwiftUI
 struct SidebarView: View {
     @EnvironmentObject var state: AppState
 
+    /// Non-nil while the create-project sheet is up; carries the target space.
+    @State private var newProjectTarget: NewProjectTarget?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 4) {
@@ -39,6 +42,9 @@ struct SidebarView: View {
         }
         .scrollContentBackground(.hidden)
         .background(AtlasTheme.Colors.bgSidebar)
+        .sheet(item: $newProjectTarget) { target in
+            NewProjectSheet(spaceName: target.spaceName)
+        }
     }
 
     // MARK: - Profile / settings
@@ -146,25 +152,47 @@ struct SidebarView: View {
     private func spaceSection(_ space: Space) -> some View {
         let expanded = state.expandedSpaces.contains(space.id)
         return VStack(alignment: .leading, spacing: 2) {
-            Button {
-                state.toggleSpace(space.id)
-            } label: {
-                HStack(spacing: 9) {
-                    Circle()
-                        .fill(space.color)
-                        .frame(width: 8, height: 8)
-                    Text(space.name)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Spacer()
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+            HStack(spacing: 4) {
+                Button {
+                    state.toggleSpace(space.id)
+                } label: {
+                    HStack(spacing: 9) {
+                        Circle()
+                            .fill(space.color)
+                            .frame(width: 8, height: 8)
+                        Text(space.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        Spacer()
+                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    }
+                    .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .buttonStyle(.plain)
+
+                Button {
+                    newProjectTarget = NewProjectTarget(spaceName: space.name)
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Add a project to \(space.name)")
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .contextMenu {
+                Button {
+                    newProjectTarget = NewProjectTarget(spaceName: space.name)
+                } label: {
+                    Label("Add Project…", systemImage: "plus")
+                }
+            }
 
             if expanded {
                 ForEach(space.projects) { project in
