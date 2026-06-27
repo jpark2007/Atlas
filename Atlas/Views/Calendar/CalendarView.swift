@@ -32,7 +32,9 @@ struct CalendarView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AtlasTheme.Colors.bgBase)
-        .sheet(isPresented: $state.presentEventEditor) {
+        .sheet(isPresented: $state.presentEventEditor, onDismiss: {
+            state.eventEditorSeed = nil
+        }) {
             if let seed = state.eventEditorSeed {
                 EventEditorSheet(seed: seed)
                     .environmentObject(state)
@@ -88,7 +90,7 @@ struct CalendarView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(AtlasTheme.Colors.accent)
-            .foregroundStyle(.white)
+            .foregroundStyle(AtlasTheme.Colors.bgBase)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -249,7 +251,7 @@ struct CalendarView: View {
         let cal = Calendar.current
         let now = Date()
         let currentHour = cal.component(.hour, from: now)
-        let nextHour = min(currentHour + 1, CalendarLayout.endHour - 1)
+        let nextHour = min(max(currentHour + 1, CalendarLayout.startHour), CalendarLayout.endHour - 1)
         let start = cal.date(bySettingHour: nextHour, minute: 0, second: 0, of: date) ?? date
         let end   = cal.date(byAdding: .hour, value: 1, to: start) ?? start
 
@@ -300,6 +302,13 @@ struct CalendarView: View {
     /// sidebar to `.project(id)`. Otherwise falls back to opening the editor
     /// so a click on any tile is never a dead end.
     func openSource(for event: CalendarEvent) {
+        // Task-derived synthetic events share their UUID with the underlying TaskItem.
+        // Opening the editor for them would create a ghost-duplicate CalendarEvent in
+        // state.events — guard against that here.
+        if state.tasks.contains(where: { $0.id == event.id }) {
+            // task-derived synthetic event — no project source, don't open the event editor (would create a ghost duplicate)
+            return
+        }
         if let projectID = event.projectID, state.project(projectID) != nil {
             state.route = .project(projectID)
         } else {

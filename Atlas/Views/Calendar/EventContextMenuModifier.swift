@@ -35,6 +35,13 @@ struct EventContextMenuModifier: ViewModifier {
                 Button("1.5 hours")  { changeDuration(minutes: 90) }
             }
 
+            // ── Move to time… ─────────────────────────────────────────────
+            Menu("Move to time…") {
+                ForEach(CalendarLayout.startHour...CalendarLayout.endHour, id: \.self) { hour in
+                    Button(hourLabel(for: hour)) { moveToHour(hour) }
+                }
+            }
+
             Divider()
 
             // ── Open Source — only when event is linked to a project ──────
@@ -63,6 +70,23 @@ struct EventContextMenuModifier: ViewModifier {
         var updated = event
         updated.end = updated.start.addingTimeInterval(TimeInterval(minutes * 60))
         state.updateEvent(updated)
+    }
+
+    private func moveToHour(_ hour: Int) {
+        var updated = event
+        let cal = Calendar.current
+        let dur = updated.end.timeIntervalSince(updated.start)
+        if let newStart = cal.date(bySettingHour: hour, minute: 0, second: 0, of: updated.start) {
+            updated.start = newStart
+            updated.end = newStart.addingTimeInterval(dur)
+            state.updateEvent(updated)
+        }
+    }
+
+    private func hourLabel(for hour: Int) -> String {
+        let cal = Calendar.current
+        let date = cal.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
+        return CalendarFormat.hour.string(from: date)
     }
 }
 

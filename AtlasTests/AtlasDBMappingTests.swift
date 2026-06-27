@@ -109,10 +109,21 @@ final class AtlasDBMappingTests: XCTestCase {
             spaceName: "Personal"
         )
         let row = EventRow(domain: event)
-        // TODO Task 5: notes/isAllDay/projectID map once added to CalendarEvent
         XCTAssertNil(row.notes)
         XCTAssertFalse(row.isAllDay)
         XCTAssertNil(row.projectId)
+    }
+
+    func testEventRowWithNewFieldsRoundTrip() throws {
+        let pid = UUID()
+        let event = CalendarEvent(title: "T", subtitle: "", start: refDate, end: refDate.addingTimeInterval(3600),
+                                  color: AtlasTheme.Colors.accent, spaceName: "School",
+                                  notes: "Bring laptop", isAllDay: true, projectID: pid)
+        let data = try encoder.encode(EventRow(domain: event))
+        let result = try decoder.decode(EventRow.self, from: data).toDomain()
+        XCTAssertEqual(result.notes, "Bring laptop")
+        XCTAssertTrue(result.isAllDay)
+        XCTAssertEqual(result.projectID, pid)
     }
 
     // MARK: - NoteRow

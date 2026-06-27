@@ -183,26 +183,39 @@ struct DayCalendarView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 0) {
-                    HourGutter()
-                    DayColumnView(
-                        date: date,
-                        events: events,
-                        isToday: Calendar.current.isDateInToday(date),
-                        onDropTask: onDropTask,
-                        onTapEmpty: onTapEmpty,
-                        onTapEvent: onTapEvent
-                    )
+                ZStack(alignment: .topLeading) {
+                    HStack(alignment: .top, spacing: 0) {
+                        HourGutter()
+                        DayColumnView(
+                            date: date,
+                            events: events,
+                            isToday: Calendar.current.isDateInToday(date),
+                            onDropTask: onDropTask,
+                            onTapEmpty: onTapEmpty,
+                            onTapEvent: onTapEvent
+                        )
+                    }
+                    .padding(.trailing, 8)
+                    .padding(.top, 6)
+                    .padding(.bottom, 16)
+
+                    // Zero-height sentinel anchored at the current-time Y so that
+                    // scrollTo("nowAnchor", anchor: .center) lands precisely on "now".
+                    nowSentinel
                 }
-                .id("dayGrid")
-                .padding(.trailing, 8)
-                .padding(.top, 6)
-                .padding(.bottom, 16)
             }
             .onAppear {
-                autoScrollToNow(proxy: proxy, anchor: "dayGrid")
+                scrollToNowIfVisible(proxy: proxy)
             }
         }
+    }
+
+    private var nowSentinel: some View {
+        let offsetY = CalendarLayout.offsetHours(for: Date()) * CalendarLayout.hourHeight + 6  // +6 for top padding
+        return Color.clear
+            .frame(width: 1, height: 1)
+            .offset(y: offsetY)
+            .id("nowAnchor")
     }
 }
 
@@ -237,31 +250,39 @@ struct WeekGridView: View {
                 // ── Scrollable time grid (auto-scrolls to current hour) ───────
                 ScrollViewReader { proxy in
                     ScrollView(.vertical, showsIndicators: false) {
-                        HStack(alignment: .top, spacing: 0) {
-                            HourGutter()
-                            ForEach(Array(days.enumerated()), id: \.element) { index, day in
-                                DayColumnView(
-                                    date: day,
-                                    events: eventsProvider(day),
-                                    isToday: Calendar.current.isDateInToday(day),
-                                    onDropTask: onDropTask,
-                                    onTapEmpty: onTapEmpty,
-                                    onTapEvent: onTapEvent
-                                )
-                                .frame(width: columnWidth)
-                                if index < days.count - 1 {
-                                    Rectangle()
-                                        .fill(AtlasTheme.Colors.border)
-                                        .frame(width: 1, height: CalendarLayout.totalHeight)
+                        ZStack(alignment: .topLeading) {
+                            HStack(alignment: .top, spacing: 0) {
+                                HourGutter()
+                                ForEach(Array(days.enumerated()), id: \.element) { index, day in
+                                    DayColumnView(
+                                        date: day,
+                                        events: eventsProvider(day),
+                                        isToday: Calendar.current.isDateInToday(day),
+                                        onDropTask: onDropTask,
+                                        onTapEmpty: onTapEmpty,
+                                        onTapEvent: onTapEvent
+                                    )
+                                    .frame(width: columnWidth)
+                                    if index < days.count - 1 {
+                                        Rectangle()
+                                            .fill(AtlasTheme.Colors.border)
+                                            .frame(width: 1, height: CalendarLayout.totalHeight)
+                                    }
                                 }
                             }
+                            .padding(.top, 6)
+                            .padding(.bottom, 16)
+
+                            // Zero-height sentinel anchored at the current-time Y.
+                            let offsetY = CalendarLayout.offsetHours(for: Date()) * CalendarLayout.hourHeight + 6
+                            Color.clear
+                                .frame(width: 1, height: 1)
+                                .offset(y: offsetY)
+                                .id("nowAnchor")
                         }
-                        .id("weekGrid")
-                        .padding(.top, 6)
-                        .padding(.bottom, 16)
                     }
                     .onAppear {
-                        autoScrollToNow(proxy: proxy, anchor: "weekGrid")
+                        scrollToNowIfVisible(proxy: proxy)
                     }
                 }
             }
@@ -272,20 +293,16 @@ struct WeekGridView: View {
 
 // MARK: - Auto-scroll helper
 
-/// Scrolls `proxy` so that the current hour is visible near the top of the
-/// scroll container, with ~1 h of context above it.
+/// Scrolls `proxy` so that the "nowAnchor" sentinel is centered in the
+/// scroll container, giving a clean "now" landing position.
 /// Only fires when the current time falls within [startHour, endHour].
-private func autoScrollToNow(proxy: ScrollViewProxy, anchor: String) {
+private func scrollToNowIfVisible(proxy: ScrollViewProxy) {
     let currentOffset = CalendarLayout.offsetHours(for: Date())
     let totalHours = CGFloat(CalendarLayout.endHour - CalendarLayout.startHour)
     guard currentOffset >= 0, currentOffset <= totalHours else { return }
 
-    // Show ~1 hour of context above the current time
-    let targetY     = max(0, currentOffset - 1) * CalendarLayout.hourHeight
-    let fraction    = targetY / CalendarLayout.totalHeight
-
     // Defer one run-loop so the ScrollView has finished its initial layout
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-        proxy.scrollTo(anchor, anchor: UnitPoint(x: 0, y: fraction))
+        proxy.scrollTo("nowAnchor", anchor: .center)
     }
 }
