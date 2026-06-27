@@ -58,7 +58,7 @@ struct MetricsPopupView: View {
                                     .padding(.leading, 12)
                             }
 
-                            MetricsCompletionBar(rate: m.completionRate)
+                            MetricsCompletionDonut(rate: m.completionRate, size: 112)
                         }
                     }
 
@@ -81,7 +81,7 @@ struct MetricsPopupView: View {
                         AtlasCard {
                             VStack(alignment: .leading, spacing: 12) {
                                 sectionLabel("BY SPACE")
-                                MetricsSpaceLoadBars(loads: m.perSpace)
+                                MetricsSpaceDonut(loads: m.perSpace)
                             }
                         }
                     }
@@ -103,7 +103,7 @@ struct MetricsPopupView: View {
                                             : AtlasTheme.Colors.textSecondary
                                     )
                             }
-                            MetricsCompletionBar(rate: m.goalAvgProgress, label: "GOAL AVG")
+                            MetricsCompletionDonut(rate: m.goalAvgProgress, label: "GOAL AVG", size: 100)
                         }
                     }
 

@@ -40,8 +40,8 @@ struct MetricsCard: View {
                         .padding(.leading, 12)
                 }
 
-                // Completion rate bar
-                MetricsCompletionBar(rate: m.completionRate)
+                // Completion rate ring
+                MetricsCompletionDonut(rate: m.completionRate, size: 96)
 
                 // Goal avg
                 HStack {

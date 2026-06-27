@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 // MARK: - Shared subviews (used by MetricsView, MetricsPopupView, MetricsCard)
 
@@ -21,72 +22,97 @@ struct MetricsStatCell: View {
     }
 }
 
-/// Labeled progress bar for completion rate.
-struct MetricsCompletionBar: View {
-    let rate: Double    // 0…1
+/// Completion ring (Swift Charts donut) with a center percentage label.
+/// Replaces the old linear `MetricsCompletionBar`; same `rate` (0…1) input.
+struct MetricsCompletionDonut: View {
+    let rate: Double            // 0…1
     var label: String = "COMPLETION"
+    var size: CGFloat = 128
+
+    private var clamped: Double { min(max(rate, 0), 1) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(label)
-                    .font(AtlasTheme.Font.sectionLabel())
-                    .tracking(1.1)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-                Spacer()
-                Text("\(Int(rate * 100))%")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
-            }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(AtlasTheme.Colors.bgElevated)
-                    Capsule()
-                        .fill(LinearGradient(
-                            colors: [AtlasTheme.Colors.accent, AtlasTheme.Colors.accentDeep],
-                            startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(4, geo.size.width * rate))
+        VStack(spacing: 8) {
+            ZStack {
+                Chart {
+                    SectorMark(
+                        angle: .value("Done", clamped),
+                        innerRadius: .ratio(0.70),
+                        angularInset: 1.5
+                    )
+                    .cornerRadius(4)
+                    .foregroundStyle(AtlasTheme.Colors.accent)
+
+                    SectorMark(
+                        angle: .value("Remaining", 1 - clamped),
+                        innerRadius: .ratio(0.70),
+                        angularInset: 1.5
+                    )
+                    .cornerRadius(4)
+                    .foregroundStyle(AtlasTheme.Colors.bgElevated)
+                }
+                .chartLegend(.hidden)
+                .frame(width: size, height: size)
+
+                VStack(spacing: 1) {
+                    Text("\(Int((clamped * 100).rounded()))%")
+                        .font(.system(size: size * 0.24, weight: .semibold))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text(label)
+                        .font(AtlasTheme.Font.sectionLabel())
+                        .tracking(1.0)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
             }
-            .frame(height: 5)
         }
+        .frame(maxWidth: .infinity)
     }
 }
 
-/// Per-space task load bar rows.
-struct MetricsSpaceLoadBars: View {
+/// Per-space task distribution as a Swift Charts donut (sectors sized by each
+/// space's total task count, colored by space color) plus a compact legend.
+/// Replaces the old linear `MetricsSpaceLoadBars`; same `[SpaceLoad]` input.
+struct MetricsSpaceDonut: View {
     let loads: [SpaceLoad]
+    var size: CGFloat = 124
+
+    private var hasData: Bool { loads.contains { $0.totalCount > 0 } }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(loads) { load in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Circle()
-                            .fill(load.color)
-                            .frame(width: 7, height: 7)
-                        Text(load.spaceName)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                        Spacer()
-                        Text("\(load.openCount) open / \(load.totalCount) total")
-                            .font(AtlasTheme.Font.small())
-                            .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    }
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(AtlasTheme.Colors.bgElevated)
-                            let fraction = load.totalCount > 0
-                                ? Double(load.openCount) / Double(load.totalCount)
-                                : 0
-                            Capsule()
-                                .fill(load.color.opacity(0.7))
-                                .frame(width: max(4, geo.size.width * fraction))
+        if hasData {
+            HStack(alignment: .center, spacing: 18) {
+                Chart(loads) { load in
+                    SectorMark(
+                        angle: .value("Tasks", load.totalCount),
+                        innerRadius: .ratio(0.62),
+                        angularInset: 1.5
+                    )
+                    .cornerRadius(3)
+                    .foregroundStyle(load.color)
+                }
+                .chartLegend(.hidden)
+                .frame(width: size, height: size)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(loads) { load in
+                        HStack(spacing: 8) {
+                            Circle().fill(load.color).frame(width: 7, height: 7)
+                            Text(load.spaceName)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                            Spacer(minLength: 10)
+                            Text("\(load.openCount) open / \(load.totalCount) total")
+                                .font(AtlasTheme.Font.small())
+                                .foregroundStyle(AtlasTheme.Colors.textMuted)
                         }
                     }
-                    .frame(height: 4)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+        } else {
+            Text("No task data yet.")
+                .font(.system(size: 12))
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
 }
@@ -126,7 +152,7 @@ struct MetricsView: View {
                                 .padding(.leading, 12)
                         }
 
-                        MetricsCompletionBar(rate: m.completionRate)
+                        MetricsCompletionDonut(rate: m.completionRate)
                     }
                 }
 
@@ -135,7 +161,7 @@ struct MetricsView: View {
                     AtlasCard {
                         VStack(alignment: .leading, spacing: 14) {
                             cardTitle("By space", icon: "square.grid.2x2.fill")
-                            MetricsSpaceLoadBars(loads: m.perSpace)
+                            MetricsSpaceDonut(loads: m.perSpace)
                         }
                     }
                 }
@@ -167,7 +193,7 @@ struct MetricsView: View {
                             )
                         }
 
-                        MetricsCompletionBar(rate: m.goalAvgProgress, label: "GOAL AVG")
+                        MetricsCompletionDonut(rate: m.goalAvgProgress, label: "GOAL AVG", size: 112)
                     }
                 }
             }

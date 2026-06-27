@@ -13,13 +13,15 @@ struct DashboardView: View {
                         .frame(maxWidth: .infinity)
 
                     VStack(spacing: 18) {
-                        TasksCard()
                         FocusCard()
                         GoalsCard(goals: state.goals)
                         MetricsCard()
                     }
                     .frame(width: 320)
                 }
+
+                // Full-width tasks section, grouped by due-date bucket.
+                DashboardTasksSection()
             }
             .padding(28)
         }
@@ -128,63 +130,172 @@ struct ScheduleCard: View {
     }
 }
 
-// MARK: - Tasks card
+// MARK: - Tasks section (full-width, grouped by due-date bucket)
 
-struct TasksCard: View {
+/// The all-tasks list, moved out of the cramped right rail into a full-width
+/// section under "Today's schedule." Tasks are grouped under due-date headings
+/// (Overdue / Today / This week / Later / No date) via `TaskGrouping`, with an
+/// optional space filter above the groups.
+struct DashboardTasksSection: View {
     @EnvironmentObject var state: AppState
+
+    /// nil = all spaces; otherwise the selected space name.
+    @State private var spaceFilter: String?
+
+    /// Tasks after the space filter is applied.
+    private var filteredTasks: [TaskItem] {
+        guard let filter = spaceFilter else { return state.tasks }
+        return state.tasks.filter { $0.spaceName == filter }
+    }
+
+    private var groups: [(title: String, tasks: [TaskItem])] {
+        TaskGrouping.byDueBucket(tasks: filteredTasks, now: state.now)
+    }
 
     var body: some View {
         AtlasCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 6) {
-                    Text("Tasks").font(AtlasTheme.Font.cardTitle())
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text("\(state.tasks.count)")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                }
+            VStack(alignment: .leading, spacing: 14) {
+                header
+                addAffordance
 
-                HStack(spacing: 8) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(AtlasTheme.Colors.accent)
-                    Text("Add a task — Atlas files it for you")
+                if groups.isEmpty {
+                    Text(spaceFilter == nil
+                         ? "No tasks yet — add one above."
+                         : "No tasks in this space.")
                         .font(.system(size: 12))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    Spacer()
-                    Image(systemName: "return")
-                        .font(.system(size: 10))
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                }
-                .padding(.horizontal, 10).padding(.vertical, 8)
-                .background(AtlasTheme.Colors.bgElevated.opacity(0.6))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-                VStack(spacing: 2) {
-                    ForEach(state.tasks) { task in
-                        Button { state.toggleTask(task.id) } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: task.done ? "checkmark.square.fill" : "square")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
-                                Text(task.title)
-                                    .font(.system(size: 13))
-                                    .strikethrough(task.done)
-                                    .foregroundStyle(task.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
-                                Spacer()
-                                if !task.dueLabel.isEmpty {
-                                    Text(task.dueLabel)
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(AtlasTheme.Colors.accent.opacity(0.85))
-                                }
+                        .padding(.vertical, 14)
+                } else {
+                    ForEach(Array(groups.enumerated()), id: \.element.title) { index, group in
+                        groupHeading(group.title, count: group.tasks.count)
+                        VStack(spacing: 2) {
+                            ForEach(group.tasks) { task in
+                                taskRow(task)
                             }
-                            .padding(.vertical, 6)
                         }
-                        .buttonStyle(.plain)
+                        if index < groups.count - 1 {
+                            Divider().overlay(AtlasTheme.Colors.border).padding(.top, 4)
+                        }
                     }
                 }
             }
         }
+    }
+
+    // MARK: Header + space filter
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Text("Tasks").font(AtlasTheme.Font.cardTitle())
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+            Text("\(filteredTasks.count)")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+            Spacer()
+            spaceFilterMenu
+        }
+    }
+
+    private var spaceFilterMenu: some View {
+        Menu {
+            Button {
+                spaceFilter = nil
+            } label: {
+                Label("All spaces", systemImage: spaceFilter == nil ? "checkmark" : "")
+            }
+            Divider()
+            ForEach(state.spaces) { space in
+                Button {
+                    spaceFilter = space.name
+                } label: {
+                    Label(space.name, systemImage: spaceFilter == space.name ? "checkmark" : "")
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .font(.system(size: 11))
+                Text(spaceFilter ?? "All spaces")
+                    .font(.system(size: 12, weight: .medium))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+            }
+            .foregroundStyle(AtlasTheme.Colors.textSecondary)
+            .padding(.horizontal, 9).padding(.vertical, 5)
+            .background(AtlasTheme.Colors.bgElevated.opacity(0.6))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private var addAffordance: some View {
+        Button { state.presentCapture = true } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(AtlasTheme.Colors.accent)
+                Text("Add a task — Atlas files it for you")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                Spacer()
+                Text("⌘⇧K")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(AtlasTheme.Colors.bgElevated.opacity(0.6))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func groupHeading(_ title: String, count: Int) -> some View {
+        HStack(spacing: 6) {
+            Text(title.uppercased())
+                .font(AtlasTheme.Font.sectionLabel())
+                .tracking(1.1)
+                .foregroundStyle(title == "Overdue"
+                                 ? AtlasTheme.Colors.danger
+                                 : AtlasTheme.Colors.textMuted)
+            Text("\(count)")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+            Spacer()
+        }
+        .padding(.top, 2)
+    }
+
+    private func taskRow(_ task: TaskItem) -> some View {
+        Button { state.toggleTask(task.id) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: task.done ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 14))
+                    .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
+                Text(task.title)
+                    .font(.system(size: 13))
+                    .strikethrough(task.done)
+                    .foregroundStyle(task.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
+                if !task.spaceName.isEmpty {
+                    HStack(spacing: 4) {
+                        Circle().fill(task.spaceColor).frame(width: 6, height: 6)
+                        Text(task.spaceName)
+                            .font(.system(size: 11))
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    }
+                    .padding(.leading, 4)
+                }
+                Spacer()
+                if !task.dueLabel.isEmpty {
+                    Text(task.dueLabel)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(AtlasTheme.Colors.accent.opacity(0.85))
+                }
+            }
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
