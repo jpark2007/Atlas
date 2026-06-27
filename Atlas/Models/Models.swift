@@ -90,6 +90,20 @@ extension TaskItem {
         f.dateFormat = (days > 1 && days < 7) ? "EEE" : "MMM d"
         return f.string(from: date)
     }
+
+    /// Non-destructive "resurface" rule for the unscheduled tray.
+    ///
+    /// True when the task has no slot (`scheduledAt == nil`), OR when its slot
+    /// has fully elapsed (`scheduledAt + durationMin·60 < now`) and it's still
+    /// open (`!done`). A completed task never resurfaces; a future slot stays
+    /// scheduled. The schedule is never mutated — the task simply re-appears in
+    /// the tray (and drops off the grid) once its window passes.
+    func isEffectivelyUnscheduled(now: Date = Date()) -> Bool {
+        guard let at = scheduledAt else { return true }
+        if done { return false }
+        let end = at.addingTimeInterval(TimeInterval((durationMin ?? 60) * 60))
+        return end < now
+    }
 }
 
 enum TaskStatus {

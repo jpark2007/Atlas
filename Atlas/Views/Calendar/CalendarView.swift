@@ -27,9 +27,17 @@ struct CalendarView: View {
                 grid
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                UnscheduledTray(tasks: state.unscheduledTasks) { taskID, hour in
-                    schedule(taskID: taskID, on: selectedDate, hour: Double(hour))
-                }
+                UnscheduledTray(
+                    tasks: state.unscheduledTasks,
+                    spaceFilter: spaceFilter,
+                    onSchedule: { taskID, hour in
+                        schedule(taskID: taskID, on: selectedDate, hour: Double(hour))
+                    },
+                    onSuggest: suggestSlot(for:),
+                    onSetDueDate: { taskID, date in
+                        state.setDueDate(taskId: taskID, date: date)
+                    }
+                )
             }
             .padding(.horizontal, 24)
             .padding(.top, 14)
@@ -217,9 +225,12 @@ struct CalendarView: View {
     /// drag-to-schedule shows immediate, satisfying feedback on the grid.
     private func scheduledTaskEvents(on date: Date) -> [CalendarEvent] {
         state.tasks.compactMap { task in
-            guard let at = task.scheduledAt,
+            // Tasks whose slot has elapsed without completion resurface in the
+            // tray and must drop off the grid (non-destructive revert-after-slot).
+            guard !task.isEffectivelyUnscheduled(now: state.now),
+                  let at = task.scheduledAt,
                   Calendar.current.isDate(at, inSameDayAs: date) else { return nil }
-            let end = Calendar.current.date(byAdding: .minute, value: 60, to: at) ?? at
+            let end = Calendar.current.date(byAdding: .minute, value: task.durationMin ?? 60, to: at) ?? at
             return CalendarEvent(
                 id: task.id,                       // stable identity → no per-render flicker
                 title: task.title,
@@ -289,6 +300,16 @@ struct CalendarView: View {
     /// Drop callback from the grid (hour is fractional from the drop location).
     private func handleDrop(taskID: UUID, date: Date, hour: Double) -> Bool {
         schedule(taskID: taskID, on: date, hour: hour)
+    }
+
+    /// Auto-find-a-slot: scan the selected day for the first free gap that fits
+    /// the task and schedule it there. No-op if the task is gone or the day's full.
+    private func suggestSlot(for taskID: UUID) {
+        guard let task = state.tasks.first(where: { $0.id == taskID }),
+              let slot = state.suggestSlot(for: task, on: selectedDate, now: Date()) else { return }
+        withAnimation(.easeOut(duration: 0.2)) {
+            state.schedule(taskId: taskID, at: slot)
+        }
     }
 
     @discardableResult

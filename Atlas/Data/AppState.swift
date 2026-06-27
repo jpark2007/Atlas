@@ -43,9 +43,26 @@ final class AppState: ObservableObject {
     /// Which spaces are expanded in the sidebar.
     @Published var expandedSpaces: Set<UUID> = []
 
+    /// A coarse "now" the UI can observe so time-derived state (the unscheduled
+    /// tray's resurface rule, the grid's scheduled-task rendering) refreshes as
+    /// slots pass. Updated every 60 s by `startClock()`.
+    @Published var now: Date = Date()
+    private var clockTimer: Timer?
+
     init() {
         // Expand the first two spaces by default (matches the prototype).
         expandedSpaces = Set(spaces.prefix(2).map(\.id))
+        startClock()
+    }
+
+    deinit { clockTimer?.invalidate() }
+
+    /// Starts (or restarts) the 60 s clock that publishes `now`. Idempotent.
+    func startClock() {
+        clockTimer?.invalidate()
+        clockTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.now = Date() }
+        }
     }
 
     // MARK: - Supabase Bootstrap
@@ -170,9 +187,12 @@ final class AppState: ObservableObject {
     /// Today's events, sorted — the Dashboard schedule reads this.
     var todaysEvents: [CalendarEvent] { events(on: Date()) }
 
-    /// Open to-dos with no time yet — the calendar's drag-to-schedule tray.
+    /// Open to-dos that need a (new) slot — the calendar's drag-to-schedule tray.
+    /// Includes never-scheduled tasks AND tasks whose slot has elapsed without
+    /// being completed (non-destructive resurface; see
+    /// `TaskItem.isEffectivelyUnscheduled(now:)`). Completed tasks are excluded.
     var unscheduledTasks: [TaskItem] {
-        tasks.filter { $0.scheduledAt == nil && !$0.done }
+        tasks.filter { $0.isEffectivelyUnscheduled(now: now) && !$0.done }
     }
 
     /// Quick-capture entry point. Appends a task with an optional structured due date.
@@ -185,6 +205,17 @@ final class AppState: ObservableObject {
         tasks.append(task)
         Task { try? await self.db?.upsertTask(task) }
         return task
+    }
+
+    /// Set (or clear) a task's structured due date, keeping the derived
+    /// `dueLabel` in sync. Backs the manual due-date picker in the tray.
+    func setDueDate(taskId: UUID, date: Date?) {
+        if let i = tasks.firstIndex(where: { $0.id == taskId }) {
+            tasks[i].dueDate = date
+            tasks[i].dueLabel = TaskItem.dueLabel(for: date)
+            let updated = tasks[i]
+            Task { try? await self.db?.upsertTask(updated) }
+        }
     }
 
     /// Place an unscheduled task onto the calendar at `date` (drag-to-schedule).
