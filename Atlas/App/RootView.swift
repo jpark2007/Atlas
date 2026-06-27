@@ -41,6 +41,7 @@ struct RootView: View {
         .background(WindowConfigurator())
         .atlasCaptureOverlay()   // ⌘⇧K quick-capture pill
         .atlasCommandPalette()   // ⌘K search / command palette
+        .sheet(isPresented: $state.presentSettings) { SettingsView() }
     }
 }
 

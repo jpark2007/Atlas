@@ -19,6 +19,9 @@ final class AppState: ObservableObject {
     /// ⌘K command palette / search presentation.
     @Published var presentSearch: Bool = false
 
+    /// Account / integrations settings sheet.
+    @Published var presentSettings: Bool = false
+
     /// Which spaces are expanded in the sidebar.
     @Published var expandedSpaces: Set<UUID> = []
 

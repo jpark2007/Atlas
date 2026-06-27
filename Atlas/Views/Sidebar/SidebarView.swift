@@ -30,11 +30,37 @@ struct SidebarView: View {
                 }
 
                 Spacer(minLength: 20)
+
+                profileRow
+                    .padding(.top, 8)
             }
             .padding(.horizontal, 12)
         }
         .scrollContentBackground(.hidden)
         .background(AtlasTheme.Colors.bgSidebar)
+    }
+
+    // MARK: - Profile / settings
+
+    private var profileRow: some View {
+        Button { state.presentSettings = true } label: {
+            HStack(spacing: 9) {
+                Circle().fill(AtlasTheme.Colors.accent.opacity(0.15))
+                    .frame(width: 24, height: 24)
+                    .overlay(Image(systemName: "person.fill")
+                        .font(.system(size: 11)).foregroundStyle(AtlasTheme.Colors.accent))
+                Text(state.userName)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                Spacer()
+                Image(systemName: "gearshape")
+                    .font(.system(size: 12)).foregroundStyle(AtlasTheme.Colors.textMuted)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(AtlasTheme.Colors.bgElevated.opacity(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Logo
