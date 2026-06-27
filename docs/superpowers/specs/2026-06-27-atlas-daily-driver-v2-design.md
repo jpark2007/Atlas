@@ -8,7 +8,7 @@
 
 ## 0. One-paragraph summary
 
-v1 shipped the shell: spaces, calendar (day/week), unscheduled tray, capture overlay, metrics, EventKit read-only. But the AI brain never actually runs (its backend was never deployed, and failures are swallowed), tasks have no real due dates, scheduling is fully manual, there's no global capture / voice, no Google sync, no way to add a project, and the dashboard/metrics need restructuring. v2 makes Atlas an actual daily driver: a working AI capture pipeline, structured task dates with auto-scheduling, global + voice capture, Google Calendar two-way sync, month/list calendar views, project management, and a reworked dashboard + donut metrics.
+v1 shipped the shell: spaces, calendar (day/week), unscheduled tray, capture overlay, metrics, EventKit read-only. But the AI brain never actually runs (its backend was never deployed, and failures are swallowed), tasks have no real due dates, scheduling is fully manual, there's no global capture / voice, no Google sync, no way to add a project, and the dashboard/metrics need restructuring. v2 makes Atlas an actual daily driver: a working AI capture pipeline, structured task dates with auto-scheduling, global + voice capture, Google Calendar two-way sync, month/list calendar views, project management, a reworked dashboard + donut metrics, and a constrained notes editor that two-way syncs with Google Docs.
 
 ---
 
@@ -51,6 +51,7 @@ User confirmed: **do all of it.** Decomposed so parallel agents don't collide on
 - **WS-7 Command palette unify** — `⌘K` searches tasks + "Create '<query>'" on the fly.
 - **WS-8 Spaces/Projects** — add-project UI + edit description/detail.
 - **WS-9 Dashboard + Metrics** — tasks-below-schedule grouped by headings (+ space filter); pull Metrics off sidebar into popup; donut/ring charts.
+- **WS-10 Notes ↔ Google Docs** — constrained native notes editor + two-way sync with Google Docs (Doc = styling master, Atlas editor = slimmed-down subset).
 
 ---
 
@@ -92,11 +93,23 @@ User confirmed: **do all of it.** Decomposed so parallel agents don't collide on
 - **Native window controls:** ensure `.titlebar`/window style shows the standard traffic lights (close/minimize/zoom); fix whatever custom chrome is hiding them.
 
 ### WS-5 — Google Calendar sync
-- **OAuth:** `ASWebAuthenticationSession` + **PKCE** (no client secret to protect). Tokens in Keychain; refresh handling.
-- **Read:** fetch Google events, merge into the calendar like EventKit does (tagged read-only or editable per scope).
-- **Write-back:** create/update Atlas events in Google.
+- **OAuth:** `ASWebAuthenticationSession` + **PKCE**, **loopback redirect** (Desktop-app client type). One app-level client — every account (home or school) just clicks "Connect Google" and signs in; nobody pastes a Client ID again.
+- **Credentials:** provided 2026-06-27, stored in gitignored `.env.local` (`GOOGLE_OAUTH_CLIENT_ID` / `_SECRET`). Desktop-app secret is not a hard boundary (PKCE protects); token exchange routed through a Supabase function to keep the secret off the client, matching the existing `capture` pattern.
+- **Read:** fetch Google events, merge into the calendar like EventKit does.
+- **Write-back:** create/update Atlas events in Google (`calendar.events` scope).
 - **Settings:** wire the existing "Connect Google" stub (`SettingsView.swift:171`) to the real flow.
-- **Prereq:** user-provided Client ID (see §6).
+- **Prereq:** see §6 (project + both APIs + OAuth client already done; only "add test user" remains, and only before live testing).
+
+### WS-10 — Notes ↔ Google Docs (two-way)
+- **Native notes editor — constrained style set, the ONLY styling allowed:**
+  - Block levels: **Heading**, **Sub-heading**, **Normal text** — each with custom Atlas typography.
+  - Inline: **bold**, *italic*, underline.
+  - Lists: bulleted, numbered.
+  - Nothing else (no arbitrary fonts/sizes/colors/tables). Atlas's editor is a deliberately slimmed-down view.
+- **Two-way sync:** each Atlas note is backed by a Google Doc. Edits flow both directions.
+- **Google Doc is the styling master:** the Doc holds full fidelity; Atlas renders/edits the allowed subset and maps cleanly onto Doc heading styles / lists / bold-italic-underline. On conflict, the Doc's styling wins; Atlas content edits sync up.
+- **APIs/scopes:** Google Docs API (`documents`) for content/structure, Drive (`drive.file`) to create/locate the backing docs. Reuses the WS-5 OAuth session (same Google account).
+- **Backing model:** store the Doc ID on the `NoteRef`/note record; sync on open/save with last-write reconciliation; never silently lose either side.
 
 ### WS-6 — Global hotkey + Voice *(dedicated subagent group)*
 - **Global hotkey:** integrate carryover `HotkeyService.swift` (Carbon) so capture works system-wide, app unfocused.
@@ -140,6 +153,7 @@ User confirmed: **do all of it.** Decomposed so parallel agents don't collide on
 - **Agent-Palette:** WS-7
 - **Agent-Proj:** WS-8
 - **Agent-Dash:** WS-9
+- **Agent-Notes:** WS-10 (reuses WS-5's Google OAuth session; starts once auth scaffolding from WS-5 exists)
 
 Worktrees prevent file collisions; each rebases on the merged foundation. Shared-file edits (Models/AppState) are mostly done in Phase 1 to minimize later conflicts.
 
@@ -152,11 +166,15 @@ Worktrees prevent file collisions; each rebases on the merged foundation. Shared
 
 ## 6. Manual prerequisites (what only the user can do)
 
-**Google Cloud (one-time, ~10 min):**
-1. console.cloud.google.com → new project `Atlas`.
-2. APIs & Services → Library → **Google Calendar API** → Enable.
-3. OAuth consent screen → External → app `Atlas` → add **lets.flowstate@gmail.com** as Test user → scope `.../auth/calendar.events` → status **Testing**.
-4. Credentials → Create → OAuth client ID → **Desktop app** → copy **Client ID** → paste to Claude.
+**Google Cloud — DONE 2026-06-27:**
+- ✅ Project `Atlas` created.
+- ✅ **Google Calendar API** + **Google Docs API** enabled.
+- ✅ OAuth consent screen set to **External**, status **Testing**.
+- ✅ OAuth client created — **Desktop app** "Atlas LM". Client ID + secret captured in `.env.local`.
+
+**Still to do (low effort, only before live Google testing — does NOT block Phase 0/1/scaffolding):**
+1. **Add test user:** Auth Platform → **Audience** → **Test users** → add **lets.flowstate@gmail.com**. (Owner is usually allowed, but this prevents an "access blocked / app not verified" wall during the consent click.)
+2. **Scopes:** when we wire auth we'll request `calendar.events`, `documents`, `drive.file`. If a scope warning blocks consent, add them under **Data Access** on the consent screen — we'll cross that at WS-5/WS-10 testing time.
 
 **At runtime (only the user):** the "Sign in → Allow" consent click in the Google window (can't be done headlessly by an agent).
 
@@ -170,6 +188,7 @@ Worktrees prevent file collisions; each rebases on the merged foundation. Shared
 - **Revert-after-slot UX:** derived/non-destructive (resurface, don't delete the schedule) so an accidental pass-the-slot never loses the intended time.
 - **Voice model:** on-device `SFSpeechRecognizer` (free, private) over cloud Whisper for v2.
 - **Google write-back scope:** `calendar.events` (read+write) chosen so two-way works; if user prefers read-only first, narrow to `calendar.readonly`.
+- **Notes editor style set (settled):** Heading / Sub-heading / Normal + bold/italic/underline + bulleted/numbered lists, each level with custom Atlas typography. No other styling. Google Doc is the styling master; Atlas is the slimmed-down subset. Don't add tables/colors/fonts in v2.
 - **Branch:** continue on `feat/daily-driver-v1` or cut `feat/daily-driver-v2`? (Recommend a fresh `feat/daily-driver-v2` so v1 stays a clean reviewable unit.)
 
 ---
