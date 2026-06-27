@@ -33,6 +33,10 @@ final class AppState: ObservableObject {
     /// Calendar sync settings sheet (wired in Task 9).
     @Published var presentCalendarSync: Bool = false
 
+    /// Event editor sheet — set `eventEditorSeed` first, then flip `presentEventEditor`.
+    @Published var presentEventEditor: Bool = false
+    @Published var eventEditorSeed: CalendarEvent? = nil
+
     /// Which spaces are expanded in the sidebar.
     @Published var expandedSpaces: Set<UUID> = []
 

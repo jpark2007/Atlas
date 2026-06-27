@@ -32,6 +32,12 @@ struct CalendarView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AtlasTheme.Colors.bgBase)
+        .sheet(isPresented: $state.presentEventEditor) {
+            if let seed = state.eventEditorSeed {
+                EventEditorSheet(seed: seed)
+                    .environmentObject(state)
+            }
+        }
     }
 
     // MARK: - Header
@@ -49,6 +55,7 @@ struct CalendarView: View {
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 }
                 Spacer()
+                addEventButton
                 navigationControls
             }
 
@@ -66,6 +73,25 @@ struct CalendarView: View {
                 Spacer()
             }
         }
+    }
+
+    private var addEventButton: some View {
+        Button {
+            openEditorForNewEvent(on: selectedDate)
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .bold))
+                Text("Add event")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(AtlasTheme.Colors.accent)
+            .foregroundStyle(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private var navigationControls: some View {
@@ -141,13 +167,15 @@ struct CalendarView: View {
             DayCalendarView(
                 date: selectedDate,
                 events: filteredEvents(on: selectedDate),
-                onDropTask: handleDrop
+                onDropTask: handleDrop,
+                onTapEmpty: handleTapEmpty
             )
         case .week:
             WeekGridView(
                 days: weekDays,
                 eventsProvider: { filteredEvents(on: $0) },
-                onDropTask: handleDrop
+                onDropTask: handleDrop,
+                onTapEmpty: handleTapEmpty
             )
         }
     }
@@ -209,6 +237,57 @@ struct CalendarView: View {
             state.schedule(taskId: taskID, at: dropped)
         }
         return true
+    }
+
+    // MARK: - Event editor helpers
+
+    /// Presents the editor seeded with a new 1-hour event at the next round
+    /// hour on `date`. The "+ Add event" button calls this with `selectedDate`.
+    private func openEditorForNewEvent(on date: Date) {
+        let cal = Calendar.current
+        let now = Date()
+        let currentHour = cal.component(.hour, from: now)
+        let nextHour = min(currentHour + 1, CalendarLayout.endHour - 1)
+        let start = cal.date(bySettingHour: nextHour, minute: 0, second: 0, of: date) ?? date
+        let end   = cal.date(byAdding: .hour, value: 1, to: start) ?? start
+
+        let spaceName = state.spaces.first?.name ?? ""
+        let color     = state.calendarSpaceColor(named: spaceName)
+
+        state.eventEditorSeed = CalendarEvent(
+            title: "",
+            subtitle: "",
+            start: start,
+            end: end,
+            color: color,
+            spaceName: spaceName
+        )
+        state.presentEventEditor = true
+    }
+
+    /// Called by `DayColumnView` when the user taps an empty grid area.
+    /// Converts the fractional `hour` into a concrete `Date` on `date`, snaps
+    /// to 15-minute increments, and opens the editor pre-filled.
+    private func handleTapEmpty(date: Date, hour: Double) {
+        let cal = Calendar.current
+        let clamped = min(max(hour, Double(CalendarLayout.startHour)), Double(CalendarLayout.endHour) - 0.25)
+        let h = Int(clamped)
+        let minute = (Int((clamped - Double(h)) * 60) / 15) * 15
+        guard let start = cal.date(bySettingHour: h, minute: minute, second: 0, of: date) else { return }
+        let end = cal.date(byAdding: .hour, value: 1, to: start) ?? start
+
+        let spaceName = state.spaces.first?.name ?? ""
+        let color     = state.calendarSpaceColor(named: spaceName)
+
+        state.eventEditorSeed = CalendarEvent(
+            title: "",
+            subtitle: "",
+            start: start,
+            end: end,
+            color: color,
+            spaceName: spaceName
+        )
+        state.presentEventEditor = true
     }
 
     // MARK: - Header helpers

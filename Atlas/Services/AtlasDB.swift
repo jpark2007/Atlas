@@ -274,23 +274,24 @@ struct EventRow: Codable {
         self.subtitle  = e.subtitle
         self.startAt   = e.start
         self.endAt     = e.end
-        // TODO Task 5: map notes/isAllDay/projectID once added to CalendarEvent
-        self.notes     = nil
-        self.isAllDay  = false
-        self.projectId = nil
+        self.notes     = e.notes
+        self.isAllDay  = e.isAllDay
+        self.projectId = e.projectID
     }
 
     func toDomain() -> CalendarEvent {
         // CalendarEvent has `var id: UUID = UUID()` — memberwise init exposes `id`
         // as an overridable parameter, so the DB UUID IS preserved here.
-        // TODO Task 5: map notes/isAllDay/projectID once added to CalendarEvent
         CalendarEvent(id: id,
                       title: title,
                       subtitle: subtitle,
                       start: startAt,
                       end: endAt,
                       color: AtlasTheme.Colors.accent, // Task 2 re-derives from spaceName
-                      spaceName: spaceName)
+                      spaceName: spaceName,
+                      notes: notes,
+                      isAllDay: isAllDay,
+                      projectID: projectId)
     }
 }
 

@@ -16,8 +16,7 @@ struct AllDayRowView: View {
     // MARK: - Helpers
 
     private func allDayEvents(for day: Date) -> [CalendarEvent] {
-        // TODO Task 5: change predicate to { $0.isAllDay }
-        eventsProvider(day).filter { _ in false }
+        eventsProvider(day).filter { $0.isAllDay }
     }
 
     private var hasAnyAllDayEvents: Bool {

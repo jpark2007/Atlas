@@ -34,6 +34,9 @@ struct DayColumnView: View {
     let isToday: Bool
     /// Returns true if the drop was accepted.
     let onDropTask: (UUID, Date, Double) -> Bool
+    /// Called when the user taps an empty area of the grid (not on an EventTile).
+    /// `hour` is a fractional clock hour (e.g. 9.5 = 9:30 AM).
+    var onTapEmpty: ((Date, Double) -> Void)? = nil
 
     @State private var isTargeted = false
 
@@ -58,6 +61,12 @@ struct DayColumnView: View {
             .frame(width: geo.size.width, height: CalendarLayout.totalHeight, alignment: .topLeading)
             .clipped()   // keep events outside 7AM–10PM from bleeding past the column
             .contentShape(Rectangle())
+            // Tap-to-create: only fires on empty grid areas because EventTile swallows
+            // its own TapGesture (child gestures take priority over parent gestures).
+            .onTapGesture(coordinateSpace: .local) { location in
+                let hours = Double(CalendarLayout.startHour) + Double(location.y) / Double(CalendarLayout.hourHeight)
+                onTapEmpty?(date, hours)
+            }
             .dropDestination(for: DraggableTaskID.self) { items, location in
                 guard let first = items.first else { return false }
                 let hours = Double(CalendarLayout.startHour) + Double(location.y) / Double(CalendarLayout.hourHeight)
@@ -110,6 +119,10 @@ struct DayColumnView: View {
         let laneWidth = (columnWidth - CGFloat(item.laneCount - 1) * gap) / CGFloat(item.laneCount)
         let x = CGFloat(item.lane) * (laneWidth + gap)
         return EventTile(event: ev, compact: height < 44)
+            // Swallow left-click so the ZStack's tap-to-create gesture doesn't
+            // fire when the user clicks on an existing tile. Task 6 will replace
+            // this no-op with a context-menu / tap-to-edit action.
+            .onTapGesture {}
             .frame(width: max(0, laneWidth - 2), height: height, alignment: .topLeading)
             .offset(x: x, y: y)
     }
@@ -159,6 +172,7 @@ struct DayCalendarView: View {
     let date: Date
     let events: [CalendarEvent]
     let onDropTask: (UUID, Date, Double) -> Bool
+    var onTapEmpty: ((Date, Double) -> Void)? = nil
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -169,7 +183,8 @@ struct DayCalendarView: View {
                         date: date,
                         events: events,
                         isToday: Calendar.current.isDateInToday(date),
-                        onDropTask: onDropTask
+                        onDropTask: onDropTask,
+                        onTapEmpty: onTapEmpty
                     )
                 }
                 .id("dayGrid")
@@ -191,6 +206,7 @@ struct WeekGridView: View {
     /// Provides the (space-filtered) events for a given day.
     let eventsProvider: (Date) -> [CalendarEvent]
     let onDropTask: (UUID, Date, Double) -> Bool
+    var onTapEmpty: ((Date, Double) -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -220,7 +236,8 @@ struct WeekGridView: View {
                                     date: day,
                                     events: eventsProvider(day),
                                     isToday: Calendar.current.isDateInToday(day),
-                                    onDropTask: onDropTask
+                                    onDropTask: onDropTask,
+                                    onTapEmpty: onTapEmpty
                                 )
                                 .frame(width: columnWidth)
                                 if index < days.count - 1 {

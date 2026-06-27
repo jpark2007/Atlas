@@ -37,6 +37,9 @@ struct CalendarEvent: Identifiable {
     var end: Date
     var color: Color
     var spaceName: String
+    var notes: String? = nil
+    var isAllDay: Bool = false
+    var projectID: UUID? = nil
 
     /// "9 AM" / "6:30 PM" — start time formatted for compact rows.
     var timeLabel: String {
