@@ -69,15 +69,9 @@ private let isoDecoder: JSONDecoder = {
 /// `spaces` come back with `projects: []`; `projects` is a flat array carrying `spaceName`.
 /// Re-nesting projects into spaces is Task 2's job — not done here.
 ///
-/// IMPORTANT: Domain types that use `let id = UUID()` (Space, Project, TaskItem, Note, Goal)
-/// will receive a fresh auto-generated UUID in `toDomain()` because Swift extension
-/// initializers cannot override a `let` property's default value. Task 2 must account for
-/// this: domain objects loaded from the DB have new UUIDs in memory. The recommended fix
-/// (deferred to Task 2) is to use each DTO's `.id` field as the authoritative source when
-/// populating AppState, bypassing toDomain() for identity purposes, or to add an explicit
-/// `init(id:...)` to the relevant domain types if the plan approves a targeted Models.swift edit.
-/// CalendarEvent is unaffected because its `var id: UUID = UUID()` is included in the
-/// memberwise init as an overridable parameter.
+/// All domain types now use `var id = UUID()` so their memberwise inits accept `id:`
+/// as an overridable parameter. Each `toDomain()` call passes the row's UUID through,
+/// so DB identity is fully preserved on load. `CalendarEvent` was already correct.
 struct AtlasSnapshot {
     var spaces: [Space]
     var projects: [Project]
@@ -98,7 +92,7 @@ struct SpaceRow: Codable {
     var userId: UUID?
     var name: String
     var colorToken: String
-    var sort: Int?
+    var sort: Int
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -115,11 +109,8 @@ struct SpaceRow: Codable {
         self.sort       = sort
     }
 
-    /// NOTE: `id` is from the DB row; the returned `Space.id` is the DB UUID only for
-    /// `CalendarEvent` (which has `var id`). For Space's `let id = UUID()`, a fresh UUID
-    /// is generated. Task 2 uses the DTO id directly for identity; see AtlasSnapshot note.
     func toDomain() -> Space {
-        Space(name: name, color: ColorToken.color(for: colorToken), projects: [])
+        Space(id: id, name: name, color: ColorToken.color(for: colorToken), projects: [])
     }
 }
 
@@ -165,10 +156,9 @@ struct ProjectRow: Codable {
     }
 
     func toDomain() -> Project {
-        // NOTE: Nested display arrays (assignments, notes, pinned, backlinks) are NOT
-        // persisted. toDomain() returns them as []. A fresh per-user account legitimately
-        // starts with no backlinks; Task 2 re-nests projects into spaces via spaceName.
-        Project(name: name, code: code, isClass: isClass,
+        // Nested display arrays (assignments, notes, pinned, backlinks) are NOT persisted;
+        // toDomain() returns them as []. Task 2 re-nests projects into spaces via spaceName.
+        Project(id: id, name: name, code: code, isClass: isClass,
                 spaceName: spaceName,
                 spaceColor: AtlasTheme.Colors.accent, // Task 2 re-derives from spaceName
                 meetingInfo: meetingInfo, instructor: instructor,
@@ -215,7 +205,8 @@ struct TaskRow: Codable {
     }
 
     func toDomain() -> TaskItem {
-        TaskItem(title: title,
+        TaskItem(id: id,
+                 title: title,
                  // dueLabel is not persisted (display string only); acceptable for v1
                  dueLabel: "",
                  status: TaskRow.decode(status: status),
@@ -339,7 +330,7 @@ struct NoteRow: Codable {
     }
 
     func toDomain() -> Note {
-        Note(title: title, body: body,
+        Note(id: id, title: title, body: body,
              spaceName: spaceName, updatedAt: updatedAt, isExternal: isExternal)
     }
 }
@@ -371,7 +362,7 @@ struct GoalRow: Codable {
     }
 
     func toDomain() -> Goal {
-        Goal(title: title, progress: progress, label: label)
+        Goal(id: id, title: title, progress: progress, label: label)
     }
 }
 
@@ -411,7 +402,7 @@ final class AtlasDB {
         var req = URLRequest(url: comps.url!)
         req.httpMethod = "GET"
         req.setValue(SupabaseConfig.anonKey,               forHTTPHeaderField: "apikey")
-        req.setValue("application/json",                   forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json",                   forHTTPHeaderField: "Accept")
         req.setValue("Bearer \(sess.accessToken)",         forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await URLSession.shared.data(for: req)
@@ -461,20 +452,22 @@ final class AtlasDB {
     /// Load all tables for the signed-in user. RLS scopes rows automatically.
     /// Returns a flat `AtlasSnapshot`; spaces have `projects: []` — re-nesting is Task 2's job.
     func loadAll() async throws -> AtlasSnapshot {
-        let spaceRows:   [SpaceRow]   = try await getAll("spaces")
-        let projectRows: [ProjectRow] = try await getAll("projects")
-        let taskRows:    [TaskRow]    = try await getAll("tasks")
-        let eventRows:   [EventRow]   = try await getAll("events")
-        let noteRows:    [NoteRow]    = try await getAll("notes")
-        let goalRows:    [GoalRow]    = try await getAll("goals")
+        async let spaceRows:   [SpaceRow]   = getAll("spaces")
+        async let projectRows: [ProjectRow] = getAll("projects")
+        async let taskRows:    [TaskRow]    = getAll("tasks")
+        async let eventRows:   [EventRow]   = getAll("events")
+        async let noteRows:    [NoteRow]    = getAll("notes")
+        async let goalRows:    [GoalRow]    = getAll("goals")
+
+        let (sr, pr, tr, er, nr, gr) = try await (spaceRows, projectRows, taskRows, eventRows, noteRows, goalRows)
 
         return AtlasSnapshot(
-            spaces:   spaceRows.map   { $0.toDomain() },
-            projects: projectRows.map { $0.toDomain() },
-            tasks:    taskRows.map    { $0.toDomain() },
-            events:   eventRows.map   { $0.toDomain() },
-            notes:    noteRows.map    { $0.toDomain() },
-            goals:    goalRows.map    { $0.toDomain() }
+            spaces:   sr.map { $0.toDomain() },
+            projects: pr.map { $0.toDomain() },
+            tasks:    tr.map { $0.toDomain() },
+            events:   er.map { $0.toDomain() },
+            notes:    nr.map { $0.toDomain() },
+            goals:    gr.map { $0.toDomain() }
         )
     }
 
@@ -493,8 +486,11 @@ final class AtlasDB {
 
     func upsertSpace(_ s: Space) async throws {
         let sess = try requireSession()
+        guard let userId = UUID(uuidString: sess.user.id) else {
+            throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
+        }
         var row = SpaceRow(domain: s)
-        row.userId = UUID(uuidString: sess.user.id)
+        row.userId = userId
         let body = try isoEncoder.encode(row)
         try await send(method: "POST", table: "spaces",
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
@@ -502,8 +498,11 @@ final class AtlasDB {
 
     func upsertProject(_ p: Project) async throws {
         let sess = try requireSession()
+        guard let userId = UUID(uuidString: sess.user.id) else {
+            throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
+        }
         var row = ProjectRow(domain: p)
-        row.userId = UUID(uuidString: sess.user.id)
+        row.userId = userId
         let body = try isoEncoder.encode(row)
         try await send(method: "POST", table: "projects",
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
@@ -513,8 +512,11 @@ final class AtlasDB {
 
     func upsertTask(_ t: TaskItem) async throws {
         let sess = try requireSession()
+        guard let userId = UUID(uuidString: sess.user.id) else {
+            throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
+        }
         var row = TaskRow(domain: t)
-        row.userId = UUID(uuidString: sess.user.id)
+        row.userId = userId
         let body = try isoEncoder.encode(row)
         try await send(method: "POST", table: "tasks",
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
@@ -524,6 +526,7 @@ final class AtlasDB {
         let sess = try requireSession()
         try await send(method: "DELETE", table: "tasks",
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                       extraHeaders: ["Prefer": "return=minimal"],
                        sess: sess)
     }
 
@@ -531,8 +534,11 @@ final class AtlasDB {
 
     func upsertEvent(_ e: CalendarEvent) async throws {
         let sess = try requireSession()
+        guard let userId = UUID(uuidString: sess.user.id) else {
+            throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
+        }
         var row = EventRow(domain: e)
-        row.userId = UUID(uuidString: sess.user.id)
+        row.userId = userId
         let body = try isoEncoder.encode(row)
         try await send(method: "POST", table: "events",
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
@@ -542,6 +548,7 @@ final class AtlasDB {
         let sess = try requireSession()
         try await send(method: "DELETE", table: "events",
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                       extraHeaders: ["Prefer": "return=minimal"],
                        sess: sess)
     }
 
@@ -549,8 +556,11 @@ final class AtlasDB {
 
     func upsertNote(_ n: Note) async throws {
         let sess = try requireSession()
+        guard let userId = UUID(uuidString: sess.user.id) else {
+            throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
+        }
         var row = NoteRow(domain: n)
-        row.userId = UUID(uuidString: sess.user.id)
+        row.userId = userId
         let body = try isoEncoder.encode(row)
         try await send(method: "POST", table: "notes",
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
@@ -558,8 +568,11 @@ final class AtlasDB {
 
     func upsertGoal(_ g: Goal) async throws {
         let sess = try requireSession()
+        guard let userId = UUID(uuidString: sess.user.id) else {
+            throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
+        }
         var row = GoalRow(domain: g)
-        row.userId = UUID(uuidString: sess.user.id)
+        row.userId = userId
         let body = try isoEncoder.encode(row)
         try await send(method: "POST", table: "goals",
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)

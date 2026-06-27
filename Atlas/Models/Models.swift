@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A top-level life bucket (School / Personal / Side Project …).
 struct Space: Identifiable {
-    let id = UUID()
+    var id = UUID()
     var name: String
     var color: Color
     var projects: [Project]
@@ -10,7 +10,7 @@ struct Space: Identifiable {
 
 /// A project inside a Space. In the School space, projects are Classes.
 struct Project: Identifiable {
-    let id = UUID()
+    var id = UUID()
     var name: String
     var code: String?          // e.g. "CS 201"
     var isClass: Bool
@@ -57,7 +57,7 @@ struct CalendarEvent: Identifiable {
 
 /// A task / to-do. `scheduledAt` is nil until it's dragged onto the calendar.
 struct TaskItem: Identifiable {
-    let id = UUID()
+    var id = UUID()
     var title: String
     var dueLabel: String
     var status: TaskStatus = .open
@@ -73,7 +73,7 @@ enum TaskStatus {
 
 /// A long-term goal with progress.
 struct Goal: Identifiable {
-    let id = UUID()
+    var id = UUID()
     var title: String
     var progress: Double       // 0...1
     var label: String          // e.g. "2 / 3 this week"
@@ -90,7 +90,7 @@ struct NoteRef: Identifiable {
 /// A full note with an editable body — the source of truth for the Notes editor
 /// and ⌘K search. Attachable to a space/project; `[[mentions]]` create backlinks.
 struct Note: Identifiable {
-    let id = UUID()
+    var id = UUID()
     var title: String
     var body: String
     var spaceName: String? = nil

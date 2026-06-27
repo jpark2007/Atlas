@@ -38,6 +38,7 @@ final class AtlasDBMappingTests: XCTestCase {
         let decoded = try decoder.decode(TaskRow.self, from: data)
         let result = decoded.toDomain()
 
+        XCTAssertEqual(result.id, task.id)
         XCTAssertEqual(result.title, task.title)
         XCTAssertEqual(result.done, task.done)
         XCTAssertEqual(result.status, task.status)
@@ -90,6 +91,7 @@ final class AtlasDBMappingTests: XCTestCase {
         let decoded = try decoder.decode(EventRow.self, from: data)
         let result = decoded.toDomain()
 
+        XCTAssertEqual(result.id, event.id)
         XCTAssertEqual(result.title, event.title)
         XCTAssertEqual(result.subtitle, event.subtitle)
         XCTAssertEqual(result.start, event.start)
@@ -128,6 +130,7 @@ final class AtlasDBMappingTests: XCTestCase {
         let decoded = try decoder.decode(NoteRow.self, from: data)
         let result = decoded.toDomain()
 
+        XCTAssertEqual(result.id, note.id)
         XCTAssertEqual(result.title, note.title)
         XCTAssertEqual(result.body, note.body)
         XCTAssertEqual(result.spaceName, note.spaceName)
@@ -153,6 +156,7 @@ final class AtlasDBMappingTests: XCTestCase {
         let decoded = try decoder.decode(GoalRow.self, from: data)
         let result = decoded.toDomain()
 
+        XCTAssertEqual(result.id, goal.id)
         XCTAssertEqual(result.title, goal.title)
         XCTAssertEqual(result.progress, goal.progress, accuracy: 0.001)
         XCTAssertEqual(result.label, goal.label)
@@ -167,6 +171,7 @@ final class AtlasDBMappingTests: XCTestCase {
         let decoded = try decoder.decode(SpaceRow.self, from: data)
         let result = decoded.toDomain()
 
+        XCTAssertEqual(result.id, space.id)
         XCTAssertEqual(result.name, space.name)
         XCTAssertEqual(decoded.colorToken, "school")
         XCTAssertTrue(result.projects.isEmpty,
@@ -207,6 +212,7 @@ final class AtlasDBMappingTests: XCTestCase {
         let decoded = try decoder.decode(ProjectRow.self, from: data)
         let result = decoded.toDomain()
 
+        XCTAssertEqual(result.id, project.id)
         XCTAssertEqual(result.name, project.name)
         XCTAssertEqual(result.code, project.code)
         XCTAssertEqual(result.isClass, project.isClass)

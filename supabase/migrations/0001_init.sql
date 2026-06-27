@@ -49,7 +49,7 @@ create table if not exists tasks (
     id           uuid        primary key,
     user_id      uuid        not null default auth.uid()
                              references auth.users on delete cascade,
-    project_id   uuid,       -- nullable FK, reserved for future linking (map to nil for now)
+    project_id   uuid        references projects(id) on delete set null,
     space_name   text        not null,
     title        text        not null,
     due_date     timestamptz,
