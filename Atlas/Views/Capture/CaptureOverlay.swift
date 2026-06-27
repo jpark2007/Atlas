@@ -4,7 +4,7 @@ import SwiftUI
 //
 // Quick-capture command bar — a floating, liquid-glass NL task input.
 //
-// Wiring (Stage 2): attach ONE modifier to RootView's root view:
+// Wiring: attach ONE modifier to RootView's root view:
 //
 //     RootView()
 //         .atlasCaptureOverlay()
@@ -12,36 +12,36 @@ import SwiftUI
 // The modifier:
 //   • Installs a hidden keyboard shortcut (⌘⇧K) that flips `state.presentCapture = true`.
 //   • Overlays a centered-near-top command bar whenever `state.presentCapture == true`.
-//   • Dismisses on Esc and on click-outside; Enter files the task via `state.addTask(title:)`.
-//
-// AppState is read from the environment, so callers wire it in one line.
+//   • Dismisses on Esc and on click-outside.
+//   • On Return: calls the AI edge function to auto-sort the text into the right Space.
+//     Falls back to a plain task on ANY error (offline, 404, timeout, bad JSON, etc.)
+//     so ⌘⇧K ALWAYS works even when the edge function is not yet deployed.
 
 extension View {
     /// Overlays the Atlas quick-capture command bar and installs its keyboard shortcut.
-    /// Reads `AppState` from `@EnvironmentObject`, so it must be applied inside a view
-    /// hierarchy that already injects `AppState`.
+    /// Reads `AppState` and `AuthService` from `@EnvironmentObject`, so it must be
+    /// applied inside a view hierarchy that already injects both.
     func atlasCaptureOverlay() -> some View {
         modifier(AtlasCaptureOverlayModifier())
     }
 }
 
-// MARK: - The modifier (self-contained wiring)
+// MARK: - The modifier
 
 struct AtlasCaptureOverlayModifier: ViewModifier {
     @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var auth: AuthService
 
     func body(content: Content) -> some View {
         content
-            // Hidden ⌘⇧K shortcut. Lives in a background layer so it never
+            // Hidden ⌘⇧K shortcut in a background layer so it never
             // affects layout or steals visual focus.
             .background(shortcutInstaller)
             .overlay(alignment: .top) {
                 if state.presentCapture {
                     CaptureCommandBar(
                         isPresented: presentationBinding,
-                        onSubmit: { title in
-                            _ = state.addTask(title: title)
-                        }
+                        atlasAI: AtlasAI(session: { auth.session })
                     )
                     .transition(.opacity)
                     .zIndex(1_000)
@@ -50,7 +50,6 @@ struct AtlasCaptureOverlayModifier: ViewModifier {
             .animation(.spring(response: 0.34, dampingFraction: 0.86), value: state.presentCapture)
     }
 
-    /// Bridges the (possibly computed) `presentCapture` to a `Binding` the bar can mutate.
     private var presentationBinding: Binding<Bool> {
         Binding(
             get: { state.presentCapture },
@@ -74,11 +73,16 @@ struct AtlasCaptureOverlayModifier: ViewModifier {
 // MARK: - The command bar
 
 struct CaptureCommandBar: View {
+    @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var auth: AuthService
+
     @Binding var isPresented: Bool
-    var onSubmit: (String) -> Void
+    let atlasAI: AtlasAI
 
     @State private var text: String = ""
     @FocusState private var fieldFocused: Bool
+    @State private var confirmation: String? = nil
+    @State private var isProcessing: Bool = false
 
     private let barWidth: CGFloat = 560
     private let corner: CGFloat = 18
@@ -95,8 +99,6 @@ struct CaptureCommandBar: View {
                 .frame(width: barWidth)
                 .padding(.top, 96)
         }
-        // Esc dismisses — `.onExitCommand` plus a hidden cancelAction button so
-        // Escape still fires while the TextField holds first responder on macOS.
         .onExitCommand { dismiss() }
         .background(
             Button("", action: dismiss)
@@ -105,16 +107,26 @@ struct CaptureCommandBar: View {
                 .accessibilityHidden(true)
         )
         .onAppear {
-            // Focus on the next runloop tick so the field is in the hierarchy.
             DispatchQueue.main.async { fieldFocused = true }
         }
     }
 
+    // MARK: - Bar layout
+
     private var bar: some View {
         HStack(spacing: 14) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(AtlasTheme.Colors.accent)
+            // Spinner while AI is thinking, sparkle otherwise.
+            if isProcessing {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+                    .tint(AtlasTheme.Colors.accent)
+                    .frame(width: 20, height: 20)
+            } else {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(AtlasTheme.Colors.accent)
+            }
 
             TextField("Capture anything — a task, a thought…", text: $text)
                 .textFieldStyle(.plain)
@@ -122,9 +134,19 @@ struct CaptureCommandBar: View {
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .tint(AtlasTheme.Colors.accent)
                 .focused($fieldFocused)
+                .disabled(isProcessing)
                 .onSubmit(submit)
 
-            hint
+            // Show inline confirmation OR the default hint.
+            if let msg = confirmation {
+                Text(msg)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AtlasTheme.Colors.accent)
+                    .fixedSize()
+                    .transition(.opacity)
+            } else {
+                hint
+            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
@@ -136,13 +158,13 @@ struct CaptureCommandBar: View {
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         .shadow(color: .black.opacity(0.45), radius: 30, x: 0, y: 18)
         .shadow(color: .black.opacity(0.22), radius: 6, x: 0, y: 2)
+        .animation(.easeInOut(duration: 0.2), value: confirmation)
     }
 
     private var glassBackground: some View {
         RoundedRectangle(cornerRadius: corner, style: .continuous)
             .fill(.ultraThinMaterial)
             .overlay(
-                // Warm tint so the glass reads as Atlas, not stock macOS.
                 RoundedRectangle(cornerRadius: corner, style: .continuous)
                     .fill(AtlasTheme.Colors.bgElevated.opacity(0.45))
             )
@@ -170,11 +192,100 @@ struct CaptureCommandBar: View {
         .fixedSize()
     }
 
+    // MARK: - Submit logic
+
     private func submit() {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        onSubmit(trimmed)
+        let rawText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawText.isEmpty, !isProcessing else { return }
+
+        // Clear the field immediately so the bar feels responsive.
         text = ""
+        isProcessing = true
+
+        Task { @MainActor in
+            defer { isProcessing = false }
+
+            // Offline or no session → plain-task fallback, no network call.
+            guard auth.session != nil else {
+                state.addTask(title: rawText)
+                await showConfirmation("✓ Saved as task")
+                return
+            }
+
+            // Try the AI edge function.
+            do {
+                let result = try await atlasAI.parse(rawText)
+                switch result.kind {
+                case "event":
+                    await handleEvent(result: result, rawText: rawText)
+                case "note":
+                    state.addNote(
+                        title: result.title,
+                        body: result.notes ?? "",
+                        spaceName: result.spaceName,
+                        isExternal: false
+                    )
+                    await showConfirmation("✓ Added note")
+                case "task":
+                    state.addTask(title: result.title)
+                    await showConfirmation("✓ Added task")
+                default:
+                    // Unrecognized kind — safe fallback.
+                    state.addTask(title: rawText)
+                    await showConfirmation("✓ Saved as task")
+                }
+            } catch {
+                // ANY error (network, 404 — function not deployed, parse failure):
+                // always fall through to a plain task so capture never breaks.
+                state.addTask(title: rawText)
+                await showConfirmation("✓ Saved as task")
+            }
+        }
+    }
+
+    /// Build a CalendarEvent from the AI result. Falls back to a plain task if
+    /// `startISO` is missing or unparseable (the only required field for an event).
+    @MainActor
+    private func handleEvent(result: CaptureResult, rawText: String) async {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        // Try with fractional seconds first, then without.
+        var start: Date? = result.startISO.flatMap { formatter.date(from: $0) }
+        if start == nil {
+            formatter.formatOptions = [.withInternetDateTime]
+            start = result.startISO.flatMap { formatter.date(from: $0) }
+        }
+
+        guard let eventStart = start else {
+            // Can't place this on the calendar without a time — save as task.
+            state.addTask(title: rawText)
+            await showConfirmation("✓ Saved as task")
+            return
+        }
+
+        let durationSeconds = Double(result.durationMin ?? 60) * 60
+        let eventEnd = eventStart.addingTimeInterval(durationSeconds)
+        let color = state.calendarSpaceColor(named: result.spaceName)
+
+        let event = CalendarEvent(
+            title: result.title,
+            subtitle: "",
+            start: eventStart,
+            end: eventEnd,
+            color: color,
+            spaceName: result.spaceName
+        )
+        state.addEvent(event)
+        await showConfirmation("✓ Added event")
+    }
+
+    /// Displays `message` for ~1 second then dismisses the capture bar.
+    @MainActor
+    private func showConfirmation(_ message: String) async {
+        withAnimation { confirmation = message }
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 s
+        withAnimation { confirmation = nil }
         dismiss()
     }
 
