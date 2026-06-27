@@ -10,6 +10,11 @@ struct CalendarView: View {
     @State private var mode: CalendarMode = .day
     @State private var spaceFilter: String = "All"
 
+    // MARK: - Apple Calendar sync
+    @AppStorage("calendar.apple.enabled") private var appleCalendarEnabled: Bool = false
+    @AppStorage("calendar.apple.defaultSpace") private var appleDefaultSpace: String = ""
+    private let ekService = EventKitService()
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -32,6 +37,12 @@ struct CalendarView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AtlasTheme.Colors.bgBase)
+        .onAppear { loadAppleEventsIfNeeded() }
+        .onChange(of: selectedDate) { _, _ in loadAppleEventsIfNeeded() }
+        .onChange(of: appleCalendarEnabled) { _, enabled in
+            if enabled { loadAppleEventsIfNeeded() }
+            else { state.externalEvents = [] }
+        }
         .sheet(isPresented: $state.presentEventEditor, onDismiss: {
             state.eventEditorSeed = nil
         }) {
@@ -187,9 +198,12 @@ struct CalendarView: View {
     // MARK: - Data (real source of truth)
 
     /// Space-filtered events for a day: the store's events plus a tile for any
-    /// task already dropped onto that day (`scheduledAt`).
+    /// task already dropped onto that day (`scheduledAt`), plus read-only
+    /// external events (Apple Calendar) when enabled.
     private func filteredEvents(on date: Date) -> [CalendarEvent] {
-        let all = state.events(on: date) + scheduledTaskEvents(on: date)
+        let all = state.events(on: date)
+            + scheduledTaskEvents(on: date)
+            + state.externalEvents(on: date)
         guard spaceFilter != "All" else { return all }
         return all.filter { $0.spaceName == spaceFilter }
     }
@@ -217,6 +231,52 @@ struct CalendarView: View {
         let cal = Calendar.current
         guard let interval = cal.dateInterval(of: .weekOfYear, for: selectedDate) else { return [selectedDate] }
         return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: interval.start) }
+    }
+
+    // MARK: - Apple Calendar aggregation
+
+    /// Fetches Apple Calendar events for the visible range and stores them in
+    /// `state.externalEvents`. Called on appear, on `selectedDate` change, and
+    /// when the toggle flips on. Apple events NEVER enter `state.events`.
+    private func loadAppleEventsIfNeeded() {
+        guard appleCalendarEnabled else {
+            state.externalEvents = []
+            return
+        }
+        let status = ekService.authorizationStatus()
+        guard status == .fullAccess || status == .authorized else {
+            state.externalEvents = []
+            return
+        }
+
+        let cal = Calendar.current
+        // Fetch the full visible week (or ±3 days for day mode) to cover navigation.
+        let rangeStart: Date
+        let rangeEnd: Date
+        switch mode {
+        case .day:
+            rangeStart = cal.startOfDay(for: selectedDate)
+            rangeEnd   = cal.date(byAdding: .day, value: 1, to: rangeStart) ?? rangeStart
+        case .week:
+            guard let interval = cal.dateInterval(of: .weekOfYear, for: selectedDate) else { return }
+            rangeStart = interval.start
+            rangeEnd   = interval.end
+        }
+
+        let defaultSpace = appleDefaultSpace.isEmpty
+            ? (state.spaces.first?.name ?? "")
+            : appleDefaultSpace
+
+        Task {
+            let fetched = await ekService.fetchEvents(
+                start: rangeStart,
+                end:   rangeEnd,
+                defaultSpaceName: defaultSpace
+            )
+            await MainActor.run {
+                state.externalEvents = fetched
+            }
+        }
     }
 
     // MARK: - Scheduling
@@ -302,6 +362,9 @@ struct CalendarView: View {
     /// sidebar to `.project(id)`. Otherwise falls back to opening the editor
     /// so a click on any tile is never a dead end.
     func openSource(for event: CalendarEvent) {
+        // Read-only external events (e.g. Apple Calendar) — never open the editor.
+        guard !event.isReadOnly else { return }
+
         // Task-derived synthetic events share their UUID with the underlying TaskItem.
         // Opening the editor for them would create a ghost-duplicate CalendarEvent in
         // state.events — guard against that here.

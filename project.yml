@@ -23,6 +23,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.atlas.Atlas
         CODE_SIGN_STYLE: Automatic
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        INFOPLIST_KEY_NSCalendarsUsageDescription: "Atlas reads your Apple Calendar events to display them alongside your Atlas schedule. No events are modified."
   AtlasTests:
     type: bundle.unit-test
     platform: macOS

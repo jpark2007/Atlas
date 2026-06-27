@@ -40,6 +40,8 @@ struct CalendarEvent: Identifiable {
     var notes: String? = nil
     var isAllDay: Bool = false
     var projectID: UUID? = nil
+    /// True for events sourced externally (e.g. Apple Calendar). Read-only: never persisted, never edited.
+    var isReadOnly: Bool = false
 
     /// "9 AM" / "6:30 PM" — start time formatted for compact rows.
     var timeLabel: String {

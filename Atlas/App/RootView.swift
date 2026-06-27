@@ -47,7 +47,6 @@ struct RootView: View {
         .atlasCommandPalette()   // ⌘K search / command palette
         .sheet(isPresented: $state.presentSettings) { SettingsView() }
         .sheet(isPresented: $state.presentMetrics) { MetricsPopupView() }
-        // TODO Task 9: .sheet(isPresented: $state.presentCalendarSync) { CalendarSyncSheet() }
     }
 }
 

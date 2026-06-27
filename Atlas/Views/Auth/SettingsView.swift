@@ -1,11 +1,13 @@
 import SwiftUI
 import AppKit
+import EventKit
 
 /// Account + integrations sheet. Reached from the sidebar profile row.
 struct SettingsView: View {
     @EnvironmentObject private var auth: AuthService
     @EnvironmentObject private var canvas: CanvasService
     @EnvironmentObject private var shortcuts: ShortcutStore
+    @EnvironmentObject private var state: AppState
     @Environment(\.dismiss) private var dismiss
 
     @State private var canvasToken = ""
@@ -14,6 +16,15 @@ struct SettingsView: View {
     @State private var recordingAction: ShortcutAction? = nil
     @State private var conflictWarning: String? = nil
     @State private var recordMonitor: Any? = nil
+
+    // MARK: – Calendar sync state
+    @AppStorage("calendar.apple.enabled") private var appleCalendarEnabled: Bool = false
+    @AppStorage("calendar.main") private var mainCalendar: String = "Atlas"
+    @AppStorage("calendar.apple.defaultSpace") private var appleDefaultSpace: String = ""
+    @State private var appleAccessGranted: Bool = false
+    @State private var appleAccessChecked: Bool = false
+
+    private let ekService = EventKitService()
 
     var body: some View {
         ScrollView {
@@ -32,14 +43,17 @@ struct SettingsView: View {
                 Divider().overlay(AtlasTheme.Colors.border)
                 integrations
                 Divider().overlay(AtlasTheme.Colors.border)
+                calendarsSection
+                Divider().overlay(AtlasTheme.Colors.border)
                 shortcutsSection
 
                 Spacer(minLength: 8)
             }
             .padding(28)
         }
-        .frame(width: 460, height: 680)
+        .frame(width: 460, height: 800)
         .background(AtlasTheme.Colors.bgBase)
+        .onAppear { refreshAppleAccessStatus() }
         .onDisappear { stopRecording() }
     }
 
@@ -107,6 +121,247 @@ struct SettingsView: View {
             row(icon: "applelogo", tint: AtlasTheme.Colors.textSecondary, title: "Sign in with Apple",
                 subtitle: "Enable signing in Xcode to use on device")
         }
+    }
+
+    // MARK: – Calendars section
+
+    private var calendarsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            label("CALENDARS")
+            Text("Aggregate read-only. Pick one source to write new events.")
+                .font(.system(size: 10))
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+
+            // ── Apple Calendar ───────────────────────────────────────────
+            HStack(spacing: 12) {
+                Image(systemName: "applelogo")
+                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Apple Calendar")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text(appleCalendarSubtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(appleCalendarSubtitleColor)
+                }
+                Spacer()
+                Toggle("", isOn: $appleCalendarEnabled)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .onChange(of: appleCalendarEnabled) { _, enabled in
+                        if enabled {
+                            Task {
+                                let granted = await ekService.requestAccess()
+                                await MainActor.run {
+                                    appleAccessGranted = granted
+                                    if !granted { appleCalendarEnabled = false }
+                                }
+                            }
+                        }
+                    }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
+            )
+
+            // ── Google Calendar (deferred) ───────────────────────────────
+            HStack(spacing: 12) {
+                Image(systemName: "globe")
+                    .foregroundStyle(AtlasTheme.Colors.school)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Google Calendar")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text("Not connected — OAuth wiring deferred (v2)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                Spacer()
+                Text("Connect")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(AtlasTheme.Colors.bgElevated)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(AtlasTheme.Colors.border, lineWidth: 1)
+                    )
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
+            )
+
+            // ── Canvas ──────────────────────────────────────────────────
+            HStack(spacing: 12) {
+                Image(systemName: "graduationcap.fill")
+                    .foregroundStyle(AtlasTheme.Colors.school)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Canvas LMS")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Group {
+                        if case .connected(let name) = canvas.status {
+                            Text("Connected as \(name)")
+                                .foregroundStyle(AtlasTheme.Colors.green)
+                        } else {
+                            Text("Not connected — configure above")
+                                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        }
+                    }
+                    .font(.system(size: 11))
+                }
+                Spacer()
+                Image(systemName: "eye.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .help("Read-only display")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
+            )
+
+            // ── Atlas Native ────────────────────────────────────────────
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(AtlasTheme.Colors.accent)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Atlas (native)")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text("Always on")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                Spacer()
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(AtlasTheme.Colors.green)
+                    .font(.system(size: 14))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
+            )
+
+            // ── Main calendar picker ────────────────────────────────────
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Main calendar")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text("New events are written here")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                Spacer()
+                Picker("Main calendar", selection: $mainCalendar) {
+                    Text("Atlas").tag("Atlas")
+                    if appleCalendarEnabled && appleAccessGranted {
+                        Text("Apple Calendar").tag("Apple")
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(width: 140)
+                .tint(AtlasTheme.Colors.accent)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
+            )
+
+            // ── Default space mapping ──────────────────────────────────
+            if !state.spaces.isEmpty {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Default space for Apple events")
+                            .font(.system(size: 13))
+                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        Text("Imported events land in this space")
+                            .font(.system(size: 11))
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    }
+                    Spacer()
+                    Picker("Default space", selection: $appleDefaultSpace) {
+                        ForEach(state.spaces) { space in
+                            Text(space.name).tag(space.name)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 140)
+                    .tint(AtlasTheme.Colors.accent)
+                    .onAppear {
+                        // Seed default to first space if not yet set
+                        if appleDefaultSpace.isEmpty, let first = state.spaces.first {
+                            appleDefaultSpace = first.name
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
+                )
+            }
+        }
+    }
+
+    // MARK: – Calendar helpers
+
+    private func refreshAppleAccessStatus() {
+        let status = ekService.authorizationStatus()
+        appleAccessGranted = (status == .fullAccess || status == .authorized)
+        if !appleAccessGranted && appleCalendarEnabled {
+            appleCalendarEnabled = false
+        }
+    }
+
+    private var appleCalendarSubtitle: String {
+        if appleCalendarEnabled && appleAccessGranted {
+            return "Reading from Apple Calendar"
+        }
+        let status = ekService.authorizationStatus()
+        switch status {
+        case .denied, .restricted:
+            return "Access denied — enable in System Settings → Privacy"
+        case .notDetermined:
+            return "Toggle to request access"
+        default:
+            return "Toggle to enable"
+        }
+    }
+
+    private var appleCalendarSubtitleColor: Color {
+        if appleCalendarEnabled && appleAccessGranted {
+            return AtlasTheme.Colors.green
+        }
+        let status = ekService.authorizationStatus()
+        if status == .denied || status == .restricted {
+            return AtlasTheme.Colors.danger
+        }
+        return AtlasTheme.Colors.textMuted
     }
 
     // MARK: – Shortcuts section

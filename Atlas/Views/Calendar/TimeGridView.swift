@@ -121,12 +121,18 @@ struct DayColumnView: View {
         let laneWidth = (columnWidth - CGFloat(item.laneCount - 1) * gap) / CGFloat(item.laneCount)
         let x = CGFloat(item.lane) * (laneWidth + gap)
         // Build a captured closure so the compiler can close over `ev` cleanly.
-        let openSourceClosure: (() -> Void)? = onTapEvent.map { handler in { handler(ev) } }
+        // Read-only events pass nil so openSource is a no-op (CalendarView guards it too).
+        let openSourceClosure: (() -> Void)? = ev.isReadOnly
+            ? nil
+            : onTapEvent.map { handler in { handler(ev) } }
         return EventTile(event: ev, compact: height < 44)
-            // Left-click: open source (navigates to project, or opens editor if none linked).
-            // Swallows the tap so the parent ZStack's tap-to-create doesn't fire.
-            .onTapGesture { onTapEvent?(ev) }
-            // Right-click: context menu with Edit / Change Duration / Open Source / Delete.
+            // Left-click: open source for writable events; swallow tap for read-only
+            // so the parent ZStack's tap-to-create doesn't fire.
+            .onTapGesture {
+                guard !ev.isReadOnly else { return }
+                onTapEvent?(ev)
+            }
+            // Right-click: full menu for writable; read-only label only for external events.
             .eventContextMenu(event: ev, onOpenSource: openSourceClosure)
             .frame(width: max(0, laneWidth - 2), height: height, alignment: .topLeading)
             .offset(x: x, y: y)
@@ -142,32 +148,49 @@ struct EventTile: View {
     var body: some View {
         HStack(spacing: 0) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(event.color)
+                .fill(tileAccentColor)
                 .frame(width: 3)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(event.title)
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    .lineLimit(1)
-                if !compact {
-                    Text("\(event.timeLabel) · \(event.durationLabel)")
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
+            HStack(alignment: .top, spacing: 4) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(event.title)
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(titleColor)
                         .lineLimit(1)
+                    if !compact {
+                        Text("\(event.timeLabel) · \(event.durationLabel)")
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                // Read-only source glyph — indicates external / Apple Calendar origin
+                if event.isReadOnly {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .padding(.top, compact ? 1 : 3)
                 }
             }
             .padding(.leading, 6)
             .padding(.trailing, 4)
             .padding(.vertical, compact ? 2 : 4)
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(event.color.opacity(0.16))
+        .background(tileAccentColor.opacity(event.isReadOnly ? 0.08 : 0.16))
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(event.color.opacity(0.35), lineWidth: 1)
+                .stroke(tileAccentColor.opacity(event.isReadOnly ? 0.20 : 0.35), lineWidth: 1)
         )
+    }
+
+    private var tileAccentColor: Color {
+        event.isReadOnly ? AtlasTheme.Colors.textSecondary : event.color
+    }
+
+    private var titleColor: Color {
+        event.isReadOnly ? AtlasTheme.Colors.textSecondary : AtlasTheme.Colors.textPrimary
     }
 }
 

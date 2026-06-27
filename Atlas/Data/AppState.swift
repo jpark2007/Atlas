@@ -33,6 +33,9 @@ final class AppState: ObservableObject {
     /// Calendar sync settings sheet (wired in Task 9).
     @Published var presentCalendarSync: Bool = false
 
+    /// External (read-only) events aggregated from Apple Calendar. Never persisted.
+    @Published var externalEvents: [CalendarEvent] = []
+
     /// Event editor sheet — set `eventEditorSeed` first, then flip `presentEventEditor`.
     @Published var presentEventEditor: Bool = false
     @Published var eventEditorSeed: CalendarEvent? = nil
@@ -143,6 +146,14 @@ final class AppState: ObservableObject {
     /// Events occurring on the given day, sorted by start time.
     func events(on day: Date) -> [CalendarEvent] {
         events
+            .filter { Calendar.current.isDate($0.start, inSameDayAs: day) }
+            .sorted { $0.start < $1.start }
+    }
+
+    /// External (read-only) events occurring on the given day, sorted by start time.
+    /// Mirrors `events(on:)` but draws from the non-persisted `externalEvents` pool.
+    func externalEvents(on day: Date) -> [CalendarEvent] {
+        externalEvents
             .filter { Calendar.current.isDate($0.start, inSameDayAs: day) }
             .sorted { $0.start < $1.start }
     }

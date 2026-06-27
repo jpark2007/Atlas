@@ -19,47 +19,55 @@ struct EventContextMenuModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content.contextMenu {
-            // ── Edit ──────────────────────────────────────────────────────
-            Button {
-                state.eventEditorSeed = event
-                state.presentEventEditor = true
-            } label: {
-                Label("Edit Event", systemImage: "pencil")
-            }
-
-            // ── Change Duration ───────────────────────────────────────────
-            Menu("Change Duration") {
-                Button("15 minutes") { changeDuration(minutes: 15) }
-                Button("30 minutes") { changeDuration(minutes: 30) }
-                Button("1 hour")     { changeDuration(minutes: 60) }
-                Button("1.5 hours")  { changeDuration(minutes: 90) }
-            }
-
-            // ── Move to time… ─────────────────────────────────────────────
-            Menu("Move to time…") {
-                ForEach(CalendarLayout.startHour...CalendarLayout.endHour, id: \.self) { hour in
-                    Button(hourLabel(for: hour)) { moveToHour(hour) }
+            if event.isReadOnly {
+                // ── Read-only external event — no edit, no delete ─────────
+                Button {} label: {
+                    Label("Read-only (Apple Calendar)", systemImage: "lock.fill")
                 }
-            }
-
-            Divider()
-
-            // ── Open Source — only when event is linked to a project ──────
-            if event.projectID != nil, let openSource = onOpenSource {
+                .disabled(true)
+            } else {
+                // ── Edit ──────────────────────────────────────────────────────
                 Button {
-                    openSource()
+                    state.eventEditorSeed = event
+                    state.presentEventEditor = true
                 } label: {
-                    Label("Open Source", systemImage: "arrow.up.right.square")
+                    Label("Edit Event", systemImage: "pencil")
+                }
+
+                // ── Change Duration ───────────────────────────────────────────
+                Menu("Change Duration") {
+                    Button("15 minutes") { changeDuration(minutes: 15) }
+                    Button("30 minutes") { changeDuration(minutes: 30) }
+                    Button("1 hour")     { changeDuration(minutes: 60) }
+                    Button("1.5 hours")  { changeDuration(minutes: 90) }
+                }
+
+                // ── Move to time… ─────────────────────────────────────────────
+                Menu("Move to time…") {
+                    ForEach(CalendarLayout.startHour...CalendarLayout.endHour, id: \.self) { hour in
+                        Button(hourLabel(for: hour)) { moveToHour(hour) }
+                    }
                 }
 
                 Divider()
-            }
 
-            // ── Delete (destructive) ──────────────────────────────────────
-            Button(role: .destructive) {
-                state.deleteEvent(id: event.id)
-            } label: {
-                Label("Delete", systemImage: "trash")
+                // ── Open Source — only when event is linked to a project ──────
+                if event.projectID != nil, let openSource = onOpenSource {
+                    Button {
+                        openSource()
+                    } label: {
+                        Label("Open Source", systemImage: "arrow.up.right.square")
+                    }
+
+                    Divider()
+                }
+
+                // ── Delete (destructive) ──────────────────────────────────────
+                Button(role: .destructive) {
+                    state.deleteEvent(id: event.id)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
             }
         }
     }
