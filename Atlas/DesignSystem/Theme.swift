@@ -22,6 +22,10 @@ enum AtlasTheme {
         static let accent     = Color(hex: "ff8c42")
         static let accentDeep = Color(hex: "ff6b1a")
 
+        // Semantic status tokens
+        static let warning  = Color(hex: "febc2e") // warm amber
+        static let danger   = Color(hex: "ff5c5c") // warm red
+
         // Space identity colors
         static let school   = Color(hex: "5b9bd5")
         static let personal = Color(hex: "5fb98e")

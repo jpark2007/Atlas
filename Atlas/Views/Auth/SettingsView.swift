@@ -62,7 +62,7 @@ struct SettingsView: View {
                         .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.accent)
                 } else {
                     Button("Sign out") { auth.signOut(); dismiss() }
-                        .buttonStyle(.plain).foregroundStyle(.red)
+                        .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.danger)
                 }
             }
         }
@@ -126,10 +126,10 @@ struct SettingsView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(AtlasTheme.Colors.warning)
                     Text(warning)
                         .font(.system(size: 11))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(AtlasTheme.Colors.warning)
                 }
                 .transition(.opacity)
                 .animation(.easeInOut(duration: 0.2), value: conflictWarning)
@@ -185,7 +185,7 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
             .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(isRecording ? .red : AtlasTheme.Colors.accent)
+            .foregroundStyle(isRecording ? AtlasTheme.Colors.danger : AtlasTheme.Colors.accent)
 
             // Reset button
             Button {
@@ -245,6 +245,14 @@ struct SettingsView: View {
             let candidate = ShortcutBinding(key: first, modifiers: swiftMods)
 
             DispatchQueue.main.async {
+                // Reject bare keys — require at least ⌘, ⌃, or ⌥.
+                guard swiftMods.contains(.command) || swiftMods.contains(.control) || swiftMods.contains(.option) else {
+                    conflictWarning = "Add ⌘, ⌥, or ⌃"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { conflictWarning = nil }
+                    stopRecording()
+                    return
+                }
+
                 if let conflicting = shortcuts.conflict(candidate, excluding: action) {
                     conflictWarning = "Conflicts with \"\(conflicting.title)\" — not saved."
                     // Auto-clear warning after 2 s.
