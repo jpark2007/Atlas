@@ -1,0 +1,567 @@
+import Foundation
+import SwiftUI
+
+// MARK: - Errors
+
+enum AtlasDBError: LocalizedError {
+    case notAuthenticated
+    case requestFailed(Int, String)
+
+    var errorDescription: String? {
+        switch self {
+        case .notAuthenticated:
+            return "Not authenticated. Sign in before accessing the database."
+        case .requestFailed(let code, let msg):
+            return "Database request failed (HTTP \(code)): \(msg)"
+        }
+    }
+}
+
+// MARK: - Color token helper (defined here, NOT in Models.swift)
+
+/// Maps between a short string token and its `AtlasTheme.Colors` counterpart.
+/// Only `spaces.color_token` is ever persisted. All other domain types receive
+/// `AtlasTheme.Colors.accent` as a placeholder on `toDomain()`; Task 2
+/// re-derives real colors from `spaceName` via `AppState.calendarSpaceColor(named:)`.
+enum ColorToken: String {
+    case school, personal, side, accent
+
+    var color: Color {
+        switch self {
+        case .school:   return AtlasTheme.Colors.school
+        case .personal: return AtlasTheme.Colors.personal
+        case .side:     return AtlasTheme.Colors.side
+        case .accent:   return AtlasTheme.Colors.accent
+        }
+    }
+
+    /// Best-effort mapping: compare against known theme colors; defaults to "accent".
+    static func token(for color: Color) -> String {
+        if color == AtlasTheme.Colors.school   { return "school" }
+        if color == AtlasTheme.Colors.personal { return "personal" }
+        if color == AtlasTheme.Colors.side     { return "side" }
+        return "accent"
+    }
+
+    /// Returns the `Color` for a stored token string; defaults to accent.
+    static func color(for token: String) -> Color {
+        ColorToken(rawValue: token)?.color ?? AtlasTheme.Colors.accent
+    }
+}
+
+// MARK: - Shared ISO 8601 codecs
+
+private let isoEncoder: JSONEncoder = {
+    let e = JSONEncoder()
+    e.dateEncodingStrategy = .iso8601
+    return e
+}()
+
+private let isoDecoder: JSONDecoder = {
+    let d = JSONDecoder()
+    d.dateDecodingStrategy = .iso8601
+    return d
+}()
+
+// MARK: - Snapshot
+
+/// Flat snapshot of all persisted tables returned by `AtlasDB.loadAll()`.
+/// `spaces` come back with `projects: []`; `projects` is a flat array carrying `spaceName`.
+/// Re-nesting projects into spaces is Task 2's job — not done here.
+///
+/// IMPORTANT: Domain types that use `let id = UUID()` (Space, Project, TaskItem, Note, Goal)
+/// will receive a fresh auto-generated UUID in `toDomain()` because Swift extension
+/// initializers cannot override a `let` property's default value. Task 2 must account for
+/// this: domain objects loaded from the DB have new UUIDs in memory. The recommended fix
+/// (deferred to Task 2) is to use each DTO's `.id` field as the authoritative source when
+/// populating AppState, bypassing toDomain() for identity purposes, or to add an explicit
+/// `init(id:...)` to the relevant domain types if the plan approves a targeted Models.swift edit.
+/// CalendarEvent is unaffected because its `var id: UUID = UUID()` is included in the
+/// memberwise init as an overridable parameter.
+struct AtlasSnapshot {
+    var spaces: [Space]
+    var projects: [Project]
+    var tasks: [TaskItem]
+    var events: [CalendarEvent]
+    var notes: [Note]
+    var goals: [Goal]
+}
+
+// MARK: - DTO Row structs
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SpaceRow
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct SpaceRow: Codable {
+    var id: UUID
+    var userId: UUID?
+    var name: String
+    var colorToken: String
+    var sort: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId     = "user_id"
+        case name
+        case colorToken = "color_token"
+        case sort
+    }
+
+    init(domain s: Space, sort: Int = 0) {
+        self.id         = s.id
+        self.name       = s.name
+        self.colorToken = ColorToken.token(for: s.color)
+        self.sort       = sort
+    }
+
+    /// NOTE: `id` is from the DB row; the returned `Space.id` is the DB UUID only for
+    /// `CalendarEvent` (which has `var id`). For Space's `let id = UUID()`, a fresh UUID
+    /// is generated. Task 2 uses the DTO id directly for identity; see AtlasSnapshot note.
+    func toDomain() -> Space {
+        Space(name: name, color: ColorToken.color(for: colorToken), projects: [])
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ProjectRow
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct ProjectRow: Codable {
+    var id: UUID
+    var userId: UUID?
+    var spaceName: String
+    var name: String
+    var code: String?
+    var isClass: Bool
+    var meetingInfo: String?
+    var instructor: String?
+    var canvasSynced: Bool
+    var overview: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId       = "user_id"
+        case spaceName    = "space_name"
+        case name
+        case code
+        case isClass      = "is_class"
+        case meetingInfo  = "meeting_info"
+        case instructor
+        case canvasSynced = "canvas_synced"
+        case overview
+    }
+
+    init(domain p: Project) {
+        self.id           = p.id
+        self.spaceName    = p.spaceName
+        self.name         = p.name
+        self.code         = p.code
+        self.isClass      = p.isClass
+        self.meetingInfo  = p.meetingInfo
+        self.instructor   = p.instructor
+        self.canvasSynced = p.canvasSynced
+        self.overview     = p.overview
+    }
+
+    func toDomain() -> Project {
+        // NOTE: Nested display arrays (assignments, notes, pinned, backlinks) are NOT
+        // persisted. toDomain() returns them as []. A fresh per-user account legitimately
+        // starts with no backlinks; Task 2 re-nests projects into spaces via spaceName.
+        Project(name: name, code: code, isClass: isClass,
+                spaceName: spaceName,
+                spaceColor: AtlasTheme.Colors.accent, // Task 2 re-derives from spaceName
+                meetingInfo: meetingInfo, instructor: instructor,
+                canvasSynced: canvasSynced, overview: overview)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TaskRow
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct TaskRow: Codable {
+    var id: UUID
+    var userId: UUID?
+    var projectId: UUID?
+    var spaceName: String
+    var title: String
+    var dueDate: Date?
+    var status: String        // persisted as text — see encode/decode helpers below
+    var done: Bool
+    var scheduledAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId      = "user_id"
+        case projectId   = "project_id"
+        case spaceName   = "space_name"
+        case title
+        case dueDate     = "due_date"
+        case status
+        case done
+        case scheduledAt = "scheduled_at"
+    }
+
+    init(domain t: TaskItem) {
+        self.id          = t.id
+        self.projectId   = nil // no projectId on TaskItem yet; map to nil
+        self.spaceName   = t.spaceName
+        self.title       = t.title
+        self.dueDate     = nil // dueLabel is a display string, not persisted as a Date
+        self.status      = TaskRow.encode(status: t.status)
+        self.done        = t.done
+        self.scheduledAt = t.scheduledAt
+    }
+
+    func toDomain() -> TaskItem {
+        TaskItem(title: title,
+                 // dueLabel is not persisted (display string only); acceptable for v1
+                 dueLabel: "",
+                 status: TaskRow.decode(status: status),
+                 done: done,
+                 scheduledAt: scheduledAt,
+                 spaceName: spaceName)
+    }
+
+    // MARK: TaskStatus ↔ status text (explicit switch — enum has NO raw values)
+
+    static func encode(status: TaskStatus) -> String {
+        switch status {
+        case .open:      return "open"
+        case .dueSoon:   return "due_soon"
+        case .upcoming:  return "upcoming"
+        case .submitted: return "submitted"
+        }
+    }
+
+    static func decode(status: String) -> TaskStatus {
+        switch status {
+        case "open":      return .open
+        case "due_soon":  return .dueSoon
+        case "upcoming":  return .upcoming
+        case "submitted": return .submitted
+        default:          return .open
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EventRow
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct EventRow: Codable {
+    var id: UUID
+    var userId: UUID?
+    var spaceName: String
+    var title: String
+    var subtitle: String
+    var startAt: Date
+    var endAt: Date
+    // TODO Task 5: map notes/isAllDay/projectID once added to CalendarEvent
+    var notes: String?
+    var isAllDay: Bool
+    var projectId: UUID?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId    = "user_id"
+        case spaceName = "space_name"
+        case title
+        case subtitle
+        case startAt   = "start_at"
+        case endAt     = "end_at"
+        case notes
+        case isAllDay  = "is_all_day"
+        case projectId = "project_id"
+    }
+
+    init(domain e: CalendarEvent) {
+        self.id        = e.id
+        self.spaceName = e.spaceName
+        self.title     = e.title
+        self.subtitle  = e.subtitle
+        self.startAt   = e.start
+        self.endAt     = e.end
+        // TODO Task 5: map notes/isAllDay/projectID once added to CalendarEvent
+        self.notes     = nil
+        self.isAllDay  = false
+        self.projectId = nil
+    }
+
+    func toDomain() -> CalendarEvent {
+        // CalendarEvent has `var id: UUID = UUID()` — memberwise init exposes `id`
+        // as an overridable parameter, so the DB UUID IS preserved here.
+        // TODO Task 5: map notes/isAllDay/projectID once added to CalendarEvent
+        CalendarEvent(id: id,
+                      title: title,
+                      subtitle: subtitle,
+                      start: startAt,
+                      end: endAt,
+                      color: AtlasTheme.Colors.accent, // Task 2 re-derives from spaceName
+                      spaceName: spaceName)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NoteRow
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct NoteRow: Codable {
+    var id: UUID
+    var userId: UUID?
+    var spaceName: String?
+    var projectId: UUID?
+    var title: String
+    var body: String
+    var updatedAt: Date
+    var isExternal: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId     = "user_id"
+        case spaceName  = "space_name"
+        case projectId  = "project_id"
+        case title
+        case body
+        case updatedAt  = "updated_at"
+        case isExternal = "is_external"
+    }
+
+    init(domain n: Note) {
+        self.id         = n.id
+        self.spaceName  = n.spaceName
+        self.projectId  = nil // no projectId on Note yet; map to nil
+        self.title      = n.title
+        self.body       = n.body
+        self.updatedAt  = n.updatedAt
+        self.isExternal = n.isExternal
+    }
+
+    func toDomain() -> Note {
+        Note(title: title, body: body,
+             spaceName: spaceName, updatedAt: updatedAt, isExternal: isExternal)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GoalRow
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct GoalRow: Codable {
+    var id: UUID
+    var userId: UUID?
+    var title: String
+    var progress: Double
+    var label: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId   = "user_id"
+        case title
+        case progress
+        case label
+    }
+
+    init(domain g: Goal) {
+        self.id       = g.id
+        self.title    = g.title
+        self.progress = g.progress
+        self.label    = g.label
+    }
+
+    func toDomain() -> Goal {
+        Goal(title: title, progress: progress, label: label)
+    }
+}
+
+// MARK: - AtlasDB PostgREST Client
+
+/// Thin async PostgREST client. All requests mirror the `SupabaseAuth.request(...)` pattern:
+/// `apikey: SupabaseConfig.anonKey`, `Authorization: Bearer <accessToken>`, base URL
+/// `SupabaseConfig.restBase`. RLS on the server scopes every query to `auth.uid()`.
+///
+/// If `session()` returns nil, every method throws `AtlasDBError.notAuthenticated`.
+/// Callers guard offline mode externally; this client fails cleanly rather than crashing.
+final class AtlasDB {
+
+    private let sessionProvider: () -> SupabaseSession?
+
+    init(session: @escaping () -> SupabaseSession?) {
+        self.sessionProvider = session
+    }
+
+    // MARK: - Internal helpers
+
+    private func requireSession() throws -> SupabaseSession {
+        guard let s = sessionProvider() else {
+            throw AtlasDBError.notAuthenticated
+        }
+        return s
+    }
+
+    /// GET `<restBase>/<table>?select=*` and decode the JSON array.
+    private func getAll<T: Decodable>(_ table: String) async throws -> [T] {
+        let sess = try requireSession()
+        var comps = URLComponents(
+            url: SupabaseConfig.restBase.appendingPathComponent(table),
+            resolvingAgainstBaseURL: false)!
+        comps.queryItems = [URLQueryItem(name: "select", value: "*")]
+
+        var req = URLRequest(url: comps.url!)
+        req.httpMethod = "GET"
+        req.setValue(SupabaseConfig.anonKey,               forHTTPHeaderField: "apikey")
+        req.setValue("application/json",                   forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(sess.accessToken)",         forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        try validate(response: response, data: data)
+        return try isoDecoder.decode([T].self, from: data)
+    }
+
+    /// POST (upsert) or DELETE — no response body expected (`return=minimal`).
+    private func send(method: String,
+                      table: String,
+                      query: [URLQueryItem] = [],
+                      extraHeaders: [String: String] = [:],
+                      body: Data? = nil,
+                      sess: SupabaseSession) async throws {
+        var comps = URLComponents(
+            url: SupabaseConfig.restBase.appendingPathComponent(table),
+            resolvingAgainstBaseURL: false)!
+        if !query.isEmpty { comps.queryItems = query }
+
+        var req = URLRequest(url: comps.url!)
+        req.httpMethod = method
+        req.setValue(SupabaseConfig.anonKey,       forHTTPHeaderField: "apikey")
+        req.setValue("application/json",           forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(sess.accessToken)", forHTTPHeaderField: "Authorization")
+        for (k, v) in extraHeaders { req.setValue(v, forHTTPHeaderField: k) }
+        req.httpBody = body
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        try validate(response: response, data: data)
+    }
+
+    private func validate(response: URLResponse, data: Data) throws {
+        guard let http = response as? HTTPURLResponse else {
+            throw AtlasDBError.requestFailed(0, "No HTTP response")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let msg = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw AtlasDBError.requestFailed(http.statusCode, msg)
+        }
+    }
+
+    private let upsertQuery   = [URLQueryItem(name: "on_conflict", value: "id")]
+    private let upsertHeaders = ["Prefer": "resolution=merge-duplicates,return=minimal"]
+
+    // MARK: - Public API
+
+    /// Load all tables for the signed-in user. RLS scopes rows automatically.
+    /// Returns a flat `AtlasSnapshot`; spaces have `projects: []` — re-nesting is Task 2's job.
+    func loadAll() async throws -> AtlasSnapshot {
+        let spaceRows:   [SpaceRow]   = try await getAll("spaces")
+        let projectRows: [ProjectRow] = try await getAll("projects")
+        let taskRows:    [TaskRow]    = try await getAll("tasks")
+        let eventRows:   [EventRow]   = try await getAll("events")
+        let noteRows:    [NoteRow]    = try await getAll("notes")
+        let goalRows:    [GoalRow]    = try await getAll("goals")
+
+        return AtlasSnapshot(
+            spaces:   spaceRows.map   { $0.toDomain() },
+            projects: projectRows.map { $0.toDomain() },
+            tasks:    taskRows.map    { $0.toDomain() },
+            events:   eventRows.map   { $0.toDomain() },
+            notes:    noteRows.map    { $0.toDomain() },
+            goals:    goalRows.map    { $0.toDomain() }
+        )
+    }
+
+    /// Seed all tables from a snapshot (first-run). Upserts each row so it is safe
+    /// to call if some rows already exist.
+    func seedInitial(_ snapshot: AtlasSnapshot) async throws {
+        for space   in snapshot.spaces   { try await upsertSpace(space) }
+        for project in snapshot.projects { try await upsertProject(project) }
+        for task    in snapshot.tasks    { try await upsertTask(task) }
+        for event   in snapshot.events   { try await upsertEvent(event) }
+        for note    in snapshot.notes    { try await upsertNote(note) }
+        for goal    in snapshot.goals    { try await upsertGoal(goal) }
+    }
+
+    // MARK: Spaces / Projects
+
+    func upsertSpace(_ s: Space) async throws {
+        let sess = try requireSession()
+        var row = SpaceRow(domain: s)
+        row.userId = UUID(uuidString: sess.user.id)
+        let body = try isoEncoder.encode(row)
+        try await send(method: "POST", table: "spaces",
+                       query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
+    }
+
+    func upsertProject(_ p: Project) async throws {
+        let sess = try requireSession()
+        var row = ProjectRow(domain: p)
+        row.userId = UUID(uuidString: sess.user.id)
+        let body = try isoEncoder.encode(row)
+        try await send(method: "POST", table: "projects",
+                       query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
+    }
+
+    // MARK: Tasks
+
+    func upsertTask(_ t: TaskItem) async throws {
+        let sess = try requireSession()
+        var row = TaskRow(domain: t)
+        row.userId = UUID(uuidString: sess.user.id)
+        let body = try isoEncoder.encode(row)
+        try await send(method: "POST", table: "tasks",
+                       query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
+    }
+
+    func deleteTask(id: UUID) async throws {
+        let sess = try requireSession()
+        try await send(method: "DELETE", table: "tasks",
+                       query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                       sess: sess)
+    }
+
+    // MARK: Events
+
+    func upsertEvent(_ e: CalendarEvent) async throws {
+        let sess = try requireSession()
+        var row = EventRow(domain: e)
+        row.userId = UUID(uuidString: sess.user.id)
+        let body = try isoEncoder.encode(row)
+        try await send(method: "POST", table: "events",
+                       query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
+    }
+
+    func deleteEvent(id: UUID) async throws {
+        let sess = try requireSession()
+        try await send(method: "DELETE", table: "events",
+                       query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                       sess: sess)
+    }
+
+    // MARK: Notes / Goals
+
+    func upsertNote(_ n: Note) async throws {
+        let sess = try requireSession()
+        var row = NoteRow(domain: n)
+        row.userId = UUID(uuidString: sess.user.id)
+        let body = try isoEncoder.encode(row)
+        try await send(method: "POST", table: "notes",
+                       query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
+    }
+
+    func upsertGoal(_ g: Goal) async throws {
+        let sess = try requireSession()
+        var row = GoalRow(domain: g)
+        row.userId = UUID(uuidString: sess.user.id)
+        let body = try isoEncoder.encode(row)
+        try await send(method: "POST", table: "goals",
+                       query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
+    }
+}
