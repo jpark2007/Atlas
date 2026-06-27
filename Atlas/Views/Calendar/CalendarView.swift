@@ -10,6 +10,11 @@ struct CalendarView: View {
     @State private var mode: CalendarMode = .day
     @State private var spaceFilter: String = "All"
 
+    /// In-calendar title search; empty = no search filter.
+    @State private var searchText: String = ""
+    /// Space names hidden via the color/category filter row. Empty = show all.
+    @State private var hiddenSpaces: Set<String> = []
+
     // MARK: - Apple Calendar sync
     @AppStorage("calendar.apple.enabled") private var appleCalendarEnabled: Bool = false
     @AppStorage("calendar.apple.defaultSpace") private var appleDefaultSpace: String = ""
@@ -92,13 +97,95 @@ struct CalendarView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 150)
+                .frame(width: 280)
                 .labelsHidden()
 
                 spaceFilterMenu
                 Spacer()
+                searchField
+            }
+
+            categoryFilterRow
+        }
+    }
+
+    /// In-calendar title search. Filters events/tasks across every view.
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+            TextField("Search", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                .frame(width: 150)
+            if !searchText.isEmpty {
+                Button { searchText = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                .buttonStyle(.plain)
             }
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(AtlasTheme.Colors.border, lineWidth: 1)
+        )
+        .fixedSize()
+    }
+
+    /// Color/category filter (Image #1): a row of toggleable space-color chips.
+    /// Tapping a chip hides/shows that space across every view. Reuses space
+    /// colors as the categories (per spec — additive tags come later).
+    @ViewBuilder
+    private var categoryFilterRow: some View {
+        if state.spaces.count > 1 {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(state.spaces) { space in
+                        categoryChip(space)
+                    }
+                }
+            }
+        }
+    }
+
+    private func categoryChip(_ space: Space) -> some View {
+        let isHidden = hiddenSpaces.contains(space.name)
+        return Button {
+            if isHidden { hiddenSpaces.remove(space.name) }
+            else { hiddenSpaces.insert(space.name) }
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(isHidden ? AtlasTheme.Colors.textMuted.opacity(0.4) : space.color)
+                    .frame(width: 8, height: 8)
+                Text(space.name)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(isHidden ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
+                    .strikethrough(isHidden, color: AtlasTheme.Colors.textMuted)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                (isHidden ? Color.clear : space.color.opacity(0.12))
+            )
+            .clipShape(Capsule())
+            .overlay(
+                Capsule().stroke(
+                    isHidden ? AtlasTheme.Colors.border : space.color.opacity(0.4),
+                    lineWidth: 1
+                )
+            )
+            .opacity(isHidden ? 0.6 : 1)
+        }
+        .buttonStyle(.plain)
     }
 
     private var addEventButton: some View {
@@ -205,6 +292,22 @@ struct CalendarView: View {
                 onTapEmpty: handleTapEmpty,
                 onTapEvent: openSource(for:)
             )
+        case .month:
+            MonthGridView(
+                monthDate: selectedDate,
+                now: state.now,
+                eventsProvider: { filteredEvents(on: $0) },
+                onSelectDay: { day in
+                    selectedDate = Calendar.current.startOfDay(for: day)
+                    mode = .day
+                }
+            )
+        case .list:
+            AgendaListView(
+                sections: agendaSections,
+                now: state.now,
+                onSelect: handleAgendaSelect
+            )
         }
     }
 
@@ -217,8 +320,49 @@ struct CalendarView: View {
         let all = state.events(on: date)
             + scheduledTaskEvents(on: date)
             + state.externalEvents(on: date)
-        guard spaceFilter != "All" else { return all }
-        return all.filter { $0.spaceName == spaceFilter }
+        return all.filter { passesFilters($0.spaceName, title: $0.title) }
+    }
+
+    /// Shared filter gate for both events and tasks: the single-space dropdown,
+    /// the color/category hide-row, and the in-calendar title search.
+    private func passesFilters(_ spaceName: String, title: String) -> Bool {
+        if spaceFilter != "All" && spaceName != spaceFilter { return false }
+        if hiddenSpaces.contains(spaceName) { return false }
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !q.isEmpty && !title.localizedCaseInsensitiveContains(q) { return false }
+        return true
+    }
+
+    // MARK: - Agenda (List mode)
+
+    /// Filtered, day-grouped agenda for the List view. Pulls the store's events +
+    /// read-only external events + dated tasks, applies the same filters as the
+    /// grid, then orders them via the pure `AgendaBuilder`.
+    private var agendaSections: [AgendaSection] {
+        let events = (state.events + state.externalEvents)
+            .filter { passesFilters($0.spaceName, title: $0.title) }
+        let tasks = state.tasks
+            .filter { !$0.done && passesFilters($0.spaceName, title: $0.title) }
+        return AgendaBuilder.build(
+            events: events,
+            tasks: tasks,
+            from: selectedDate,
+            now: state.now
+        )
+    }
+
+    /// Tapping an agenda row: events open their source; tasks jump to the Day
+    /// view on the task's date so it can be rescheduled / inspected.
+    private func handleAgendaSelect(_ item: AgendaItem) {
+        switch item.kind {
+        case .event:
+            if let event = (state.events + state.externalEvents).first(where: { $0.id == item.id }) {
+                openSource(for: event)
+            }
+        case .task:
+            selectedDate = Calendar.current.startOfDay(for: item.date)
+            mode = .day
+        }
     }
 
     /// Tasks that have been dropped onto `date`, rendered as 1-hour blocks so
@@ -277,6 +421,16 @@ struct CalendarView: View {
             guard let interval = cal.dateInterval(of: .weekOfYear, for: selectedDate) else { return }
             rangeStart = interval.start
             rangeEnd   = interval.end
+        case .month:
+            // Fetch the whole visible 6-week grid so trailing/leading days fill in.
+            let cells = MonthGrid.cells(for: selectedDate, calendar: cal)
+            guard let first = cells.first, let last = cells.last else { return }
+            rangeStart = cal.startOfDay(for: first)
+            rangeEnd   = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: last)) ?? last
+        case .list:
+            // Upcoming window: from the selected day forward ~6 weeks.
+            rangeStart = cal.startOfDay(for: selectedDate)
+            rangeEnd   = cal.date(byAdding: .day, value: 42, to: rangeStart) ?? rangeStart
         }
 
         let defaultSpace = appleDefaultSpace.isEmpty
@@ -415,14 +569,22 @@ struct CalendarView: View {
                 return "Today · " + CalendarFormat.fullDay.string(from: selectedDate)
             }
             return CalendarFormat.fullDay.string(from: selectedDate)
-        case .week:
+        case .week, .month:
             return CalendarFormat.monthYear.string(from: selectedDate)
+        case .list:
+            return "Upcoming"
         }
     }
 
     private func shift(by amount: Int) {
         let cal = Calendar.current
-        let component: Calendar.Component = mode == .day ? .day : .weekOfYear
+        let component: Calendar.Component
+        switch mode {
+        case .day:   component = .day
+        case .month: component = .month
+        case .week:  component = .weekOfYear
+        case .list:  component = .weekOfYear
+        }
         if let next = cal.date(byAdding: component, value: amount, to: selectedDate) {
             selectedDate = cal.startOfDay(for: next)
         }

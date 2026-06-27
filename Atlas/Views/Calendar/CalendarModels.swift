@@ -1,10 +1,12 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Day / Week segmented mode for the calendar.
+/// Day / Week / Month / List segmented mode for the calendar.
 enum CalendarMode: String, CaseIterable, Identifiable {
     case day = "Day"
     case week = "Week"
+    case month = "Month"
+    case list = "List"
     var id: String { rawValue }
 }
 
