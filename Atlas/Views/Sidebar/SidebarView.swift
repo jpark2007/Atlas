@@ -242,11 +242,38 @@ struct SidebarView: View {
             }
 
             if expanded {
-                ForEach(space.projects) { project in
-                    projectRow(project)
+                if space.projects.isEmpty {
+                    emptySpaceRow(space)
+                } else {
+                    ForEach(space.projects) { project in
+                        projectRow(project)
+                    }
                 }
             }
         }
+    }
+
+    /// Friendly affordance shown when an expanded Space has no projects yet —
+    /// "Add your first project" instead of empty space.
+    private func emptySpaceRow(_ space: Space) -> some View {
+        Button {
+            newProjectTarget = NewProjectTarget(spaceName: space.name)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "plus.circle.dotted")
+                    .font(.system(size: 11))
+                Text("Add your first project")
+                    .font(.system(size: 12))
+                Spacer()
+            }
+            .foregroundStyle(AtlasTheme.Colors.textMuted)
+            .padding(.leading, 27)
+            .padding(.trailing, 10)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Add the first project to \(space.name)")
     }
 
     private func projectRow(_ project: Project) -> some View {

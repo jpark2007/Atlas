@@ -7,6 +7,18 @@ struct ProjectDetailView: View {
     @State private var isEditingOverview = false
     @State private var draftOverview = ""
 
+    /// Editable starter sample-tasks for an empty project. Seeded once from
+    /// `ProjectTemplate`; purely local (never persisted) — the user can edit or
+    /// delete them so a new project shows useful scaffolding instead of blank.
+    @State private var starterTasks: [String] = []
+    @State private var didSeedStarter = false
+
+    /// True when the project has nothing real yet: no overview and no assignments.
+    /// Drives the editable starter template so the page is never blank.
+    private var isEmptyProject: Bool {
+        project.overview.isEmpty && project.assignments.isEmpty
+    }
+
     var body: some View {
         ScrollView {
             HStack(alignment: .top, spacing: 28) {
@@ -16,6 +28,7 @@ struct ProjectDetailView: View {
                     titleBlock
                     overview
                     if !project.assignments.isEmpty { assignments }
+                    if isEmptyProject { starterTemplate }
                     if !project.pinned.isEmpty { pinned }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -28,6 +41,65 @@ struct ProjectDetailView: View {
             .padding(28)
         }
         .background(AtlasTheme.Colors.bgBase)
+        .onAppear { seedStarterIfNeeded() }
+    }
+
+    /// Seed the editable starter sample-tasks once, for an empty project only.
+    private func seedStarterIfNeeded() {
+        guard !didSeedStarter, isEmptyProject else { return }
+        starterTasks = ProjectTemplate.starter(for: project).sampleTasks
+        didSeedStarter = true
+    }
+
+    // MARK: - Editable starter template (empty project)
+
+    /// Shown only when `isEmptyProject`. A few editable sample-task placeholders
+    /// the user can rewrite or delete. Purely local scaffolding — nothing here is
+    /// persisted, so it's never auto-saved junk; it just keeps the page useful.
+    private var starterTemplate: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                sectionLabel("STARTER TASKS")
+                Text("editable suggestions — rewrite or remove")
+                    .font(.system(size: 10))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                Spacer()
+            }
+
+            if starterTasks.isEmpty {
+                Text("Cleared. Add an overview above to describe this project.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(starterTasks.indices, id: \.self) { i in
+                        HStack(spacing: 12) {
+                            Image(systemName: "circle.dashed")
+                                .font(.system(size: 14))
+                                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                            TextField("Task", text: $starterTasks[i])
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 13))
+                                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                            Spacer()
+                            Button {
+                                starterTasks.remove(at: i)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Remove this suggestion")
+                        }
+                        .padding(.vertical, 9)
+                        if i < starterTasks.count - 1 {
+                            Divider().overlay(AtlasTheme.Colors.border)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private var badges: some View {
@@ -104,7 +176,9 @@ struct ProjectDetailView: View {
                 overviewEditor
             } else if project.overview.isEmpty {
                 Button {
-                    draftOverview = ""
+                    // Empty project → pre-fill the editable template prompt so
+                    // the user edits a starting point instead of a blank box.
+                    draftOverview = isEmptyProject ? ProjectTemplate.starter(for: project).overview : ""
                     isEditingOverview = true
                 } label: {
                     HStack(spacing: 6) {
