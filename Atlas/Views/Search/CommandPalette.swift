@@ -255,7 +255,44 @@ struct CommandPaletteOverlay: View {
     private var quickActions: [PaletteAction] {
         [
             PaletteAction(id: "metrics", title: "Open Metrics", subtitle: "View your stats",
-                          icon: "chart.bar.fill", run: { state.presentMetrics = true })
+                          icon: "chart.bar.fill",
+                          run: { state.presentMetrics = true }),
+
+            PaletteAction(id: "new-task", title: "New Task", subtitle: "Capture a to-do with AI filing",
+                          icon: "plus.circle.fill",
+                          run: { state.presentCapture = true }),
+
+            PaletteAction(id: "new-note", title: "New Note", subtitle: "Create a blank note",
+                          icon: "note.text.badge.plus",
+                          run: {
+                              state.addNote(
+                                  title: "Untitled note",
+                                  body: "",
+                                  spaceName: state.spaces.first?.name,
+                                  isExternal: false
+                              )
+                          }),
+
+            PaletteAction(id: "new-event", title: "New Event", subtitle: "Open the event editor",
+                          icon: "calendar.badge.plus",
+                          run: {
+                              // Seed a 1-hour event at the next round hour.
+                              let now = Date()
+                              let cal = Calendar.current
+                              var comps = cal.dateComponents([.year, .month, .day, .hour], from: now)
+                              comps.hour = (comps.hour ?? 0) + 1
+                              comps.minute = 0; comps.second = 0
+                              let nextHour = cal.date(from: comps) ?? now.addingTimeInterval(3600)
+                              let seed = CalendarEvent(
+                                  title: "New event", subtitle: "",
+                                  start: nextHour, end: nextHour.addingTimeInterval(3600),
+                                  color: state.spaces.first?.color ?? AtlasTheme.Colors.accent,
+                                  spaceName: state.spaces.first?.name ?? ""
+                              )
+                              state.route = .calendar
+                              state.eventEditorSeed = seed
+                              state.presentEventEditor = true
+                          })
         ]
     }
 
