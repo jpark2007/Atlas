@@ -6,6 +6,9 @@ struct SidebarView: View {
     /// Non-nil while the create-project sheet is up; carries the target space.
     @State private var newProjectTarget: NewProjectTarget?
 
+    /// Drives the create-Space sheet (top-level bucket).
+    @State private var presentNewSpace = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 4) {
@@ -20,13 +23,30 @@ struct SidebarView: View {
                 navRow(title: "Calendar", icon: "calendar", route: .calendar, trailing: "Today")
                 navRow(title: "Focus", icon: "timer", route: .focus, trailing: nil)
 
-                Text("SPACES")
-                    .font(AtlasTheme.Font.sectionLabel())
-                    .tracking(1.2)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 18)
-                    .padding(.bottom, 6)
+                HStack(spacing: 4) {
+                    Text("SPACES")
+                        .font(AtlasTheme.Font.sectionLabel())
+                        .tracking(1.2)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    Spacer()
+                    Button {
+                        presentNewSpace = true
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 9, weight: .semibold))
+                            Text("Space")
+                                .font(.system(size: 10.5, weight: .semibold))
+                        }
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Add a new top-level Space")
+                }
+                .padding(.horizontal, 10)
+                .padding(.top, 18)
+                .padding(.bottom, 6)
 
                 ForEach(state.spaces) { space in
                     spaceSection(space)
@@ -44,6 +64,9 @@ struct SidebarView: View {
         .background(AtlasTheme.Colors.bgSidebar)
         .sheet(item: $newProjectTarget) { target in
             NewProjectSheet(spaceName: target.spaceName)
+        }
+        .sheet(isPresented: $presentNewSpace) {
+            NewSpaceSheet()
         }
     }
 

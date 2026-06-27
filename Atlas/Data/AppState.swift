@@ -151,6 +151,24 @@ final class AppState: ObservableObject {
         return nil
     }
 
+    // MARK: - Spaces (follow-up: add a top-level bucket)
+
+    /// Create a new top-level Space and persist it via the existing
+    /// `SpaceRow`/`AtlasDB.upsertSpace` write-through (mirrors `addProject`).
+    /// `name` is trimmed; a blank/empty name is rejected (returns `nil` and
+    /// appends nothing). The new space starts with no projects and is immediately
+    /// usable as an AI routing bucket (capture context reads `state.spaces`).
+    @discardableResult
+    func addSpace(name: String, color: Color) -> Space? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let space = Space(name: trimmed, color: color, projects: [])
+        let sort = spaces.count
+        spaces.append(space)
+        Task { try? await self.db?.upsertSpace(space, sort: sort) }
+        return space
+    }
+
     // MARK: - Projects (WS-8)
 
     /// Create a Project inside the Space named `spaceName` and persist it.
