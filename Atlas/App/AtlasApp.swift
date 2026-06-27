@@ -34,7 +34,14 @@ struct AppGate: View {
                     .background(AtlasTheme.Colors.bgBase)
             case .signedOut:
                 SignInView()
-            case .signedIn, .offline:
+            case .signedIn:
+                RootView()
+                    .onAppear { state.userName = auth.displayName }
+                    .task {
+                        let db = AtlasDB(session: { auth.session })
+                        await state.bootstrap(db: db)
+                    }
+            case .offline:
                 RootView()
                     .onAppear { state.userName = auth.displayName }
             }

@@ -13,6 +13,11 @@ final class AppState: ObservableObject {
     @Published var notes: [Note] = MockData.notes
     @Published var goals: [Goal] = MockData.goals
 
+    /// Supabase persistence layer — nil when offline / not yet bootstrapped.
+    /// `internal` (not `private`) so that `AppState+*.swift` extensions can
+    /// fire write-through Tasks without crossing Swift's file-private boundary.
+    var db: AtlasDB?
+
     /// Quick-capture pill presentation (toggled by the ⌘ hotkey / Tasks card).
     @Published var presentCapture: Bool = false
 
@@ -36,6 +41,74 @@ final class AppState: ObservableObject {
         expandedSpaces = Set(spaces.prefix(2).map(\.id))
     }
 
+    // MARK: - Supabase Bootstrap
+
+    /// Load all persisted data for the signed-in user. Seeds from MockData on
+    /// first run (empty DB). On any failure keeps the existing in-memory MockData
+    /// so the UI is never left blank. Stores the `db` reference for write-through.
+    func bootstrap(db: AtlasDB) async {
+        self.db = db
+        do {
+            var snapshot = try await db.loadAll()
+
+            // First-run detection: no spaces means a fresh account.
+            if snapshot.spaces.isEmpty {
+                // Flatten nested MockData into the AtlasSnapshot shape AtlasDB expects.
+                let flatSpaces = MockData.spaces.map {
+                    Space(id: $0.id, name: $0.name, color: $0.color, projects: [])
+                }
+                let flatProjects = MockData.spaces.flatMap { $0.projects }
+                let seed = AtlasSnapshot(
+                    spaces:   flatSpaces,
+                    projects: flatProjects,
+                    tasks:    MockData.tasks,
+                    events:   MockData.events,
+                    notes:    MockData.notes,
+                    goals:    MockData.goals
+                )
+                try await db.seedInitial(seed)
+                snapshot = try await db.loadAll()
+            }
+
+            // Re-nest flat projects back into their parent spaces by spaceName.
+            let projectsBySpace = Dictionary(grouping: snapshot.projects, by: \.spaceName)
+            var nestedSpaces = snapshot.spaces
+            for i in nestedSpaces.indices {
+                nestedSpaces[i].projects = projectsBySpace[nestedSpaces[i].name] ?? []
+            }
+
+            // Assign to @Published properties (already on @MainActor).
+            self.spaces = nestedSpaces
+            self.tasks  = snapshot.tasks
+            self.events = snapshot.events
+            self.notes  = snapshot.notes
+            self.goals  = snapshot.goals
+
+            // Re-derive colors from spaceName.
+            // Spaces already carry real colors from `color_token` — don't touch those.
+            for i in self.events.indices {
+                self.events[i].color = calendarSpaceColor(named: self.events[i].spaceName)
+            }
+            for i in self.tasks.indices {
+                self.tasks[i].spaceColor = calendarSpaceColor(named: self.tasks[i].spaceName)
+            }
+            for i in self.spaces.indices {
+                for j in self.spaces[i].projects.indices {
+                    self.spaces[i].projects[j].spaceColor =
+                        calendarSpaceColor(named: self.spaces[i].projects[j].spaceName)
+                }
+            }
+
+            // Re-seed sidebar expansion to first 2 loaded space ids
+            // (old MockData ids no longer match after DB load).
+            expandedSpaces = Set(self.spaces.prefix(2).map(\.id))
+
+        } catch {
+            // Keep existing in-memory MockData — never blank the UI on a DB error.
+            print("[AtlasDB] bootstrap failed — keeping MockData. Error: \(error.localizedDescription)")
+        }
+    }
+
     func project(_ id: UUID) -> Project? {
         for space in spaces {
             if let match = space.projects.first(where: { $0.id == id }) {
@@ -56,6 +129,8 @@ final class AppState: ObservableObject {
     func toggleTask(_ id: UUID) {
         if let i = tasks.firstIndex(where: { $0.id == id }) {
             tasks[i].done.toggle()
+            let updated = tasks[i]
+            Task { try? await self.db?.upsertTask(updated) }
         }
     }
 
@@ -81,6 +156,7 @@ final class AppState: ObservableObject {
     func addTask(title: String) -> TaskItem {
         let task = TaskItem(title: title, dueLabel: "")
         tasks.append(task)
+        Task { try? await self.db?.upsertTask(task) }
         return task
     }
 
@@ -88,6 +164,8 @@ final class AppState: ObservableObject {
     func schedule(taskId: UUID, at date: Date) {
         if let i = tasks.firstIndex(where: { $0.id == taskId }) {
             tasks[i].scheduledAt = date
+            let updated = tasks[i]
+            Task { try? await self.db?.upsertTask(updated) }
         }
     }
 
@@ -95,27 +173,32 @@ final class AppState: ObservableObject {
 
     func addEvent(_ event: CalendarEvent) {
         events.append(event)
+        Task { try? await self.db?.upsertEvent(event) }
     }
 
     func updateEvent(_ event: CalendarEvent) {
         if let i = events.firstIndex(where: { $0.id == event.id }) {
             events[i] = event
         }
+        Task { try? await self.db?.upsertEvent(event) }
     }
 
     func deleteEvent(id: UUID) {
         events.removeAll { $0.id == id }
+        Task { try? await self.db?.deleteEvent(id: id) }
     }
 
     // MARK: - Goal CRUD (in-memory; DB write-through layered in Task 2)
 
     func addGoal(_ goal: Goal) {
         goals.append(goal)
+        Task { try? await self.db?.upsertGoal(goal) }
     }
 
     func updateGoal(_ goal: Goal) {
         if let i = goals.firstIndex(where: { $0.id == goal.id }) {
             goals[i] = goal
         }
+        Task { try? await self.db?.upsertGoal(goal) }
     }
 }

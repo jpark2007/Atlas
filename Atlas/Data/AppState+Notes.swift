@@ -22,6 +22,7 @@ extension AppState {
             isExternal: isExternal
         )
         notes.insert(note, at: 0)
+        Task { try? await self.db?.upsertNote(note) }
         return note
     }
 
@@ -35,5 +36,6 @@ extension AppState {
         } else {
             notes.insert(updated, at: 0)
         }
+        Task { try? await self.db?.upsertNote(updated) }
     }
 }
