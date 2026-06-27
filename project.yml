@@ -33,14 +33,24 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: Atlas/Atlas.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        # Surface the Google OAuth credentials (from Secrets.xcconfig) into Info.plist.
-        INFOPLIST_KEY_GoogleOAuthClientID: "$(GOOGLE_OAUTH_CLIENT_ID)"
-        INFOPLIST_KEY_GoogleOAuthClientSecret: "$(GOOGLE_OAUTH_CLIENT_SECRET)"
-        INFOPLIST_KEY_NSHumanReadableCopyright: ""
-        INFOPLIST_KEY_NSCalendarsUsageDescription: "Atlas reads your Apple Calendar events to display them alongside your Atlas schedule. No events are modified."
-        INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription: "Atlas reads your Apple Calendar events to show them alongside your schedule. Atlas never modifies your calendars."
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Atlas uses the microphone for click-to-talk capture, transcribing what you say into the capture bar. Recording only starts when you tap the mic."
-        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Atlas transcribes your speech on-device so you can dictate tasks and notes into the capture bar."
+        # Custom Info.plist keys (GoogleOAuthClientID/Secret) are NOT emitted by Xcode's
+        # INFOPLIST_KEY_* mechanism — that only handles Apple's known keys. So we generate
+        # the plist explicitly below; $(...) values still resolve from Secrets.xcconfig.
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: Atlas/Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
+        LSApplicationCategoryType: "public.app-category.productivity"
+        NSHumanReadableCopyright: ""
+        NSCalendarsUsageDescription: "Atlas reads your Apple Calendar events to display them alongside your Atlas schedule. No events are modified."
+        NSCalendarsFullAccessUsageDescription: "Atlas reads your Apple Calendar events to show them alongside your schedule. Atlas never modifies your calendars."
+        NSMicrophoneUsageDescription: "Atlas uses the microphone for click-to-talk capture, transcribing what you say into the capture bar. Recording only starts when you tap the mic."
+        NSSpeechRecognitionUsageDescription: "Atlas transcribes your speech on-device so you can dictate tasks and notes into the capture bar."
+        GoogleOAuthClientID: "$(GOOGLE_OAUTH_CLIENT_ID)"
+        GoogleOAuthClientSecret: "$(GOOGLE_OAUTH_CLIENT_SECRET)"
   AtlasTests:
     type: bundle.unit-test
     platform: macOS
