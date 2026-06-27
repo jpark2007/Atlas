@@ -210,7 +210,7 @@ struct CaptureCommandBar: View {
             // Offline or no session → plain-task fallback, no network call.
             guard auth.session != nil else {
                 state.addTask(title: rawText)
-                await showConfirmation("✓ Saved as task")
+                await showConfirmation(CaptureOutcome.degraded.confirmation)
                 return
             }
 
@@ -227,23 +227,23 @@ struct CaptureCommandBar: View {
                         spaceName: result.spaceName,
                         isExternal: false
                     )
-                    await showConfirmation("✓ Added note")
+                    await showConfirmation(CaptureOutcome.note.confirmation)
                 case "task":
                     let due = CaptureDateParser.date(from: result.dueISO)
                     state.addTask(title: result.title,
                                   dueDate: due,
                                   durationMin: result.durationMin)
-                    await showConfirmation(due != nil ? "✓ Added task · due set" : "✓ Added task")
+                    await showConfirmation(CaptureOutcome.task(hasDate: due != nil).confirmation)
                 default:
                     // Unrecognized kind — safe fallback.
                     state.addTask(title: rawText)
-                    await showConfirmation("✓ Saved as task")
+                    await showConfirmation(CaptureOutcome.degraded.confirmation)
                 }
             } catch {
                 // ANY error (network, 404 — function not deployed, parse failure):
                 // always fall through to a plain task so capture never breaks.
                 state.addTask(title: rawText)
-                await showConfirmation("✓ Saved as task")
+                await showConfirmation(CaptureOutcome.degraded.confirmation)
             }
         }
     }
@@ -256,7 +256,7 @@ struct CaptureCommandBar: View {
         guard let eventStart else {
             // Can't place this on the calendar without a time — save as task.
             state.addTask(title: rawText)
-            await showConfirmation("✓ Saved as task")
+            await showConfirmation(CaptureOutcome.degraded.confirmation)
             return
         }
 
@@ -273,7 +273,7 @@ struct CaptureCommandBar: View {
             spaceName: result.spaceName
         )
         state.addEvent(event)
-        await showConfirmation("✓ Added event")
+        await showConfirmation(CaptureOutcome.event.confirmation)
     }
 
     /// Displays `message` for ~1 second then dismisses the capture bar.
