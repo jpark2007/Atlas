@@ -71,6 +71,14 @@ struct CommandPaletteOverlay: View {
     @State private var editingNote: Note?
     @FocusState private var fieldFocused: Bool
 
+    /// A section plus the index offset of its first row into the flat result
+    /// list — lets `group(...)` map each row to the right `selection` value.
+    private struct SectionSlice: Identifiable {
+        let section: PaletteSection
+        let base: Int
+        var id: String { section.id }
+    }
+
     var body: some View {
         ZStack {
             if state.presentSearch {
@@ -106,6 +114,8 @@ struct CommandPaletteOverlay: View {
             searchField
             Divider().overlay(AtlasTheme.Colors.border)
             resultsList
+            Divider().overlay(AtlasTheme.Colors.border)
+            footer
         }
         .frame(width: 560)
         .frame(maxHeight: 460)
@@ -129,7 +139,7 @@ struct CommandPaletteOverlay: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 14))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
-            TextField("Search projects, tasks, notes…", text: $query)
+            TextField("Find anything, or create a task…", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
@@ -151,14 +161,15 @@ struct CommandPaletteOverlay: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    if query.isEmpty {
-                        group("Quick actions", base: 0, items: quickActions.map(CommandResult.action))
-                    } else if flat.isEmpty {
-                        hint("No matches for \"\(query)\".")
+                    if flat.isEmpty {
+                        // Effectively unreachable (empty query still shows quick
+                        // actions; any non-empty query always carries the Create
+                        // row) — kept as a defensive fallback.
+                        hint("Type to search or create.")
                     } else {
-                        group("Projects", base: 0, items: projects.map(CommandResult.project))
-                        group("Tasks", base: projects.count, items: tasks.map(CommandResult.task))
-                        group("Notes", base: projects.count + tasks.count, items: notes.map(CommandResult.note))
+                        ForEach(sectionSlices) { slice in
+                            group(slice.section.title, base: slice.base, items: slice.section.items)
+                        }
                     }
                 }
                 .padding(8)
@@ -166,6 +177,31 @@ struct CommandPaletteOverlay: View {
             .onChange(of: selection) { _, value in
                 withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(value, anchor: .center) }
             }
+        }
+    }
+
+    /// Bottom hint row disambiguating ⌘K (find/create) from ⌘⇧K (braindump).
+    private var footer: some View {
+        HStack(spacing: 12) {
+            shortcutHint("⌘K", "find or create")
+            shortcutHint("⌘⇧K", "braindump")
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 9)
+    }
+
+    private func shortcutHint(_ glyph: String, _ label: String) -> some View {
+        HStack(spacing: 5) {
+            Text(glyph)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                .padding(.horizontal, 5).padding(.vertical, 2)
+                .background(AtlasTheme.Colors.bgElevated)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
 
@@ -225,31 +261,32 @@ struct CommandPaletteOverlay: View {
 
     // MARK: Search
 
-    /// Normalized query; empty when the user hasn't typed anything meaningful.
-    /// Guards every result list so an empty query yields NO results (otherwise
-    /// `contains("")` matches everything and Enter would navigate at random).
-    private var trimmedQuery: String {
-        query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    /// The persistent "Create '<query>' as task" row. Always the leading result
+    /// for a non-empty query — even when there are matches. `activate()` runs it
+    /// and dismisses; the closure here just creates the task (capture filing can
+    /// hang off `addTask` later). Stable id (`createActionID`) so the row is the
+    /// guaranteed default selection and is testable.
+    private var createAction: PaletteAction {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return PaletteAction(
+            id: CommandPaletteModel.createActionID,
+            title: "Create \u{201C}\(trimmed)\u{201D} as task",
+            subtitle: "Press return to add it to your tasks",
+            icon: "plus.circle.fill",
+            run: { state.addTask(title: trimmed) }
+        )
     }
 
-    private var projects: [Project] {
-        let q = trimmedQuery
-        guard !q.isEmpty else { return [] }
-        return state.spaces.flatMap(\.projects).filter {
-            $0.name.lowercased().contains(q) || ($0.code?.lowercased().contains(q) ?? false)
-        }
-    }
-
-    private var tasks: [TaskItem] {
-        let q = trimmedQuery
-        guard !q.isEmpty else { return [] }
-        return state.tasks.filter { $0.title.lowercased().contains(q) }
-    }
-
-    private var notes: [Note] {
-        let q = trimmedQuery
-        guard !q.isEmpty else { return [] }
-        return state.notes.filter { $0.title.lowercased().contains(q) }
+    /// Ordered result sections, decided by the pure `CommandPaletteModel`.
+    private var sections: [PaletteSection] {
+        CommandPaletteModel.results(
+            query: query,
+            projects: state.spaces.flatMap(\.projects),
+            tasks: state.tasks,
+            notes: state.notes,
+            quickActions: quickActions,
+            createAction: createAction
+        )
     }
 
     private var quickActions: [PaletteAction] {
@@ -296,13 +333,21 @@ struct CommandPaletteOverlay: View {
         ]
     }
 
+    /// Flattened, in-render-order results — backs keyboard nav and `activate()`.
     private var flat: [CommandResult] {
-        if trimmedQuery.isEmpty {
-            return quickActions.map(CommandResult.action)
+        sections.flatMap(\.items)
+    }
+
+    /// Sections paired with the running index offset of their first item, so a
+    /// section's row `index` lines up with `selection` into `flat`.
+    private var sectionSlices: [SectionSlice] {
+        var base = 0
+        var slices: [SectionSlice] = []
+        for section in sections {
+            slices.append(SectionSlice(section: section, base: base))
+            base += section.items.count
         }
-        return projects.map(CommandResult.project)
-            + tasks.map(CommandResult.task)
-            + notes.map(CommandResult.note)
+        return slices
     }
 
     // MARK: Actions
