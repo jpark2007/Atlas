@@ -96,7 +96,7 @@ struct AtlasMetrics {
             let prior = spaceMap[name] ?? (0, 0)
             spaceMap[name] = (prior.open + (task.done ? 0 : 1), prior.total + 1)
         }
-        let perSpace: [SpaceLoad] = spaceMap.map { name, counts in
+        let unsorted: [SpaceLoad] = spaceMap.map { (name: String, counts: (open: Int, total: Int)) in
             // Resolve brand color from the spaces list; accent is the fallback.
             let color = spaces.first { $0.name == name }?.color ?? AtlasTheme.Colors.accent
             return SpaceLoad(
@@ -104,7 +104,7 @@ struct AtlasMetrics {
                 openCount: counts.open, totalCount: counts.total
             )
         }
-        .sorted { $0.spaceName < $1.spaceName }
+        let perSpace = unsorted.sorted { $0.spaceName < $1.spaceName }
 
         // ── Goals ──────────────────────────────────────────────────────────
         let goalAvgProgress: Double = goals.isEmpty

@@ -60,10 +60,5 @@ struct MetricsCard: View {
                 }
             }
         }
-        // Popup sheet wired to AppState.presentMetrics
-        .sheet(isPresented: $state.presentMetrics) {
-            MetricsPopupView()
-                .environmentObject(state)
-        }
     }
 }
