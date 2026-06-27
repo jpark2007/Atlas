@@ -41,6 +41,10 @@ struct DayColumnView: View {
         GeometryReader { geo in
             let positioned = packEventsIntoLanes(events)
             ZStack(alignment: .topLeading) {
+                // Subtle today-column background tint — first layer so everything renders on top
+                if isToday {
+                    AtlasTheme.Colors.accent.opacity(0.04)
+                }
                 hourLines
                 if isTargeted {
                     RoundedRectangle(cornerRadius: 6)
@@ -157,19 +161,25 @@ struct DayCalendarView: View {
     let onDropTask: (UUID, Date, Double) -> Bool
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 0) {
-                HourGutter()
-                DayColumnView(
-                    date: date,
-                    events: events,
-                    isToday: Calendar.current.isDateInToday(date),
-                    onDropTask: onDropTask
-                )
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 0) {
+                    HourGutter()
+                    DayColumnView(
+                        date: date,
+                        events: events,
+                        isToday: Calendar.current.isDateInToday(date),
+                        onDropTask: onDropTask
+                    )
+                }
+                .id("dayGrid")
+                .padding(.trailing, 8)
+                .padding(.top, 6)
+                .padding(.bottom, 16)
             }
-            .padding(.trailing, 8)
-            .padding(.top, 6)
-            .padding(.bottom, 16)
+            .onAppear {
+                autoScrollToNow(proxy: proxy, anchor: "dayGrid")
+            }
         }
     }
 }
@@ -184,65 +194,72 @@ struct WeekGridView: View {
 
     var body: some View {
         GeometryReader { geo in
+            // columnWidth accounts for the gutter and the 8 pt trailing padding on the VStack.
+            // The 1 pt column dividers are additive (same as in the original layout).
             let columnWidth = (geo.size.width - CalendarLayout.gutterWidth - 8) / CGFloat(days.count)
             VStack(spacing: 0) {
-                header(columnWidth: columnWidth)
+                // ── Sticky weekday / date header ──────────────────────────────
+                WeekColumnHeader(days: days, columnWidth: columnWidth)
+
                 Divider().overlay(AtlasTheme.Colors.border)
-                ScrollView(.vertical, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 0) {
-                        HourGutter()
-                        ForEach(Array(days.enumerated()), id: \.element) { index, day in
-                            DayColumnView(
-                                date: day,
-                                events: eventsProvider(day),
-                                isToday: Calendar.current.isDateInToday(day),
-                                onDropTask: onDropTask
-                            )
-                            .frame(width: columnWidth)
-                            if index < days.count - 1 {
-                                Rectangle()
-                                    .fill(AtlasTheme.Colors.border)
-                                    .frame(width: 1, height: CalendarLayout.totalHeight)
+
+                // ── All-day event strip (collapses to 0 height when empty) ────
+                AllDayRowView(
+                    days: days,
+                    columnWidth: columnWidth,
+                    eventsProvider: eventsProvider
+                )
+
+                // ── Scrollable time grid (auto-scrolls to current hour) ───────
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        HStack(alignment: .top, spacing: 0) {
+                            HourGutter()
+                            ForEach(Array(days.enumerated()), id: \.element) { index, day in
+                                DayColumnView(
+                                    date: day,
+                                    events: eventsProvider(day),
+                                    isToday: Calendar.current.isDateInToday(day),
+                                    onDropTask: onDropTask
+                                )
+                                .frame(width: columnWidth)
+                                if index < days.count - 1 {
+                                    Rectangle()
+                                        .fill(AtlasTheme.Colors.border)
+                                        .frame(width: 1, height: CalendarLayout.totalHeight)
+                                }
                             }
                         }
+                        .id("weekGrid")
+                        .padding(.top, 6)
+                        .padding(.bottom, 16)
                     }
-                    .padding(.top, 6)
-                    .padding(.bottom, 16)
+                    .onAppear {
+                        autoScrollToNow(proxy: proxy, anchor: "weekGrid")
+                    }
                 }
             }
             .padding(.trailing, 8)
         }
     }
+}
 
-    private func header(columnWidth: CGFloat) -> some View {
-        HStack(spacing: 0) {
-            Color.clear.frame(width: CalendarLayout.gutterWidth)
-            ForEach(Array(days.enumerated()), id: \.element) { index, day in
-                dayHeader(day)
-                    .frame(width: columnWidth)
-                if index < days.count - 1 {
-                    Color.clear.frame(width: 1)
-                }
-            }
-        }
-        .padding(.vertical, 8)
-    }
+// MARK: - Auto-scroll helper
 
-    private func dayHeader(_ day: Date) -> some View {
-        let isToday = Calendar.current.isDateInToday(day)
-        let dayNum = Calendar.current.component(.day, from: day)
-        return VStack(spacing: 3) {
-            Text(CalendarFormat.weekdayShort.string(from: day).uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(0.6)
-                .foregroundStyle(isToday ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
-            Text("\(dayNum)")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(isToday ? .white : AtlasTheme.Colors.textPrimary)
-                .frame(width: 26, height: 26)
-                .background(
-                    Circle().fill(isToday ? AtlasTheme.Colors.accent : .clear)
-                )
-        }
+/// Scrolls `proxy` so that the current hour is visible near the top of the
+/// scroll container, with ~1 h of context above it.
+/// Only fires when the current time falls within [startHour, endHour].
+private func autoScrollToNow(proxy: ScrollViewProxy, anchor: String) {
+    let currentOffset = CalendarLayout.offsetHours(for: Date())
+    let totalHours = CGFloat(CalendarLayout.endHour - CalendarLayout.startHour)
+    guard currentOffset >= 0, currentOffset <= totalHours else { return }
+
+    // Show ~1 hour of context above the current time
+    let targetY     = max(0, currentOffset - 1) * CalendarLayout.hourHeight
+    let fraction    = targetY / CalendarLayout.totalHeight
+
+    // Defer one run-loop so the ScrollView has finished its initial layout
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        proxy.scrollTo(anchor, anchor: UnitPoint(x: 0, y: fraction))
     }
 }

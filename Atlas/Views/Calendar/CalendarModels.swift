@@ -31,6 +31,8 @@ enum CalendarLayout {
     static let hourHeight: CGFloat = 56
     static let gutterWidth: CGFloat = 54
     static let minEventHeight: CGFloat = 26
+    /// Height of the all-day strip when it contains at least one event (Task 5 populates it).
+    static let allDayRowHeight: CGFloat = 28
 
     static var totalHeight: CGFloat { CGFloat(endHour - startHour) * hourHeight }
 
