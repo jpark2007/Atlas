@@ -7,6 +7,7 @@ struct AtlasApp: App {
     @StateObject private var auth = AuthService()
     @StateObject private var canvas = CanvasService()
     @StateObject private var shortcuts = ShortcutStore()
+    @StateObject private var googleAuth = GoogleAuthService()
 
     var body: some Scene {
         WindowGroup {
@@ -15,6 +16,7 @@ struct AtlasApp: App {
                 .environmentObject(auth)
                 .environmentObject(canvas)
                 .environmentObject(shortcuts)
+                .environmentObject(googleAuth)
                 .frame(minWidth: 960, minHeight: 600)
                 .preferredColorScheme(.dark)
                 .background(GlobalHotkeyInstaller())

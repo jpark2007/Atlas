@@ -8,7 +8,10 @@ struct SettingsView: View {
     @EnvironmentObject private var canvas: CanvasService
     @EnvironmentObject private var shortcuts: ShortcutStore
     @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var googleAuth: GoogleAuthService
     @Environment(\.dismiss) private var dismiss
+
+    @AppStorage("calendar.google.enabled") private var googleCalendarEnabled: Bool = false
 
     @State private var canvasToken = ""
 
@@ -168,40 +171,8 @@ struct SettingsView: View {
                     .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
             )
 
-            // ── Google Calendar (deferred) ───────────────────────────────
-            HStack(spacing: 12) {
-                Image(systemName: "globe")
-                    .foregroundStyle(AtlasTheme.Colors.school)
-                    .frame(width: 22)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Google Calendar")
-                        .font(.system(size: 13))
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text("Not connected — OAuth wiring deferred (v2)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                }
-                Spacer()
-                Text("Connect")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(AtlasTheme.Colors.bgElevated)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(AtlasTheme.Colors.border, lineWidth: 1)
-                    )
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-            )
+            // ── Google Calendar ──────────────────────────────────────────
+            googleCalendarRow
 
             // ── Canvas ──────────────────────────────────────────────────
             HStack(spacing: 12) {
@@ -326,6 +297,71 @@ struct SettingsView: View {
                 )
             }
         }
+    }
+
+    // MARK: – Google Calendar row
+
+    private var googleCalendarRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "globe")
+                .foregroundStyle(AtlasTheme.Colors.school)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Google Calendar")
+                    .font(.system(size: 13))
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                Text(googleSubtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(googleSubtitleColor)
+            }
+            Spacer()
+            if googleAuth.isConnected {
+                Button("Disconnect") {
+                    googleAuth.disconnect()
+                    googleCalendarEnabled = false
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(AtlasTheme.Colors.danger)
+            } else {
+                Button {
+                    Task {
+                        await googleAuth.connect()
+                        if googleAuth.isConnected { googleCalendarEnabled = true }
+                    }
+                } label: {
+                    Text(googleAuth.isWorking ? "Connecting…" : "Connect")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AtlasTheme.Colors.bgDeep)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(AtlasTheme.Colors.accent)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(googleAuth.isWorking)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
+        )
+    }
+
+    private var googleSubtitle: String {
+        if googleAuth.isConnected { return "Connected — syncing your primary calendar" }
+        if let error = googleAuth.errorMessage { return error }
+        return "Not connected — sign in to sync events two-way"
+    }
+
+    private var googleSubtitleColor: Color {
+        if googleAuth.isConnected { return AtlasTheme.Colors.green }
+        if googleAuth.errorMessage != nil { return AtlasTheme.Colors.danger }
+        return AtlasTheme.Colors.textMuted
     }
 
     // MARK: – Calendar helpers

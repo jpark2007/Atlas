@@ -20,6 +20,10 @@ struct CalendarView: View {
     @AppStorage("calendar.apple.defaultSpace") private var appleDefaultSpace: String = ""
     private let ekService = EventKitService()
 
+    // MARK: - Google Calendar sync
+    @EnvironmentObject private var googleAuth: GoogleAuthService
+    @AppStorage("calendar.google.enabled") private var googleCalendarEnabled: Bool = false
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -59,8 +63,10 @@ struct CalendarView: View {
                     _ = await ekService.requestAccess()
                     await MainActor.run { loadAppleEventsIfNeeded() }
                 }
-            } else { state.externalEvents = [] }
+            } else { loadAppleEventsIfNeeded() }
         }
+        .onChange(of: googleCalendarEnabled) { _, _ in loadAppleEventsIfNeeded() }
+        .onChange(of: googleAuth.isConnected) { _, _ in loadAppleEventsIfNeeded() }
         .sheet(isPresented: $state.presentEventEditor, onDismiss: {
             state.eventEditorSeed = nil
         }) {
@@ -393,18 +399,17 @@ struct CalendarView: View {
         return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: interval.start) }
     }
 
-    // MARK: - Apple Calendar aggregation
+    // MARK: - External calendar aggregation (Apple + Google)
 
-    /// Fetches Apple Calendar events for the visible range and stores them in
-    /// `state.externalEvents`. Called on appear, on `selectedDate` change, and
-    /// when the toggle flips on. Apple events NEVER enter `state.events`.
+    /// Fetches external events for the visible range and stores them in
+    /// `state.externalEvents`. Aggregates Apple Calendar (read-only EventKit) and
+    /// Google Calendar (read via `GoogleCalendarService`) — whichever are enabled
+    /// and authorized. Called on appear, on `selectedDate`/`mode` change, and when
+    /// a source toggles. External events NEVER enter `state.events`.
     private func loadAppleEventsIfNeeded() {
-        guard appleCalendarEnabled else {
-            state.externalEvents = []
-            return
-        }
-        let status = ekService.authorizationStatus()
-        guard status == .fullAccess else {
+        let wantApple = appleCalendarEnabled && ekService.authorizationStatus() == .fullAccess
+        let wantGoogle = googleCalendarEnabled && googleAuth.isConnected
+        guard wantApple || wantGoogle else {
             state.externalEvents = []
             return
         }
@@ -438,13 +443,26 @@ struct CalendarView: View {
             : appleDefaultSpace
 
         Task {
-            let fetched = await ekService.fetchEvents(
-                start: rangeStart,
-                end:   rangeEnd,
-                defaultSpaceName: defaultSpace
-            )
+            var combined: [CalendarEvent] = []
+            if wantApple {
+                combined += await ekService.fetchEvents(
+                    start: rangeStart,
+                    end:   rangeEnd,
+                    defaultSpaceName: defaultSpace
+                )
+            }
+            if wantGoogle {
+                let service = GoogleCalendarService(auth: googleAuth)
+                if let googleEvents = try? await service.listEvents(
+                    start: rangeStart,
+                    end:   rangeEnd,
+                    defaultSpaceName: defaultSpace
+                ) {
+                    combined += googleEvents
+                }
+            }
             await MainActor.run {
-                state.externalEvents = fetched
+                state.externalEvents = combined
             }
         }
     }

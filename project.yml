@@ -16,6 +16,11 @@ targets:
   Atlas:
     type: application
     platform: macOS
+    # Google OAuth client id/secret come from Config/Secrets.xcconfig (gitignored).
+    # Missing file → Xcode treats the base config as empty (warning, not error).
+    configFiles:
+      Debug: Config/Secrets.xcconfig
+      Release: Config/Secrets.xcconfig
     sources:
       - path: Atlas
         excludes:
@@ -27,6 +32,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.atlas.Atlas
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: Atlas/Atlas.entitlements
+        # Surface the Google OAuth credentials (from Secrets.xcconfig) into Info.plist.
+        INFOPLIST_KEY_GoogleOAuthClientID: "$(GOOGLE_OAUTH_CLIENT_ID)"
+        INFOPLIST_KEY_GoogleOAuthClientSecret: "$(GOOGLE_OAUTH_CLIENT_SECRET)"
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         INFOPLIST_KEY_NSCalendarsUsageDescription: "Atlas reads your Apple Calendar events to display them alongside your Atlas schedule. No events are modified."
         INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription: "Atlas reads your Apple Calendar events to show them alongside your schedule. Atlas never modifies your calendars."
