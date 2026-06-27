@@ -175,10 +175,13 @@ final class AppState: ObservableObject {
         tasks.filter { $0.scheduledAt == nil && !$0.done }
     }
 
-    /// Quick-capture entry point. Appends a task; AI bucketing wires in at Stage 3.
+    /// Quick-capture entry point. Appends a task with an optional structured due date.
     @discardableResult
-    func addTask(title: String) -> TaskItem {
-        let task = TaskItem(title: title, dueLabel: "")
+    func addTask(title: String, dueDate: Date? = nil, durationMin: Int? = nil) -> TaskItem {
+        let task = TaskItem(title: title,
+                            dueLabel: TaskItem.dueLabel(for: dueDate),
+                            dueDate: dueDate,
+                            durationMin: durationMin)
         tasks.append(task)
         Task { try? await self.db?.upsertTask(task) }
         return task
