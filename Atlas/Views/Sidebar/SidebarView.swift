@@ -121,17 +121,7 @@ struct SidebarView: View {
 
     private var logo: some View {
         HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(
-                    LinearGradient(colors: [AtlasTheme.Colors.accent, AtlasTheme.Colors.accentDeep],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                )
-                .frame(width: 26, height: 26)
-                .overlay(
-                    Image(systemName: "circle.hexagongrid.fill")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
-                )
+            BrandLogo(size: 26)
             Text("Atlas")
                 .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
