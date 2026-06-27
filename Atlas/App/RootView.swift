@@ -6,6 +6,7 @@ enum Route: Hashable {
     case calendar
     case focus
     case project(UUID)
+    case metrics
 }
 
 struct RootView: View {
@@ -24,6 +25,8 @@ struct RootView: View {
                     CalendarView()
                 case .focus:
                     FocusView()
+                case .metrics:
+                    MetricsView()
                 case .project(let id):
                     if let project = state.project(id) {
                         ProjectDetailView(project: project)
@@ -43,6 +46,8 @@ struct RootView: View {
         .atlasCaptureOverlay()   // ⌘⇧K quick-capture pill
         .atlasCommandPalette()   // ⌘K search / command palette
         .sheet(isPresented: $state.presentSettings) { SettingsView() }
+        .sheet(isPresented: $state.presentMetrics) { MetricsPopupView() }
+        // TODO Task 9: .sheet(isPresented: $state.presentCalendarSync) { CalendarSyncSheet() }
     }
 }
 

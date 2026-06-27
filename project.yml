@@ -23,3 +23,22 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.atlas.Atlas
         CODE_SIGN_STYLE: Automatic
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
+  AtlasTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - AtlasTests
+    dependencies:
+      - target: Atlas
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Atlas:
+    build:
+      targets:
+        Atlas: all
+        AtlasTests: [test]
+    test:
+      targets:
+        - AtlasTests

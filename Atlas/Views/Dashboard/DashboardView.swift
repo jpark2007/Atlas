@@ -16,6 +16,7 @@ struct DashboardView: View {
                         TasksCard()
                         FocusCard()
                         GoalsCard(goals: state.goals)
+                        MetricsCard()
                     }
                     .frame(width: 320)
                 }

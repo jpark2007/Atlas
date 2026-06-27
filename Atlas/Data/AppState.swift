@@ -22,6 +22,12 @@ final class AppState: ObservableObject {
     /// Account / integrations settings sheet.
     @Published var presentSettings: Bool = false
 
+    /// Metrics popup sheet.
+    @Published var presentMetrics: Bool = false
+
+    /// Calendar sync settings sheet (wired in Task 9).
+    @Published var presentCalendarSync: Bool = false
+
     /// Which spaces are expanded in the sidebar.
     @Published var expandedSpaces: Set<UUID> = []
 
@@ -82,6 +88,34 @@ final class AppState: ObservableObject {
     func schedule(taskId: UUID, at date: Date) {
         if let i = tasks.firstIndex(where: { $0.id == taskId }) {
             tasks[i].scheduledAt = date
+        }
+    }
+
+    // MARK: - Event CRUD (in-memory; DB write-through layered in Task 2)
+
+    func addEvent(_ event: CalendarEvent) {
+        events.append(event)
+    }
+
+    func updateEvent(_ event: CalendarEvent) {
+        if let i = events.firstIndex(where: { $0.id == event.id }) {
+            events[i] = event
+        }
+    }
+
+    func deleteEvent(id: UUID) {
+        events.removeAll { $0.id == id }
+    }
+
+    // MARK: - Goal CRUD (in-memory; DB write-through layered in Task 2)
+
+    func addGoal(_ goal: Goal) {
+        goals.append(goal)
+    }
+
+    func updateGoal(_ goal: Goal) {
+        if let i = goals.firstIndex(where: { $0.id == goal.id }) {
+            goals[i] = goal
         }
     }
 }

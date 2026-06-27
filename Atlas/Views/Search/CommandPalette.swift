@@ -31,18 +31,30 @@ struct CommandPaletteModifier: ViewModifier {
     }
 }
 
+// MARK: - Quick-action model
+
+struct PaletteAction {
+    let id: String
+    let title: String
+    let subtitle: String
+    let icon: String
+    let run: () -> Void
+}
+
 // MARK: - Result model
 
 enum CommandResult: Identifiable {
     case project(Project)
     case task(TaskItem)
     case note(Note)
+    case action(PaletteAction)
 
     var id: String {
         switch self {
         case .project(let p): return "project-\(p.id)"
         case .task(let t): return "task-\(t.id)"
         case .note(let n): return "note-\(n.id)"
+        case .action(let a): return "action-\(a.id)"
         }
     }
 }
@@ -138,9 +150,9 @@ struct CommandPaletteOverlay: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     if query.isEmpty {
-                        hint("Type to search across projects, tasks and notes.")
+                        group("Quick actions", base: 0, items: quickActions.map(CommandResult.action))
                     } else if flat.isEmpty {
-                        hint("No matches for “\(query)”.")
+                        hint("No matches for \"\(query)\".")
                     } else {
                         group("Projects", base: 0, items: projects.map(CommandResult.project))
                         group("Tasks", base: projects.count, items: tasks.map(CommandResult.task))
@@ -238,8 +250,18 @@ struct CommandPaletteOverlay: View {
         return state.notes.filter { $0.title.lowercased().contains(q) }
     }
 
+    private var quickActions: [PaletteAction] {
+        [
+            PaletteAction(id: "metrics", title: "Open Metrics", subtitle: "View your stats",
+                          icon: "chart.bar.fill", run: { state.presentMetrics = true })
+        ]
+    }
+
     private var flat: [CommandResult] {
-        projects.map(CommandResult.project)
+        if trimmedQuery.isEmpty {
+            return quickActions.map(CommandResult.action)
+        }
+        return projects.map(CommandResult.project)
             + tasks.map(CommandResult.task)
             + notes.map(CommandResult.note)
     }
@@ -263,6 +285,9 @@ struct CommandPaletteOverlay: View {
         case .task:
             // Tasks have no dedicated route yet; close the palette.
             dismiss()
+        case .action(let action):
+            action.run()
+            dismiss()
         }
     }
 
@@ -277,6 +302,7 @@ struct CommandPaletteOverlay: View {
         case .project(let p): return p.isClass ? "graduationcap.fill" : "folder.fill"
         case .task: return "checkmark.circle"
         case .note(let n): return n.isExternal ? "doc.text.fill" : "note.text"
+        case .action(let a): return a.icon
         }
     }
 
@@ -285,6 +311,7 @@ struct CommandPaletteOverlay: View {
         case .project(let p): return p.name
         case .task(let t): return t.title
         case .note(let n): return n.title
+        case .action(let a): return a.title
         }
     }
 
@@ -297,6 +324,7 @@ struct CommandPaletteOverlay: View {
         case .note(let n):
             if let space = n.spaceName, !space.isEmpty { return "Note · \(space)" }
             return "Note"
+        case .action(let a): return a.subtitle
         }
     }
 }

@@ -14,4 +14,6 @@ enum SupabaseConfig {
     static let redirectURL = "atlas://auth-callback"
 
     static var authBase: URL { url.appendingPathComponent("auth/v1") }
+    static var functionsBase: URL { url.appendingPathComponent("functions/v1") }
+    static var restBase: URL { url.appendingPathComponent("rest/v1") }
 }
