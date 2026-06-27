@@ -229,8 +229,11 @@ struct CaptureCommandBar: View {
                     )
                     await showConfirmation("✓ Added note")
                 case "task":
-                    state.addTask(title: result.title)
-                    await showConfirmation("✓ Added task")
+                    let due = CaptureDateParser.date(from: result.dueISO)
+                    state.addTask(title: result.title,
+                                  dueDate: due,
+                                  durationMin: result.durationMin)
+                    await showConfirmation(due != nil ? "✓ Added task · due set" : "✓ Added task")
                 default:
                     // Unrecognized kind — safe fallback.
                     state.addTask(title: rawText)
@@ -249,17 +252,8 @@ struct CaptureCommandBar: View {
     /// `startISO` is missing or unparseable (the only required field for an event).
     @MainActor
     private func handleEvent(result: CaptureResult, rawText: String) async {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-        // Try with fractional seconds first, then without.
-        var start: Date? = result.startISO.flatMap { formatter.date(from: $0) }
-        if start == nil {
-            formatter.formatOptions = [.withInternetDateTime]
-            start = result.startISO.flatMap { formatter.date(from: $0) }
-        }
-
-        guard let eventStart = start else {
+        let eventStart = CaptureDateParser.date(from: result.startISO)
+        guard let eventStart else {
             // Can't place this on the calendar without a time — save as task.
             state.addTask(title: rawText)
             await showConfirmation("✓ Saved as task")
