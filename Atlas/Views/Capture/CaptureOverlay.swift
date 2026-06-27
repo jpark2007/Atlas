@@ -31,6 +31,7 @@ extension View {
 struct AtlasCaptureOverlayModifier: ViewModifier {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var auth: AuthService
+    @EnvironmentObject private var shortcuts: ShortcutStore
 
     func body(content: Content) -> some View {
         content
@@ -58,12 +59,13 @@ struct AtlasCaptureOverlayModifier: ViewModifier {
     }
 
     private var shortcutInstaller: some View {
-        Button("Quick capture") {
+        let binding = shortcuts.binding(for: .capture)
+        return Button("Quick capture") {
             withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
                 state.presentCapture = true
             }
         }
-        .keyboardShortcut("k", modifiers: [.command, .shift])
+        .keyboardShortcut(binding.keyEquivalent, modifiers: binding.modifiers)
         .opacity(0)
         .frame(width: 0, height: 0)
         .accessibilityHidden(true)

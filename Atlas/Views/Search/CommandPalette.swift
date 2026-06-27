@@ -15,17 +15,19 @@ extension View {
 
 struct CommandPaletteModifier: ViewModifier {
     @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var shortcuts: ShortcutStore
 
     func body(content: Content) -> some View {
-        content
+        let binding = shortcuts.binding(for: .search)
+        return content
             .overlay(CommandPaletteOverlay())
             .background(
-                // Hidden control hosting the ⌘K shortcut.
+                // Hidden control hosting the ⌘K shortcut (live-rebindable via ShortcutStore).
                 Button(action: { state.presentSearch = true }) { Color.clear }
                     .buttonStyle(.plain)
                     .frame(width: 0, height: 0)
                     .opacity(0)
-                    .keyboardShortcut("k", modifiers: .command)
+                    .keyboardShortcut(binding.keyEquivalent, modifiers: binding.modifiers)
                     .accessibilityHidden(true)
             )
     }

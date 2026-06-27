@@ -5,6 +5,7 @@ struct AtlasApp: App {
     @StateObject private var state = AppState()
     @StateObject private var auth = AuthService()
     @StateObject private var canvas = CanvasService()
+    @StateObject private var shortcuts = ShortcutStore()
 
     var body: some Scene {
         WindowGroup {
@@ -12,6 +13,7 @@ struct AtlasApp: App {
                 .environmentObject(state)
                 .environmentObject(auth)
                 .environmentObject(canvas)
+                .environmentObject(shortcuts)
                 .frame(minWidth: 960, minHeight: 600)
                 .preferredColorScheme(.dark)
         }
