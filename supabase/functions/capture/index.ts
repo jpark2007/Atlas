@@ -2,8 +2,13 @@
  * Atlas — capture Edge Function (Deno)
  *
  * POST /functions/v1/capture
- * Body:   { text: string }
- * Returns: { kind, title, spaceName, projectName?, dueISO?, startISO?, durationMin?, notes? }
+ * Body:   { text: string, spaces?: [{ name: string, projects: string[] }] }
+ * Returns: JSON ARRAY of capture items:
+ *   [{ kind, title, spaceName, projectName?, dueISO?, startISO?, durationMin?, notes? }, ...]
+ *
+ * The model splits a multi-item paragraph ("essay due thu, gym 3x, dinner sunday")
+ * into multiple objects. When `spaces` is supplied, the user's real Space + project
+ * names are injected into the prompt so routing uses their actual buckets.
  *
  * Requires:
  *   - Authorization: Bearer <Supabase JWT>  (presence-only check for v1)
@@ -19,28 +24,96 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const SYSTEM_PROMPT = `You are Atlas, a personal life-management AI. \
-Given a user's free-text capture, classify it and return ONLY a JSON object matching this schema — \
-no markdown, no explanation, just the raw JSON:
+type ContextSpace = { name: string; projects: string[] };
+
+const DEFAULT_SPACES = ["School", "Work", "Personal", "Health", "Finance", "Other"];
+
+/**
+ * Render the Space/Project routing block. When the client sends real buckets we
+ * use those; otherwise we fall back to the generic default list so old clients
+ * (and direct callers) still work.
+ */
+function spacesBlock(spaces: ContextSpace[] | undefined): string {
+  const valid = (spaces ?? []).filter(
+    (s) => s && typeof s.name === "string" && s.name.trim().length > 0,
+  );
+  if (valid.length === 0) {
+    return `- "spaceName": one of: ${DEFAULT_SPACES.map((s) => `"${s}"`).join(", ")}.`;
+  }
+  const lines = valid.map((s) => {
+    const projects = (s.projects ?? []).filter(
+      (p) => typeof p === "string" && p.trim().length > 0,
+    );
+    const proj = projects.length
+      ? ` (projects: ${projects.map((p) => `"${p}"`).join(", ")})`
+      : "";
+    return `    • "${s.name}"${proj}`;
+  });
+  return `- "spaceName": choose the single best match from the user's actual spaces below. \
+Use the EXACT name as written. If nothing fits, use the closest one.
+${lines.join("\n")}
+- "projectName": when an item clearly belongs to one of that space's listed projects, \
+set it to the EXACT project name shown above. Otherwise omit it.`;
+}
+
+function buildSystemPrompt(spaces: ContextSpace[] | undefined): string {
+  return `You are Atlas, a personal life-management AI. \
+Given a user's free-text capture, classify it and split it into one or more items. \
+A single paragraph can contain MULTIPLE items (e.g. "essay due thursday, gym 3x this \
+week, dinner with mom sunday" → three items). Return ONLY a JSON object of the form \
+{ "items": [ ... ] } — no markdown, no explanation, just the raw JSON. \
+Each element of "items" matches this schema:
 
 {
   "kind": "task" | "event" | "note",
   "title": string,            // concise, actionable title
-  "spaceName": string,        // one of: "School", "Work", "Personal", "Health", "Finance", "Other"
-  "projectName"?: string,     // if the text mentions a specific project/class
+  "spaceName": string,        // see routing rules below
+  "projectName"?: string,     // if the item belongs to a specific project/class
   "dueISO"?: string,          // ISO 8601 UTC if a due date is mentioned (tasks)
   "startISO"?: string,        // ISO 8601 UTC if a start time is mentioned (events)
   "durationMin"?: number,     // duration in minutes (events, default 60 if not specified)
   "notes"?: string            // extra detail / body text (notes, or longer event notes)
 }
 
+Routing:
+${spacesBlock(spaces)}
+
 Rules:
+- Split distinct to-dos / events / notes into SEPARATE items. A single self-contained
+  capture is a one-element array.
 - "task"  = something to do (verb phrase, deadline, assignment, chore)
 - "event" = a meeting, appointment, session, or time-bound activity
 - "note"  = a thought, idea, reference, or piece of information to remember
-- If the text is ambiguous, prefer "task".
+- If an item is ambiguous, prefer "task".
 - Use today's date as the reference point for relative dates ("Thursday", "next week", etc.).
 - Always populate kind, title, and spaceName. All other fields are optional.`;
+}
+
+/**
+ * Coerce whatever the model returned into a flat array of capture objects.
+ * Accepts `{ items: [...] }` (the requested shape), a bare array, or a single
+ * object (wrapped as a one-element array).
+ */
+function normalizeItems(parsed: unknown): Record<string, unknown>[] {
+  if (Array.isArray(parsed)) {
+    return parsed.filter((x): x is Record<string, unknown> =>
+      typeof x === "object" && x !== null
+    );
+  }
+  if (parsed && typeof parsed === "object") {
+    const obj = parsed as Record<string, unknown>;
+    if (Array.isArray(obj.items)) {
+      return obj.items.filter((x): x is Record<string, unknown> =>
+        typeof x === "object" && x !== null
+      );
+    }
+    // A single capture object (no `items` wrapper) — wrap it.
+    if (typeof obj.kind === "string" || typeof obj.title === "string") {
+      return [obj];
+    }
+  }
+  return [];
+}
 
 Deno.serve(async (req: Request) => {
   // Handle CORS preflight
@@ -59,6 +132,7 @@ Deno.serve(async (req: Request) => {
 
   // Parse request body
   let text: string;
+  let spaces: ContextSpace[] | undefined;
   try {
     const body = await req.json();
     if (typeof body?.text !== "string" || !body.text.trim()) {
@@ -68,6 +142,9 @@ Deno.serve(async (req: Request) => {
       );
     }
     text = body.text.trim();
+    if (Array.isArray(body.spaces)) {
+      spaces = body.spaces as ContextSpace[];
+    }
   } catch {
     return new Response(
       JSON.stringify({ error: "Invalid JSON body" }),
@@ -98,12 +175,12 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         model: "openai/gpt-4o-mini",
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: buildSystemPrompt(spaces) },
           { role: "user", content: text },
         ],
         response_format: { type: "json_object" },
         temperature: 0.2,
-        max_tokens: 256,
+        max_tokens: 1024,
       }),
     });
   } catch (err) {
@@ -121,12 +198,12 @@ Deno.serve(async (req: Request) => {
     );
   }
 
-  // Parse the model's JSON content
-  let captureResult: Record<string, unknown>;
+  // Parse the model's JSON content → a flat array of capture items.
+  let items: Record<string, unknown>[];
   try {
     const completion = await openRouterResponse.json();
     const content: string = completion?.choices?.[0]?.message?.content ?? "{}";
-    captureResult = JSON.parse(content);
+    items = normalizeItems(JSON.parse(content));
   } catch (err) {
     return new Response(
       JSON.stringify({ error: "Could not parse model output as JSON", detail: String(err) }),
@@ -134,8 +211,9 @@ Deno.serve(async (req: Request) => {
     );
   }
 
+  // Always return a JSON ARRAY (possibly empty) so the client can decode uniformly.
   return new Response(
-    JSON.stringify(captureResult),
+    JSON.stringify(items),
     { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
   );
 });
