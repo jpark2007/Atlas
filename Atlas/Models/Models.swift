@@ -68,8 +68,28 @@ struct TaskItem: Identifiable {
     var status: TaskStatus = .open
     var done: Bool = false
     var scheduledAt: Date? = nil
+    var dueDate: Date? = nil
+    var durationMin: Int? = nil
     var spaceColor: Color = AtlasTheme.Colors.accent
     var spaceName: String = ""
+}
+
+extension TaskItem {
+    /// Short, human due label derived from a date. Deterministic given `now`.
+    /// "" for nil; "Today"/"Tomorrow"; weekday ("Thu") within a week; else "MMM d".
+    static func dueLabel(for date: Date?, now: Date = Date()) -> String {
+        guard let date else { return "" }
+        let cal = Calendar.current
+        if cal.isDate(date, inSameDayAs: now) { return "Today" }
+        if let tomorrow = cal.date(byAdding: .day, value: 1, to: now),
+           cal.isDate(date, inSameDayAs: tomorrow) { return "Tomorrow" }
+        let days = cal.dateComponents([.day],
+                                      from: cal.startOfDay(for: now),
+                                      to: cal.startOfDay(for: date)).day ?? 0
+        let f = DateFormatter()
+        f.dateFormat = (days > 1 && days < 7) ? "EEE" : "MMM d"
+        return f.string(from: date)
+    }
 }
 
 enum TaskStatus {
