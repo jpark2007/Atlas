@@ -16,6 +16,24 @@ struct CaptureResult: Codable {
     let notes: String?
 }
 
+// MARK: - Context payload
+
+/// One of the user's real Spaces + its project names, sent to the edge function
+/// so the model routes each captured item into an actual bucket (instead of the
+/// generic School/Work/Personal default list).
+struct CaptureContextSpace: Codable, Equatable {
+    let name: String
+    let projects: [String]
+}
+
+/// Request body for the `capture` function. `spaces` is omitted entirely when
+/// the caller has no context to share, keeping old/default routing intact.
+/// `Codable` (not just `Encodable`) so tests can round-trip the produced body.
+struct CaptureRequest: Codable {
+    let text: String
+    let spaces: [CaptureContextSpace]?
+}
+
 // MARK: - Error
 
 enum AtlasAIError: LocalizedError {
@@ -56,11 +74,13 @@ final class AtlasAI {
         self.urlSession = urlSession
     }
 
-    /// POST `SupabaseConfig.functionsBase/capture` with `{ text }`.
+    /// POST `SupabaseConfig.functionsBase/capture` with `{ text, spaces? }`.
+    /// Returns an ARRAY of results (a multi-item paragraph splits into several).
     /// Throws `AtlasAIError.notAuthenticated` if `session()` is nil.
     /// Throws `AtlasAIError.httpError` on non-2xx.
-    /// Throws `AtlasAIError.decodingError` if the JSON doesn't match `CaptureResult`.
-    func parse(_ text: String) async throws -> CaptureResult {
+    /// Throws `AtlasAIError.decodingError` if the JSON can't be decoded.
+    func parse(_ text: String,
+               spaces: [CaptureContextSpace] = []) async throws -> [CaptureResult] {
         guard let session = sessionProvider() else {
             throw AtlasAIError.notAuthenticated
         }
@@ -71,7 +91,7 @@ final class AtlasAI {
         request.setValue(SupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["text": text])
+        request.httpBody = try AtlasAI.requestBody(text: text, spaces: spaces)
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -84,9 +104,41 @@ final class AtlasAI {
         }
 
         do {
-            return try JSONDecoder().decode(CaptureResult.self, from: data)
+            return try AtlasAI.decodeResults(from: data)
         } catch {
             throw AtlasAIError.decodingError(error)
         }
+    }
+
+    // MARK: - Testable seams (pure functions — no network)
+
+    /// Map the user's live `Space` list into the lightweight context payload.
+    static func context(from spaces: [Space]) -> [CaptureContextSpace] {
+        spaces.map { space in
+            CaptureContextSpace(name: space.name,
+                                projects: space.projects.map { $0.name })
+        }
+    }
+
+    /// Encode the POST body. `spaces` is dropped when empty so callers without
+    /// context produce `{ "text": ... }` exactly as before.
+    static func requestBody(text: String, spaces: [CaptureContextSpace]) throws -> Data {
+        let payload = CaptureRequest(text: text,
+                                     spaces: spaces.isEmpty ? nil : spaces)
+        return try JSONEncoder().encode(payload)
+    }
+
+    /// Decode the function response. Tolerant of three shapes so a stale deploy
+    /// (single object) still works:
+    ///   1. `[ {...}, {...} ]`           → as-is
+    ///   2. `{ ...one capture object }`  → wrapped as `[ {...} ]`
+    static func decodeResults(from data: Data) throws -> [CaptureResult] {
+        let decoder = JSONDecoder()
+        if let array = try? decoder.decode([CaptureResult].self, from: data) {
+            return array
+        }
+        // Fall back to a single object (old deploys returned one).
+        let single = try decoder.decode(CaptureResult.self, from: data)
+        return [single]
     }
 }

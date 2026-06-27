@@ -97,4 +97,91 @@ final class AtlasAIDecodeTests: XCTestCase {
         XCTAssertEqual(result.spaceName, "Personal")
         XCTAssertNil(result.dueISO)
     }
+
+    // MARK: - Array decoding (WS-2: multi-item paragraph)
+
+    func testDecodeResultsArray() throws {
+        let json = """
+        [
+          {"kind":"task","title":"Essay outline","spaceName":"School","dueISO":"2026-07-02T23:59:00Z"},
+          {"kind":"event","title":"Gym","spaceName":"Health","startISO":"2026-06-28T15:00:00Z","durationMin":60},
+          {"kind":"note","title":"Dinner idea","spaceName":"Personal"}
+        ]
+        """.data(using: .utf8)!
+
+        let results = try AtlasAI.decodeResults(from: json)
+
+        XCTAssertEqual(results.count, 3)
+        XCTAssertEqual(results[0].kind, "task")
+        XCTAssertEqual(results[0].dueISO, "2026-07-02T23:59:00Z")
+        XCTAssertEqual(results[1].kind, "event")
+        XCTAssertEqual(results[1].durationMin, 60)
+        XCTAssertEqual(results[2].kind, "note")
+    }
+
+    /// Tolerance: a stale deploy that still returns a single object must decode
+    /// as a one-element array.
+    func testDecodeResultsSingleObjectTolerance() throws {
+        let json = """
+        {"kind":"task","title":"Call dentist","spaceName":"Personal"}
+        """.data(using: .utf8)!
+
+        let results = try AtlasAI.decodeResults(from: json)
+
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].title, "Call dentist")
+    }
+
+    func testDecodeResultsEmptyArray() throws {
+        let json = "[]".data(using: .utf8)!
+        let results = try AtlasAI.decodeResults(from: json)
+        XCTAssertTrue(results.isEmpty)
+    }
+
+    // MARK: - Context payload building
+
+    func testContextFromSpacesMapsNamesAndProjects() {
+        let school = Space(
+            name: "School",
+            color: .blue,
+            projects: [
+                Project(name: "CS101", code: "CS 101", isClass: true,
+                        spaceName: "School", spaceColor: .blue),
+                Project(name: "Writing Seminar", code: nil, isClass: true,
+                        spaceName: "School", spaceColor: .blue),
+            ]
+        )
+        let personal = Space(name: "Personal", color: .green, projects: [])
+
+        let ctx = AtlasAI.context(from: [school, personal])
+
+        XCTAssertEqual(ctx.count, 2)
+        XCTAssertEqual(ctx[0].name, "School")
+        XCTAssertEqual(ctx[0].projects, ["CS101", "Writing Seminar"])
+        XCTAssertEqual(ctx[1].name, "Personal")
+        XCTAssertTrue(ctx[1].projects.isEmpty)
+    }
+
+    // MARK: - Request body building (decode back — never string-compare)
+
+    func testRequestBodyIncludesContextWhenPresent() throws {
+        let spaces = [CaptureContextSpace(name: "Work", projects: ["Atlas"])]
+        let data = try AtlasAI.requestBody(text: "ship it", spaces: spaces)
+
+        let round = try decoder.decode(CaptureRequest.self, from: data)
+        XCTAssertEqual(round.text, "ship it")
+        XCTAssertEqual(round.spaces, spaces)
+    }
+
+    func testRequestBodyOmitsContextWhenEmpty() throws {
+        let data = try AtlasAI.requestBody(text: "ship it", spaces: [])
+
+        // `spaces` must be absent entirely (old-deploy compatible), not [].
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        XCTAssertEqual(object?["text"] as? String, "ship it")
+        XCTAssertNil(object?["spaces"])
+
+        let round = try decoder.decode(CaptureRequest.self, from: data)
+        XCTAssertNil(round.spaces)
+    }
 }

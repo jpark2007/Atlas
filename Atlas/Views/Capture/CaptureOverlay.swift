@@ -214,31 +214,21 @@ struct CaptureCommandBar: View {
                 return
             }
 
-            // Try the AI edge function.
+            // Try the AI edge function. It returns an ARRAY — a multi-item
+            // paragraph splits into several captures, each routed individually.
             do {
-                let result = try await atlasAI.parse(rawText)
-                switch result.kind {
-                case "event":
-                    await handleEvent(result: result, rawText: rawText)
-                case "note":
-                    state.addNote(
-                        title: result.title,
-                        body: result.notes ?? "",
-                        spaceName: result.spaceName,
-                        isExternal: false
-                    )
-                    await showConfirmation(CaptureOutcome.note.confirmation)
-                case "task":
-                    let due = CaptureDateParser.date(from: result.dueISO)
-                    state.addTask(title: result.title,
-                                  dueDate: due,
-                                  durationMin: result.durationMin)
-                    await showConfirmation(CaptureOutcome.task(hasDate: due != nil).confirmation)
-                default:
-                    // Unrecognized kind — safe fallback.
+                let results = try await atlasAI.parse(
+                    rawText,
+                    spaces: AtlasAI.context(from: state.spaces)
+                )
+                guard !results.isEmpty else {
+                    // Parsed OK but nothing actionable — never lose the text.
                     state.addTask(title: rawText)
                     await showConfirmation(CaptureOutcome.degraded.confirmation)
+                    return
                 }
+                let outcomes = results.map { state.applyCapture($0) }
+                await showConfirmation(CaptureOutcome.confirmation(for: outcomes))
             } catch {
                 // ANY error (network, 404 — function not deployed, parse failure):
                 // always fall through to a plain task so capture never breaks.
@@ -246,34 +236,6 @@ struct CaptureCommandBar: View {
                 await showConfirmation(CaptureOutcome.degraded.confirmation)
             }
         }
-    }
-
-    /// Build a CalendarEvent from the AI result. Falls back to a plain task if
-    /// `startISO` is missing or unparseable (the only required field for an event).
-    @MainActor
-    private func handleEvent(result: CaptureResult, rawText: String) async {
-        let eventStart = CaptureDateParser.date(from: result.startISO)
-        guard let eventStart else {
-            // Can't place this on the calendar without a time — save as task.
-            state.addTask(title: rawText)
-            await showConfirmation(CaptureOutcome.degraded.confirmation)
-            return
-        }
-
-        let durationSeconds = Double(result.durationMin ?? 60) * 60
-        let eventEnd = eventStart.addingTimeInterval(durationSeconds)
-        let color = state.calendarSpaceColor(named: result.spaceName)
-
-        let event = CalendarEvent(
-            title: result.title,
-            subtitle: "",
-            start: eventStart,
-            end: eventEnd,
-            color: color,
-            spaceName: result.spaceName
-        )
-        state.addEvent(event)
-        await showConfirmation(CaptureOutcome.event.confirmation)
     }
 
     /// Displays `message` for ~1 second then dismisses the capture bar.
