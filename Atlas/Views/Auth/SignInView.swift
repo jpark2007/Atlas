@@ -70,12 +70,7 @@ struct SignInView: View {
 
     private var logo: some View {
         VStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(LinearGradient(colors: [AtlasTheme.Colors.accent, AtlasTheme.Colors.accentDeep],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                .frame(width: 52, height: 52)
-                .overlay(Image(systemName: "circle.hexagongrid.fill")
-                    .font(.system(size: 24, weight: .bold)).foregroundStyle(.white))
+            BrandLogo(size: 76)
             Text("Atlas").font(.system(size: 24, weight: .bold))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Text(mode == .signIn ? "Your whole life, one place." : "Create your account.")

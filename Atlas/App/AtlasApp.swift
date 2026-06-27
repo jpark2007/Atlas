@@ -23,6 +23,44 @@ struct AtlasApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
+
+        // Atlas mark in the macOS menu bar — always-on quick access.
+        MenuBarExtra("Atlas", image: "AtlasMenuBar") {
+            AtlasMenuBarContent()
+                .environmentObject(state)
+        }
+        .menuBarExtraStyle(.menu)
+    }
+}
+
+/// Dropdown shown from the menu-bar Atlas icon.
+struct AtlasMenuBarContent: View {
+    @EnvironmentObject private var state: AppState
+
+    var body: some View {
+        Button("Open Atlas") { Self.activateMainWindow() }
+
+        Button("Quick Capture") {
+            Self.activateMainWindow()
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                state.presentCapture = true
+            }
+        }
+        .keyboardShortcut("k", modifiers: [.command, .shift])
+
+        Divider()
+
+        Button("Quit Atlas") { NSApp.terminate(nil) }
+            .keyboardShortcut("q")
+    }
+
+    /// Bring the main Atlas window to the front (it may be hidden or behind).
+    static func activateMainWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        for window in NSApp.windows where window.canBecomeMain {
+            window.makeKeyAndOrderFront(nil)
+            break
+        }
     }
 }
 
