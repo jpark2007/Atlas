@@ -1,153 +1,117 @@
 # Atlas — Handoff / Continue-Here
 
-**Read this first in a new chat to resume work.** Snapshot of where we are, what's left, and a ready-to-run sub-agent/workflow plan.
+**Read this first in a new chat to resume work.** Where we are, the codebase map, what you must do by hand, and what's deferred.
 
-_Last updated: 2026-06-27 — **Daily-driver v1 built on branch `feat/daily-driver-v1`** (real data + AI capture + calendar overhaul + editable hotkeys + metrics + Settings→Calendars/EventKit). 45/45 tests, build green, reviewed. Not merged/pushed. Plan: `docs/superpowers/plans/2026-06-27-atlas-daily-driver-v1.md`. Ledger: `.superpowers/sdd/progress.md`._
-
-> ## Session 3 — Daily-driver v1: DONE (branch `feat/daily-driver-v1`, 16 commits)
-> **Built + reviewed (adversarial per-task + a 4-dimension whole-branch review):** Supabase Postgres persistence (DTO layer, RLS, load/seed/write-through, offline keeps mock) · AI ⌘⇧K capture (edge function + client, auto-sort, plain-task fallback) · calendar overhaul (week redesign, create/edit, right-click menu, click-to-source) · editable keyboard shortcuts (Settings→Shortcuts) · Metrics (card + page + ⌘K popup) · Settings→Calendars + EventKit read-only aggregate.
-> **YOU must do before it works live:** (1) run `supabase/migrations/0001_init.sql` in the Supabase SQL editor; (2) `supabase functions deploy capture` (+ confirm `OPENROUTER_API_KEY` function secret) — until then capture falls back to a plain task; (3) Apple/Google provider config for those sign-ins; (4) Apple Calendar aggregation needs you to grant calendar access at the macOS prompt.
-> **Deferred to v2 (intentionally):** Google/Canvas calendar fetch + write-back, EventKit write-back, global system-wide hotkey, social, email capture, iOS target, Drive folders. Plus hardening: move the Canvas token to Keychain; a bootstrap-clobber edge case (item added during initial load reappears next reload).
+_Last updated: 2026-06-27 — **Daily-driver v1 built, reviewed, building green** on branch `feat/daily-driver-v1` (NOT merged/pushed). 45/45 tests pass._
 
 ---
 
-## TL;DR for a new session
+## TL;DR — where we are
 
-> **Atlas** is a native SwiftUI (macOS-first) smart life manager. **Dark, orange `#ff8c42`.** All core screens are built and building green: Dashboard, Calendar, Focus, Project/Class detail, ⌘K command palette, ⌘⇧K quick-capture, Notes editor. **Auth is live against Supabase** (email working; Apple/Google wired but need provider config). The app gates on sign-in with a "continue offline" escape. Data is still **mock** (same for every user) — wiring it to Supabase Postgres is the next big step.
+**Atlas** is a native SwiftUI (macOS-first) smart life manager. Dark, orange `#ff8c42`. All core screens + the v1 feature set are built on branch **`feat/daily-driver-v1`** (17 commits ahead of `main`):
 
-**Resume:**
+- **Real data** — Supabase Postgres + RLS, a DTO/mapper service (`AtlasDB`), load-on-sign-in, first-run seed, write-through on every mutation. Offline mode keeps mock data.
+- **AI capture** — ⌘⇧K → Supabase Edge Function (`gpt-4o-mini`) auto-sorts text into task/event/note, with a plain-task fallback so it never breaks.
+- **Calendar overhaul** — redesigned week view (sticky headers, today tint, auto-scroll to now), create/edit events, tap-empty-slot, right-click menu (Edit / Change duration / Move to time / Delete), click-event → jump to source.
+- **Editable hotkeys** — Settings → Shortcuts (`ShortcutStore`, live rebinding of ⌘K / ⌘⇧K).
+- **Metrics** — dashboard card + full page + ⌘K popup + ⌘K "New Task/Note/Event" actions.
+- **Settings → Calendars** — source toggles + main-calendar picker + EventKit (Apple Calendar) **read-only** aggregate.
+
+Built task-by-task with an adversarial reviewer per task + a 4-dimension whole-branch review at the end (plan: `docs/superpowers/plans/2026-06-27-atlas-daily-driver-v1.md`; per-task ledger: `.superpowers/sdd/progress.md`).
+
+### Resume / build / run
 ```bash
 cd "atlas life manager"
+git checkout feat/daily-driver-v1
 xcodegen generate
 xcodebuild -project Atlas.xcodeproj -scheme Atlas -destination 'platform=macOS' build CODE_SIGNING_ALLOWED=NO
-open Atlas.xcodeproj   # or run the built .app
+xcodebuild -project Atlas.xcodeproj -scheme Atlas -destination 'platform=macOS' test  CODE_SIGNING_ALLOWED=NO   # 45 tests
 ```
-Then tell the new chat: *"Continue Atlas from docs/HANDOFF.md — run the Session 3 plan."*
+> ⚠️ **Run a clean, known build before launching.** There are several stale `Atlas.app` copies in DerivedData; `open`-ing "the newest" can grab an OLD binary (this bit us — an old build with no Focus/Metrics/profile rows looked like a regression). Build with an explicit `-derivedDataPath ./.build-run` and launch *that* `.../Build/Products/Debug/Atlas.app`.
 
-> ⚠️ **SourceKit lies in this single-module XcodeGen setup**: the IDE shows "Cannot find type X in scope" constantly. These are FALSE. Trust `xcodebuild` only.
-
----
-
-## Current state (what's DONE and building green)
-
-- **Screens:** Sidebar (+ profile/settings row), **Dashboard** (schedule from `events`, tasks, focus, goals), **Calendar** (day/week grid from `state.events`, space filter, drag-to-schedule tray), **Focus** (Pomodoro), **Project/Class detail** (backlinks, pinned, Canvas badge), **⌘K command palette**, **⌘⇧K quick-capture pill**, **Notes editor**.
-- **Auth (Stage 3a — DONE):** Supabase REST auth (no SDK, just URLSession) — see `Atlas/Services/`:
-  - `SupabaseConfig.swift` — project URL + anon key (anon key is safe to ship).
-  - `SupabaseAuth.swift` — signup / password / refresh / id_token (Apple) / PKCE (Google) / logout.
-  - `AuthService.swift` — session restore+persist (UserDefaults), email, Apple (`ASAuthorizationController`), Google (`ASWebAuthenticationSession` + PKCE).
-  - `CanvasService.swift` — token + host store, validates against Canvas API.
-  - UI: `Views/Auth/SignInView.swift` (gate, with "continue offline"), `Views/Auth/SettingsView.swift` (account + Canvas + integrations, opened from the sidebar profile row).
-  - `AppGate` in `AtlasApp.swift` routes loading / signedOut / signedIn|offline.
-- **Window chrome:** the gray title-bar strip is FIXED (`Atlas/App/WindowConfigurator.swift` + `.toolbar(.hidden, for: .windowToolbar)`).
-
-### What WORKS to test now
-- **Email sign up / sign in** → hits the real Supabase project, creates a user. (Confirm-email is now OFF in the dashboard, so it's instant.)
-- **Continue without an account** → full app on mock data.
-- **Canvas connect** (Settings → host + token) validates live.
-
-### What's WIRED but needs config (the "fix all paths" work)
-- **Google** — full PKCE flow coded; needs: Supabase → Auth → Providers → Google (client id/secret) + Auth → URL Configuration → Redirect URLs → add `atlas://auth-callback`.
-- **Apple** — button + id_token exchange coded; needs: Supabase Apple provider enabled + Xcode "Sign in with Apple" capability under a team (requires signing).
+> ⚠️ **SourceKit lies** in this single-module XcodeGen setup ("Cannot find type X in scope" everywhere). These are FALSE. Trust `xcodebuild` only.
 
 ---
 
-## File map (key paths)
+## Codebase structure (current)
+
+`project.yml` globs all `Atlas/**.swift` + `AtlasTests/**` — new files need NO project edits, just `xcodegen generate`. `supabase/` lives outside the Xcode target.
+
 ```
 Atlas/
-  App/         AtlasApp (AppGate), RootView (Route enum + split view + overlays), WindowConfigurator
-  Config/      SupabaseConfig.swift
-  Services/    SupabaseAuth, AuthService, CanvasService   (add: AtlasDB, AtlasAI here)
-  DesignSystem/Theme.swift (AtlasTheme + AtlasCard)
-  Models/      Models.swift (Space, Project, CalendarEvent, TaskItem, Note, Goal, …)
-  Data/        AppState (store), AppState+Calendar, AppState+Notes, MockData
-  Views/       Sidebar/, Dashboard/, Calendar/, Focus/, Capture/, Search/, Notes/, Project/, Auth/
-docs/          atlas-vision, specs/01..10, SETUP, HANDOFF (this file)
+  App/
+    AtlasApp.swift            AppGate (loading/signedOut/signedIn/offline) — builds AtlasDB + bootstraps on sign-in; injects AppState/AuthService/CanvasService/ShortcutStore
+    RootView.swift            Route enum (dashboard/calendar/focus/metrics/project) + split view + sheets (Settings, Metrics popup, Event editor)
+    WindowConfigurator.swift  hides the window toolbar (the gray-bar fix)
+  Config/
+    SupabaseConfig.swift      project URL + anon key + authBase / restBase / functionsBase
+  Services/
+    SupabaseAuth.swift        GoTrue over URLSession (email + Apple id_token + Google PKCE)
+    AuthService.swift         session restore/persist, state machine, displayName
+    AtlasDB.swift             ★ PostgREST CRUD + Row DTOs/mappers (Color never persisted; ids preserved) + ColorToken
+    AtlasAI.swift             ★ POSTs capture text to the edge function; CaptureResult
+    EventKitService.swift     ★ Apple Calendar READ adapter (full-access request + range fetch → read-only CalendarEvents)
+    CanvasService.swift       Canvas host+token (validates); token in UserDefaults (TODO: Keychain)
+    ShortcutStore.swift       ★ @AppStorage-backed editable keyboard shortcuts (capture/search)
+  DesignSystem/
+    Theme.swift               AtlasTheme (Colors incl. accent/warning/danger/bgDeep, Font, Radius) + AtlasCard
+  Models/
+    Models.swift              Space, Project, CalendarEvent (+notes/isAllDay/projectID/isReadOnly), TaskItem, TaskStatus, Note, Goal — all `var id` (NOT Codable; DTOs handle persistence)
+  Data/
+    AppState.swift            the store: @Published spaces/events/tasks/notes/goals + UI flags + externalEvents; bootstrap() + write-through; addEvent/updateEvent/deleteEvent/addGoal/updateGoal
+    AppState+Calendar.swift   calendarSpaceColor(named:), events(on:) etc.
+    AppState+Notes.swift      addNote/updateNote
+    Metrics.swift             ★ pure AtlasMetrics.compute(...) (honest, derivable-only metrics)
+    MockData.swift            the seed: 3 spaces, 6 projects (1 rich), 5 events, 5 tasks, 3 notes, 3 goals
+  Views/
+    Sidebar/SidebarView.swift     nav rows (Dashboard/Calendar/Focus/Metrics) + profile row → Settings
+    Dashboard/DashboardView.swift schedule/tasks/focus/goals + MetricsCard
+    Calendar/                     CalendarView, TimeGridView, CalendarModels, UnscheduledTray,
+                                  ★WeekColumnHeader, ★AllDayRowView, ★EventEditorSheet, ★EventContextMenuModifier
+    Focus/                        FocusView, FocusViewModel (Pomodoro)
+    Capture/CaptureOverlay.swift  ⌘⇧K quick-capture → AtlasAI (+ fallback)
+    Search/CommandPalette.swift   ⌘K palette + quick actions (Open Metrics, New Task/Note/Event)
+    Notes/                        NoteEditorView, NotesListView, NoteMentions ([[wikilinks]])
+    Project/ProjectDetailView.swift
+    Metrics/                      ★MetricsCard, ★MetricsView (route), ★MetricsPopupView
+    Auth/                         SignInView (gate + continue-offline), SettingsView (Account/Canvas/Shortcuts/Calendars)
+AtlasTests/                       AtlasDBMappingTests, AtlasAIDecodeTests, MetricsTests, ShortcutStoreTests, (smoke) — 45 tests
+supabase/
+  migrations/0001_init.sql        ★ tables + RLS (run in the SQL editor)
+  functions/capture/index.ts      ★ Deno edge function (deploy via Supabase CLI)
+docs/
+  atlas-vision.md, specs/01..10, SETUP.md, HANDOFF.md (this file)
+  superpowers/plans/2026-06-27-atlas-daily-driver-v1.md   the executed implementation plan
 ```
-`project.yml` globs all `Atlas/**.swift` — new files need NO project edits, just `xcodegen generate`.
+★ = added in the Daily-driver v1 build.
 
 ---
 
-## SESSION 3 — what to build (everything below)
+## Manual steps for YOU (human)
 
-The user wants **all of it**. Three tracks plus a calendar overhaul and the sync design. Run them as the workflow in the next section.
+Done ✅: Supabase project + URL/anon key in app · Confirm-email OFF · `OPENROUTER_API_KEY` secret added · **`0001_init.sql` run** (per user, 2026-06-27).
 
-### Track A — AI brain (capture → auto-sort) 🔑 secret `OPENROUTER_API_KEY` already set
-1. Write a Supabase **Edge Function** `capture` (Deno/TypeScript) that:
-   - Auth: verifies the caller's Supabase JWT.
-   - Takes `{ text }`, calls OpenRouter (`openai/gpt-4o-mini`) with a strict JSON schema prompt.
-   - Returns `{ kind: "task"|"event"|"note", title, spaceName, projectName?, dueISO?, startISO?, durationMin?, notes? }`.
-   - Reads the key from `Deno.env.get("OPENROUTER_API_KEY")`. **Never** in the client.
-   - Deliver the function file under `supabase/functions/capture/index.ts` for the user to `supabase functions deploy capture`.
-2. Client `Atlas/Services/AtlasAI.swift` — POSTs to `{url}/functions/v1/capture` with the user JWT.
-3. Wire **⌘⇧K capture**: on submit → call AI → create the parsed object in the right Space/project → confirmation toast. Fall back to a plain task if AI/offline fails.
-
-### Track B — Real data persistence (Supabase Postgres)
-1. SQL migration (`supabase/migrations/0001_init.sql`) — tables `profiles, spaces, projects, tasks, events, notes, pinned_resources, backlinks`, each with `user_id uuid references auth.users` + **RLS** (`auth.uid() = user_id`). Deliver for the user to run in the SQL editor.
-2. `Atlas/Services/AtlasDB.swift` — PostgREST CRUD over `{url}/rest/v1/...` with `apikey` + user `Authorization: Bearer`.
-3. Swap `AppState` internals: on sign-in, load from Supabase (seed the new user with the mock data on first run so it isn't empty); write-through on every mutation (`addTask`, `toggleTask`, `schedule`, `addNote`, `updateNote`, event CRUD). **Offline mode keeps using `MockData`.** UI must not change.
-
-### Track C — Calendar overhaul + interactions + polish
-- **Week view redesign** (user: "weekly view sucks") — readable 7-day grid: sticky day headers with weekday+date, today highlighted, scrollable time column, events laid out per-day with the existing lane-packing, an optional all-day row. Make it feel like a real calendar.
-- **Add events from the calendar** — an "+ Add event" affordance in the calendar (in/near the unscheduled tray sidebar) AND click-empty-slot-to-create. Opens a quick event editor (title, space, start, duration). Writes to `state.events` (→ Track B persists).
-- **Right-click an event → context menu** — Edit time / change duration / move to specific time / delete. (Reschedule precisely, not just drag.)
-- **Click an event → link to its source** — selecting an event/task tile navigates to the underlying item (its Project/Class, Task, or Note). Generalize "click a node → open it" across backlinks/linked-references too.
-- **⌘K palette** (user likes it) — extend: tasks should navigate somewhere (task detail or its project), add "Create new task/note/event" actions, keep the glass look.
-- Verify the **gray bar fix** holds on every route (Dashboard/Calendar/Focus/Project/Settings).
-
-### Track D — Auth paths + Calendar SYNC logic (design + scaffold)
-- **Fix all auth paths:** verify Google PKCE end-to-end (after dashboard config), Apple (after capability), Canvas; surface clear errors.
-- **Sync design (the open question the user raised — recommended answer below).** Build the Settings → **Calendars** section to support it.
+Still needed:
+- **Deploy the AI function:** `supabase functions deploy capture` + confirm `OPENROUTER_API_KEY` is a Function secret. *(Until then ⌘⇧K cleanly falls back to a plain task.)*
+- **Apple / Google sign-in:** Supabase → Auth → Providers config (Apple needs the Xcode "Sign in with Apple" capability + signing). Email sign-in already works.
+- **Apple Calendar aggregate:** grant calendar access at the macOS prompt when you toggle it on in Settings → Calendars.
 
 ---
 
-## Calendar sync — recommended logic (resolve this in Session 3)
+## Verification status
 
-Per `docs/specs/03-unified-calendar.md`, the answer is **aggregate-to-read, pick-one-to-write**:
-
-- **Aggregate everything for display.** Atlas shows events from **all** connected sources at once — Apple Calendar (EventKit, on-device), Google Calendar (OAuth), Canvas (assignments + class meetings), and Atlas-native. Color-code by **Space** (with a subtle source glyph). Each source has an on/off toggle in Settings.
-- **Pick ONE "main" calendar for writes.** In Settings → Calendars the user chooses their main (Apple *or* Google). New Atlas-created events default to the main and **two-way sync** to it (so they also show in the user's native Apple/Google app). All other sources remain **read-only** mirrors inside Atlas.
-- **Conflict policy:** last-write-wins to start (revisit later). Edits in Atlas push to the source if the event lives there; external edits pull on next sync.
-- **Settings UI to build:** a "Calendars" group — list each source with connect/toggle, a "Main calendar" picker, and a default Space mapping per source.
-
-This keeps it simple (no N-way merge engine) while showing a true unified calendar. Implement the Settings UI + the source toggles now; wire EventKit/Google/Canvas read adapters incrementally (EventKit first — it's local and needs no OAuth).
+- **Build + 45 unit tests:** green (authoritative `xcodebuild test`).
+- **Reviewed:** every task individually + a final 4-dimension whole-branch review (1 Critical + 6 Important found and fixed; e.g. a right-click ghost-duplicate on scheduled-task tiles).
+- **Pending live/manual checks (need YOU):** email sign-in → per-user persistence (now that SQL is run); ⌘K palette opens in the *fresh* build; ⌘⇧K after the function is deployed; Apple Calendar toggle after granting access. (Visual screenshot verification couldn't be automated — it captures the real screen.)
 
 ---
 
-## Session 3 — sub-agent / workflow plan (ready to run)
-
-Use a **workflow** (or sub-agents in worktrees). Suggested shape:
-
-**Phase 0 — Discovery / review (parallel, read-only):** spawn agents to (a) audit the codebase vs `docs/specs/` and list discrepancies/gaps, (b) inventory every `AppState` mutation that Track B must persist, (c) sanity-check the auth paths and list exactly what each provider needs. Output: a punch-list.
-
-**Phase 1 — Build (parallel, each in its own git worktree, NEW files + `extension AppState` only; do NOT edit Models/Theme/RootView except via the integration step):**
-- Agent A — **AI brain** (Track A): `supabase/functions/capture/index.ts`, `Services/AtlasAI.swift`, capture wiring.
-- Agent B — **Persistence** (Track B): `supabase/migrations/0001_init.sql`, `Services/AtlasDB.swift`, AppState load/write-through.
-- Agent C — **Calendar overhaul** (Track C): week view, add/edit event, right-click menu, click-to-link.
-- Agent D — **Auth paths + Sync settings** (Track D): Settings → Calendars UI, source toggles, main-calendar picker, EventKit read adapter, provider error handling.
-
-**Phase 2 — Review (parallel, adversarial):** a reviewer per agent — correctness, conflict-rule compliance, design fidelity, spec alignment. Apply fixes.
-
-**Phase 3 — Integrate (solo):** merge worktrees, wire the few route/sheet hooks, `xcodegen generate`, full build, **launch + screenshot every screen**, compare to mockups, iterate.
-
-**Conflict rules for parallel agents:** only ADD files; extend the store via `extension AppState { }` (methods only — stored `@Published` props must be added to `AppState.swift` up front in a tiny solo "Stage 0.3" pass, e.g. `presentEventEditor`, `mainCalendarSource`, source toggles). Each agent must `xcodebuild` green in its worktree before reporting. **Worktrees fork from `main`'s HEAD — make sure the coordinator commits the shared-state additions to `main` BEFORE fanning out** (last session the worktrees forked from a stale commit and every agent built duplicate models; don't repeat that).
-
----
-
-## Manual steps for YOU (human) — Supabase dashboard / Xcode
-
-Done ✅: Supabase project created, URL + anon key in app, **Confirm email OFF**, `OPENROUTER_API_KEY` secret added.
-
-Still needed, by track:
-- **Track A (AI):** after we hand you `supabase/functions/capture/index.ts`, run `supabase functions deploy capture` (needs the Supabase CLI + `supabase link`). Confirm `OPENROUTER_API_KEY` is set as a Function secret.
-- **Track B (data):** paste the contents of `supabase/migrations/0001_init.sql` into Supabase → SQL Editor → Run (creates tables + RLS).
-- **Google:** Auth → Providers → Google (client id/secret from Google Cloud) + Auth → URL Configuration → Redirect URLs → add `atlas://auth-callback`. Optionally set **Site URL** to `atlas://auth-callback` so email links stop pointing at `localhost:3000`.
-- **Apple:** Auth → Providers → Apple; in Xcode enable **Sign in with Apple** capability under your team (this also requires turning on signing — see `SETUP.md`).
-- **Canvas / Google Calendar / Drive / Gmail:** per-user tokens/OAuth, wired incrementally.
+## Deferred to v2 (intentional, not bugs)
+Google/Canvas calendar fetch + write-back · EventKit write-back · global system-wide hotkey · social (friends/shared spaces) · email capture (Gmail→AI) · iOS target · Drive folders.
+Known hardening/edges: move the Canvas token to Keychain; a bootstrap-clobber edge case (an item added during the very first load reappears on next reload); Day-mode all-day events have no strip yet (week mode does).
 
 ---
 
 ## Architecture recap
-- Native SwiftUI, macOS-first. All UI talks to `AppState`; Track B swaps its guts for Supabase without touching screens.
-- Auth = Supabase GoTrue via URLSession (swap for `supabase-swift` SDK if/when we want realtime).
-- AI = OpenRouter `gpt-4o-mini` behind a Supabase Edge Function (`OPENROUTER_API_KEY` server-side only).
-- `.gitignore` blocks secrets, the generated `.xcodeproj`, and `.claude/worktrees/`. Commit `project.yml` + Swift source; run `xcodegen generate` after pulling.
+Native SwiftUI, macOS-first. All UI talks to `AppState`; persistence is a DTO layer in `AtlasDB` so domain models stay clean (Color re-derived from `spaceName`, never persisted). Auth = Supabase GoTrue via URLSession. AI = OpenRouter `gpt-4o-mini` behind a Supabase Edge Function (key server-side only). `.gitignore` blocks secrets, the generated `.xcodeproj`, `.build-run/`, and `.superpowers/`.
+```
