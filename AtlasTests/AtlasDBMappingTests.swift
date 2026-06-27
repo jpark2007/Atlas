@@ -73,6 +73,15 @@ final class AtlasDBMappingTests: XCTestCase {
         }
     }
 
+    func testTaskRowDueDateRoundTrip() throws {
+        let due = Date(timeIntervalSinceReferenceDate: 1_000_000)
+        let task = TaskItem(title: "Essay", dueLabel: "", dueDate: due)
+        let row = TaskRow(domain: task)
+        let decoded = try decoder.decode(TaskRow.self, from: try encoder.encode(row))
+        XCTAssertEqual(decoded.dueDate, due, "due_date must survive encode/decode")
+        XCTAssertEqual(decoded.toDomain().dueDate, due, "toDomain must restore dueDate")
+    }
+
     // MARK: - EventRow
 
     func testEventRowRoundTrip() throws {

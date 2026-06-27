@@ -198,7 +198,7 @@ struct TaskRow: Codable {
         self.projectId   = nil // no projectId on TaskItem yet; map to nil
         self.spaceName   = t.spaceName
         self.title       = t.title
-        self.dueDate     = nil // dueLabel is a display string, not persisted as a Date
+        self.dueDate     = t.dueDate
         self.status      = TaskRow.encode(status: t.status)
         self.done        = t.done
         self.scheduledAt = t.scheduledAt
@@ -207,11 +207,11 @@ struct TaskRow: Codable {
     func toDomain() -> TaskItem {
         TaskItem(id: id,
                  title: title,
-                 // dueLabel is not persisted (display string only); acceptable for v1
-                 dueLabel: "",
+                 dueLabel: TaskItem.dueLabel(for: dueDate),
                  status: TaskRow.decode(status: status),
                  done: done,
                  scheduledAt: scheduledAt,
+                 dueDate: dueDate,
                  spaceName: spaceName)
     }
 
