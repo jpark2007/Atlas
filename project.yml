@@ -17,14 +17,21 @@ targets:
     type: application
     platform: macOS
     sources:
-      - Atlas
+      - path: Atlas
+        excludes:
+          - "Atlas.entitlements"
+      - path: Atlas/Atlas.entitlements
+        buildPhase: none
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.atlas.Atlas
         CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: Atlas/Atlas.entitlements
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         INFOPLIST_KEY_NSCalendarsUsageDescription: "Atlas reads your Apple Calendar events to display them alongside your Atlas schedule. No events are modified."
         INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription: "Atlas reads your Apple Calendar events to show them alongside your schedule. Atlas never modifies your calendars."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Atlas uses the microphone for click-to-talk capture, transcribing what you say into the capture bar. Recording only starts when you tap the mic."
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Atlas transcribes your speech on-device so you can dictate tasks and notes into the capture bar."
   AtlasTests:
     type: bundle.unit-test
     platform: macOS

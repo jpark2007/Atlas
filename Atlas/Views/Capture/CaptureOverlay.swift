@@ -86,6 +86,11 @@ struct CaptureCommandBar: View {
     @State private var confirmation: String? = nil
     @State private var isProcessing: Bool = false
 
+    // Click-to-talk dictation. NEVER listens on open — only when the mic button
+    // is tapped. The live transcript streams into `text`.
+    @StateObject private var speech = SpeechCaptureService()
+    @State private var dotPulse = false
+
     private let barWidth: CGFloat = 560
     private let corner: CGFloat = 18
 
@@ -139,16 +144,11 @@ struct CaptureCommandBar: View {
                 .disabled(isProcessing)
                 .onSubmit(submit)
 
-            // Show inline confirmation OR the default hint.
-            if let msg = confirmation {
-                Text(msg)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(AtlasTheme.Colors.accent)
-                    .fixedSize()
-                    .transition(.opacity)
-            } else {
-                hint
-            }
+            // Inline status: confirmation > live dictation > permission note > hint.
+            trailingStatus
+
+            // Mic button in the trailing corner of the bar — click to talk.
+            micButton
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
@@ -170,6 +170,84 @@ struct CaptureCommandBar: View {
                 RoundedRectangle(cornerRadius: corner, style: .continuous)
                     .fill(AtlasTheme.Colors.bgElevated.opacity(0.45))
             )
+    }
+
+    // MARK: - Trailing status + mic
+
+    @ViewBuilder
+    private var trailingStatus: some View {
+        if let msg = confirmation {
+            Text(msg)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(AtlasTheme.Colors.accent)
+                .fixedSize()
+                .transition(.opacity)
+        } else if speech.isListening {
+            listeningLabel
+        } else if speech.state == .denied {
+            statusLabel("Enable mic & speech in Settings", color: AtlasTheme.Colors.danger)
+        } else if speech.state == .unavailable {
+            statusLabel("Dictation unavailable", color: AtlasTheme.Colors.textMuted)
+        } else {
+            hint
+        }
+    }
+
+    private var listeningLabel: some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(AtlasTheme.Colors.danger)
+                .frame(width: 8, height: 8)
+                .opacity(dotPulse ? 1 : 0.3)
+                .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: dotPulse)
+            Text("Listening…")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(AtlasTheme.Colors.danger)
+        }
+        .fixedSize()
+        .onAppear { dotPulse = true }
+        .onDisappear { dotPulse = false }
+    }
+
+    private func statusLabel(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(color)
+            .fixedSize()
+            .transition(.opacity)
+    }
+
+    private var micButton: some View {
+        Button(action: toggleVoice) {
+            ZStack {
+                Circle()
+                    .fill(speech.isListening
+                          ? AtlasTheme.Colors.danger.opacity(0.18)
+                          : Color.white.opacity(0.06))
+                Image(systemName: speech.isListening ? "stop.fill" : "mic.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(speech.isListening
+                                     ? AtlasTheme.Colors.danger
+                                     : AtlasTheme.Colors.textSecondary)
+            }
+            .frame(width: 32, height: 32)
+            .overlay(
+                Circle().strokeBorder(
+                    speech.isListening
+                        ? AtlasTheme.Colors.danger.opacity(0.5)
+                        : Color.white.opacity(0.08),
+                    lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .help(speech.isListening ? "Stop dictation" : "Click to talk")
+        .disabled(isProcessing)
+    }
+
+    private func toggleVoice() {
+        speech.toggle(currentText: text) { merged in
+            text = merged
+        }
     }
 
     private var hint: some View {
@@ -248,6 +326,7 @@ struct CaptureCommandBar: View {
     }
 
     private func dismiss() {
+        speech.stop()
         fieldFocused = false
         withAnimation(.spring(response: 0.32, dampingFraction: 0.88)) {
             isPresented = false
