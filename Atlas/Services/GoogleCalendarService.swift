@@ -64,6 +64,7 @@ enum GoogleCalendarMapper {
                 notes: event.description,
                 isAllDay: isAllDay,
                 isReadOnly: true,
+                source: .google,
                 googleEventId: event.id
             )
         }

@@ -19,8 +19,13 @@ struct AtlasApp: App {
                 .environmentObject(googleAuth)
                 .frame(minWidth: 960, minHeight: 600)
                 .preferredColorScheme(.dark)
-                .background(GlobalHotkeyInstaller(state: state))
+                .background(GlobalHotkeyInstaller(state: state, auth: auth))
         }
+        // .hiddenTitleBar gives the transparent, full-size-content title bar (edge-to-edge
+        // dark content, no gray strip, no title) while KEEPING the standard traffic-light
+        // controls — it does not suppress them. The buttons were actually being removed by
+        // `.toolbar(.hidden, for: .windowToolbar)` in RootView, which strips the whole
+        // window toolbar (controls included); that line has been removed.
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
 
@@ -71,21 +76,22 @@ struct AtlasMenuBarContent: View {
 /// The in-app ShortcutStore binding (`.atlasCaptureOverlay()`) stays in place for
 /// when the app is already focused.
 private struct GlobalHotkeyInstaller: View {
-    /// The concrete `AppState` (a reference type), captured directly so the escaping
-    /// Carbon hotkey callback never touches an `@EnvironmentObject` wrapper outside
-    /// `body` — doing so previously tripped a fatal SwiftUI error on hotkey press.
+    /// Concrete reference types captured directly so the escaping Carbon hotkey callback
+    /// never touches an `@EnvironmentObject` wrapper outside `body` (that previously
+    /// tripped a fatal SwiftUI error on hotkey press).
     let state: AppState
+    let auth: AuthService
 
     var body: some View {
         Color.clear
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
             .onAppear {
+                // ⌘⇧K summons a floating, non-activating capture panel OVER the current
+                // app — it no longer activates Atlas or uses the in-window overlay.
+                CapturePanelController.shared.configure(state: state, auth: auth)
                 HotkeyService.shared.register {
-                    NSApp.activate(ignoringOtherApps: true)
-                    withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
-                        state.presentCapture = true
-                    }
+                    CapturePanelController.shared.toggle()
                 }
             }
     }

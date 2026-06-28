@@ -11,6 +11,11 @@ final class SlotFinderTests: XCTestCase {
     private func at(_ h: Int, _ m: Int = 0) -> Date {
         cal.date(bySettingHour: h, minute: m, second: 0, of: day)!
     }
+    /// End of the visible scheduling window. Uses date-adding so it's valid even when
+    /// `endHour == 24` (where `at(24)`/`bySettingHour: 24` returns nil and would crash).
+    private var windowEnd: Date {
+        cal.date(byAdding: .hour, value: CalendarLayout.workdayEndHour - CalendarLayout.workdayStartHour, to: at(CalendarLayout.workdayStartHour))!
+    }
     /// "now" before the visible window so it doesn't constrain unless intended.
     private var earlyNow: Date { at(0, 0) }
 
@@ -19,7 +24,7 @@ final class SlotFinderTests: XCTestCase {
     }
 
     func testEmptyDayReturnsStartHour() {
-        XCTAssertEqual(slot(60, busy: [], now: earlyNow), at(CalendarLayout.startHour))
+        XCTAssertEqual(slot(60, busy: [], now: earlyNow), at(CalendarLayout.workdayStartHour))
     }
 
     func testNowSnappedUpToFifteen() {
@@ -62,19 +67,19 @@ final class SlotFinderTests: XCTestCase {
     }
 
     func testFullDayReturnsNil() {
-        let busy = [DateInterval(start: at(CalendarLayout.startHour), end: at(CalendarLayout.endHour))]
+        let busy = [DateInterval(start: at(CalendarLayout.workdayStartHour), end: windowEnd)]
         XCTAssertNil(slot(60, busy: busy, now: earlyNow))
     }
 
     func testTooLongToFitReturnsNil() {
         // Only 21:30–22:00 free (30 min) but task needs 120.
-        let busy = [DateInterval(start: at(CalendarLayout.startHour), end: at(21, 30))]
+        let busy = [DateInterval(start: at(CalendarLayout.workdayStartHour), end: at(21, 30))]
         XCTAssertNil(slot(120, busy: busy, now: earlyNow))
     }
 
     func testPastDayReturnsNil() {
         // now after the whole window → nothing left today.
-        XCTAssertNil(slot(60, busy: [], now: at(CalendarLayout.endHour)))
+        XCTAssertNil(slot(60, busy: [], now: windowEnd))
     }
 
     func testChainedOverlapsResolve() {

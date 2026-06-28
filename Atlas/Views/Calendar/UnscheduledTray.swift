@@ -3,12 +3,12 @@ import SwiftUI
 /// The right-hand tray of unscheduled tasks (`state.unscheduledTasks`). Each
 /// chip is `.draggable` onto a time slot; a context menu provides a click
 /// fallback that schedules to a chosen hour or auto-suggests a free slot.
-/// Clicking a chip opens a popover to set the task's due date. The tray narrows
-/// to `spaceFilter` (the calendar grid stays global).
+/// Clicking a chip opens a popover to set the task's due date. The tray hides the
+/// same spaces as the calendar's category chips (`hiddenSpaces`).
 struct UnscheduledTray: View {
     let tasks: [TaskItem]
-    /// "All" or a space name — narrows the tray without touching the grid.
-    var spaceFilter: String = "All"
+    /// Spaces hidden via the calendar's category chips — narrows the tray to match the grid.
+    var hiddenSpaces: Set<String> = []
     /// Fallback scheduler — schedules the task to the given hour.
     let onSchedule: (UUID, Int) -> Void
     /// Auto-find-a-slot: pick the first free gap today and schedule there.
@@ -17,13 +17,17 @@ struct UnscheduledTray: View {
     var onSetDueDate: (UUID, Date?) -> Void = { _, _ in }
     /// Check a task off — it completes and drops out of the tray.
     var onToggleDone: (UUID) -> Void = { _ in }
+    /// Live drag position (point in `calendarDragSpace`) while a chip is being dragged.
+    var onDragChanged: (UUID, CGPoint) -> Void = { _, _ in }
+    /// Drag released at this point (in `calendarDragSpace`) — CalendarView maps it to a slot.
+    var onDragEnded: (UUID, CGPoint) -> Void = { _, _ in }
 
     /// Which chip's due-date popover is open.
     @State private var editingTaskID: UUID?
 
     /// Tasks shown after applying the space filter.
     private var displayedTasks: [TaskItem] {
-        spaceFilter == "All" ? tasks : tasks.filter { $0.spaceName == spaceFilter }
+        tasks.filter { !hiddenSpaces.contains($0.spaceName) }
     }
 
     var body: some View {
@@ -106,20 +110,18 @@ struct UnscheduledTray: View {
                 .stroke(AtlasTheme.Colors.border, lineWidth: 1)
         )
         .contentShape(Rectangle())
-        // Click → due-date editor. Drag still works (distinguished by movement).
-        .onTapGesture { editingTaskID = task.id }
-        .draggable(DraggableTaskID(id: task.id)) {
-            // Drag preview
-            EventTile(event: CalendarEvent(
-                title: task.title,
-                subtitle: "",
-                start: Date(),
-                end: Date().addingTimeInterval(3600),
-                color: task.spaceColor,
-                spaceName: ""
-            ))
-            .frame(width: 160, height: 40)
-        }
+        // Custom pointer drag (NOT native `.draggable`): moving the chip ≥6pt schedules it
+        // onto the grid via coordinate math in CalendarView. This sidesteps the macOS green
+        // "+" copy badge and the unreliable native drop, matching the prototype that worked.
+        // `minimumDistance: 6` means a stationary CLICK never engages the drag, so it passes
+        // through to the check-off Button (the checkbox completes instead of mis-firing).
+        // Setting a due date is via the context menu ("Set due date…") — no chip-body tap,
+        // which would otherwise fight both the drag and the checkbox.
+        .gesture(
+            DragGesture(minimumDistance: 6, coordinateSpace: .global)
+                .onChanged { value in onDragChanged(task.id, value.location) }
+                .onEnded { value in onDragEnded(task.id, value.location) }
+        )
         .contextMenu {
             Button {
                 onSuggest(task.id)

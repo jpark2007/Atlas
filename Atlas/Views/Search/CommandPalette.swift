@@ -146,6 +146,10 @@ struct CommandPaletteOverlay: View {
                 .focused($fieldFocused)
                 .onSubmit { activate() }
                 .onChange(of: query) { selection = 0 }
+                // Focus from the field's OWN lifecycle so the `.focused` binding is live
+                // when we set it — driving it from the persistent parent's onChange while
+                // the field animates in often fails to land, so typing did nothing.
+                .onAppear { DispatchQueue.main.async { fieldFocused = true } }
             Text("esc")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
@@ -293,7 +297,7 @@ struct CommandPaletteOverlay: View {
         [
             PaletteAction(id: "metrics", title: "Open Metrics", subtitle: "View your stats",
                           icon: "chart.bar.fill",
-                          run: { state.presentMetrics = true }),
+                          run: { state.settingsSection = .metrics; state.route = .settings }),
 
             PaletteAction(id: "new-task", title: "New Task", subtitle: "Capture a to-do with AI filing",
                           icon: "plus.circle.fill",

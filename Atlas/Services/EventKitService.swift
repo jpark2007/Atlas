@@ -90,7 +90,8 @@ final class EventKitService {
                 color: AtlasTheme.Colors.textSecondary,
                 spaceName: defaultSpaceName,
                 isAllDay: ekEvent.isAllDay,
-                isReadOnly: true
+                isReadOnly: true,
+                source: .apple
             )
         }
     }

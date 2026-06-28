@@ -22,6 +22,13 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS = os.path.join(REPO, "Atlas", "Assets.xcassets")
 DEFAULT_SRC = os.path.expanduser("~/Downloads/ATLASLM LOGO.jpg")
 
+# Uniform, bright brand orange. The source JPEG's strokes fade to a near-black
+# brown toward the legs, which vanishes on the dark tile — so we drop the source
+# pixels entirely and refill the figure's shape with this gradient (bright at the
+# sphere, still bright at the feet) so the whole figure reads on a dark tile.
+BRAND_TOP = "#F4A658"
+BRAND_BOT = "#E37D2C"
+
 
 def hex2rgb(h):
     h = h.lstrip("#")
@@ -67,6 +74,28 @@ def figure_alpha(figure):
     return figure.split()[3]
 
 
+def recolor(alpha, top_hex=BRAND_TOP, bottom_hex=BRAND_BOT):
+    """Paint a shape (given by its alpha) with a uniform bright-orange vertical
+    gradient, keeping the supplied anti-aliased alpha as edges."""
+    w, h = alpha.size
+    grad = vgrad(w, h, top_hex, bottom_hex).convert("RGBA")
+    grad.putalpha(alpha)
+    return grad
+
+
+def recolor_figure(figure, top_hex=BRAND_TOP, bottom_hex=BRAND_BOT):
+    return recolor(figure.split()[3], top_hex, bottom_hex)
+
+
+def thicken(alpha, passes):
+    """Dilate strokes by `passes` pixels each side, then soften the new edges so
+    the bolder small-size figure doesn't look jagged."""
+    a = alpha
+    for _ in range(max(0, passes)):
+        a = a.filter(ImageFilter.MaxFilter(3))
+    return a.filter(ImageFilter.GaussianBlur(0.5)) if passes > 0 else a
+
+
 def fit_h(img, th):
     w, h = img.size
     return img.resize((max(1, round(w * th / h)), th), Image.LANCZOS)
@@ -80,22 +109,33 @@ def fit_within(img, max_w, max_h):
     return img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
 
 
-def make_master_icon(figure, px=1024):
+def make_icon(figure, px):
+    """Render the icon natively at `px` (rather than downscaling one master) so the
+    figure's strokes can be thickened proportionally — keeping the fine line-art at
+    1024 while preventing the figure from collapsing to a smudge at 16–64px.
+
+    The dark tile is FULL-BLEED (fills the whole icon, only the rounded corners are
+    cut off) so it matches neighbouring macOS Dock icons edge-to-edge. An inset tile
+    leaves transparent padding, through which the translucent Dock shows whatever is
+    behind it (e.g. a light window) as a grey "border" — full-bleed kills that."""
     img = Image.new("RGBA", (px, px), (0, 0, 0, 0))
-    margin = round(px * 100 / 1024)
-    body = px - 2 * margin
+    body = px
     radius = round(body * 0.2237)
     tile = vgrad(body, body, "#241a11", "#0d0a07").convert("RGBA")
-    img.paste(tile, (margin, margin), rounded_mask(body, body, radius))
+    img.paste(tile, (0, 0), rounded_mask(body, body, radius))
     border = Image.new("RGBA", (body, body), (0, 0, 0, 0))
     ImageDraw.Draw(border).rounded_rectangle(
         [0, 0, body - 1, body - 1], radius=radius,
         outline=(255, 140, 66, 60), width=max(2, body // 256))
-    img.paste(border, (margin, margin), border)
+    img.paste(border, (0, 0), border)
     # Fit the figure inside a centered box on BOTH axes so a wide figure can't
-    # overflow the tile horizontally (the old height-only fit cropped the shoulders).
-    fig = fit_within(figure, round(body * 0.70), round(body * 0.64))
-    img.paste(fig, (margin + (body - fig.width) // 2, margin + (body - fig.height) // 2), fig)
+    # overflow horizontally; ~0.80 leaves a little dark tile around it (not grey).
+    fig_alpha = fit_within(figure, round(body * 0.82), round(body * 0.80)).split()[3]
+    # Aim for a ~2px stroke at every size: source strokes are ~6px at 1024, so they
+    # scale to ~0.006*px and need topping up with dilation passes at small sizes.
+    passes = max(0, round(2 - px * 0.006))
+    fig = recolor(thicken(fig_alpha, passes))
+    img.paste(fig, ((body - fig.width) // 2, (body - fig.height) // 2), fig)
     return img
 
 
@@ -119,21 +159,21 @@ def main():
     os.makedirs(ASSETS, exist_ok=True)
     write_json(os.path.join(ASSETS, "Contents.json"), {"info": {"author": "xcode", "version": 1}})
 
-    # AppIcon
+    # AppIcon — rendered natively per size so small sizes get bolder strokes
     appicon = os.path.join(ASSETS, "AppIcon.appiconset")
     os.makedirs(appicon, exist_ok=True)
-    master = make_master_icon(figure, 1024)
     for s in (16, 32, 64, 128, 256, 512, 1024):
-        master.resize((s, s), Image.LANCZOS).save(os.path.join(appicon, f"icon_{s}.png"))
+        make_icon(figure, s).save(os.path.join(appicon, f"icon_{s}.png"))
     images = [{"size": f"{b}x{b}", "idiom": "mac", "filename": f"icon_{b * sc}.png", "scale": f"{sc}x"}
               for b in (16, 32, 128, 256, 512) for sc in (1, 2)]
     write_json(os.path.join(appicon, "Contents.json"), {"images": images, "info": {"author": "xcode", "version": 1}})
 
-    # AtlasMark (in-app, original orange)
+    # AtlasMark (in-app) — same uniform bright orange so the legs don't fade out
     mark = os.path.join(ASSETS, "AtlasMark.imageset")
     os.makedirs(mark, exist_ok=True)
+    mark_fig = recolor_figure(figure)
     for th, name in ((128, "mark.png"), (256, "mark@2x.png"), (384, "mark@3x.png")):
-        fit_h(figure, th).save(os.path.join(mark, name))
+        fit_h(mark_fig, th).save(os.path.join(mark, name))
     write_json(os.path.join(mark, "Contents.json"), {
         "images": [{"idiom": "universal", "filename": n, "scale": s}
                    for n, s in (("mark.png", "1x"), ("mark@2x.png", "2x"), ("mark@3x.png", "3x"))],

@@ -54,7 +54,6 @@ struct SidebarView: View {
 
                 Spacer(minLength: 20)
 
-                metricsRow
                 profileRow
                     .padding(.top, 8)
             }
@@ -70,34 +69,10 @@ struct SidebarView: View {
         }
     }
 
-    // MARK: - Metrics (popup, not a route)
-
-    /// Metrics no longer lives in the nav stack — it opens the `presentMetrics`
-    /// popup. A small entry sits near the profile/settings area.
-    private var metricsRow: some View {
-        Button { state.presentMetrics = true } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "chart.bar.fill")
-                    .font(.system(size: 12))
-                    .frame(width: 18)
-                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
-                Text("Metrics")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
-                Spacer()
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("Open Metrics")
-    }
-
     // MARK: - Profile / settings
 
     private var profileRow: some View {
-        Button { state.presentSettings = true } label: {
+        Button { state.settingsSection = .general; state.route = .settings } label: {
             HStack(spacing: 9) {
                 Circle().fill(AtlasTheme.Colors.accent.opacity(0.15))
                     .frame(width: 24, height: 24)

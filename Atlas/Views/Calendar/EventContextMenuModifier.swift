@@ -29,7 +29,7 @@ struct EventContextMenuModifier: ViewModifier {
             if event.isReadOnly {
                 // ── Read-only external event — no edit, no delete ─────────
                 Button {} label: {
-                    Label("Read-only (Apple Calendar)", systemImage: "lock.fill")
+                    Label("Read-only (\(event.source.displayName))", systemImage: "lock.fill")
                 }
                 .disabled(true)
             } else if isTaskDerived {
@@ -57,7 +57,7 @@ struct EventContextMenuModifier: ViewModifier {
 
                 // ── Move to time… ─────────────────────────────────────────────
                 Menu("Move to time…") {
-                    ForEach(CalendarLayout.startHour...CalendarLayout.endHour, id: \.self) { hour in
+                    ForEach(CalendarLayout.startHour..<CalendarLayout.endHour, id: \.self) { hour in
                         Button(hourLabel(for: hour)) { moveToHour(hour) }
                     }
                 }

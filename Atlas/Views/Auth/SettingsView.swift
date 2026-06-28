@@ -2,14 +2,13 @@ import SwiftUI
 import AppKit
 import EventKit
 
-/// Account + integrations sheet. Reached from the sidebar profile row.
+/// Full-page Settings route (General / Integrations / Metrics). Opened by the sidebar gear.
 struct SettingsView: View {
     @EnvironmentObject private var auth: AuthService
     @EnvironmentObject private var canvas: CanvasService
     @EnvironmentObject private var shortcuts: ShortcutStore
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var googleAuth: GoogleAuthService
-    @Environment(\.dismiss) private var dismiss
 
     @AppStorage("calendar.google.enabled") private var googleCalendarEnabled: Bool = false
 
@@ -30,43 +29,72 @@ struct SettingsView: View {
     private let ekService = EventKitService()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                HStack {
-                    Text("Settings").font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Spacer()
-                    Button {
-                        dismiss()
-                        state.presentGraph = true
-                    } label: {
-                        BrandLogo(size: 18).opacity(0.85)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Open relationship graph")
-                    .padding(.trailing, 2)
-                    Button { dismiss() } label: { Image(systemName: "xmark.circle.fill") }
-                        .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.textMuted)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Settings").font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                Spacer()
+                Button { state.presentGraph = true } label: {
+                    BrandLogo(size: 18).opacity(0.85)
                 }
-
-                account
-                Divider().overlay(AtlasTheme.Colors.border)
-                canvasSection
-                Divider().overlay(AtlasTheme.Colors.border)
-                integrations
-                Divider().overlay(AtlasTheme.Colors.border)
-                calendarsSection
-                Divider().overlay(AtlasTheme.Colors.border)
-                shortcutsSection
-
-                Spacer(minLength: 8)
+                .buttonStyle(.plain)
+                .help("Open relationship graph")
             }
-            .padding(28)
+            .padding(.horizontal, 28)
+            .padding(.top, 24)
+            .padding(.bottom, 14)
+
+            Picker("", selection: $state.settingsSection) {
+                ForEach(SettingsSection.allCases) { section in
+                    Text(section.title).tag(section)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 360, alignment: .leading)
+            .padding(.horizontal, 28)
+            .padding(.bottom, 14)
+
+            Divider().overlay(AtlasTheme.Colors.border)
+
+            sectionContent
         }
-        .frame(width: 460, height: 800)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AtlasTheme.Colors.bgBase)
         .onAppear { refreshAppleAccessStatus() }
         .onDisappear { stopRecording() }
+    }
+
+    /// Body for the selected settings section. Metrics renders the full `MetricsView`
+    /// (which has its own ScrollView); the others share a scrolling settings stack.
+    @ViewBuilder
+    private var sectionContent: some View {
+        switch state.settingsSection {
+        case .general:
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    account
+                    Divider().overlay(AtlasTheme.Colors.border)
+                    shortcutsSection
+                    Spacer(minLength: 8)
+                }
+                .padding(28)
+            }
+        case .integrations:
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    canvasSection
+                    Divider().overlay(AtlasTheme.Colors.border)
+                    integrations
+                    Divider().overlay(AtlasTheme.Colors.border)
+                    calendarsSection
+                    Spacer(minLength: 8)
+                }
+                .padding(28)
+            }
+        case .metrics:
+            MetricsView()
+        }
     }
 
     private var account: some View {
@@ -87,7 +115,7 @@ struct SettingsView: View {
                     Button("Sign in") { auth.signOut() } // returns to gate
                         .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.accent)
                 } else {
-                    Button("Sign out") { auth.signOut(); dismiss() }
+                    Button("Sign out") { auth.signOut() }
                         .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.danger)
                 }
             }

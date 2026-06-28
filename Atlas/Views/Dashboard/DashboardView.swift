@@ -9,8 +9,13 @@ struct DashboardView: View {
                 header
 
                 HStack(alignment: .top, spacing: 18) {
-                    ScheduleCard(entries: state.todaysEvents)
-                        .frame(maxWidth: .infinity)
+                    // Schedule + tasks stacked on the left so tasks sit directly under
+                    // the schedule (no dead space); focus/goals/metrics on the right.
+                    VStack(spacing: 18) {
+                        ScheduleCard(entries: state.todaysEvents)
+                        DashboardTasksSection()
+                    }
+                    .frame(maxWidth: .infinity)
 
                     VStack(spacing: 18) {
                         FocusCard()
@@ -19,9 +24,6 @@ struct DashboardView: View {
                     }
                     .frame(width: 320)
                 }
-
-                // Full-width tasks section, grouped by due-date bucket.
-                DashboardTasksSection()
             }
             .padding(28)
         }
@@ -40,21 +42,6 @@ struct DashboardView: View {
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
             }
             Spacer()
-            HStack(spacing: 22) {
-                statBlock(value: "\(state.tasks.count)", label: "tasks today", accent: false)
-                statBlock(value: "10", label: "free hours", accent: true)
-            }
-        }
-    }
-
-    private func statBlock(value: String, label: String, accent: Bool) -> some View {
-        VStack(alignment: .trailing, spacing: 2) {
-            Text(value)
-                .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(accent ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textPrimary)
-            Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
 

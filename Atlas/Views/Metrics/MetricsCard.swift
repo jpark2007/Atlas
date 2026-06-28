@@ -20,7 +20,7 @@ struct MetricsCard: View {
                         .font(AtlasTheme.Font.cardTitle())
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Spacer()
-                    Button { state.presentMetrics = true } label: {
+                    Button { state.settingsSection = .metrics; state.route = .settings } label: {
                         HStack(spacing: 4) {
                             Text("Details")
                             Image(systemName: "chevron.right")

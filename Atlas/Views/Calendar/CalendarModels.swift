@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// Day / Week / Month / List segmented mode for the calendar.
 enum CalendarMode: String, CaseIterable, Identifiable {
@@ -15,21 +14,16 @@ extension CalendarEvent {
     var durationMinutes: Int { max(1, Int(end.timeIntervalSince(start) / 60)) }
 }
 
-/// The drag payload carried from the tray to a time slot.
-struct DraggableTaskID: Codable, Transferable {
-    let id: UUID
-
-    static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .json)
-    }
-}
-
 // MARK: - Layout helpers
 
 /// Shared geometry constants for the time grid.
 enum CalendarLayout {
-    static let startHour: Int = 7        // 7 AM
-    static let endHour: Int = 22         // 10 PM
+    static let startHour: Int = 0        // 12 AM — full-day grid; the view auto-scrolls to "now"
+    static let endHour: Int = 24         // midnight (exclusive end → last row is the 11 PM slot)
+    /// Working-hours window for auto-scheduling ("Suggest a time"). The grid spans the
+    /// full day, but slot suggestions stay within waking hours rather than proposing 3 AM.
+    static let workdayStartHour: Int = 7   // 7 AM
+    static let workdayEndHour: Int = 22    // 10 PM
     static let hourHeight: CGFloat = 56
     static let gutterWidth: CGFloat = 54
     static let minEventHeight: CGFloat = 26

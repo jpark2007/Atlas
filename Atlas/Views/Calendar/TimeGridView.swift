@@ -1,5 +1,47 @@
 import SwiftUI
 
+// MARK: - Drag-to-schedule plumbing (custom pointer drag)
+
+/// A day column's hit-frame in GLOBAL coordinates, published so the tray's custom
+/// drag can map a release point → (date, fractional hour) without the native
+/// `.dropDestination` (which forces the green "+" copy badge and is unreliable
+/// inside the scrolling grid). Global space is scroll-aware and unambiguous across
+/// the grid's ScrollView — a named space measured inside the scroll skews the hour.
+struct TaskDropColumn: Equatable {
+    let date: Date
+    let frame: CGRect
+}
+
+struct TaskDropColumnsKey: PreferenceKey {
+    static var defaultValue: [TaskDropColumn] = []
+    static func reduce(value: inout [TaskDropColumn], nextValue: () -> [TaskDropColumn]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+/// The little chip that follows the cursor during a tray drag.
+struct TaskDragPreview: View {
+    let title: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 3, height: 20)
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(AtlasTheme.Colors.bgElevated)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(AtlasTheme.Colors.accent.opacity(0.5), lineWidth: 1))
+        .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
+        .frame(width: 170, alignment: .leading)
+    }
+}
+
 // MARK: - Hour gutter (shared left rail of time labels)
 
 struct HourGutter: View {
@@ -32,15 +74,11 @@ struct DayColumnView: View {
     let date: Date
     let events: [CalendarEvent]
     let isToday: Bool
-    /// Returns true if the drop was accepted.
-    let onDropTask: (UUID, Date, Double) -> Bool
     /// Called when the user taps an empty area of the grid (not on an EventTile).
     /// `hour` is a fractional clock hour (e.g. 9.5 = 9:30 AM).
     var onTapEmpty: ((Date, Double) -> Void)? = nil
     /// Called when the user left-clicks an event tile. Feeds into `CalendarView.openSource(for:)`.
     var onTapEvent: ((CalendarEvent) -> Void)? = nil
-
-    @State private var isTargeted = false
 
     var body: some View {
         GeometryReader { geo in
@@ -54,10 +92,6 @@ struct DayColumnView: View {
                     AtlasTheme.Colors.accent.opacity(0.04)
                 }
                 hourLines
-                if isTargeted {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(AtlasTheme.Colors.accent.opacity(0.06))
-                }
                 if isToday { nowLine }
                 ForEach(positioned) { item in
                     tile(for: item, columnWidth: geo.size.width)
@@ -72,13 +106,16 @@ struct DayColumnView: View {
                 let hours = Double(CalendarLayout.startHour) + Double(location.y) / Double(CalendarLayout.hourHeight)
                 onTapEmpty?(date, hours)
             }
-            .dropDestination(for: DraggableTaskID.self) { items, location in
-                guard let first = items.first else { return false }
-                let hours = Double(CalendarLayout.startHour) + Double(location.y) / Double(CalendarLayout.hourHeight)
-                return onDropTask(first.id, date, hours)
-            } isTargeted: { targeted in
-                isTargeted = targeted
-            }
+            // Publish this column's hit-frame so the tray's custom drag can resolve a
+            // release point → (date, hour). Replaces the native `.dropDestination`.
+            .background(
+                GeometryReader { g in
+                    Color.clear.preference(
+                        key: TaskDropColumnsKey.self,
+                        value: [TaskDropColumn(date: date, frame: g.frame(in: .global))]
+                    )
+                }
+            )
         }
         .frame(height: CalendarLayout.totalHeight)
     }
@@ -202,7 +239,6 @@ struct EventTile: View {
 struct DayCalendarView: View {
     let date: Date
     let events: [CalendarEvent]
-    let onDropTask: (UUID, Date, Double) -> Bool
     var onTapEmpty: ((Date, Double) -> Void)? = nil
     var onTapEvent: ((CalendarEvent) -> Void)? = nil
 
@@ -216,7 +252,6 @@ struct DayCalendarView: View {
                             date: date,
                             events: events,
                             isToday: Calendar.current.isDateInToday(date),
-                            onDropTask: onDropTask,
                             onTapEmpty: onTapEmpty,
                             onTapEvent: onTapEvent
                         )
@@ -251,7 +286,6 @@ struct WeekGridView: View {
     let days: [Date]
     /// Provides the (space-filtered) events for a given day.
     let eventsProvider: (Date) -> [CalendarEvent]
-    let onDropTask: (UUID, Date, Double) -> Bool
     var onTapEmpty: ((Date, Double) -> Void)? = nil
     var onTapEvent: ((CalendarEvent) -> Void)? = nil
 
@@ -284,7 +318,6 @@ struct WeekGridView: View {
                                         date: day,
                                         events: eventsProvider(day),
                                         isToday: Calendar.current.isDateInToday(day),
-                                        onDropTask: onDropTask,
                                         onTapEmpty: onTapEmpty,
                                         onTapEvent: onTapEvent
                                     )

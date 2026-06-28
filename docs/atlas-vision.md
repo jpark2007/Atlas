@@ -8,6 +8,7 @@
 - **Repo:** https://github.com/jpark2007/Atlas
 
 > Read this file first for the big picture. Each subsystem has a detailed spec in [`specs/`](./specs/).
+> A preliminary **iOS companion** design (capture + glance + widgets) is drafted in [`specs/11-mobile-companion.md`](./specs/11-mobile-companion.md) — parked for later, after the macOS app.
 
 ---
 

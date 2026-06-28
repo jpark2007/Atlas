@@ -39,16 +39,16 @@ final class AppStateScheduleTests: XCTestCase {
         let state = AppState()
         let t = state.addTask(title: "Study", durationMin: 60)
         let slot = state.suggestSlot(for: t, on: day, now: at(0))
-        XCTAssertEqual(slot, at(CalendarLayout.startHour))
+        XCTAssertEqual(slot, at(CalendarLayout.workdayStartHour))
     }
 
     func testSuggestSlotAvoidsAnAlreadyScheduledTask() {
         let state = AppState()
         let blocker = state.addTask(title: "Blocker", durationMin: 60)
-        state.schedule(taskId: blocker.id, at: at(CalendarLayout.startHour))
+        state.schedule(taskId: blocker.id, at: at(CalendarLayout.workdayStartHour))
         let t = state.addTask(title: "Study", durationMin: 60)
         let slot = state.suggestSlot(for: t, on: day, now: at(0))
-        XCTAssertEqual(slot, at(CalendarLayout.startHour + 1))
+        XCTAssertEqual(slot, at(CalendarLayout.workdayStartHour + 1))
     }
 
     // MARK: revert-after-slot via unscheduledTasks

@@ -29,6 +29,24 @@ struct Project: Identifiable {
 /// A calendar event — the single source of truth shared by the Dashboard
 /// schedule and the Calendar screen. Backed by real `Date`s so the Calendar
 /// can lay it out on a time grid and so drag-to-schedule has something concrete.
+
+/// Where a `CalendarEvent` originated. Drives the source label and edit affordances —
+/// attribution is set ONCE at ingest, never guessed from other fields.
+enum EventSource {
+    case atlas      // app-owned, writable
+    case apple      // Apple Calendar (EventKit)
+    case google     // Google Calendar
+
+    /// Human label for the source (e.g. the read-only menu row).
+    var displayName: String {
+        switch self {
+        case .atlas:  return "Atlas"
+        case .apple:  return "Apple Calendar"
+        case .google: return "Google Calendar"
+        }
+    }
+}
+
 struct CalendarEvent: Identifiable {
     var id: UUID = UUID()
     var title: String
@@ -42,6 +60,9 @@ struct CalendarEvent: Identifiable {
     var projectID: UUID? = nil
     /// True for events sourced externally (e.g. Apple Calendar). Read-only: never persisted, never edited.
     var isReadOnly: Bool = false
+    /// Where this event came from. Stamped at ingest (`.apple`/`.google`) or `.atlas`
+    /// for app-owned events — drives the correct source label. Never inferred.
+    var source: EventSource = .atlas
 
     /// The backing Google Calendar event id, set after a successful write-back so
     /// later edits/deletes target the same Google event. Held in memory this build

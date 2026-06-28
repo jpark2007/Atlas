@@ -14,14 +14,16 @@ enum SlotFinder {
         on day: Date,
         busy: [DateInterval],
         now: Date,
-        startHour: Int = CalendarLayout.startHour,
-        endHour: Int = CalendarLayout.endHour,
+        startHour: Int = CalendarLayout.workdayStartHour,
+        endHour: Int = CalendarLayout.workdayEndHour,
         snapMinutes: Int = 15,
         calendar: Calendar = .current
     ) -> Date? {
         guard durationMin > 0, snapMinutes > 0 else { return nil }
+        // Derive dayEnd by ADDING hours, not `bySettingHour: endHour` — endHour can be 24
+        // (full-day grid), and `bySettingHour: 24` returns nil. Adding handles 24 → next-day 00:00.
         guard let dayStart = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: day),
-              let dayEnd   = calendar.date(bySettingHour: endHour,   minute: 0, second: 0, of: day),
+              let dayEnd   = calendar.date(byAdding: .hour, value: endHour - startHour, to: dayStart),
               dayEnd > dayStart else { return nil }
 
         let duration = TimeInterval(durationMin * 60)

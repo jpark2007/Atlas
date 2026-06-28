@@ -8,12 +8,19 @@ struct CalendarView: View {
 
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var mode: CalendarMode = .day
-    @State private var spaceFilter: String = "All"
 
     /// In-calendar title search; empty = no search filter.
     @State private var searchText: String = ""
     /// Space names hidden via the color/category filter row. Empty = show all.
     @State private var hiddenSpaces: Set<String> = []
+
+    // MARK: - Drag-to-schedule (custom pointer drag)
+    /// The task currently being dragged from the tray (nil = no drag in progress).
+    @State private var dragTaskID: UUID?
+    /// Live cursor position during a drag, in `calendarDragSpace`.
+    @State private var dragLocation: CGPoint = .zero
+    /// Day-column hit-frames published by the grid, in `calendarDragSpace`.
+    @State private var dropColumns: [TaskDropColumn] = []
 
     // MARK: - Apple Calendar sync
     @AppStorage("calendar.apple.enabled") private var appleCalendarEnabled: Bool = false
@@ -38,7 +45,7 @@ struct CalendarView: View {
 
                 UnscheduledTray(
                     tasks: state.unscheduledTasks,
-                    spaceFilter: spaceFilter,
+                    hiddenSpaces: hiddenSpaces,
                     onSchedule: { taskID, hour in
                         schedule(taskID: taskID, on: selectedDate, hour: Double(hour))
                     },
@@ -46,12 +53,34 @@ struct CalendarView: View {
                     onSetDueDate: { taskID, date in
                         state.setDueDate(taskId: taskID, date: date)
                     },
-                    onToggleDone: { state.toggleTask($0) }
+                    onToggleDone: { state.toggleTask($0) },
+                    onDragChanged: { id, point in
+                        dragTaskID = id
+                        dragLocation = point
+                    },
+                    onDragEnded: { id, point in
+                        performTaskDrop(taskID: id, at: point)
+                        dragTaskID = nil
+                    }
                 )
             }
             .padding(.horizontal, 24)
             .padding(.top, 14)
             .padding(.bottom, 18)
+            .onPreferenceChange(TaskDropColumnsKey.self) { dropColumns = $0 }
+            // The drag point + column frames are in GLOBAL space. Convert the global
+            // drag point into the overlay's local space (subtract its global origin)
+            // to position the preview chip under the cursor.
+            .overlay {
+                GeometryReader { proxy in
+                    if let id = dragTaskID, let task = state.tasks.first(where: { $0.id == id }) {
+                        let origin = proxy.frame(in: .global).origin
+                        TaskDragPreview(title: task.title, color: task.spaceColor)
+                            .position(x: dragLocation.x - origin.x, y: dragLocation.y - origin.y)
+                    }
+                }
+                .allowsHitTesting(false)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AtlasTheme.Colors.bgBase)
@@ -107,7 +136,6 @@ struct CalendarView: View {
                 .frame(width: 280)
                 .labelsHidden()
 
-                spaceFilterMenu
                 Spacer()
                 searchField
             }
@@ -242,42 +270,6 @@ struct CalendarView: View {
         .font(.system(size: 13, weight: .semibold))
     }
 
-    private var spaceFilterMenu: some View {
-        Menu {
-            Button("All") { spaceFilter = "All" }
-            Divider()
-            ForEach(state.spaces) { space in
-                Button {
-                    spaceFilter = space.name
-                } label: {
-                    Label(space.name, systemImage: spaceFilter == space.name ? "checkmark" : "circle.fill")
-                }
-            }
-        } label: {
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(spaceFilter == "All" ? AtlasTheme.Colors.textMuted : state.calendarSpaceColor(named: spaceFilter))
-                    .frame(width: 8, height: 8)
-                Text(spaceFilter)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-            }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 6)
-            .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(AtlasTheme.Colors.border, lineWidth: 1)
-            )
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-    }
-
     // MARK: - Grid
 
     @ViewBuilder
@@ -287,7 +279,6 @@ struct CalendarView: View {
             DayCalendarView(
                 date: selectedDate,
                 events: filteredEvents(on: selectedDate),
-                onDropTask: handleDrop,
                 onTapEmpty: handleTapEmpty,
                 onTapEvent: openSource(for:)
             )
@@ -295,7 +286,6 @@ struct CalendarView: View {
             WeekGridView(
                 days: weekDays,
                 eventsProvider: { filteredEvents(on: $0) },
-                onDropTask: handleDrop,
                 onTapEmpty: handleTapEmpty,
                 onTapEvent: openSource(for:)
             )
@@ -333,7 +323,6 @@ struct CalendarView: View {
     /// Shared filter gate for both events and tasks: the single-space dropdown,
     /// the color/category hide-row, and the in-calendar title search.
     private func passesFilters(_ spaceName: String, title: String) -> Bool {
-        if spaceFilter != "All" && spaceName != spaceFilter { return false }
         if hiddenSpaces.contains(spaceName) { return false }
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !q.isEmpty && !title.localizedCaseInsensitiveContains(q) { return false }
@@ -470,9 +459,14 @@ struct CalendarView: View {
 
     // MARK: - Scheduling
 
-    /// Drop callback from the grid (hour is fractional from the drop location).
-    private func handleDrop(taskID: UUID, date: Date, hour: Double) -> Bool {
-        schedule(taskID: taskID, on: date, hour: hour)
+    /// Resolve a custom-drag release point (in `calendarDragSpace`) to a day column +
+    /// fractional hour, then schedule. No-op if released outside any day column (e.g.
+    /// back on the tray), so a mis-drop simply returns the task to the tray.
+    private func performTaskDrop(taskID: UUID, at point: CGPoint) {
+        guard let column = dropColumns.first(where: { $0.frame.contains(point) }) else { return }
+        let hour = Double(CalendarLayout.startHour)
+            + Double(point.y - column.frame.minY) / Double(CalendarLayout.hourHeight)
+        _ = schedule(taskID: taskID, on: column.date, hour: hour)
     }
 
     /// Auto-find-a-slot: scan the selected day for the first free gap that fits
@@ -494,7 +488,18 @@ struct CalendarView: View {
         let clamped = min(max(hour, Double(CalendarLayout.startHour)), Double(CalendarLayout.endHour) - 0.25)
         let h = Int(clamped)
         let minute = (Int((clamped - Double(h)) * 60) / 15) * 15
-        guard let dropped = cal.date(bySettingHour: h, minute: minute, second: 0, of: date) else { return false }
+        guard var dropped = cal.date(bySettingHour: h, minute: minute, second: 0, of: date) else { return false }
+
+        // An explicit drop in the past (earlier today than "now") would instantly
+        // resurface to the tray via isEffectivelyUnscheduled. Bump it to the next
+        // 15-min boundary at/after now so a deliberate drop always sticks.
+        if cal.isDateInToday(dropped), dropped < state.now {
+            let nowMinutes = cal.component(.hour, from: state.now) * 60 + cal.component(.minute, from: state.now)
+            let snapped = ((nowMinutes / 15) + 1) * 15
+            if let next = cal.date(bySettingHour: snapped / 60, minute: snapped % 60, second: 0, of: date) {
+                dropped = next
+            }
+        }
 
         withAnimation(.easeOut(duration: 0.2)) {
             state.schedule(taskId: taskID, at: dropped)

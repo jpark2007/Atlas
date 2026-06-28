@@ -31,13 +31,12 @@ extension View {
 struct AtlasCaptureOverlayModifier: ViewModifier {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var auth: AuthService
-    @EnvironmentObject private var shortcuts: ShortcutStore
 
     func body(content: Content) -> some View {
         content
-            // Hidden ⌘⇧K shortcut in a background layer so it never
-            // affects layout or steals visual focus.
-            .background(shortcutInstaller)
+            // ⌘⇧K is owned by the global Carbon hotkey → floating CapturePanelController,
+            // so there's no in-app keyboard shortcut here (it would double-fire when Atlas
+            // is focused). This overlay still renders for the menu-bar "Quick Capture".
             .overlay(alignment: .top) {
                 if state.presentCapture {
                     CaptureCommandBar(
@@ -57,19 +56,6 @@ struct AtlasCaptureOverlayModifier: ViewModifier {
             set: { state.presentCapture = $0 }
         )
     }
-
-    private var shortcutInstaller: some View {
-        let binding = shortcuts.binding(for: .capture)
-        return Button("Quick capture") {
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
-                state.presentCapture = true
-            }
-        }
-        .keyboardShortcut(binding.keyEquivalent, modifiers: binding.modifiers)
-        .opacity(0)
-        .frame(width: 0, height: 0)
-        .accessibilityHidden(true)
-    }
 }
 
 // MARK: - The command bar
@@ -80,6 +66,9 @@ struct CaptureCommandBar: View {
 
     @Binding var isPresented: Bool
     let atlasAI: AtlasAI
+    /// When hosted in the floating NSPanel, drop the full-bleed scrim + top offset —
+    /// the panel itself is the surface and handles click-outside / Esc dismissal.
+    var inPanel: Bool = false
 
     @State private var text: String = ""
     @FocusState private var fieldFocused: Bool
@@ -95,24 +84,32 @@ struct CaptureCommandBar: View {
     private let corner: CGFloat = 18
 
     var body: some View {
-        ZStack(alignment: .top) {
-            // Click-outside catcher + subtle scrim for focus.
-            Color.black.opacity(0.16)
-                .ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture { dismiss() }
+        Group {
+            if inPanel {
+                // Hosted in the floating panel — just the bar; the panel handles
+                // click-outside + Esc dismissal (CapturePanelController).
+                bar.frame(width: barWidth).padding(16)
+            } else {
+                ZStack(alignment: .top) {
+                    // Click-outside catcher + subtle scrim for focus.
+                    Color.black.opacity(0.16)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture { dismiss() }
 
-            bar
-                .frame(width: barWidth)
-                .padding(.top, 96)
+                    bar
+                        .frame(width: barWidth)
+                        .padding(.top, 96)
+                }
+                .onExitCommand { dismiss() }
+                .background(
+                    Button("", action: dismiss)
+                        .keyboardShortcut(.cancelAction)
+                        .opacity(0)
+                        .accessibilityHidden(true)
+                )
+            }
         }
-        .onExitCommand { dismiss() }
-        .background(
-            Button("", action: dismiss)
-                .keyboardShortcut(.cancelAction)
-                .opacity(0)
-                .accessibilityHidden(true)
-        )
         .onAppear {
             DispatchQueue.main.async { fieldFocused = true }
         }

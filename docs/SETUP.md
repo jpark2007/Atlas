@@ -32,15 +32,29 @@ This powers accounts, data sync, and hides our API keys.
 
 ---
 
-## 3. Google Cloud OAuth  ← later (Google Calendar / Drive / Gmail)
+## 3. Google Cloud OAuth  ← Calendar sync is now LIVE; Drive/Gmail still to come
 
-Needed when we add Google Calendar sync, Drive folders, and email capture.
+Powers Google Calendar sync (live), Notes ↔ Google Docs, Drive folders, and (future)
+email capture. Done once for the whole app — every account just clicks "Connect Google".
 
 1. https://console.cloud.google.com → new project `Atlas`.
-2. **APIs & Services → Enable APIs**: Google Calendar API, Google Drive API, Gmail API.
-3. **OAuth consent screen**: External, add yourself + Jonah as test users.
-4. **Credentials → Create OAuth client ID** → Web application. Add the Supabase redirect URL (I'll give you the exact one).
-5. Copy the **Client ID + Client Secret** → paste to me (stored server-side).
+2. **APIs & Services → Enable APIs**: Google Calendar API, **Google Docs API**
+   (Notes ↔ Docs), Google Drive API, and Gmail API (the last two for future Drive
+   folders / email capture).
+3. **OAuth consent screen**: External, status **Testing**, add yourself + Jonah as
+   test users (this avoids the "access blocked / app not verified" wall at consent).
+4. **Credentials → Create OAuth client ID → Desktop app** (named e.g. "Atlas LM").
+   The app uses the Authorization-Code-with-**PKCE** flow over a **loopback redirect**
+   (`http://127.0.0.1:<ephemeral-port>`), so there is **no** Supabase/Web redirect URL
+   to configure for this client.
+5. Copy the **Client ID + Client Secret** → paste to me. They go in the **git-ignored
+   `Atlas/Config/Secrets.xcconfig`** (fed into `Info.plist` at build time), NOT into
+   committed source. For a Desktop client the secret isn't a hard boundary — PKCE is
+   the real protection.
+
+> Note: "Sign in with Google" for *user accounts* (if/when enabled) is a separate
+> Supabase social-login OAuth client (Web type, Supabase redirect URL) — distinct from
+> this Desktop client, which is only for the Calendar/Docs/Drive data integrations.
 
 ---
 

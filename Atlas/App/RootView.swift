@@ -6,7 +6,21 @@ enum Route: Hashable {
     case calendar
     case focus
     case project(UUID)
-    case metrics
+    case settings
+}
+
+/// Sections within the full-page Settings route. Metrics lives here now — it is no
+/// longer a sidebar item or a popup sheet.
+enum SettingsSection: String, CaseIterable, Identifiable {
+    case general, integrations, metrics
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .general:      return "General"
+        case .integrations: return "Integrations"
+        case .metrics:      return "Metrics"
+        }
+    }
 }
 
 struct RootView: View {
@@ -25,8 +39,8 @@ struct RootView: View {
                     CalendarView()
                 case .focus:
                     FocusView()
-                case .metrics:
-                    MetricsView()
+                case .settings:
+                    SettingsView()
                 case .project(let id):
                     if let project = state.project(id) {
                         ProjectDetailView(project: project)
@@ -41,12 +55,13 @@ struct RootView: View {
         .navigationSplitViewStyle(.balanced)
         .background(AtlasTheme.Colors.bgBase)
         .toolbar(removing: .sidebarToggle)
-        .toolbar(.hidden, for: .windowToolbar)
+        // Do NOT add `.toolbar(.hidden, for: .windowToolbar)` here — it strips the entire
+        // window toolbar INCLUDING the traffic-light controls (close/min/zoom). That was
+        // the real cause of the missing buttons. The gray toolbar strip is instead
+        // suppressed by WindowConfigurator (window.toolbar = nil), which is button-safe.
         .background(WindowConfigurator())
         .atlasCaptureOverlay()   // ⌘⇧K quick-capture pill
         .atlasCommandPalette()   // ⌘K search / command palette
-        .sheet(isPresented: $state.presentSettings) { SettingsView() }
-        .sheet(isPresented: $state.presentMetrics) { MetricsPopupView() }
         .overlay {
             if state.presentGraph {
                 GraphView()

@@ -35,11 +35,8 @@ final class AppState: ObservableObject {
     /// ⌘K command palette / search presentation.
     @Published var presentSearch: Bool = false
 
-    /// Account / integrations settings sheet.
-    @Published var presentSettings: Bool = false
-
-    /// Metrics popup sheet.
-    @Published var presentMetrics: Bool = false
+    /// Which section the full-page Settings route shows (General / Integrations / Metrics).
+    @Published var settingsSection: SettingsSection = .general
 
     /// Obsidian-style relationship graph overlay (opened from the Metrics logo button).
     @Published var presentGraph: Bool = false
