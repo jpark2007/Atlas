@@ -15,6 +15,8 @@ struct UnscheduledTray: View {
     var onSuggest: (UUID) -> Void = { _ in }
     /// Manual due-date editor — nil clears the due date.
     var onSetDueDate: (UUID, Date?) -> Void = { _, _ in }
+    /// Check a task off — it completes and drops out of the tray.
+    var onToggleDone: (UUID) -> Void = { _ in }
 
     /// Which chip's due-date popover is open.
     @State private var editingTaskID: UUID?
@@ -67,6 +69,15 @@ struct UnscheduledTray: View {
 
     private func taskChip(_ task: TaskItem) -> some View {
         HStack(spacing: 9) {
+            // Check it off — completes the task; it then drops out of the tray.
+            Button { onToggleDone(task.id) } label: {
+                Image(systemName: "circle")
+                    .font(.system(size: 15))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Mark done")
             RoundedRectangle(cornerRadius: 2)
                 .fill(task.spaceColor)
                 .frame(width: 3, height: 28)

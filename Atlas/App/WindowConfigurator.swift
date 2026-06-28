@@ -21,12 +21,16 @@ struct WindowConfigurator: NSViewRepresentable {
     }
 
     private func configure(_ window: NSWindow) {
-        // Keep the window titled so the standard traffic-light controls exist.
-        window.styleMask.insert(.titled)
+        // Keep the window titled + closable/miniaturizable/resizable so the standard
+        // traffic-light controls exist AND are enabled — a hidden-title-bar style can
+        // strip these flags, which leaves the red/yellow/green buttons missing.
+        window.styleMask.insert([.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView])
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.styleMask.insert(.fullSizeContentView)
-        window.isMovableByWindowBackground = true
+        // Do NOT make the whole body drag the window — it hijacks content drags such
+        // as calendar drag-to-schedule (you'd move the window instead of the event).
+        // The transparent title-bar strip at the top still drags the window normally.
+        window.isMovableByWindowBackground = false
         window.backgroundColor = NSColor(srgbRed: 0x16/255, green: 0x13/255, blue: 0x0f/255, alpha: 1) // bgBase
         // Kill the toolbar NavigationSplitView attaches (the gray bar's source).
         window.toolbar = nil

@@ -72,6 +72,14 @@ def fit_h(img, th):
     return img.resize((max(1, round(w * th / h)), th), Image.LANCZOS)
 
 
+def fit_within(img, max_w, max_h):
+    """Scale to fit inside a box on BOTH axes (preserves aspect). Prevents a wide
+    figure from overflowing the icon tile and getting cropped at the edges."""
+    w, h = img.size
+    scale = min(max_w / w, max_h / h)
+    return img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
+
+
 def make_master_icon(figure, px=1024):
     img = Image.new("RGBA", (px, px), (0, 0, 0, 0))
     margin = round(px * 100 / 1024)
@@ -84,7 +92,9 @@ def make_master_icon(figure, px=1024):
         [0, 0, body - 1, body - 1], radius=radius,
         outline=(255, 140, 66, 60), width=max(2, body // 256))
     img.paste(border, (margin, margin), border)
-    fig = fit_h(figure, round(body * 0.66))
+    # Fit the figure inside a centered box on BOTH axes so a wide figure can't
+    # overflow the tile horizontally (the old height-only fit cropped the shoulders).
+    fig = fit_within(figure, round(body * 0.70), round(body * 0.64))
     img.paste(fig, (margin + (body - fig.width) // 2, margin + (body - fig.height) // 2), fig)
     return img
 

@@ -40,13 +40,15 @@ struct AtlasMenuBarContent: View {
     var body: some View {
         Button("Open Atlas") { Self.activateMainWindow() }
 
+        // No ⌘⇧K here on purpose: a MenuBarExtra key-equivalent shadows BOTH the
+        // Carbon global hotkey and the in-app capture shortcut whenever Atlas is the
+        // active app, breaking ⌘⇧K. The global hotkey + in-app shortcut own that combo.
         Button("Quick Capture") {
             Self.activateMainWindow()
             withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
                 state.presentCapture = true
             }
         }
-        .keyboardShortcut("k", modifiers: [.command, .shift])
 
         Divider()
 

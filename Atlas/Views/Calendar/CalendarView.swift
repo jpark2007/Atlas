@@ -45,7 +45,8 @@ struct CalendarView: View {
                     onSuggest: suggestSlot(for:),
                     onSetDueDate: { taskID, date in
                         state.setDueDate(taskId: taskID, date: date)
-                    }
+                    },
+                    onToggleDone: { state.toggleTask($0) }
                 )
             }
             .padding(.horizontal, 24)
