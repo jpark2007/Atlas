@@ -47,6 +47,14 @@ struct RootView: View {
         .atlasCommandPalette()   // ⌘K search / command palette
         .sheet(isPresented: $state.presentSettings) { SettingsView() }
         .sheet(isPresented: $state.presentMetrics) { MetricsPopupView() }
+        .overlay {
+            if state.presentGraph {
+                GraphView()
+                    .transition(.opacity.combined(with: .scale(scale: 1.02)))
+                    .zIndex(10)
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: state.presentGraph)
     }
 }
 

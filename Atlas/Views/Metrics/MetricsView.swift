@@ -128,11 +128,23 @@ struct MetricsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
 
-                // Page kicker
-                Text("METRICS")
-                    .font(AtlasTheme.Font.sectionLabel())
-                    .tracking(1.4)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                // Page kicker + relationship-graph entry
+                HStack {
+                    Text("METRICS")
+                        .font(AtlasTheme.Font.sectionLabel())
+                        .tracking(1.4)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    Spacer()
+                    Button { state.presentGraph = true } label: {
+                        HStack(spacing: 6) {
+                            BrandLogo(size: 16).opacity(0.85)
+                            Text("Graph").font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open relationship graph")
+                }
 
                 // ── Summary ────────────────────────────────────────────────
                 AtlasCard {

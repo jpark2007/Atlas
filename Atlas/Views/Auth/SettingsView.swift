@@ -36,6 +36,15 @@ struct SettingsView: View {
                     Text("Settings").font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Spacer()
+                    Button {
+                        dismiss()
+                        state.presentGraph = true
+                    } label: {
+                        BrandLogo(size: 18).opacity(0.85)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open relationship graph")
+                    .padding(.trailing, 2)
                     Button { dismiss() } label: { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.textMuted)
                 }

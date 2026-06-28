@@ -24,6 +24,17 @@ struct MetricsPopupView: View {
                 Spacer()
                 Button {
                     state.presentMetrics = false
+                    state.presentGraph = true
+                } label: {
+                    BrandLogo(size: 18)
+                        .frame(width: 22, height: 22)
+                        .opacity(0.85)
+                }
+                .buttonStyle(.plain)
+                .help("Open relationship graph")
+                .padding(.trailing, 2)
+                Button {
+                    state.presentMetrics = false
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 11, weight: .semibold))

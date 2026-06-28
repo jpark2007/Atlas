@@ -31,11 +31,11 @@ struct DashboardView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("THURSDAY · JUNE 26")
+                Text(todayKicker)
                     .font(AtlasTheme.Font.kicker())
                     .tracking(1.4)
                     .foregroundStyle(AtlasTheme.Colors.accent)
-                Text("Good morning, \(state.userName)")
+                Text("\(greeting), \(state.userName)")
                     .font(AtlasTheme.Font.greeting())
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
             }
@@ -55,6 +55,23 @@ struct DashboardView: View {
             Text(label)
                 .font(.system(size: 11))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
+        }
+    }
+
+    /// Live date kicker (e.g. "THURSDAY · JUNE 26"), driven by `state.now` so it
+    /// refreshes as the day rolls over — replaces the old hardcoded mock string.
+    private var todayKicker: String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE · MMMM d"
+        return f.string(from: state.now).uppercased()
+    }
+
+    /// Time-of-day greeting, driven by `state.now`.
+    private var greeting: String {
+        switch Calendar.current.component(.hour, from: state.now) {
+        case 5..<12:  return "Good morning"
+        case 12..<17: return "Good afternoon"
+        default:      return "Good evening"
         }
     }
 }

@@ -33,6 +33,9 @@ final class AppState: ObservableObject {
     /// Metrics popup sheet.
     @Published var presentMetrics: Bool = false
 
+    /// Obsidian-style relationship graph overlay (opened from the Metrics logo button).
+    @Published var presentGraph: Bool = false
+
     /// External (read-only) events aggregated from Apple Calendar. Never persisted.
     @Published var externalEvents: [CalendarEvent] = []
 
