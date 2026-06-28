@@ -325,7 +325,7 @@ struct NoteRow: Codable {
     init(domain n: Note) {
         self.id          = n.id
         self.spaceName   = n.spaceName
-        self.projectId   = nil // no projectId on Note yet; map to nil
+        self.projectId   = n.projectID
         self.title       = n.title
         self.body        = n.body
         self.updatedAt   = n.updatedAt
@@ -335,7 +335,8 @@ struct NoteRow: Codable {
 
     func toDomain() -> Note {
         Note(id: id, title: title, body: body,
-             spaceName: spaceName, updatedAt: updatedAt, isExternal: isExternal,
+             spaceName: spaceName, projectID: projectId,
+             updatedAt: updatedAt, isExternal: isExternal,
              googleDocId: googleDocId)
     }
 }

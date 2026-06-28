@@ -13,6 +13,10 @@ struct ProjectDetailView: View {
     @State private var starterTasks: [String] = []
     @State private var didSeedStarter = false
 
+    /// Note currently open in the editor sheet (nil = closed). A brand-new note is
+    /// an unsaved draft pre-linked to this project.
+    @State private var editingNote: Note?
+
     /// True when the project has nothing real yet: no overview and no assignments.
     /// Drives the editable starter template so the page is never blank.
     private var isEmptyProject: Bool {
@@ -29,6 +33,7 @@ struct ProjectDetailView: View {
                     overview
                     if !project.assignments.isEmpty { assignments }
                     if isEmptyProject { starterTemplate }
+                    notesSection
                     if !project.pinned.isEmpty { pinned }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -42,6 +47,90 @@ struct ProjectDetailView: View {
         }
         .background(AtlasTheme.Colors.bgBase)
         .onAppear { seedStarterIfNeeded() }
+        .sheet(item: $editingNote) { note in
+            NoteEditorView(note: note)
+                .frame(width: 560, height: 540)
+                .background(AtlasTheme.Colors.bgDeep)
+        }
+    }
+
+    // MARK: - Notes (WS-10 native foundation)
+
+    /// Per-project notes. New notes are pre-linked to this project; once Google is
+    /// connected they map to Google Docs inside this project's Drive folder
+    /// (see docs/superpowers/specs — folder-per-project). The live sync is layered
+    /// on later; this is the native structure it plugs into.
+    private var notesSection: some View {
+        let projectNotes = state.notes(in: project.id)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                sectionLabel("NOTES")
+                Spacer()
+                Button(action: newNote) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus").font(.system(size: 10, weight: .semibold))
+                        Text("New").font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundStyle(AtlasTheme.Colors.accent)
+                }
+                .buttonStyle(.plain)
+                .help("New note in this project")
+            }
+
+            if projectNotes.isEmpty {
+                Text("No notes yet. Notes you add here live in this project — and, once Google is connected, sync to a Drive folder for \(project.name) as Google Docs.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(projectNotes.enumerated()), id: \.element.id) { i, note in
+                        Button { editingNote = note } label: { noteRow(note) }
+                            .buttonStyle(.plain)
+                        if i < projectNotes.count - 1 {
+                            Divider().overlay(AtlasTheme.Colors.border)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func noteRow(_ note: Note) -> some View {
+        let linked = note.googleDocId != nil
+        return HStack(spacing: 12) {
+            Image(systemName: linked ? "doc.text.fill" : "note.text")
+                .font(.system(size: 14))
+                .foregroundStyle(linked ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(note.title.isEmpty ? "Untitled note" : note.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                if !note.body.isEmpty {
+                    Text(note.body)
+                        .font(.system(size: 11))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            if linked {
+                Text("Doc ↗").font(.system(size: 10)).foregroundStyle(AtlasTheme.Colors.accent)
+            }
+            Image(systemName: "chevron.right")
+                .font(.system(size: 9))
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+        }
+        .padding(.vertical, 9)
+        .contentShape(Rectangle())
+    }
+
+    private func newNote() {
+        // Unsaved draft pre-linked to this project; NoteEditorView.commit() persists
+        // it (updateNote inserts on no-match), so dismissing without Done leaves
+        // nothing behind.
+        editingNote = Note(title: "", body: "", spaceName: project.spaceName, projectID: project.id)
     }
 
     /// Seed the editable starter sample-tasks once, for an empty project only.

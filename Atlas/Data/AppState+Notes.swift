@@ -12,18 +12,27 @@ extension AppState {
         title: String = "Untitled note",
         body: String = "",
         spaceName: String? = nil,
+        projectID: UUID? = nil,
         isExternal: Bool = false
     ) -> Note {
         let note = Note(
             title: title,
             body: body,
             spaceName: spaceName,
+            projectID: projectID,
             updatedAt: Date(),
             isExternal: isExternal
         )
         notes.insert(note, at: 0)
         Task { try? await self.db?.upsertNote(note) }
         return note
+    }
+
+    /// Notes attached to a given project, newest first. Backs the per-project
+    /// Notes section in `ProjectDetailView` (WS-10 native linking).
+    func notes(in projectID: UUID) -> [Note] {
+        notes.filter { $0.projectID == projectID }
+             .sorted { $0.updatedAt > $1.updatedAt }
     }
 
     /// Replaces an existing note (matched by id), refreshing `updatedAt`.

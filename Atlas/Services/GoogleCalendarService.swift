@@ -63,7 +63,8 @@ enum GoogleCalendarMapper {
                 spaceName: defaultSpaceName,
                 notes: event.description,
                 isAllDay: isAllDay,
-                isReadOnly: true
+                isReadOnly: true,
+                googleEventId: event.id
             )
         }
     }
@@ -215,6 +216,22 @@ final class GoogleCalendarService {
         request.httpBody = GoogleCalendarMapper.eventBody(for: event)
 
         let (data, response) = try await urlSession.data(for: request)
+        try Self.checkOK(response, data)
+    }
+
+    /// Deletes a Google event by id. Treats 404/410 (already gone) as success so a
+    /// local delete never gets stuck retrying a vanished event.
+    func deleteEvent(googleEventID: String) async throws {
+        let token = try await auth.validAccessToken()
+        let url = URL(string: "\(apiBase)/calendars/\(calendarID)/events/\(googleEventID)")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await urlSession.data(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 404 || code == 410 { return }
         try Self.checkOK(response, data)
     }
 

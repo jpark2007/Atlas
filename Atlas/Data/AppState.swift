@@ -18,6 +18,14 @@ final class AppState: ObservableObject {
     /// fire write-through Tasks without crossing Swift's file-private boundary.
     var db: AtlasDB?
 
+    /// Google account, attached by `AppGate` once it's in scope. Drives Calendar
+    /// write-back (Atlas → Google) for user-created events when connected. `weak`
+    /// because the `GoogleAuthService` is owned by the app, not by `AppState`.
+    weak var googleAuth: GoogleAuthService?
+
+    /// Wire the Google account in so event write-back can reach it.
+    func attachGoogle(_ auth: GoogleAuthService) { googleAuth = auth }
+
     /// Guards against double-bootstrap if `bootstrap(db:)` is called more than once.
     private var didBootstrap = false
 
@@ -288,11 +296,12 @@ final class AppState: ObservableObject {
         }
     }
 
-    // MARK: - Event CRUD (in-memory; DB write-through layered in Task 2)
+    // MARK: - Event CRUD (in-memory + DB write-through + Google write-back)
 
     func addEvent(_ event: CalendarEvent) {
         events.append(event)
         Task { try? await self.db?.upsertEvent(event) }
+        pushNewEventToGoogle(event)
     }
 
     func updateEvent(_ event: CalendarEvent) {
@@ -300,11 +309,65 @@ final class AppState: ObservableObject {
             events[i] = event
         }
         Task { try? await self.db?.upsertEvent(event) }
+        pushUpdatedEventToGoogle(event)
     }
 
     func deleteEvent(id: UUID) {
+        let removed = events.first { $0.id == id }
         events.removeAll { $0.id == id }
         Task { try? await self.db?.deleteEvent(id: id) }
+        if let removed { pushDeletedEventToGoogle(removed) }
+    }
+
+    // MARK: - Google Calendar write-back (Atlas → Google)
+    //
+    // Only user-created Atlas events are mirrored — never external/read-only
+    // events (Apple/Google reads live in `externalEvents`, not `events`). All
+    // calls no-op until the account is connected. The Google event id is held in
+    // memory on the `CalendarEvent`; durable persistence (an events-table column
+    // + migration) is deferred to the live-Google session, so after a relaunch an
+    // edit re-creates rather than patches. Failures are swallowed: write-back must
+    // never block the local edit, which already succeeded.
+
+    /// True only for user-created events while the account is connected.
+    private func shouldWriteBack(_ event: CalendarEvent) -> Bool {
+        guard let auth = googleAuth, auth.isConnected else { return false }
+        return !event.isReadOnly
+    }
+
+    private func pushNewEventToGoogle(_ event: CalendarEvent) {
+        guard shouldWriteBack(event), event.googleEventId == nil, let auth = googleAuth else { return }
+        let service = GoogleCalendarService(auth: auth)
+        Task { @MainActor in
+            guard let gid = try? await service.createEvent(event), !gid.isEmpty else { return }
+            // Remember the Google id so later edits patch instead of duplicating.
+            if let i = self.events.firstIndex(where: { $0.id == event.id }) {
+                self.events[i].googleEventId = gid
+            }
+        }
+    }
+
+    private func pushUpdatedEventToGoogle(_ event: CalendarEvent) {
+        guard shouldWriteBack(event), let auth = googleAuth else { return }
+        let service = GoogleCalendarService(auth: auth)
+        Task { @MainActor in
+            if let gid = event.googleEventId, !gid.isEmpty {
+                try? await service.updateEvent(googleEventID: gid, event)
+            } else {
+                // Connected but never pushed (e.g. created before connecting) — create now.
+                guard let gid = try? await service.createEvent(event), !gid.isEmpty else { return }
+                if let i = self.events.firstIndex(where: { $0.id == event.id }) {
+                    self.events[i].googleEventId = gid
+                }
+            }
+        }
+    }
+
+    private func pushDeletedEventToGoogle(_ event: CalendarEvent) {
+        guard shouldWriteBack(event), let auth = googleAuth,
+              let gid = event.googleEventId, !gid.isEmpty else { return }
+        let service = GoogleCalendarService(auth: auth)
+        Task { try? await service.deleteEvent(googleEventID: gid) }
     }
 
     // MARK: - Goal CRUD (in-memory; DB write-through layered in Task 2)

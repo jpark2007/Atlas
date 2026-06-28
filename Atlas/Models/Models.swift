@@ -43,6 +43,12 @@ struct CalendarEvent: Identifiable {
     /// True for events sourced externally (e.g. Apple Calendar). Read-only: never persisted, never edited.
     var isReadOnly: Bool = false
 
+    /// The backing Google Calendar event id, set after a successful write-back so
+    /// later edits/deletes target the same Google event. Held in memory this build
+    /// (not yet persisted to the events table — see AppState write-back); a fresh
+    /// launch re-creates rather than patches until durable persistence lands.
+    var googleEventId: String? = nil
+
     /// "9 AM" / "6:30 PM" — start time formatted for compact rows.
     var timeLabel: String {
         let f = DateFormatter()
@@ -133,6 +139,10 @@ struct Note: Identifiable {
     var title: String
     var body: String
     var spaceName: String? = nil
+    /// The project this note belongs to (WS-10 native linking). Drives the per-
+    /// project Notes list and, later, the per-project Google Drive folder that
+    /// holds this note's backing Doc. `nil` for loose / space-level notes.
+    var projectID: UUID? = nil
     var updatedAt: Date = Date()
     var isExternal: Bool = false   // links out to a Google Doc / Apple Note
 

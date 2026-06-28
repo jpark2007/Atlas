@@ -93,6 +93,7 @@ private struct GlobalHotkeyInstaller: View {
 struct AppGate: View {
     @EnvironmentObject private var auth: AuthService
     @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var googleAuth: GoogleAuthService
 
     var body: some View {
         Group {
@@ -115,5 +116,6 @@ struct AppGate: View {
                     .onAppear { state.userName = auth.displayName }
             }
         }
+        .onAppear { state.attachGoogle(googleAuth) }
     }
 }
