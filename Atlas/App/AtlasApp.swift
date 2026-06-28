@@ -19,7 +19,7 @@ struct AtlasApp: App {
                 .environmentObject(googleAuth)
                 .frame(minWidth: 960, minHeight: 600)
                 .preferredColorScheme(.dark)
-                .background(GlobalHotkeyInstaller())
+                .background(GlobalHotkeyInstaller(state: state))
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
@@ -69,7 +69,10 @@ struct AtlasMenuBarContent: View {
 /// The in-app ShortcutStore binding (`.atlasCaptureOverlay()`) stays in place for
 /// when the app is already focused.
 private struct GlobalHotkeyInstaller: View {
-    @EnvironmentObject private var state: AppState
+    /// The concrete `AppState` (a reference type), captured directly so the escaping
+    /// Carbon hotkey callback never touches an `@EnvironmentObject` wrapper outside
+    /// `body` — doing so previously tripped a fatal SwiftUI error on hotkey press.
+    let state: AppState
 
     var body: some View {
         Color.clear
