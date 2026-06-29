@@ -172,7 +172,6 @@ private struct DueDatePopover: View {
     let onSuggest: () -> Void
 
     @State private var date: Date
-    @State private var hasDate: Bool
 
     init(title: String, initialDate: Date?, onSave: @escaping (Date?) -> Void, onSuggest: @escaping () -> Void) {
         self.title = title
@@ -180,7 +179,6 @@ private struct DueDatePopover: View {
         self.onSave = onSave
         self.onSuggest = onSuggest
         _date = State(initialValue: initialDate ?? Date())
-        _hasDate = State(initialValue: initialDate != nil)
     }
 
     var body: some View {
@@ -197,7 +195,6 @@ private struct DueDatePopover: View {
             )
             .datePickerStyle(.field)
             .labelsHidden()
-            .onChange(of: date) { _, _ in hasDate = true }
 
             Button {
                 onSuggest()
@@ -216,7 +213,7 @@ private struct DueDatePopover: View {
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .font(.system(size: 12))
                 Spacer()
-                Button("Set due date") { onSave(hasDate ? date : nil) }
+                Button("Set due date") { onSave(date) }
                     .keyboardShortcut(.defaultAction)
                     .font(.system(size: 12, weight: .semibold))
             }

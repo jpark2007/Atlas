@@ -180,6 +180,9 @@ struct TaskRow: Codable {
     var status: String        // persisted as text — see encode/decode helpers below
     var done: Bool
     var scheduledAt: Date?
+    var notes: String?
+    var noteId: UUID?
+    var durationMin: Int?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -191,6 +194,9 @@ struct TaskRow: Codable {
         case status
         case done
         case scheduledAt = "scheduled_at"
+        case notes
+        case noteId      = "note_id"
+        case durationMin = "duration_min"
     }
 
     init(domain t: TaskItem) {
@@ -202,6 +208,9 @@ struct TaskRow: Codable {
         self.status      = TaskRow.encode(status: t.status)
         self.done        = t.done
         self.scheduledAt = t.scheduledAt
+        self.notes       = t.notes
+        self.noteId      = t.noteID
+        self.durationMin = t.durationMin
     }
 
     func toDomain() -> TaskItem {
@@ -212,6 +221,9 @@ struct TaskRow: Codable {
                  done: done,
                  scheduledAt: scheduledAt,
                  dueDate: dueDate,
+                 durationMin: durationMin,
+                 notes: notes,
+                 noteID: noteId,
                  spaceName: spaceName)
     }
 
@@ -253,6 +265,8 @@ struct EventRow: Codable {
     var notes: String?
     var isAllDay: Bool
     var projectId: UUID?
+    var googleEventId: String?
+    var noteId: UUID?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -265,6 +279,8 @@ struct EventRow: Codable {
         case notes
         case isAllDay  = "is_all_day"
         case projectId = "project_id"
+        case googleEventId = "google_event_id"
+        case noteId    = "note_id"
     }
 
     init(domain e: CalendarEvent) {
@@ -277,6 +293,8 @@ struct EventRow: Codable {
         self.notes     = e.notes
         self.isAllDay  = e.isAllDay
         self.projectId = e.projectID
+        self.googleEventId = e.googleEventId
+        self.noteId    = e.noteID
     }
 
     func toDomain() -> CalendarEvent {
@@ -291,7 +309,9 @@ struct EventRow: Codable {
                       spaceName: spaceName,
                       notes: notes,
                       isAllDay: isAllDay,
-                      projectID: projectId)
+                      projectID: projectId,
+                      noteID: noteId,
+                      googleEventId: googleEventId)
     }
 }
 

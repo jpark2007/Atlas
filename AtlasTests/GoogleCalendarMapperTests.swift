@@ -27,7 +27,9 @@ final class GoogleCalendarMapperTests: XCTestCase {
         XCTAssertEqual(event.notes, "Bring laptop")
         XCTAssertEqual(event.spaceName, "School")
         XCTAssertFalse(event.isAllDay)
-        XCTAssertTrue(event.isReadOnly)
+        // A one-off (non-recurring) Google event is now editable two-way, not read-only.
+        XCTAssertFalse(event.isReadOnly)
+        XCTAssertFalse(event.isRecurring)
         XCTAssertEqual(event.start, GoogleCalendarMapper.rfc3339.date(from: startISO))
         XCTAssertEqual(event.end, GoogleCalendarMapper.rfc3339.date(from: endISO))
     }
@@ -50,6 +52,26 @@ final class GoogleCalendarMapperTests: XCTestCase {
         XCTAssertEqual(event.title, "Conference")
         XCTAssertEqual(event.start, GoogleCalendarMapper.allDayFormatter.date(from: "2026-07-01"))
         XCTAssertEqual(event.end, GoogleCalendarMapper.allDayFormatter.date(from: "2026-07-02"))
+    }
+
+    // MARK: - Decode (recurring instance stays read-only until Phase 3)
+
+    func testDecodeRecurringInstanceIsReadOnlyAndFlagged() throws {
+        let json = """
+        { "items": [
+          { "id": "evt-r_20260629", "summary": "CS 101 Lecture",
+            "recurringEventId": "evt-r",
+            "start": { "dateTime": "2026-06-29T09:00:00Z" },
+            "end": { "dateTime": "2026-06-29T10:00:00Z" } }
+        ] }
+        """.data(using: .utf8)!
+
+        let events = try GoogleCalendarMapper.decodeEvents(
+            from: json, defaultSpaceName: "School", color: .blue)
+
+        let event = try XCTUnwrap(events.first)
+        XCTAssertTrue(event.isRecurring)
+        XCTAssertTrue(event.isReadOnly)   // can't edit a recurring instance in Atlas yet
     }
 
     // MARK: - Decode tolerance

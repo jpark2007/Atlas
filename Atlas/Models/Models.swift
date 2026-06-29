@@ -58,17 +58,34 @@ struct CalendarEvent: Identifiable {
     var notes: String? = nil
     var isAllDay: Bool = false
     var projectID: UUID? = nil
+    /// Optional link to a Note — lets a calendar item be "tagged" to a note from the detail
+    /// view. Durable only for Atlas events + work-blocks (external events aren't persisted).
+    var noteID: UUID? = nil
     /// True for events sourced externally (e.g. Apple Calendar). Read-only: never persisted, never edited.
     var isReadOnly: Bool = false
     /// Where this event came from. Stamped at ingest (`.apple`/`.google`) or `.atlas`
     /// for app-owned events — drives the correct source label. Never inferred.
     var source: EventSource = .atlas
 
-    /// The backing Google Calendar event id, set after a successful write-back so
-    /// later edits/deletes target the same Google event. Held in memory this build
-    /// (not yet persisted to the events table — see AppState write-back); a fresh
-    /// launch re-creates rather than patches until durable persistence lands.
+    /// The backing Google Calendar event id, set after a successful write-back (or at
+    /// ingest for Google-origin events) so later edits/deletes target the same Google
+    /// event. Persisted via migration 0003 (`events.google_event_id`), so edits after a
+    /// relaunch patch the same event instead of duplicating it.
     var googleEventId: String? = nil
+
+    /// True for an expanded instance of a recurring Google event. Recurring instances stay
+    /// read-only in Atlas until series editing lands (Phase 3); one-off events edit two-way.
+    var isRecurring: Bool = false
+
+    /// True when this tile is a work-block synthesized from a scheduled task (drag-to-
+    /// schedule) rather than a first-class event — drives the provisional "planned work"
+    /// styling (translucent, dashed, with a checkbox) so it reads as a plan, not a commitment.
+    var isWorkBlock: Bool = false
+
+    /// True when this is a deadline marker synthesized from a task's `dueDate` — rendered as
+    /// a flag-pill in the deadline strip (never as a time block), red when overdue. Atlas-only;
+    /// deadlines are never pushed to Google.
+    var isDeadline: Bool = false
 
     /// "9 AM" / "6:30 PM" — start time formatted for compact rows.
     var timeLabel: String {
@@ -97,6 +114,15 @@ struct TaskItem: Identifiable {
     var scheduledAt: Date? = nil
     var dueDate: Date? = nil
     var durationMin: Int? = nil
+    /// Free-text description, editable from the detail view (a task — and its work-block
+    /// visualization — is what carries a description).
+    var notes: String? = nil
+    /// Optional link to a Note, set from the detail view's "tag to a note".
+    var noteID: UUID? = nil
+    /// Google event id backing this task's scheduled work-block, set after it mirrors to
+    /// Google so a reschedule patches the same event. In-memory this build (no TaskRow
+    /// column yet) — a relaunch re-creates rather than patches.
+    var workBlockGoogleEventId: String? = nil
     var spaceColor: Color = AtlasTheme.Colors.accent
     var spaceName: String = ""
 }

@@ -48,15 +48,31 @@ struct AllDayRowView: View {
         let events = allDayEvents(for: day)
         VStack(spacing: 2) {
             ForEach(events) { event in
-                Text(event.title)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    .lineLimit(1)
-                    .padding(.horizontal, 4)
+                if event.isDeadline {
+                    // Deadline → flag-pill (matches the day-view DUE strip), red when overdue.
+                    HStack(spacing: 4) {
+                        Image(systemName: "flag.fill").font(.system(size: 7))
+                        Text(event.title)
+                            .font(.system(size: 10, weight: .semibold))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(event.color)
+                    .padding(.horizontal, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: 18)
-                    .background(event.color.opacity(0.22))
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .background(Capsule().fill(event.color.opacity(0.12)))
+                    .overlay(Capsule().stroke(event.color.opacity(0.45), lineWidth: 1))
+                } else {
+                    Text(event.title)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .lineLimit(1)
+                        .padding(.horizontal, 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(height: 18)
+                        .background(event.color.opacity(0.22))
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                }
             }
         }
     }

@@ -169,7 +169,8 @@ struct DayColumnView: View {
             // Left-click: open source for writable events; swallow tap for read-only
             // so the parent ZStack's tap-to-create doesn't fire.
             .onTapGesture {
-                guard !ev.isReadOnly else { return }
+                // Every tile (incl. read-only) opens the detail view; the gesture still
+                // consumes the tap so tap-to-create on the empty grid stays suppressed.
                 onTapEvent?(ev)
             }
             // Right-click: full menu for writable; read-only label only for external events.
@@ -191,6 +192,13 @@ struct EventTile: View {
                 .fill(tileAccentColor)
                 .frame(width: 3)
             HStack(alignment: .top, spacing: 4) {
+                // Work-block checkbox — signals "planned work, tickable" (vs a fixed event).
+                if event.isWorkBlock {
+                    Image(systemName: "circle")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(tileAccentColor)
+                        .padding(.top, compact ? 0 : 1)
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(event.title)
                         .font(.system(size: 11.5, weight: .semibold))
@@ -217,11 +225,12 @@ struct EventTile: View {
             .padding(.vertical, compact ? 2 : 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(tileAccentColor.opacity(event.isReadOnly ? 0.08 : 0.16))
+        .background(tileAccentColor.opacity(backgroundOpacity))
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(tileAccentColor.opacity(event.isReadOnly ? 0.20 : 0.35), lineWidth: 1)
+                .stroke(tileAccentColor.opacity(borderOpacity),
+                        style: StrokeStyle(lineWidth: 1, dash: event.isWorkBlock ? [4, 3] : []))
         )
     }
 
@@ -229,8 +238,53 @@ struct EventTile: View {
         event.isReadOnly ? AtlasTheme.Colors.textSecondary : event.color
     }
 
+    /// Work-blocks read as provisional (fainter fill, dashed border); fixed events are solid.
+    private var backgroundOpacity: Double {
+        if event.isWorkBlock { return 0.10 }
+        return event.isReadOnly ? 0.08 : 0.16
+    }
+
+    private var borderOpacity: Double {
+        if event.isWorkBlock { return 0.55 }
+        return event.isReadOnly ? 0.20 : 0.35
+    }
+
     private var titleColor: Color {
         event.isReadOnly ? AtlasTheme.Colors.textSecondary : AtlasTheme.Colors.textPrimary
+    }
+}
+
+// MARK: - Deadline strip
+
+/// A horizontal rail of deadline flag-pills, pinned above the time grid so due-dates are
+/// always visible (they never scroll away with the grid). Orange normally, red when overdue
+/// (the pill carries its colour via `event.color`). Deadlines are Atlas-only — never on Google.
+struct DeadlineStrip: View {
+    let deadlines: [CalendarEvent]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("DUE")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+            ForEach(deadlines) { dl in
+                HStack(spacing: 5) {
+                    Image(systemName: "flag.fill").font(.system(size: 8))
+                    Text(dl.title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(dl.color)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(dl.color.opacity(0.12)))
+                .overlay(Capsule().stroke(dl.color.opacity(0.45), lineWidth: 1))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -243,30 +297,38 @@ struct DayCalendarView: View {
     var onTapEvent: ((CalendarEvent) -> Void)? = nil
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                ZStack(alignment: .topLeading) {
-                    HStack(alignment: .top, spacing: 0) {
-                        HourGutter()
-                        DayColumnView(
-                            date: date,
-                            events: events,
-                            isToday: Calendar.current.isDateInToday(date),
-                            onTapEmpty: onTapEmpty,
-                            onTapEvent: onTapEvent
-                        )
-                    }
-                    .padding(.trailing, 8)
-                    .padding(.top, 6)
-                    .padding(.bottom, 16)
-
-                    // Zero-height sentinel anchored at the current-time Y so that
-                    // scrollTo("nowAnchor", anchor: .center) lands precisely on "now".
-                    nowSentinel
-                }
+        VStack(spacing: 0) {
+            // Deadline strip — pinned above the grid so due-dates never scroll out of view.
+            let dayDeadlines = events.filter { $0.isDeadline }
+            if !dayDeadlines.isEmpty {
+                DeadlineStrip(deadlines: dayDeadlines)
+                Divider().overlay(AtlasTheme.Colors.border)
             }
-            .onAppear {
-                scrollToNowIfVisible(proxy: proxy)
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    ZStack(alignment: .topLeading) {
+                        HStack(alignment: .top, spacing: 0) {
+                            HourGutter()
+                            DayColumnView(
+                                date: date,
+                                events: events,
+                                isToday: Calendar.current.isDateInToday(date),
+                                onTapEmpty: onTapEmpty,
+                                onTapEvent: onTapEvent
+                            )
+                        }
+                        .padding(.trailing, 8)
+                        .padding(.top, 6)
+                        .padding(.bottom, 16)
+
+                        // Zero-height sentinel anchored at the current-time Y so that
+                        // scrollTo("nowAnchor", anchor: .center) lands precisely on "now".
+                        nowSentinel
+                    }
+                }
+                .onAppear {
+                    scrollToNowIfVisible(proxy: proxy)
+                }
             }
         }
     }

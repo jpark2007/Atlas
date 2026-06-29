@@ -21,7 +21,6 @@ struct SettingsView: View {
 
     // MARK: – Calendar sync state
     @AppStorage("calendar.apple.enabled") private var appleCalendarEnabled: Bool = false
-    @AppStorage("calendar.main") private var mainCalendar: String = "Atlas"
     @AppStorage("calendar.apple.defaultSpace") private var appleDefaultSpace: String = ""
     @State private var appleAccessGranted: Bool = false
     @State private var appleAccessChecked: Bool = false
@@ -269,27 +268,25 @@ struct SettingsView: View {
                     .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
             )
 
-            // ── Main calendar picker ────────────────────────────────────
+            // ── Two-way sync toggle ─────────────────────────────────────
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Main calendar")
+                    Text("Sync calendar with Google")
                         .font(.system(size: 13))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text("Atlas-native events only — write-back to Apple/Google deferred (v2)")
+                    Text(syncSubtitle)
                         .font(.system(size: 11))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer()
-                Picker("Main calendar", selection: $mainCalendar) {
-                    Text("Atlas").tag("Atlas")
-                    if appleCalendarEnabled && appleAccessGranted {
-                        Text("Apple Calendar").tag("Apple")
+                Toggle("", isOn: $googleCalendarEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(AtlasTheme.Colors.accent)
+                    .disabled(!googleAuth.isConnected)
+                    .onChange(of: googleCalendarEnabled) { _, on in
+                        if on { state.backfillEventsToGoogle() }
                     }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 140)
-                .tint(AtlasTheme.Colors.accent)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -389,14 +386,27 @@ struct SettingsView: View {
         )
     }
 
+    private var syncSubtitle: String {
+        if !googleAuth.isConnected { return "Connect Google above to enable two-way sync." }
+        return googleCalendarEnabled
+            ? "Events sync both ways with your primary Google Calendar."
+            : "Off — your calendar stays in Atlas only."
+    }
+
     private var googleSubtitle: String {
-        if googleAuth.isConnected { return "Connected — syncing your primary calendar" }
+        if googleAuth.isConnected {
+            if let syncError = state.lastCalendarSyncError { return "Sync issue — \(syncError)" }
+            return "Connected — syncing your primary calendar"
+        }
         if let error = googleAuth.errorMessage { return error }
         return "Not connected — sign in to sync events two-way"
     }
 
     private var googleSubtitleColor: Color {
-        if googleAuth.isConnected { return AtlasTheme.Colors.green }
+        if googleAuth.isConnected {
+            return state.lastCalendarSyncError == nil
+                ? AtlasTheme.Colors.green : AtlasTheme.Colors.danger
+        }
         if googleAuth.errorMessage != nil { return AtlasTheme.Colors.danger }
         return AtlasTheme.Colors.textMuted
     }

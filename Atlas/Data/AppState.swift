@@ -13,6 +13,16 @@ final class AppState: ObservableObject {
     @Published var notes: [Note] = MockData.notes
     @Published var goals: [Goal] = MockData.goals
 
+    /// Last Google calendar sync error (nil when the most recent pull succeeded). Set on
+    /// the main actor by the calendar load path; surfaced as a small status indicator so
+    /// sync failures are visible instead of silently swallowed.
+    @Published var lastCalendarSyncError: String? = nil
+
+    /// The calendar item open in the full-page detail view (a snapshot of the clicked tile).
+    /// Nil when closed. Snapshotting rather than an id lets ephemeral external events open
+    /// without a dangling lookup.
+    @Published var calendarDetailItem: CalendarEvent? = nil
+
     /// Supabase persistence layer — nil when offline / not yet bootstrapped.
     /// `internal` (not `private`) so that `AppState+*.swift` extensions can
     /// fire write-through Tasks without crossing Swift's file-private boundary.
@@ -251,7 +261,39 @@ final class AppState: ObservableObject {
     }
 
     /// Today's events, sorted — the Dashboard schedule reads this.
-    var todaysEvents: [CalendarEvent] { events(on: Date()) }
+    /// Today's calendar entries for the dashboard schedule: store events plus the
+    /// scheduled work-blocks (dragged tasks), in time order — a scheduled task is
+    /// something to do, so it belongs on the schedule too.
+    var todaysEvents: [CalendarEvent] {
+        (events(on: Date()) + scheduledWorkBlocks(on: Date()))
+            .sorted { $0.start < $1.start }
+    }
+
+    /// Scheduled tasks rendered as work-block events for `date` — the calendar's
+    /// drag-to-schedule tiles. Excludes tasks whose slot has elapsed unmet (they resurface
+    /// in the tray) and completed tasks. Shared by the calendar grid and the dashboard so
+    /// both show the same scheduled work.
+    func scheduledWorkBlocks(on date: Date) -> [CalendarEvent] {
+        let cal = Calendar.current
+        return tasks.compactMap { task in
+            guard !task.isEffectivelyUnscheduled(now: now),
+                  let at = task.scheduledAt,
+                  cal.isDate(at, inSameDayAs: date) else { return nil }
+            let end = cal.date(byAdding: .minute, value: task.durationMin ?? 60, to: at) ?? at
+            return CalendarEvent(
+                id: task.id,
+                title: task.title,
+                subtitle: "Scheduled",
+                start: at,
+                end: end,
+                color: task.spaceColor,
+                spaceName: task.spaceName,
+                notes: task.notes,
+                noteID: task.noteID,
+                isWorkBlock: true
+            )
+        }
+    }
 
     /// Open to-dos that need a (new) slot — the calendar's drag-to-schedule tray.
     /// Includes never-scheduled tasks AND tasks whose slot has elapsed without
@@ -290,7 +332,61 @@ final class AppState: ObservableObject {
             tasks[i].scheduledAt = date
             let updated = tasks[i]
             Task { try? await self.db?.upsertTask(updated) }
+            pushWorkBlockToGoogle(taskID: taskId)
         }
+    }
+
+    /// Mirrors a scheduled task's work-block (its planned work time) to Google — create on
+    /// first schedule, patch on reschedule — storing the returned id on the task. Gated by
+    /// the sync toggle. The task's *deadline* is never pushed (deadlines stay Atlas-native).
+    private func pushWorkBlockToGoogle(taskID: UUID) {
+        guard UserDefaults.standard.bool(forKey: "calendar.google.enabled"),
+              let auth = googleAuth, auth.isConnected,
+              let i = tasks.firstIndex(where: { $0.id == taskID }),
+              let at = tasks[i].scheduledAt else { return }
+        let task = tasks[i]
+        let end = Calendar.current.date(byAdding: .minute, value: task.durationMin ?? 60, to: at) ?? at
+        let block = CalendarEvent(title: task.title, subtitle: "", start: at, end: end,
+                                  color: task.spaceColor, spaceName: task.spaceName)
+        let service = GoogleCalendarService(auth: auth)
+        Task { @MainActor in
+            if let gid = task.workBlockGoogleEventId, !gid.isEmpty {
+                try? await service.updateEvent(googleEventID: gid, block)
+            } else {
+                guard let gid = try? await service.createEvent(block), !gid.isEmpty else { return }
+                if let j = self.tasks.firstIndex(where: { $0.id == taskID }) {
+                    self.tasks[j].workBlockGoogleEventId = gid
+                }
+            }
+        }
+    }
+
+    /// Write-through for editing a scheduled task (its work-block) from the detail view —
+    /// title / time / duration / description / note link. A work-block IS a task, so this
+    /// never touches `events`; it persists the task and patches the mirrored Google block.
+    func updateScheduledTask(id: UUID, title: String, start: Date, durationMin: Int,
+                             notes: String?, noteID: UUID?) {
+        guard let i = tasks.firstIndex(where: { $0.id == id }) else { return }
+        tasks[i].title = title
+        tasks[i].scheduledAt = start
+        tasks[i].durationMin = durationMin
+        tasks[i].notes = notes
+        tasks[i].noteID = noteID
+        let updated = tasks[i]
+        Task { try? await self.db?.upsertTask(updated) }
+        pushWorkBlockToGoogle(taskID: id)
+    }
+
+    /// Removes a task's calendar work-block (returns it to the tray) and deletes its mirrored
+    /// Google event. The task itself is kept.
+    func unscheduleTask(id: UUID) {
+        guard let i = tasks.firstIndex(where: { $0.id == id }) else { return }
+        let gid = tasks[i].workBlockGoogleEventId
+        tasks[i].scheduledAt = nil
+        tasks[i].workBlockGoogleEventId = nil
+        let updated = tasks[i]
+        Task { try? await self.db?.upsertTask(updated) }
+        if let gid, !gid.isEmpty { deleteGoogleEvent(googleEventID: gid) }
     }
 
     // MARK: - Event CRUD (in-memory + DB write-through + Google write-back)
@@ -302,6 +398,17 @@ final class AppState: ObservableObject {
     }
 
     func updateEvent(_ event: CalendarEvent) {
+        // Google-origin events live in `externalEvents`, not the Atlas store. Edit them by
+        // patching Google and reflecting optimistically — never write them to the Atlas DB
+        // (which would orphan a ghost row) or relabel their source.
+        if event.source == .google, let gid = event.googleEventId,
+           !events.contains(where: { $0.id == event.id }) {
+            if let i = externalEvents.firstIndex(where: { $0.id == event.id }) {
+                externalEvents[i] = event
+            }
+            pushExternalGoogleEdit(event, googleEventID: gid)
+            return
+        }
         if let i = events.firstIndex(where: { $0.id == event.id }) {
             events[i] = event
         }
@@ -310,10 +417,42 @@ final class AppState: ObservableObject {
     }
 
     func deleteEvent(id: UUID) {
+        // Google-origin event in the external pool — delete it on Google and drop the
+        // optimistic copy; never touch the Atlas DB.
+        if let ext = externalEvents.first(where: { $0.id == id }),
+           ext.source == .google, let gid = ext.googleEventId {
+            externalEvents.removeAll { $0.id == id }
+            deleteGoogleEvent(googleEventID: gid)
+            return
+        }
         let removed = events.first { $0.id == id }
         events.removeAll { $0.id == id }
         Task { try? await self.db?.deleteEvent(id: id) }
         if let removed { pushDeletedEventToGoogle(removed) }
+    }
+
+    /// Patches an edited Google-origin event back to Google. Always appropriate when
+    /// connected (the event came from Google) — not gated on the new-events picker.
+    private func pushExternalGoogleEdit(_ event: CalendarEvent, googleEventID gid: String) {
+        guard let auth = googleAuth, auth.isConnected else { return }
+        let service = GoogleCalendarService(auth: auth)
+        Task { try? await service.updateEvent(googleEventID: gid, event) }
+    }
+
+    /// Deletes a Google-origin event on Google (when the user deletes it in Atlas).
+    private func deleteGoogleEvent(googleEventID gid: String) {
+        guard let auth = googleAuth, auth.isConnected else { return }
+        let service = GoogleCalendarService(auth: auth)
+        Task { try? await service.deleteEvent(googleEventID: gid) }
+    }
+
+    /// Removes events locally (memory + DB) **without** echoing a delete to Google — used
+    /// by the sync reaper when the event was already deleted on Google. No-op on empty.
+    func removeEventsLocally(ids: [UUID]) {
+        guard !ids.isEmpty else { return }
+        let idset = Set(ids)
+        events.removeAll { idset.contains($0.id) }
+        for id in ids { Task { try? await self.db?.deleteEvent(id: id) } }
     }
 
     // MARK: - Google Calendar write-back (Atlas → Google)
@@ -329,7 +468,19 @@ final class AppState: ObservableObject {
     /// True only for user-created events while the account is connected.
     private func shouldWriteBack(_ event: CalendarEvent) -> Bool {
         guard let auth = googleAuth, auth.isConnected else { return false }
+        // Gated by the single "Sync calendar with Google" toggle (calendar.google.enabled).
+        guard UserDefaults.standard.bool(forKey: "calendar.google.enabled") else { return false }
         return !event.isReadOnly
+    }
+
+    /// Pushes existing Atlas-origin events that were never mirrored (no `googleEventId`)
+    /// to Google — used when the user turns sync on so the toggle backfills, not just
+    /// new events. Safe to call repeatedly: events that gained an id are skipped, and the
+    /// reaper's pre-fetch snapshot guards a just-backfilled event from an in-flight pull.
+    func backfillEventsToGoogle() {
+        for event in events where event.source == .atlas && event.googleEventId == nil {
+            pushNewEventToGoogle(event)
+        }
     }
 
     private func pushNewEventToGoogle(_ event: CalendarEvent) {

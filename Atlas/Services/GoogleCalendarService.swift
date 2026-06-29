@@ -34,6 +34,10 @@ enum GoogleCalendarMapper {
         let description: String?
         let start: GTime?
         let end: GTime?
+        /// Present on an expanded instance of a recurring series (singleEvents=true).
+        let recurringEventId: String?
+        /// Present on a series master if ever fetched un-expanded.
+        let recurrence: [String]?
     }
 
     struct GTime: Decodable {
@@ -53,6 +57,10 @@ enum GoogleCalendarMapper {
         let list = try JSONDecoder().decode(EventList.self, from: data)
         return (list.items ?? []).compactMap { event in
             guard let (start, end, isAllDay) = interval(event.start, event.end) else { return nil }
+            // A recurring instance stays read-only until series editing lands (Phase 3);
+            // a one-off Google event is editable two-way (isReadOnly = false).
+            let isRecurring = event.recurringEventId != nil
+                || (event.recurrence?.isEmpty == false)
             return CalendarEvent(
                 id: stableUUID(from: event.id ?? UUID().uuidString),
                 title: event.summary ?? "Untitled",
@@ -63,9 +71,10 @@ enum GoogleCalendarMapper {
                 spaceName: defaultSpaceName,
                 notes: event.description,
                 isAllDay: isAllDay,
-                isReadOnly: true,
+                isReadOnly: isRecurring,
                 source: .google,
-                googleEventId: event.id
+                googleEventId: event.id,
+                isRecurring: isRecurring
             )
         }
     }

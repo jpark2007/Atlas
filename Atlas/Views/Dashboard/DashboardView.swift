@@ -114,9 +114,16 @@ struct ScheduleCard: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .frame(width: 50, alignment: .leading)
-            RoundedRectangle(cornerRadius: 2)
-                .fill(entry.color)
-                .frame(width: 3, height: 30)
+            // Work-blocks (scheduled tasks) get a dashed bar so they read as planned work.
+            if entry.isWorkBlock {
+                RoundedRectangle(cornerRadius: 2)
+                    .stroke(entry.color, style: StrokeStyle(lineWidth: 1, dash: [2.5, 2]))
+                    .frame(width: 4, height: 30)
+            } else {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(entry.color)
+                    .frame(width: 3, height: 30)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.title)
                     .font(.system(size: 13, weight: .semibold))

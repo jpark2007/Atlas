@@ -5,6 +5,7 @@ import SwiftUI
 /// shared `AppState` store (`events`, `unscheduledTasks`, `schedule(taskId:at:)`).
 struct CalendarView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var mode: CalendarMode = .day
@@ -97,6 +98,15 @@ struct CalendarView: View {
         }
         .onChange(of: googleCalendarEnabled) { _, _ in loadAppleEventsIfNeeded() }
         .onChange(of: googleAuth.isConnected) { _, _ in loadAppleEventsIfNeeded() }
+        // Auto-refresh so Google-side changes (incl. deletes) surface without leaving and
+        // re-entering the tab: poll every 60s while the calendar is visible, and refresh
+        // immediately when the app regains focus (e.g. after you edited on your phone).
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+            loadAppleEventsIfNeeded()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { loadAppleEventsIfNeeded() }
+        }
         .sheet(isPresented: $state.presentEventEditor, onDismiss: {
             state.eventEditorSeed = nil
         }) {
@@ -316,8 +326,32 @@ struct CalendarView: View {
     private func filteredEvents(on date: Date) -> [CalendarEvent] {
         let all = state.events(on: date)
             + scheduledTaskEvents(on: date)
+            + deadlineEvents(on: date)
             + state.externalEvents(on: date)
         return all.filter { passesFilters($0.spaceName, title: $0.title) }
+    }
+
+    /// Deadline markers for `date`: one per open task whose `dueDate` falls on that day.
+    /// Rendered as flag-pills in the deadline strip (never time blocks), red once the due
+    /// day has passed. Deadlines stay in Atlas — they are never pushed to Google.
+    private func deadlineEvents(on date: Date) -> [CalendarEvent] {
+        let cal = Calendar.current
+        return state.tasks.compactMap { task in
+            guard !task.done, let due = task.dueDate,
+                  cal.isDate(due, inSameDayAs: date) else { return nil }
+            let overdue = cal.startOfDay(for: due) < cal.startOfDay(for: state.now)
+            return CalendarEvent(
+                id: GoogleCalendarMapper.stableUUID(from: "deadline-" + task.id.uuidString),
+                title: task.title,
+                subtitle: "Due",
+                start: due,
+                end: due,
+                color: overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.accent,
+                spaceName: task.spaceName,
+                isAllDay: true,        // excluded from time-block packing; shown in the strip
+                isDeadline: true
+            )
+        }
     }
 
     /// Shared filter gate for both events and tasks: the single-space dropdown,
@@ -364,23 +398,7 @@ struct CalendarView: View {
     /// Tasks that have been dropped onto `date`, rendered as 1-hour blocks so
     /// drag-to-schedule shows immediate, satisfying feedback on the grid.
     private func scheduledTaskEvents(on date: Date) -> [CalendarEvent] {
-        state.tasks.compactMap { task in
-            // Tasks whose slot has elapsed without completion resurface in the
-            // tray and must drop off the grid (non-destructive revert-after-slot).
-            guard !task.isEffectivelyUnscheduled(now: state.now),
-                  let at = task.scheduledAt,
-                  Calendar.current.isDate(at, inSameDayAs: date) else { return nil }
-            let end = Calendar.current.date(byAdding: .minute, value: task.durationMin ?? 60, to: at) ?? at
-            return CalendarEvent(
-                id: task.id,                       // stable identity → no per-render flicker
-                title: task.title,
-                subtitle: "Scheduled",
-                start: at,
-                end: end,
-                color: task.spaceColor,
-                spaceName: task.spaceName           // direct, not a fragile Color reverse-map
-            )
-        }
+        state.scheduledWorkBlocks(on: date)
     }
 
     private var weekDays: [Date] {
@@ -432,6 +450,11 @@ struct CalendarView: View {
             ? (state.spaces.first?.name ?? "")
             : appleDefaultSpace
 
+        // Pre-fetch snapshot of our pushed-mirror ids. An event created during the fetch
+        // won't be in here, so a listing that predates its id can never reap it (B2).
+        let eligibleGoogleIDs = Set(
+            state.events.filter { $0.source == .atlas }.compactMap(\.googleEventId))
+
         Task {
             var combined: [CalendarEvent] = []
             if wantApple {
@@ -441,18 +464,49 @@ struct CalendarView: View {
                     defaultSpaceName: defaultSpace
                 )
             }
+            var googlePresentIDs: Set<String> = []
+            var googleFetchOK = true
+            var fetchError: String? = nil
             if wantGoogle {
                 let service = GoogleCalendarService(auth: googleAuth)
-                if let googleEvents = try? await service.listEvents(
-                    start: rangeStart,
-                    end:   rangeEnd,
-                    defaultSpaceName: defaultSpace
-                ) {
+                do {
+                    let googleEvents = try await service.listEvents(
+                        start: rangeStart,
+                        end:   rangeEnd,
+                        defaultSpaceName: defaultSpace
+                    )
                     combined += googleEvents
+                    googlePresentIDs = Set(googleEvents.compactMap(\.googleEventId))
+                } catch {
+                    // A failed fetch returns no events — this must NOT be read as
+                    // "everything was deleted on Google", or the reaper would wipe the
+                    // window. Record the error and skip reaping this cycle.
+                    googleFetchOK = false
+                    fetchError = error.localizedDescription
                 }
             }
             await MainActor.run {
-                state.externalEvents = combined
+                // Drop any external (Google) event that is actually one of our own
+                // Atlas events / scheduled work-blocks we already pushed — otherwise it
+                // shows twice (once native, once as a read-only Google copy).
+                let ownGoogleIDs = Set(state.events.compactMap(\.googleEventId))
+                    .union(state.tasks.compactMap(\.workBlockGoogleEventId))
+                state.externalEvents = combined.filter { ev in
+                    guard let gid = ev.googleEventId else { return true }
+                    return !ownGoogleIDs.contains(gid)
+                }
+                // Reflect Google-side deletions: reap our mirrors that vanished from a
+                // SUCCESSFUL listing for this window. Safety rules live in CalendarSync.
+                if wantGoogle && googleFetchOK {
+                    let reap = CalendarSync.reapableEventIDs(
+                        events: state.events,
+                        presentGoogleIDs: googlePresentIDs,
+                        eligibleGoogleIDs: eligibleGoogleIDs,
+                        windowStart: rangeStart,
+                        windowEnd: rangeEnd)
+                    state.removeEventsLocally(ids: reap)
+                }
+                if wantGoogle { state.lastCalendarSyncError = fetchError }
             }
         }
     }
@@ -566,22 +620,12 @@ struct CalendarView: View {
     /// sidebar to `.project(id)`. Otherwise falls back to opening the editor
     /// so a click on any tile is never a dead end.
     func openSource(for event: CalendarEvent) {
-        // Read-only external events (e.g. Apple Calendar) — never open the editor.
-        guard !event.isReadOnly else { return }
-
-        // Task-derived synthetic events share their UUID with the underlying TaskItem.
-        // Opening the editor for them would create a ghost-duplicate CalendarEvent in
-        // state.events — guard against that here.
-        if state.tasks.contains(where: { $0.id == event.id }) {
-            // task-derived synthetic event — no project source, don't open the event editor (would create a ghost duplicate)
-            return
-        }
-        if let projectID = event.projectID, state.project(projectID) != nil {
-            state.route = .project(projectID)
-        } else {
-            state.eventEditorSeed = event
-            state.presentEventEditor = true
-        }
+        // Clicking any tile / agenda row opens the full-page detail view — events,
+        // work-blocks, and read-only external items alike (the detail view discriminates
+        // mode from the item's own flags). Deadlines have no detail page.
+        guard !event.isDeadline else { return }
+        state.calendarDetailItem = event
+        state.route = .calendarDetail
     }
 
     // MARK: - Header helpers

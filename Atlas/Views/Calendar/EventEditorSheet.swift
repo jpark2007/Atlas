@@ -228,6 +228,7 @@ struct EventEditorSheet: View {
     /// True when the seed event's id is already in `state.events` (edit mode).
     private var isEditingExisting: Bool {
         state.events.contains(where: { $0.id == seed.id })
+            || state.externalEvents.contains(where: { $0.id == seed.id })
     }
 
     private func save() {
@@ -257,7 +258,13 @@ struct EventEditorSheet: View {
             spaceName: finalSpaceName,
             notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes,
             isAllDay: isAllDay,
-            projectID: seed.projectID
+            projectID: seed.projectID,
+            // Preserve origin so an edited Google event stays a Google event (never
+            // relabeled to Atlas) and keeps its backing id for the patch.
+            isReadOnly: seed.isReadOnly,
+            source: seed.source,
+            googleEventId: seed.googleEventId,
+            isRecurring: seed.isRecurring
         )
 
         if isEditingExisting {
