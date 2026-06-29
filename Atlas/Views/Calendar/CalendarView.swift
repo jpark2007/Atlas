@@ -17,9 +17,11 @@ struct CalendarView: View {
     // MARK: - Drag-to-schedule (custom pointer drag)
     /// The task currently being dragged from the tray (nil = no drag in progress).
     @State private var dragTaskID: UUID?
-    /// Live cursor position during a drag, in `calendarDragSpace`.
+    /// An already-placed event/task being dragged to a new slot (nil = not dragging from grid).
+    @State private var draggingEvent: CalendarEvent?
+    /// Live cursor position during a drag, in global space.
     @State private var dragLocation: CGPoint = .zero
-    /// Day-column hit-frames published by the grid, in `calendarDragSpace`.
+    /// Day-column hit-frames published by the grid, in global space.
     @State private var dropColumns: [TaskDropColumn] = []
 
     // MARK: - Apple Calendar sync
@@ -46,6 +48,7 @@ struct CalendarView: View {
                 UnscheduledTray(
                     tasks: state.unscheduledTasks,
                     hiddenSpaces: hiddenSpaces,
+                    spaceOrder: state.spaces.map(\.name),
                     onSchedule: { taskID, hour in
                         schedule(taskID: taskID, on: selectedDate, hour: Double(hour))
                     },
@@ -73,9 +76,12 @@ struct CalendarView: View {
             // to position the preview chip under the cursor.
             .overlay {
                 GeometryReader { proxy in
+                    let origin = proxy.frame(in: .global).origin
                     if let id = dragTaskID, let task = state.tasks.first(where: { $0.id == id }) {
-                        let origin = proxy.frame(in: .global).origin
                         TaskDragPreview(title: task.title, color: task.spaceColor)
+                            .position(x: dragLocation.x - origin.x, y: dragLocation.y - origin.y)
+                    } else if let event = draggingEvent {
+                        TaskDragPreview(title: event.title, color: event.color)
                             .position(x: dragLocation.x - origin.x, y: dragLocation.y - origin.y)
                     }
                 }
@@ -280,14 +286,30 @@ struct CalendarView: View {
                 date: selectedDate,
                 events: filteredEvents(on: selectedDate),
                 onTapEmpty: handleTapEmpty,
-                onTapEvent: openSource(for:)
+                onTapEvent: openSource(for:),
+                onDragEvent: { event, point in
+                    draggingEvent = event
+                    dragLocation = point
+                },
+                onDropEvent: { event, point in
+                    performEventReschedule(event: event, at: point)
+                    draggingEvent = nil
+                }
             )
         case .week:
             WeekGridView(
                 days: weekDays,
                 eventsProvider: { filteredEvents(on: $0) },
                 onTapEmpty: handleTapEmpty,
-                onTapEvent: openSource(for:)
+                onTapEvent: openSource(for:),
+                onDragEvent: { event, point in
+                    draggingEvent = event
+                    dragLocation = point
+                },
+                onDropEvent: { event, point in
+                    performEventReschedule(event: event, at: point)
+                    draggingEvent = nil
+                }
             )
         case .month:
             MonthGridView(
@@ -365,9 +387,7 @@ struct CalendarView: View {
     /// drag-to-schedule shows immediate, satisfying feedback on the grid.
     private func scheduledTaskEvents(on date: Date) -> [CalendarEvent] {
         state.tasks.compactMap { task in
-            // Tasks whose slot has elapsed without completion resurface in the
-            // tray and must drop off the grid (non-destructive revert-after-slot).
-            guard !task.isEffectivelyUnscheduled(now: state.now),
+            guard !task.done,
                   let at = task.scheduledAt,
                   Calendar.current.isDate(at, inSameDayAs: date) else { return nil }
             let end = Calendar.current.date(byAdding: .minute, value: task.durationMin ?? 60, to: at) ?? at
@@ -467,6 +487,41 @@ struct CalendarView: View {
         let hour = Double(CalendarLayout.startHour)
             + Double(point.y - column.frame.minY) / Double(CalendarLayout.hourHeight)
         _ = schedule(taskID: taskID, on: column.date, hour: hour)
+    }
+
+    /// Resolve a drag-release of an already-placed event/task to a new slot and reschedule it.
+    /// Task-derived tiles (id matches a TaskItem) update `scheduledAt` directly.
+    /// Native CalendarEvents preserve their duration and move start/end.
+    private func performEventReschedule(event: CalendarEvent, at point: CGPoint) {
+        guard let column = dropColumns.first(where: { $0.frame.contains(point) }) else { return }
+        let hour = Double(CalendarLayout.startHour)
+            + Double(point.y - column.frame.minY) / Double(CalendarLayout.hourHeight)
+        let clamped = min(max(hour, Double(CalendarLayout.startHour)), Double(CalendarLayout.endHour) - 0.25)
+        let h = Int(clamped)
+        let minute = (Int((clamped - Double(h)) * 60) / 15) * 15
+        let cal = Calendar.current
+        guard var newStart = cal.date(bySettingHour: h, minute: minute, second: 0, of: column.date) else { return }
+
+        // Bump a past-today drop to the next 15-min boundary at/after now.
+        if cal.isDateInToday(newStart), newStart < state.now {
+            let nowMinutes = cal.component(.hour, from: state.now) * 60 + cal.component(.minute, from: state.now)
+            let snapped = ((nowMinutes / 15) + 1) * 15
+            if let next = cal.date(bySettingHour: snapped / 60, minute: snapped % 60, second: 0, of: column.date) {
+                newStart = next
+            }
+        }
+
+        withAnimation(.easeOut(duration: 0.2)) {
+            if state.tasks.contains(where: { $0.id == event.id }) {
+                state.schedule(taskId: event.id, at: newStart)
+            } else {
+                var updated = event
+                let duration = event.end.timeIntervalSince(event.start)
+                updated.start = newStart
+                updated.end = newStart.addingTimeInterval(duration)
+                state.updateEvent(updated)
+            }
+        }
     }
 
     /// Auto-find-a-slot: scan the selected day for the first free gap that fits

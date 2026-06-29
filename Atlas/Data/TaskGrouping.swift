@@ -42,6 +42,52 @@ enum TaskGrouping {
         return .later
     }
 
+    /// Group `tasks` by space name, ordered by `spaceOrder` (sidebar order).
+    /// Within each group tasks are sorted by due date ascending (nil last), then title.
+    /// Tasks with no space land in a trailing "No Space" bucket.
+    static func bySpace(
+        tasks: [TaskItem],
+        spaceOrder: [String],
+        calendar: Calendar = .current
+    ) -> [(spaceName: String, tasks: [TaskItem])] {
+        var grouped: [String: [TaskItem]] = [:]
+        for task in tasks {
+            grouped[task.spaceName.isEmpty ? "" : task.spaceName, default: []].append(task)
+        }
+
+        let sortByDue = { (items: [TaskItem]) -> [TaskItem] in
+            items.sorted { a, b in
+                switch (a.dueDate, b.dueDate) {
+                case let (ad?, bd?):
+                    return ad != bd ? ad < bd
+                        : a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+                case (nil, _?): return false
+                case (_?, nil): return true
+                case (nil, nil):
+                    return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+                }
+            }
+        }
+
+        var result: [(spaceName: String, tasks: [TaskItem])] = []
+        let known = Set(spaceOrder)
+
+        for name in spaceOrder {
+            if let items = grouped[name], !items.isEmpty {
+                result.append((spaceName: name, tasks: sortByDue(items)))
+            }
+        }
+        // Tasks assigned to a space not in the sidebar (edge case)
+        for (name, items) in grouped where !name.isEmpty && !known.contains(name) {
+            result.append((spaceName: name, tasks: sortByDue(items)))
+        }
+        // No-space bucket last
+        if let items = grouped[""], !items.isEmpty {
+            result.append((spaceName: "No Space", tasks: sortByDue(items)))
+        }
+        return result
+    }
+
     /// Group `tasks` by due-date bucket. Returns `(title, tasks)` pairs in fixed
     /// bucket order, omitting empty buckets. Within a bucket tasks are sorted by
     /// `dueDate` ascending (nil last), then by title — deterministic for tests.

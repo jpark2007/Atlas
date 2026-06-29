@@ -33,11 +33,17 @@ struct EventContextMenuModifier: ViewModifier {
                 }
                 .disabled(true)
             } else if isTaskDerived {
-                // ── Synthetic task tile — editing would ghost-duplicate in DB ─
-                Button {} label: {
-                    Label("Scheduled task — edit from Tasks", systemImage: "checkmark.circle")
+                Button {
+                    state.unschedule(taskId: event.id)
+                } label: {
+                    Label("Unschedule", systemImage: "tray.and.arrow.up")
                 }
-                .disabled(true)
+                Divider()
+                Button(role: .destructive) {
+                    state.toggleTask(event.id)
+                } label: {
+                    Label("Mark Done", systemImage: "checkmark.circle")
+                }
             } else {
                 // ── Edit ──────────────────────────────────────────────────────
                 Button {

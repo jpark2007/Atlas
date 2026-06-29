@@ -113,6 +113,13 @@ struct CaptureCommandBar: View {
         .onAppear {
             DispatchQueue.main.async { fieldFocused = true }
         }
+        // When dictation stops, re-focus the text field so the user can press
+        // Return to submit without having to click first.
+        .onChange(of: speech.isListening) { _, isListening in
+            if !isListening {
+                DispatchQueue.main.async { fieldFocused = true }
+            }
+        }
     }
 
     // MARK: - Bar layout
