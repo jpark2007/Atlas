@@ -102,6 +102,7 @@ struct AppGate: View {
     @EnvironmentObject private var auth: AuthService
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var googleAuth: GoogleAuthService
+    @EnvironmentObject private var canvas: CanvasService
 
     var body: some View {
         Group {
@@ -118,12 +119,23 @@ struct AppGate: View {
                     .task {
                         let db = AtlasDB(session: { auth.session })
                         await state.bootstrap(db: db)
+                        // Sync Canvas once bootstrap has populated projects so matching works.
+                        if canvas.isConnected {
+                            await state.syncCanvas(using: canvas)
+                        }
                     }
             case .offline:
                 RootView()
                     .onAppear { state.userName = auth.displayName }
             }
         }
-        .onAppear { state.attachGoogle(googleAuth) }
+        .onAppear {
+            state.attachGoogle(googleAuth)
+            // Sync Canvas whenever the user connects via Settings.
+            canvas.onConnected = { [weak state, weak canvas] in
+                guard let state, let canvas else { return }
+                Task { await state.syncCanvas(using: canvas) }
+            }
+        }
     }
 }

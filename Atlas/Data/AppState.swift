@@ -18,6 +18,9 @@ final class AppState: ObservableObject {
     /// sync failures are visible instead of silently swallowed.
     @Published var lastCalendarSyncError: String? = nil
 
+    /// Last Canvas sync error (nil when the most recent sync succeeded or Canvas is disconnected).
+    @Published var lastCanvasSyncError: String? = nil
+
     /// The calendar item open in the full-page detail view (a snapshot of the clicked tile).
     /// Nil when closed. Snapshotting rather than an id lets ephemeral external events open
     /// without a dangling lookup.
