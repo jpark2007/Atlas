@@ -73,6 +73,8 @@ struct HourGutter: View {
 struct DayColumnView: View {
     let date: Date
     let events: [CalendarEvent]
+    /// Shared 60-sec clock, forwarded to each EventTile so past tiles dim live.
+    let now: Date
     let isToday: Bool
     /// Called when the user taps an empty area of the grid (not on an EventTile).
     /// `hour` is a fractional clock hour (e.g. 9.5 = 9:30 AM).
@@ -90,6 +92,16 @@ struct DayColumnView: View {
             // and render off-screen at negative Y. Week mode shows them in AllDayRowView;
             // day mode omits them from the grid (acceptable for v1).
             let positioned = packEventsIntoLanes(events.filter { !$0.isAllDay })
+            // Collapse near-simultaneous timed deadlines so their dashed-line labels don't
+            // overprint (computed off-body to keep the grid's type-check budget light).
+            let deadlineClusters = clusterTimedDeadlines(
+                events.filter { $0.isDeadline && $0.hasSpecificTime },
+                gapPoints: CalendarLayout.deadlineLabelHeight
+            )
+            // Reserve a narrow left rail for timed-deadline flags — but only on days that have
+            // any, so other days keep the full tile width. Tiles inset by railWidth, so a
+            // deadline marker is NEVER drawn over a tile.
+            let railWidth: CGFloat = deadlineClusters.isEmpty ? 0 : CalendarLayout.deadlineRailWidth
             ZStack(alignment: .topLeading) {
                 // Subtle today-column background tint — first layer so everything renders on top
                 if isToday {
@@ -97,34 +109,21 @@ struct DayColumnView: View {
                 }
                 hourLines
                 if isToday { nowLine }
-                // Timed deadline markers — a dashed hairline across the column at the due
-                // time (red if overdue). All-day deadlines stay in the strip; these are the
-                // ones with a specific time. Rendered separately so they never pack as tiles.
-                ForEach(events.filter { $0.isDeadline && $0.hasSpecificTime }) { dl in
-                    let off = CalendarLayout.offsetHours(for: dl.start) * CalendarLayout.hourHeight
-                    if off >= 0, off <= CalendarLayout.totalHeight {
-                        ZStack(alignment: .leading) {
-                            // Deadline lines are always red so they stand out from the
-                            // accent now-line and event tiles (overdue intensity lives on
-                            // the strip pill, not the line).
-                            Rectangle()
-                                .stroke(AtlasTheme.Colors.danger, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-                                .frame(height: 1.5)
-                            Text("Due · \(dl.title)")
-                                .font(.system(size: 8, weight: .semibold))
-                                .foregroundStyle(AtlasTheme.Colors.danger)
-                                .lineLimit(1)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(AtlasTheme.Colors.danger.opacity(0.14))
-                                .clipShape(Capsule())
-                                .offset(x: 4, y: -9)
-                        }
-                        .offset(y: off)
-                    }
-                }
+                // Event/work-block tiles sit to the RIGHT of the deadline rail (inset by
+                // railWidth) so flags and tiles never collide.
                 ForEach(positioned) { item in
-                    tile(for: item, columnWidth: geo.size.width)
+                    tile(for: item, columnWidth: geo.size.width - railWidth, xInset: railWidth)
+                }
+                // Timed-deadline flags live in the dedicated left rail (off the tiles), drawn
+                // last so they stay clickable and on top. A lone deadline is one red flag; a
+                // cluster of near-simultaneous ones collapses to a flag + count badge (tap →
+                // popover listing each). All-day deadlines stay in the top DUE strip.
+                ForEach(deadlineClusters) { cluster in
+                    let off = CalendarLayout.offsetHours(for: cluster.representative.start) * CalendarLayout.hourHeight
+                    if off >= 0, off <= CalendarLayout.totalHeight {
+                        DeadlineRailMarker(cluster: cluster)
+                            .offset(y: off - CalendarLayout.deadlineLabelHeight / 2)
+                    }
                 }
             }
             .frame(width: geo.size.width, height: CalendarLayout.totalHeight, alignment: .topLeading)
@@ -182,7 +181,7 @@ struct DayColumnView: View {
         }
     }
 
-    private func tile(for item: PositionedEvent, columnWidth: CGFloat) -> some View {
+    private func tile(for item: PositionedEvent, columnWidth: CGFloat, xInset: CGFloat) -> some View {
         let ev = item.event
         let y = CalendarLayout.offsetHours(for: ev.start) * CalendarLayout.hourHeight
         let rawHeight = CGFloat(ev.durationMinutes) / 60 * CalendarLayout.hourHeight
@@ -195,7 +194,7 @@ struct DayColumnView: View {
         let openSourceClosure: (() -> Void)? = ev.isReadOnly
             ? nil
             : onTapEvent.map { handler in { handler(ev) } }
-        return EventTile(event: ev, compact: height < 44)
+        return EventTile(event: ev, now: now, compact: height < 44)
             // Left-click: open source for writable events; swallow tap for read-only
             // so the parent ZStack's tap-to-create doesn't fire.
             .onTapGesture {
@@ -206,7 +205,7 @@ struct DayColumnView: View {
             // Right-click: full menu for writable; read-only label only for external events.
             .eventContextMenu(event: ev, onOpenSource: openSourceClosure)
             .frame(width: max(0, laneWidth - 2), height: height, alignment: .topLeading)
-            .offset(x: x, y: y)
+            .offset(x: x + xInset, y: y)
             // Drag-to-reschedule: mirrors the tray's custom DragGesture approach.
             // simultaneousGesture lets the tap still fire on a stationary click.
             // Read-only events (Apple/Google) are excluded via the guard.
@@ -228,6 +227,8 @@ struct DayColumnView: View {
 
 struct EventTile: View {
     let event: CalendarEvent
+    /// The shared 60-sec clock (AppState.now) — drives the "passed" dim live as time elapses.
+    let now: Date
     var compact: Bool = false
 
     var body: some View {
@@ -276,6 +277,10 @@ struct EventTile: View {
                 .stroke(tileAccentColor.opacity(borderOpacity),
                         style: StrokeStyle(lineWidth: 1, dash: event.isWorkBlock ? [4, 3] : []))
         )
+        // A timed tile whose slot has fully elapsed reads as "passed" — dimmed only, no
+        // strike-through or recolor. Covers work-blocks (scheduled-but-unfinished; done ones
+        // never reach the grid) and events incl. read-only external ones (simply ended < now).
+        .opacity(event.end < now ? 0.65 : 1)
     }
 
     private var tileAccentColor: Color {
@@ -298,6 +303,73 @@ struct EventTile: View {
     }
 }
 
+// MARK: - Timed deadline rail marker (grid)
+
+/// A timed-deadline marker that lives in the dedicated left rail (never over a tile): a red
+/// `flag.fill` at the due-time y. A lone deadline is a single flag; near-simultaneous ones
+/// collapse to a flag + count badge ("3"). Tapping opens a popover listing each deadline
+/// (title + time). The red flag iconography is deliberately distinct from a rounded event tile,
+/// so a deadline never reads as a calendar event.
+struct DeadlineRailMarker: View {
+    let cluster: DeadlineCluster
+    @State private var showList = false
+
+    var body: some View {
+        Button { showList.toggle() } label: {
+            Image(systemName: "flag.fill")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(AtlasTheme.Colors.danger)
+                .frame(width: CalendarLayout.deadlineRailWidth,
+                       height: CalendarLayout.deadlineLabelHeight)
+                // Count badge (kept inside the rail) when several deadlines collapse into one.
+                .overlay(alignment: .topTrailing) {
+                    if cluster.count > 1 {
+                        Text("\(cluster.count)")
+                            .font(.system(size: 7, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .frame(width: 10, height: 10)
+                            .background(Circle().fill(AtlasTheme.Colors.danger))
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showList, arrowEdge: .leading) {
+            DeadlineListPopover(deadlines: cluster.events)
+        }
+    }
+}
+
+/// Compact list shown when a deadline cluster / overflow chip is expanded: one "flag · title …
+/// time" row per deadline. Shared by the grid marker, the day DUE strip, and the week cells.
+struct DeadlineListPopover: View {
+    let deadlines: [CalendarEvent]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(deadlines) { dl in
+                HStack(spacing: 8) {
+                    Image(systemName: "flag.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(dl.color)
+                    Text(dl.title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .lineLimit(1)
+                    if dl.hasSpecificTime {
+                        Spacer(minLength: 12)
+                        Text(dl.timeLabel)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(minWidth: 180, alignment: .leading)
+    }
+}
+
 // MARK: - Deadline strip
 
 /// A horizontal rail of deadline flag-pills, pinned above the time grid so due-dates are
@@ -305,35 +377,61 @@ struct EventTile: View {
 /// (the pill carries its colour via `event.color`). Deadlines are Atlas-only — never on Google.
 struct DeadlineStrip: View {
     let deadlines: [CalendarEvent]
+    @State private var showOverflow = false
+
+    /// Inline pill budget before collapsing the rest into a "+N" overflow chip, so a busy day
+    /// doesn't push the strip off-screen. A simple cap (not width-measured) — keeps it light.
+    private let maxVisible = 4
 
     var body: some View {
+        let visible = Array(deadlines.prefix(maxVisible))
+        let overflow = Array(deadlines.dropFirst(maxVisible))
         HStack(spacing: 6) {
             Text("DUE")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
-            ForEach(deadlines) { dl in
-                HStack(spacing: 5) {
-                    Image(systemName: "flag.fill").font(.system(size: 8))
-                    Text(dl.title)
+            ForEach(visible) { dl in
+                pill(dl)
+            }
+            if !overflow.isEmpty {
+                Button { showOverflow.toggle() } label: {
+                    Text("+\(overflow.count)")
                         .font(.system(size: 11, weight: .semibold))
-                        .lineLimit(1)
-                    if dl.hasSpecificTime {
-                        Text(dl.timeLabel)
-                            .font(.system(size: 10, weight: .medium))
-                            .lineLimit(1)
-                    }
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(AtlasTheme.Colors.textMuted.opacity(0.12)))
+                        .overlay(Capsule().stroke(AtlasTheme.Colors.textMuted.opacity(0.45), lineWidth: 1))
                 }
-                .foregroundStyle(dl.color)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(dl.color.opacity(0.12)))
-                .overlay(Capsule().stroke(dl.color.opacity(0.45), lineWidth: 1))
+                .buttonStyle(.plain)
+                .popover(isPresented: $showOverflow, arrowEdge: .bottom) {
+                    DeadlineListPopover(deadlines: overflow)
+                }
             }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func pill(_ dl: CalendarEvent) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "flag.fill").font(.system(size: 8))
+            Text(dl.title)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+            if dl.hasSpecificTime {
+                Text(dl.timeLabel)
+                    .font(.system(size: 10, weight: .medium))
+                    .lineLimit(1)
+            }
+        }
+        .foregroundStyle(dl.color)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(dl.color.opacity(0.12)))
+        .overlay(Capsule().stroke(dl.color.opacity(0.45), lineWidth: 1))
     }
 }
 
@@ -342,6 +440,8 @@ struct DeadlineStrip: View {
 struct DayCalendarView: View {
     let date: Date
     let events: [CalendarEvent]
+    /// Shared 60-sec clock (AppState.now), forwarded down so past tiles dim live.
+    let now: Date
     var onTapEmpty: ((Date, Double) -> Void)? = nil
     var onTapEvent: ((CalendarEvent) -> Void)? = nil
     var onDragEvent: ((CalendarEvent, CGPoint) -> Void)? = nil
@@ -363,6 +463,7 @@ struct DayCalendarView: View {
                             DayColumnView(
                                 date: date,
                                 events: events,
+                                now: now,
                                 isToday: Calendar.current.isDateInToday(date),
                                 onTapEmpty: onTapEmpty,
                                 onTapEvent: onTapEvent,
@@ -401,6 +502,8 @@ struct WeekGridView: View {
     let days: [Date]
     /// Provides the (space-filtered) events for a given day.
     let eventsProvider: (Date) -> [CalendarEvent]
+    /// Shared 60-sec clock (AppState.now), forwarded down so past tiles dim live.
+    let now: Date
     var onTapEmpty: ((Date, Double) -> Void)? = nil
     var onTapEvent: ((CalendarEvent) -> Void)? = nil
     var onDragEvent: ((CalendarEvent, CGPoint) -> Void)? = nil
@@ -421,6 +524,7 @@ struct WeekGridView: View {
                 AllDayRowView(
                     days: days,
                     columnWidth: columnWidth,
+                    now: now,
                     eventsProvider: eventsProvider
                 )
 
@@ -434,6 +538,7 @@ struct WeekGridView: View {
                                     DayColumnView(
                                         date: day,
                                         events: eventsProvider(day),
+                                        now: now,
                                         isToday: Calendar.current.isDateInToday(day),
                                         onTapEmpty: onTapEmpty,
                                         onTapEvent: onTapEvent,

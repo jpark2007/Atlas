@@ -150,14 +150,28 @@ extension TaskItem {
         return f.string(from: date)
     }
 
-    /// True only when the task has never been given a calendar slot.
-    /// Once scheduled it stays on the grid (and out of the tray) until
-    /// explicitly marked done — scheduling is NOT the same as completion.
-    func isEffectivelyUnscheduled(now: Date = Date()) -> Bool {
-        guard let at = scheduledAt else { return true }
-        if done { return false }
-        let end = at.addingTimeInterval(TimeInterval((durationMin ?? 60) * 60))
-        return end < now
+    /// True only when the task has never been given a calendar slot. Once scheduled it
+    /// stays on the grid (and out of the tray) until explicitly marked done — an elapsed
+    /// slot does NOT make a task "unscheduled" again; it stays put, rendered as passed.
+    var isEffectivelyUnscheduled: Bool {
+        scheduledAt == nil
+    }
+
+    /// True when this task has a due date that has already passed and it isn't done — the
+    /// "overdue" signal that turns its deadline pill (and tray chip) red.
+    func isOverdue(now: Date) -> Bool {
+        dueDate != nil && dueDate! < now && !done
+    }
+
+    /// True when an overdue task's scheduled slot has ALSO elapsed — meaning the planned
+    /// work time came and went without it being done. Such a block leaves the grid and
+    /// returns to the tray to be re-planned. Gating on the slot having elapsed is what lets
+    /// a user re-drag an overdue task to a FUTURE slot and have it stay on the grid (the new
+    /// slot hasn't elapsed yet), instead of instantly bouncing back to the tray.
+    func needsReplan(now: Date) -> Bool {
+        guard isOverdue(now: now), let at = scheduledAt else { return false }
+        let slotEnd = at.addingTimeInterval(Double(durationMin ?? 60) * 60)
+        return slotEnd < now
     }
 }
 

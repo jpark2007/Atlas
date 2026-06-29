@@ -12,6 +12,9 @@ struct SettingsView: View {
 
     @AppStorage("calendar.google.enabled") private var googleCalendarEnabled: Bool = false
 
+    /// Space new / quick-captured tasks fall into when none is inferred.
+    @AppStorage("tasks.defaultSpaceName") private var defaultTaskSpace: String = "Personal"
+
     @State private var canvasToken = ""
 
     // MARK: – Shortcut recorder state
@@ -73,6 +76,8 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     account
+                    Divider().overlay(AtlasTheme.Colors.border)
+                    tasksSection
                     Divider().overlay(AtlasTheme.Colors.border)
                     shortcutsSection
                     Spacer(minLength: 8)
@@ -445,6 +450,54 @@ struct SettingsView: View {
             return AtlasTheme.Colors.danger
         }
         return AtlasTheme.Colors.textMuted
+    }
+
+    // MARK: – Tasks section
+
+    private var tasksSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            label("TASKS")
+            if state.spaces.isEmpty {
+                Text("Create a space first to set a default.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+            } else {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Default space for new tasks")
+                            .font(.system(size: 13))
+                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        Text("Quick-captured tasks without an inferred space land here")
+                            .font(.system(size: 11))
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    }
+                    Spacer()
+                    Picker("Default task space", selection: $defaultTaskSpace) {
+                        ForEach(state.spaces) { space in
+                            Text(space.name).tag(space.name)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 140)
+                    .tint(AtlasTheme.Colors.accent)
+                    .onAppear {
+                        // Heal a stale/empty default (e.g. the space was renamed or deleted).
+                        if !state.spaces.contains(where: { $0.name == defaultTaskSpace }) {
+                            defaultTaskSpace = state.spaces.contains(where: { $0.name == "Personal" })
+                                ? "Personal"
+                                : (state.spaces.first?.name ?? "Personal")
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
+                )
+            }
+        }
     }
 
     // MARK: – Shortcuts section

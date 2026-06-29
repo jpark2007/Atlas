@@ -19,6 +19,7 @@ struct TaskDetailView: View {
             VStack(alignment: .leading, spacing: 24) {
                 header
                 metaRow
+                spacePicker
                 projectPicker
                 notesSection
             }
@@ -163,6 +164,43 @@ struct TaskDetailView: View {
         .padding(.horizontal, 10).padding(.vertical, 5)
         .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
         .clipShape(Capsule())
+    }
+
+    // MARK: Space picker
+
+    private var spacePicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("SPACE")
+                .font(AtlasTheme.Font.sectionLabel())
+                .tracking(0.8)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+
+            Menu {
+                ForEach(state.spaces) { space in
+                    Button(space.name) {
+                        state.setTaskSpace(taskId: live.id, spaceName: space.name)
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(live.spaceColor)
+                        .frame(width: 8, height: 8)
+                    Text(live.spaceName.isEmpty ? "None" : live.spaceName)
+                        .font(.system(size: 12, weight: .medium))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                }
+                .foregroundStyle(live.spaceName.isEmpty
+                                 ? AtlasTheme.Colors.textMuted
+                                 : live.spaceColor)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
     }
 
     // MARK: Project picker

@@ -270,13 +270,15 @@ final class AppState: ObservableObject {
     }
 
     /// Scheduled tasks rendered as work-block events for `date` — the calendar's
-    /// drag-to-schedule tiles. Excludes tasks whose slot has elapsed unmet (they resurface
-    /// in the tray) and completed tasks. Shared by the calendar grid and the dashboard so
-    /// both show the same scheduled work.
+    /// drag-to-schedule tiles. Excludes completed tasks; a scheduled block whose slot has
+    /// elapsed but isn't yet overdue STAYS on the grid (rendered dimmed/"passed"). Once it is
+    /// overdue AND its slot has elapsed (`needsReplan`) it leaves the grid and returns to the
+    /// tray to be re-planned. Shared by the calendar grid and the dashboard.
     func scheduledWorkBlocks(on date: Date) -> [CalendarEvent] {
         let cal = Calendar.current
         return tasks.compactMap { task in
-            guard !task.isEffectivelyUnscheduled(now: now),
+            guard !task.done,
+                  !task.needsReplan(now: now),
                   let at = task.scheduledAt,
                   cal.isDate(at, inSameDayAs: date) else { return nil }
             let end = cal.date(byAdding: .minute, value: task.durationMin ?? 60, to: at) ?? at
@@ -295,28 +297,60 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Open to-dos that need a (new) slot — the calendar's drag-to-schedule tray.
-    /// Includes never-scheduled tasks AND tasks whose slot has elapsed without
-    /// being completed (non-destructive resurface; see
-    /// `TaskItem.isEffectivelyUnscheduled(now:)`). Completed tasks are excluded.
+    /// Open to-dos that need a (new) slot — the calendar's drag-to-schedule tray. Includes
+    /// never-scheduled tasks AND scheduled tasks that have gone overdue with their slot
+    /// elapsed (`needsReplan`), which return here (shown red) to be re-planned. A scheduled
+    /// task whose slot merely passed (not yet overdue) stays on the grid, not here.
     var unscheduledTasks: [TaskItem] {
-        tasks.filter { $0.isEffectivelyUnscheduled(now: now) && !$0.done }
+        tasks.filter { !$0.done && ($0.scheduledAt == nil || $0.needsReplan(now: now)) }
+    }
+
+    /// The space a new/quick-captured task falls into when none is otherwise chosen.
+    /// Reads the `tasks.defaultSpaceName` setting, falls back to "Personal", and
+    /// finally to the first space — so a created task is never space-less.
+    var defaultTaskSpaceName: String {
+        if let stored = UserDefaults.standard.string(forKey: "tasks.defaultSpaceName"),
+           spaces.contains(where: { $0.name == stored }) {
+            return stored
+        }
+        if spaces.contains(where: { $0.name == "Personal" }) { return "Personal" }
+        return spaces.first?.name ?? "Personal"
+    }
+
+    /// Pick the real space a created task should live in — never empty. Order:
+    /// 1. an explicit `hint` (AI/capture category, or caller-supplied) that names
+    ///    a real space (case-insensitive), 2. a case-insensitive mention of a
+    ///    space name inside `text`, 3. the configured default space.
+    func resolvedTaskSpaceName(hint: String = "", text: String = "") -> String {
+        let trimmedHint = hint.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedHint.isEmpty,
+           let match = spaces.first(where: { $0.name.caseInsensitiveCompare(trimmedHint) == .orderedSame }) {
+            return match.name
+        }
+        let lower = text.lowercased()
+        if !lower.isEmpty,
+           let mentioned = spaces.first(where: { !$0.name.isEmpty && lower.contains($0.name.lowercased()) }) {
+            return mentioned.name
+        }
+        return defaultTaskSpaceName
     }
 
     /// Quick-capture entry point. Appends a task with an optional due date and space.
+    /// Every task ends up in a real space (guess → default), so `spaceName` here is
+    /// a HINT — the resolver matches it (or the title) against existing spaces.
     @discardableResult
     func addTask(title: String,
                  dueDate: Date? = nil,
                  durationMin: Int? = nil,
                  spaceName: String = "",
                  projectName: String = "") -> TaskItem {
-        let spaceColor = spaceName.isEmpty ? AtlasTheme.Colors.accent : calendarSpaceColor(named: spaceName)
+        let resolvedSpace = resolvedTaskSpaceName(hint: spaceName, text: title)
         var task = TaskItem(title: title,
                             dueLabel: TaskItem.dueLabel(for: dueDate),
                             dueDate: dueDate,
                             durationMin: durationMin)
-        task.spaceName = spaceName
-        task.spaceColor = spaceColor
+        task.spaceName = resolvedSpace
+        task.spaceColor = calendarSpaceColor(named: resolvedSpace)
         task.projectName = projectName
         tasks.append(task)
         Task { try? await self.db?.upsertTask(task) }
@@ -330,6 +364,20 @@ final class AppState: ObservableObject {
             let updated = tasks[i]
             Task { try? await self.db?.upsertTask(updated) }
         }
+    }
+
+    /// Move a task to a different space, syncing its brand color and dropping a
+    /// project that doesn't belong to the new space (the project picker re-scopes).
+    func setTaskSpace(taskId: UUID, spaceName: String) {
+        guard let i = tasks.firstIndex(where: { $0.id == taskId }) else { return }
+        tasks[i].spaceName = spaceName
+        tasks[i].spaceColor = calendarSpaceColor(named: spaceName)
+        let projects = spaces.first { $0.name == spaceName }?.projects ?? []
+        if !projects.contains(where: { $0.name == tasks[i].projectName }) {
+            tasks[i].projectName = ""
+        }
+        let updated = tasks[i]
+        Task { try? await self.db?.upsertTask(updated) }
     }
 
     /// Set (or clear) a task's structured due date, keeping the derived
@@ -373,6 +421,10 @@ final class AppState: ObservableObject {
                 guard let gid = try? await service.createEvent(block), !gid.isEmpty else { return }
                 if let j = self.tasks.firstIndex(where: { $0.id == taskID }) {
                     self.tasks[j].workBlockGoogleEventId = gid
+                    // Persist the freshly-created Google id so the read-back de-dupe survives
+                    // relaunch — without this the column stays NULL and the block duplicates.
+                    let persisted = self.tasks[j]
+                    try? await self.db?.upsertTask(persisted)
                 }
             }
         }

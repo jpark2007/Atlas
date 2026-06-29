@@ -48,6 +48,7 @@ struct CalendarView: View {
 
                 UnscheduledTray(
                     tasks: state.unscheduledTasks,
+                    now: state.now,
                     hiddenSpaces: hiddenSpaces,
                     spaceOrder: state.spaces.map(\.name),
                     onSchedule: { taskID, hour in
@@ -295,6 +296,7 @@ struct CalendarView: View {
             DayCalendarView(
                 date: selectedDate,
                 events: filteredEvents(on: selectedDate),
+                now: state.now,
                 onTapEmpty: handleTapEmpty,
                 onTapEvent: openSource(for:),
                 onDragEvent: { event, point in
@@ -310,6 +312,7 @@ struct CalendarView: View {
             WeekGridView(
                 days: weekDays,
                 eventsProvider: { filteredEvents(on: $0) },
+                now: state.now,
                 onTapEmpty: handleTapEmpty,
                 onTapEvent: openSource(for:),
                 onDragEvent: { event, point in
@@ -602,9 +605,9 @@ struct CalendarView: View {
         let minute = (Int((clamped - Double(h)) * 60) / 15) * 15
         guard var dropped = cal.date(bySettingHour: h, minute: minute, second: 0, of: date) else { return false }
 
-        // An explicit drop in the past (earlier today than "now") would instantly
-        // resurface to the tray via isEffectivelyUnscheduled. Bump it to the next
-        // 15-min boundary at/after now so a deliberate drop always sticks.
+        // An explicit drop in the past (earlier today than "now") would land already
+        // "passed" (dimmed) the instant it's placed. Bump it to the next 15-min boundary
+        // at/after now so a deliberate drop is actionable, not instantly elapsed.
         if cal.isDateInToday(dropped), dropped < state.now {
             let nowMinutes = cal.component(.hour, from: state.now) * 60 + cal.component(.minute, from: state.now)
             let snapped = ((nowMinutes / 15) + 1) * 15

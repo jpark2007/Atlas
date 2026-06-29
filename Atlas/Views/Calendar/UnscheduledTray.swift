@@ -7,6 +7,8 @@ import SwiftUI
 /// same spaces as the calendar's category chips (`hiddenSpaces`).
 struct UnscheduledTray: View {
     let tasks: [TaskItem]
+    /// The shared "now" — drives the overdue (bright-red) treatment for re-planned chips.
+    var now: Date = Date()
     /// Spaces hidden via the calendar's category chips — narrows the tray to match the grid.
     var hiddenSpaces: Set<String> = []
     /// Sidebar space order — used to sort collapsible sections.
@@ -123,7 +125,10 @@ struct UnscheduledTray: View {
     }
 
     private func taskChip(_ task: TaskItem) -> some View {
-        HStack(spacing: 9) {
+        // Overdue tasks that returned to the tray to be re-planned read bright red — the
+        // same danger color the overdue deadline pill uses (don't invent a new red).
+        let overdue = task.isOverdue(now: now)
+        return HStack(spacing: 9) {
             // Check it off — completes the task; it then drops out of the tray.
             Button { onToggleDone(task.id) } label: {
                 Image(systemName: "circle")
@@ -134,17 +139,17 @@ struct UnscheduledTray: View {
             .buttonStyle(.plain)
             .help("Mark done")
             RoundedRectangle(cornerRadius: 2)
-                .fill(task.spaceColor)
+                .fill(overdue ? AtlasTheme.Colors.danger : task.spaceColor)
                 .frame(width: 3, height: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(task.title)
                     .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .foregroundStyle(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textPrimary)
                     .lineLimit(1)
                 if !task.dueLabel.isEmpty {
                     Text("Due \(task.dueLabel)")
                         .font(.system(size: 10))
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .foregroundStyle(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textMuted)
                 }
             }
             Spacer(minLength: 0)
@@ -154,11 +159,11 @@ struct UnscheduledTray: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
+        .background((overdue ? AtlasTheme.Colors.danger.opacity(0.14) : AtlasTheme.Colors.bgElevated.opacity(0.7)))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(AtlasTheme.Colors.border, lineWidth: 1)
+                .stroke(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.border, lineWidth: 1)
         )
         .contentShape(Rectangle())
         // Custom pointer drag (NOT native `.draggable`): moving the chip ≥6pt schedules it
