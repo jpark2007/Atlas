@@ -183,6 +183,7 @@ struct TaskRow: Codable {
     var notes: String?
     var noteId: UUID?
     var durationMin: Int?
+    var workBlockGoogleEventId: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -197,6 +198,7 @@ struct TaskRow: Codable {
         case notes
         case noteId      = "note_id"
         case durationMin = "duration_min"
+        case workBlockGoogleEventId = "work_block_google_event_id"
     }
 
     init(domain t: TaskItem) {
@@ -211,6 +213,7 @@ struct TaskRow: Codable {
         self.notes       = t.notes
         self.noteId      = t.noteID
         self.durationMin = t.durationMin
+        self.workBlockGoogleEventId = t.workBlockGoogleEventId
     }
 
     func toDomain() -> TaskItem {
@@ -223,6 +226,7 @@ struct TaskRow: Codable {
                  dueDate: dueDate,
                  durationMin: durationMin,
                  noteID: noteId,
+                 workBlockGoogleEventId: workBlockGoogleEventId,
                  spaceName: spaceName,
                  notes: notes ?? "")
     }

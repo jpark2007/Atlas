@@ -90,7 +90,9 @@ final class CapturePanelController {
         panel.hidesOnDeactivate = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        // The SwiftUI bar draws its own soft shadow; a window shadow on the transparent
+        // padded content renders as a hard boxy halo, so leave it off.
+        panel.hasShadow = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = false
 

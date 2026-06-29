@@ -97,6 +97,32 @@ struct DayColumnView: View {
                 }
                 hourLines
                 if isToday { nowLine }
+                // Timed deadline markers — a dashed hairline across the column at the due
+                // time (red if overdue). All-day deadlines stay in the strip; these are the
+                // ones with a specific time. Rendered separately so they never pack as tiles.
+                ForEach(events.filter { $0.isDeadline && $0.hasSpecificTime }) { dl in
+                    let off = CalendarLayout.offsetHours(for: dl.start) * CalendarLayout.hourHeight
+                    if off >= 0, off <= CalendarLayout.totalHeight {
+                        ZStack(alignment: .leading) {
+                            // Deadline lines are always red so they stand out from the
+                            // accent now-line and event tiles (overdue intensity lives on
+                            // the strip pill, not the line).
+                            Rectangle()
+                                .stroke(AtlasTheme.Colors.danger, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                                .frame(height: 1.5)
+                            Text("Due · \(dl.title)")
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundStyle(AtlasTheme.Colors.danger)
+                                .lineLimit(1)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(AtlasTheme.Colors.danger.opacity(0.14))
+                                .clipShape(Capsule())
+                                .offset(x: 4, y: -9)
+                        }
+                        .offset(y: off)
+                    }
+                }
                 ForEach(positioned) { item in
                     tile(for: item, columnWidth: geo.size.width)
                 }

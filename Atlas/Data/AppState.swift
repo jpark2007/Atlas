@@ -425,6 +425,8 @@ final class AppState: ObservableObject {
     func updateTaskNotes(taskId: UUID, notes: String) {
         if let i = tasks.firstIndex(where: { $0.id == taskId }) {
             tasks[i].notes = notes
+            let updated = tasks[i]
+            Task { try? await self.db?.upsertTask(updated) }
         }
     }
 

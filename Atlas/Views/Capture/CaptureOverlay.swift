@@ -87,8 +87,9 @@ struct CaptureCommandBar: View {
         Group {
             if inPanel {
                 // Hosted in the floating panel — just the bar; the panel handles
-                // click-outside + Esc dismissal (CapturePanelController).
-                bar.frame(width: barWidth).padding(16)
+                // click-outside + Esc dismissal (CapturePanelController). The padding gives
+                // the bar's drop shadow room so it renders soft instead of clipped.
+                bar.frame(width: barWidth).padding(18)
             } else {
                 ZStack(alignment: .top) {
                     // Click-outside catcher + subtle scrim for focus.
@@ -162,7 +163,7 @@ struct CaptureCommandBar: View {
                 .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-        .shadow(color: .black.opacity(0.45), radius: 30, x: 0, y: 18)
+        .shadow(color: .black.opacity(0.4), radius: 14, x: 0, y: 6)
         .shadow(color: .black.opacity(0.22), radius: 6, x: 0, y: 2)
         .animation(.easeInOut(duration: 0.2), value: confirmation)
     }
@@ -227,12 +228,12 @@ struct CaptureCommandBar: View {
                 Circle()
                     .fill(speech.isListening
                           ? AtlasTheme.Colors.danger.opacity(0.18)
-                          : Color.white.opacity(0.06))
+                          : Color.white.opacity(0.10))
                 Image(systemName: speech.isListening ? "stop.fill" : "mic.fill")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(speech.isListening
                                      ? AtlasTheme.Colors.danger
-                                     : AtlasTheme.Colors.textSecondary)
+                                     : AtlasTheme.Colors.textPrimary)
             }
             .frame(width: 32, height: 32)
             .overlay(
@@ -262,11 +263,11 @@ struct CaptureCommandBar: View {
 
             Text("\u{21A9}") // ↩ return glyph
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .frame(width: 22, height: 22)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.white.opacity(0.06))
+                        .fill(Color.white.opacity(0.10))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)

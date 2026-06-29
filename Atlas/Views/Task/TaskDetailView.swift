@@ -11,6 +11,8 @@ struct TaskDetailView: View {
 
     @State private var notesDraft: String = ""
     @State private var isEditingNotes = false
+    @State private var isEditingDueDate = false
+    @State private var dueDateDraft: Date? = nil
 
     var body: some View {
         ScrollView {
@@ -24,6 +26,7 @@ struct TaskDetailView: View {
         }
         .background(AtlasTheme.Colors.bgBase)
         .onAppear { notesDraft = live.notes }
+        .sheet(isPresented: $isEditingDueDate) { dueDateEditor }
     }
 
     // MARK: Header
@@ -76,10 +79,34 @@ struct TaskDetailView: View {
     }
 
     private var metaRow: some View {
-        HStack(spacing: 20) {
-            if !live.dueLabel.isEmpty {
-                metaChip(icon: "calendar", label: "Due \(dueChipLabel)")
+        HStack(spacing: 12) {
+            // Space the task belongs to.
+            if !live.spaceName.isEmpty {
+                HStack(spacing: 5) {
+                    Circle().fill(live.spaceColor).frame(width: 7, height: 7)
+                    Text(live.spaceName).font(.system(size: 12))
+                }
+                .foregroundStyle(live.spaceColor)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
+                .clipShape(Capsule())
             }
+            // Due date — tap to edit (set/change/clear, with a time).
+            Button {
+                dueDateDraft = live.dueDate ?? Date()
+                isEditingDueDate = true
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "calendar").font(.system(size: 11))
+                    Text(live.dueLabel.isEmpty ? "Set due date" : "Due \(dueChipLabel)")
+                        .font(.system(size: 12))
+                }
+                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
             if let at = live.scheduledAt {
                 metaChip(icon: "clock", label: "Scheduled \(shortDate(at))")
             }
@@ -87,6 +114,42 @@ struct TaskDetailView: View {
                 metaChip(icon: "checkmark.circle", label: "Completed")
             }
         }
+    }
+
+    /// Popover-style date+time editor for the task's due date.
+    private var dueDateEditor: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Due date")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+            DatePicker("", selection: Binding(
+                get: { dueDateDraft ?? Date() },
+                set: { dueDateDraft = $0 }
+            ), displayedComponents: [.date, .hourAndMinute])
+            .datePickerStyle(.graphical)
+            .labelsHidden()
+            HStack {
+                Button("Clear") {
+                    state.setDueDate(taskId: task.id, date: nil)
+                    isEditingDueDate = false
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                Spacer()
+                Button("Cancel") { isEditingDueDate = false }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                Button("Save") {
+                    state.setDueDate(taskId: task.id, date: dueDateDraft)
+                    isEditingDueDate = false
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(AtlasTheme.Colors.accent)
+            }
+        }
+        .padding(20)
+        .frame(width: 360)
+        .background(AtlasTheme.Colors.bgCard)
     }
 
     private func metaChip(icon: String, label: String) -> some View {
@@ -152,7 +215,7 @@ struct TaskDetailView: View {
     private var notesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("NOTES")
+                Text("DESCRIPTION")
                     .font(AtlasTheme.Font.sectionLabel())
                     .tracking(0.8)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
@@ -177,7 +240,7 @@ struct TaskDetailView: View {
                     notesDraft = ""
                     isEditingNotes = true
                 } label: {
-                    Text("Add notes…")
+                    Text("Add a description…")
                         .font(.system(size: 13))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
@@ -196,7 +259,7 @@ struct TaskDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             ZStack(alignment: .topLeading) {
                 if notesDraft.isEmpty {
-                    Text("Write notes, links, context…")
+                    Text("Add description, context, links…")
                         .font(.system(size: 13))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .padding(.horizontal, 14)
