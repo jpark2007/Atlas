@@ -175,8 +175,12 @@ final class SpeechCaptureService: ObservableObject {
                 if let result {
                     let spoken = result.bestTranscription.formattedString
                     self.liveTranscript = spoken
-                    let merged = SpeechCaptureCore.compose(base: self.base, transcript: spoken)
-                    self.onTranscript?(merged)
+                    // Guard against empty results from cancel/cleanup callbacks —
+                    // an empty spoken string would compose to "" and wipe the field.
+                    if !spoken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        let merged = SpeechCaptureCore.compose(base: self.base, transcript: spoken)
+                        self.onTranscript?(merged)
+                    }
                 }
                 if error != nil || (result?.isFinal ?? false) {
                     self.stop()
