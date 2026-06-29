@@ -17,10 +17,29 @@ struct ProjectDetailView: View {
     /// an unsaved draft pre-linked to this project.
     @State private var editingNote: Note?
 
-    /// True when the project has nothing real yet: no overview and no assignments.
-    /// Drives the editable starter template so the page is never blank.
+    /// Live tasks tagged to this project.
+    private var liveTasks: [TaskItem] {
+        state.tasks
+            .filter { $0.projectName == project.name && $0.spaceName == project.spaceName }
+            .sorted {
+                switch ($0.dueDate, $1.dueDate) {
+                case let (a?, b?): return a < b
+                case (nil, _?):    return false
+                case (_?, nil):    return true
+                case (nil, nil):   return $0.title < $1.title
+                }
+            }
+    }
+
+    /// Live events tagged to this project.
+    private var liveEvents: [CalendarEvent] {
+        state.events
+            .filter { $0.spaceName == project.spaceName && ($0.projectID == project.id || $0.subtitle == project.name) }
+            .sorted { $0.start < $1.start }
+    }
+
     private var isEmptyProject: Bool {
-        project.overview.isEmpty && project.assignments.isEmpty
+        project.overview.isEmpty && liveTasks.isEmpty
     }
 
     var body: some View {
@@ -31,7 +50,8 @@ struct ProjectDetailView: View {
                     badges
                     titleBlock
                     overview
-                    if !project.assignments.isEmpty { assignments }
+                    if !liveTasks.isEmpty  { liveTasksSection }
+                    if !liveEvents.isEmpty { liveEventsSection }
                     if isEmptyProject { starterTemplate }
                     notesSection
                     if !project.pinned.isEmpty { pinned }
@@ -335,27 +355,21 @@ struct ProjectDetailView: View {
         }
     }
 
-    private var assignments: some View {
+    // MARK: - Live tasks
+
+    private var liveTasksSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionLabel("ASSIGNMENTS & TASKS")
+            HStack {
+                sectionLabel("TASKS")
+                Text("\(liveTasks.count)")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                Spacer()
+            }
             VStack(spacing: 0) {
-                ForEach(Array(project.assignments.enumerated()), id: \.element.id) { i, task in
-                    HStack(spacing: 12) {
-                        Image(systemName: task.done ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 15))
-                            .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
-                        Text(task.title)
-                            .font(.system(size: 13))
-                            .strikethrough(task.done)
-                            .foregroundStyle(task.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
-                        Spacer()
-                        Text(task.dueLabel)
-                            .font(.system(size: 11))
-                            .foregroundStyle(AtlasTheme.Colors.textMuted)
-                        statusPill(task.status)
-                    }
-                    .padding(.vertical, 9)
-                    if i < project.assignments.count - 1 {
+                ForEach(Array(liveTasks.enumerated()), id: \.element.id) { i, task in
+                    liveTaskRow(task)
+                    if i < liveTasks.count - 1 {
                         Divider().overlay(AtlasTheme.Colors.border)
                     }
                 }
@@ -363,19 +377,72 @@ struct ProjectDetailView: View {
         }
     }
 
-    private func statusPill(_ status: TaskStatus) -> some View {
-        let (text, color): (String, Color) = {
-            switch status {
-            case .open:      return ("Open", AtlasTheme.Colors.textMuted)
-            case .dueSoon:   return ("Due soon", AtlasTheme.Colors.accent)
-            case .upcoming:  return ("Upcoming", AtlasTheme.Colors.textSecondary)
-            case .submitted: return ("Submitted", AtlasTheme.Colors.green)
+    private func liveTaskRow(_ task: TaskItem) -> some View {
+        Button { state.route = .task(task.id) } label: {
+            HStack(spacing: 12) {
+                Button {
+                    state.toggleTask(task.id)
+                } label: {
+                    Image(systemName: task.done ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 15))
+                        .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
+                }
+                .buttonStyle(.plain)
+
+                Text(task.title)
+                    .font(.system(size: 13))
+                    .strikethrough(task.done)
+                    .foregroundStyle(task.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
+                Spacer()
+                if !task.dueLabel.isEmpty {
+                    Text(task.dueLabel)
+                        .font(.system(size: 11))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
-        }()
-        return Text(text)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(color)
-            .frame(width: 66, alignment: .trailing)
+            .padding(.vertical, 9)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Live events
+
+    private var liveEventsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                sectionLabel("EVENTS")
+                Text("\(liveEvents.count)")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                Spacer()
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(liveEvents.enumerated()), id: \.element.id) { i, event in
+                    HStack(spacing: 12) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(event.color)
+                            .frame(width: 3, height: 30)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(event.title)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                            Text("\(event.timeLabel) · \(event.durationLabel)")
+                                .font(.system(size: 11))
+                                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 9)
+                    if i < liveEvents.count - 1 {
+                        Divider().overlay(AtlasTheme.Colors.border)
+                    }
+                }
+            }
+        }
     }
 
     private var pinned: some View {

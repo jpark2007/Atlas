@@ -91,7 +91,10 @@ ${lines.join("\n")}
 }
 
 function buildSystemPrompt(spaces: ContextSpace[] | undefined): string {
+  const nowISO = new Date().toISOString();
   return `You are Atlas, a personal life-management AI. \
+Today's date and time (UTC) is: ${nowISO}. Use this as the reference for ALL relative \
+dates ("tomorrow", "next week", "Friday", etc.). \
 Given a user's free-text capture, classify it and split it into one or more items. \
 A single paragraph can contain MULTIPLE items (e.g. "essay due thursday, gym 3x this \
 week, dinner with mom sunday" → three items). Return ONLY a JSON object of the form \
@@ -103,8 +106,8 @@ Each element of "items" matches this schema:
   "title": string,            // concise, actionable title
   "spaceName": string,        // see routing rules below
   "projectName"?: string,     // if the item belongs to a specific project/class
-  "dueISO"?: string,          // ISO 8601 UTC if a due date is mentioned (tasks)
-  "startISO"?: string,        // ISO 8601 UTC if a start time is mentioned (events)
+  "dueISO"?: string,          // Full ISO 8601 UTC datetime, e.g. "2026-06-30T00:00:00Z" (tasks)
+  "startISO"?: string,        // Full ISO 8601 UTC datetime, e.g. "2026-06-30T09:00:00Z" (events)
   "durationMin"?: number,     // duration in minutes (events, default 60 if not specified)
   "notes"?: string            // extra detail / body text (notes, or longer event notes)
 }
@@ -119,7 +122,6 @@ Rules:
 - "event" = a meeting, appointment, session, or time-bound activity
 - "note"  = a thought, idea, reference, or piece of information to remember
 - If an item is ambiguous, prefer "task".
-- Use today's date as the reference point for relative dates ("Thursday", "next week", etc.).
 - Always populate kind, title, and spaceName. All other fields are optional.`;
 }
 

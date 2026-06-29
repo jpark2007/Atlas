@@ -165,22 +165,29 @@ struct SidebarView: View {
         let expanded = state.expandedSpaces.contains(space.id)
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
-                Button {
-                    state.toggleSpace(space.id)
-                } label: {
+                // Space name → navigate to space detail
+                Button { state.route = .space(space.id) } label: {
                     HStack(spacing: 9) {
                         Circle()
                             .fill(space.color)
                             .frame(width: 8, height: 8)
                         Text(space.name)
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                            .foregroundStyle(state.route == .space(space.id)
+                                             ? AtlasTheme.Colors.textPrimary
+                                             : AtlasTheme.Colors.textPrimary)
                         Spacer()
-                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                // Chevron → expand/collapse projects
+                Button { state.toggleSpace(space.id) } label: {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
 

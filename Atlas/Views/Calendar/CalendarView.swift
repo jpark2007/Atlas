@@ -18,9 +18,9 @@ struct CalendarView: View {
     // MARK: - Drag-to-schedule (custom pointer drag)
     /// The task currently being dragged from the tray (nil = no drag in progress).
     @State private var dragTaskID: UUID?
-    /// Live cursor position during a drag, in `calendarDragSpace`.
+    /// Live cursor position during a drag, in global space.
     @State private var dragLocation: CGPoint = .zero
-    /// Day-column hit-frames published by the grid, in `calendarDragSpace`.
+    /// Day-column hit-frames published by the grid, in global space.
     @State private var dropColumns: [TaskDropColumn] = []
 
     // MARK: - Apple Calendar sync
@@ -47,6 +47,7 @@ struct CalendarView: View {
                 UnscheduledTray(
                     tasks: state.unscheduledTasks,
                     hiddenSpaces: hiddenSpaces,
+                    spaceOrder: state.spaces.map(\.name),
                     onSchedule: { taskID, hour in
                         schedule(taskID: taskID, on: selectedDate, hour: Double(hour))
                     },
@@ -74,8 +75,8 @@ struct CalendarView: View {
             // to position the preview chip under the cursor.
             .overlay {
                 GeometryReader { proxy in
+                    let origin = proxy.frame(in: .global).origin
                     if let id = dragTaskID, let task = state.tasks.first(where: { $0.id == id }) {
-                        let origin = proxy.frame(in: .global).origin
                         TaskDragPreview(title: task.title, color: task.spaceColor)
                             .position(x: dragLocation.x - origin.x, y: dragLocation.y - origin.y)
                     }
@@ -523,6 +524,9 @@ struct CalendarView: View {
         _ = schedule(taskID: taskID, on: column.date, hour: hour)
     }
 
+    /// Resolve a drag-release of an already-placed event/task to a new slot and reschedule it.
+    /// Task-derived tiles (id matches a TaskItem) update `scheduledAt` directly.
+    /// Native CalendarEvents preserve their duration and move start/end.
     /// Auto-find-a-slot: scan the selected day for the first free gap that fits
     /// the task and schedule it there. No-op if the task is gone or the day's full.
     private func suggestSlot(for taskID: UUID) {

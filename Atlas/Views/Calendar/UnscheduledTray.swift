@@ -9,6 +9,8 @@ struct UnscheduledTray: View {
     let tasks: [TaskItem]
     /// Spaces hidden via the calendar's category chips — narrows the tray to match the grid.
     var hiddenSpaces: Set<String> = []
+    /// Sidebar space order — used to sort collapsible sections.
+    var spaceOrder: [String] = []
     /// Fallback scheduler — schedules the task to the given hour.
     let onSchedule: (UUID, Int) -> Void
     /// Auto-find-a-slot: pick the first free gap today and schedule there.
@@ -24,10 +26,16 @@ struct UnscheduledTray: View {
 
     /// Which chip's due-date popover is open.
     @State private var editingTaskID: UUID?
+    /// Which space sections are expanded (all open by default).
+    @State private var expandedSpaces: Set<String> = []
 
-    /// Tasks shown after applying the space filter.
+    /// Tasks shown after applying the hidden-space filter.
     private var displayedTasks: [TaskItem] {
         tasks.filter { !hiddenSpaces.contains($0.spaceName) }
+    }
+
+    private var groups: [(spaceName: String, tasks: [TaskItem])] {
+        TaskGrouping.bySpace(tasks: displayedTasks, spaceOrder: spaceOrder)
     }
 
     var body: some View {
@@ -59,9 +67,12 @@ struct UnscheduledTray: View {
                     }
                     .padding(.vertical, 8)
                 } else {
-                    VStack(spacing: 8) {
-                        ForEach(displayedTasks) { task in
-                            taskChip(task)
+                    VStack(spacing: 10) {
+                        ForEach(Array(groups.enumerated()), id: \.element.spaceName) { index, group in
+                            spaceSection(group)
+                            if index < groups.count - 1 {
+                                Divider().overlay(AtlasTheme.Colors.border)
+                            }
                         }
                     }
                 }
@@ -69,6 +80,46 @@ struct UnscheduledTray: View {
             }
         }
         .frame(width: 250)
+        .onAppear { expandedSpaces = Set(groups.map(\.spaceName)) }
+    }
+
+    // MARK: Space section
+
+    private func spaceSection(_ group: (spaceName: String, tasks: [TaskItem])) -> some View {
+        let isExpanded = Binding(
+            get: { expandedSpaces.contains(group.spaceName) },
+            set: { if $0 { expandedSpaces.insert(group.spaceName) }
+                  else   { expandedSpaces.remove(group.spaceName) } }
+        )
+        return DisclosureGroup(isExpanded: isExpanded) {
+            VStack(spacing: 8) {
+                ForEach(group.tasks) { task in taskChip(task) }
+            }
+            .padding(.top, 6)
+        } label: {
+            spaceLabel(group.spaceName, count: group.tasks.count)
+        }
+    }
+
+    private func spaceLabel(_ name: String, count: Int) -> some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(spaceColor(for: name))
+                .frame(width: 7, height: 7)
+            Text(name.uppercased())
+                .font(AtlasTheme.Font.sectionLabel())
+                .tracking(1.1)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+            Text("\(count)")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+            Spacer()
+        }
+    }
+
+    private func spaceColor(for name: String) -> Color {
+        // Match the chip's own spaceColor when available, fallback to accent.
+        tasks.first { $0.spaceName == name }?.spaceColor ?? AtlasTheme.Colors.accent
     }
 
     private func taskChip(_ task: TaskItem) -> some View {

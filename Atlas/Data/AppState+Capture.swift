@@ -27,7 +27,9 @@ extension AppState {
             let due = CaptureDateParser.date(from: result.dueISO)
             addTask(title: result.title,
                     dueDate: due,
-                    durationMin: result.durationMin)
+                    durationMin: result.durationMin,
+                    spaceName: result.spaceName,
+                    projectName: result.projectName ?? "")
             return .task(hasDate: due != nil)
 
         default:

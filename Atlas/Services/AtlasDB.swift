@@ -222,9 +222,9 @@ struct TaskRow: Codable {
                  scheduledAt: scheduledAt,
                  dueDate: dueDate,
                  durationMin: durationMin,
-                 notes: notes,
                  noteID: noteId,
-                 spaceName: spaceName)
+                 spaceName: spaceName,
+                 notes: notes ?? "")
     }
 
     // MARK: TaskStatus ↔ status text (explicit switch — enum has NO raw values)

@@ -303,16 +303,33 @@ final class AppState: ObservableObject {
         tasks.filter { $0.isEffectivelyUnscheduled(now: now) && !$0.done }
     }
 
-    /// Quick-capture entry point. Appends a task with an optional structured due date.
+    /// Quick-capture entry point. Appends a task with an optional due date and space.
     @discardableResult
-    func addTask(title: String, dueDate: Date? = nil, durationMin: Int? = nil) -> TaskItem {
-        let task = TaskItem(title: title,
+    func addTask(title: String,
+                 dueDate: Date? = nil,
+                 durationMin: Int? = nil,
+                 spaceName: String = "",
+                 projectName: String = "") -> TaskItem {
+        let spaceColor = spaceName.isEmpty ? AtlasTheme.Colors.accent : calendarSpaceColor(named: spaceName)
+        var task = TaskItem(title: title,
                             dueLabel: TaskItem.dueLabel(for: dueDate),
                             dueDate: dueDate,
                             durationMin: durationMin)
+        task.spaceName = spaceName
+        task.spaceColor = spaceColor
+        task.projectName = projectName
         tasks.append(task)
         Task { try? await self.db?.upsertTask(task) }
         return task
+    }
+
+    /// Reassign a task to a different project (or clear it with "").
+    func setTaskProject(taskId: UUID, projectName: String) {
+        if let i = tasks.firstIndex(where: { $0.id == taskId }) {
+            tasks[i].projectName = projectName
+            let updated = tasks[i]
+            Task { try? await self.db?.upsertTask(updated) }
+        }
     }
 
     /// Set (or clear) a task's structured due date, keeping the derived
@@ -370,7 +387,7 @@ final class AppState: ObservableObject {
         tasks[i].title = title
         tasks[i].scheduledAt = start
         tasks[i].durationMin = durationMin
-        tasks[i].notes = notes
+        tasks[i].notes = notes ?? ""
         tasks[i].noteID = noteID
         let updated = tasks[i]
         Task { try? await self.db?.upsertTask(updated) }
@@ -387,6 +404,28 @@ final class AppState: ObservableObject {
         let updated = tasks[i]
         Task { try? await self.db?.upsertTask(updated) }
         if let gid, !gid.isEmpty { deleteGoogleEvent(googleEventID: gid) }
+    }
+
+    /// Remove a task's calendar slot, returning it to the unscheduled tray.
+    func unschedule(taskId: UUID) {
+        if let i = tasks.firstIndex(where: { $0.id == taskId }) {
+            tasks[i].scheduledAt = nil
+            let updated = tasks[i]
+            Task { try? await self.db?.upsertTask(updated) }
+        }
+    }
+
+    /// Permanently delete a task (used after completion grace period).
+    func deleteTask(id: UUID) {
+        tasks.removeAll { $0.id == id }
+        Task { try? await self.db?.deleteTask(id: id) }
+    }
+
+    /// Update a task's notes body.
+    func updateTaskNotes(taskId: UUID, notes: String) {
+        if let i = tasks.firstIndex(where: { $0.id == taskId }) {
+            tasks[i].notes = notes
+        }
     }
 
     // MARK: - Event CRUD (in-memory + DB write-through + Google write-back)

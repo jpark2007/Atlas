@@ -10,6 +10,9 @@ enum CaptureDateParser {
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let d = f.date(from: iso) { return d }
         f.formatOptions = [.withInternetDateTime]
+        if let d = f.date(from: iso) { return d }
+        // Model sometimes returns date-only: "2026-06-30"
+        f.formatOptions = [.withFullDate]
         return f.date(from: iso)
     }
 }

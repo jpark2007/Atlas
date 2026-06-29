@@ -7,6 +7,8 @@ enum Route: Hashable {
     case focus
     case project(UUID)
     case calendarDetail
+    case space(UUID)
+    case task(UUID)
     case settings
 }
 
@@ -53,6 +55,18 @@ struct RootView: View {
                         CalendarEventDetailView(item: item).id(item.id)
                     } else {
                         CalendarView()
+                    }
+                case .space(let id):
+                    if let space = state.spaces.first(where: { $0.id == id }) {
+                        SpaceDetailView(space: space)
+                    } else {
+                        PlaceholderView(title: "Not found", systemImage: "questionmark")
+                    }
+                case .task(let id):
+                    if let task = state.tasks.first(where: { $0.id == id }) {
+                        TaskDetailView(task: task)
+                    } else {
+                        PlaceholderView(title: "Not found", systemImage: "questionmark")
                     }
                 }
             }

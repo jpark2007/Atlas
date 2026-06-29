@@ -114,9 +114,6 @@ struct TaskItem: Identifiable {
     var scheduledAt: Date? = nil
     var dueDate: Date? = nil
     var durationMin: Int? = nil
-    /// Free-text description, editable from the detail view (a task — and its work-block
-    /// visualization — is what carries a description).
-    var notes: String? = nil
     /// Optional link to a Note, set from the detail view's "tag to a note".
     var noteID: UUID? = nil
     /// Google event id backing this task's scheduled work-block, set after it mirrors to
@@ -125,6 +122,8 @@ struct TaskItem: Identifiable {
     var workBlockGoogleEventId: String? = nil
     var spaceColor: Color = AtlasTheme.Colors.accent
     var spaceName: String = ""
+    var projectName: String = ""
+    var notes: String = ""
 }
 
 extension TaskItem {
@@ -144,13 +143,9 @@ extension TaskItem {
         return f.string(from: date)
     }
 
-    /// Non-destructive "resurface" rule for the unscheduled tray.
-    ///
-    /// True when the task has no slot (`scheduledAt == nil`), OR when its slot
-    /// has fully elapsed (`scheduledAt + durationMin·60 < now`) and it's still
-    /// open (`!done`). A completed task never resurfaces; a future slot stays
-    /// scheduled. The schedule is never mutated — the task simply re-appears in
-    /// the tray (and drops off the grid) once its window passes.
+    /// True only when the task has never been given a calendar slot.
+    /// Once scheduled it stays on the grid (and out of the tray) until
+    /// explicitly marked done — scheduling is NOT the same as completion.
     func isEffectivelyUnscheduled(now: Date = Date()) -> Bool {
         guard let at = scheduledAt else { return true }
         if done { return false }
