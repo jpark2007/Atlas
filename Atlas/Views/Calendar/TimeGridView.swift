@@ -79,6 +79,10 @@ struct DayColumnView: View {
     var onTapEmpty: ((Date, Double) -> Void)? = nil
     /// Called when the user left-clicks an event tile. Feeds into `CalendarView.openSource(for:)`.
     var onTapEvent: ((CalendarEvent) -> Void)? = nil
+    /// Live drag position while the user is dragging an already-placed event (global coords).
+    var onDragEvent: ((CalendarEvent, CGPoint) -> Void)? = nil
+    /// Drag released — CalendarView resolves the global point to a new slot.
+    var onDropEvent: ((CalendarEvent, CGPoint) -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -177,6 +181,20 @@ struct DayColumnView: View {
             .eventContextMenu(event: ev, onOpenSource: openSourceClosure)
             .frame(width: max(0, laneWidth - 2), height: height, alignment: .topLeading)
             .offset(x: x, y: y)
+            // Drag-to-reschedule: mirrors the tray's custom DragGesture approach.
+            // simultaneousGesture lets the tap still fire on a stationary click.
+            // Read-only events (Apple/Google) are excluded via the guard.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 6, coordinateSpace: .global)
+                    .onChanged { value in
+                        guard !ev.isReadOnly else { return }
+                        onDragEvent?(ev, value.location)
+                    }
+                    .onEnded { value in
+                        guard !ev.isReadOnly else { return }
+                        onDropEvent?(ev, value.location)
+                    }
+            )
     }
 }
 
@@ -300,6 +318,8 @@ struct DayCalendarView: View {
     let events: [CalendarEvent]
     var onTapEmpty: ((Date, Double) -> Void)? = nil
     var onTapEvent: ((CalendarEvent) -> Void)? = nil
+    var onDragEvent: ((CalendarEvent, CGPoint) -> Void)? = nil
+    var onDropEvent: ((CalendarEvent, CGPoint) -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -319,7 +339,9 @@ struct DayCalendarView: View {
                                 events: events,
                                 isToday: Calendar.current.isDateInToday(date),
                                 onTapEmpty: onTapEmpty,
-                                onTapEvent: onTapEvent
+                                onTapEvent: onTapEvent,
+                                onDragEvent: onDragEvent,
+                                onDropEvent: onDropEvent
                             )
                         }
                         .padding(.trailing, 8)
@@ -355,6 +377,8 @@ struct WeekGridView: View {
     let eventsProvider: (Date) -> [CalendarEvent]
     var onTapEmpty: ((Date, Double) -> Void)? = nil
     var onTapEvent: ((CalendarEvent) -> Void)? = nil
+    var onDragEvent: ((CalendarEvent, CGPoint) -> Void)? = nil
+    var onDropEvent: ((CalendarEvent, CGPoint) -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -386,7 +410,9 @@ struct WeekGridView: View {
                                         events: eventsProvider(day),
                                         isToday: Calendar.current.isDateInToday(day),
                                         onTapEmpty: onTapEmpty,
-                                        onTapEvent: onTapEvent
+                                        onTapEvent: onTapEvent,
+                                        onDragEvent: onDragEvent,
+                                        onDropEvent: onDropEvent
                                     )
                                     .frame(width: columnWidth)
                                     if index < days.count - 1 {

@@ -22,6 +22,8 @@ struct CalendarView: View {
     @State private var dragLocation: CGPoint = .zero
     /// Day-column hit-frames published by the grid, in global space.
     @State private var dropColumns: [TaskDropColumn] = []
+    /// An already-placed event being dragged to a new slot (nil = not dragging from grid).
+    @State private var draggingEvent: CalendarEvent?
 
     // MARK: - Apple Calendar sync
     @AppStorage("calendar.apple.enabled") private var appleCalendarEnabled: Bool = false
@@ -78,6 +80,9 @@ struct CalendarView: View {
                     let origin = proxy.frame(in: .global).origin
                     if let id = dragTaskID, let task = state.tasks.first(where: { $0.id == id }) {
                         TaskDragPreview(title: task.title, color: task.spaceColor)
+                            .position(x: dragLocation.x - origin.x, y: dragLocation.y - origin.y)
+                    } else if let event = draggingEvent {
+                        TaskDragPreview(title: event.title, color: event.color)
                             .position(x: dragLocation.x - origin.x, y: dragLocation.y - origin.y)
                     }
                 }
@@ -291,14 +296,30 @@ struct CalendarView: View {
                 date: selectedDate,
                 events: filteredEvents(on: selectedDate),
                 onTapEmpty: handleTapEmpty,
-                onTapEvent: openSource(for:)
+                onTapEvent: openSource(for:),
+                onDragEvent: { event, point in
+                    draggingEvent = event
+                    dragLocation = point
+                },
+                onDropEvent: { event, point in
+                    performEventReschedule(event: event, at: point)
+                    draggingEvent = nil
+                }
             )
         case .week:
             WeekGridView(
                 days: weekDays,
                 eventsProvider: { filteredEvents(on: $0) },
                 onTapEmpty: handleTapEmpty,
-                onTapEvent: openSource(for:)
+                onTapEvent: openSource(for:),
+                onDragEvent: { event, point in
+                    draggingEvent = event
+                    dragLocation = point
+                },
+                onDropEvent: { event, point in
+                    performEventReschedule(event: event, at: point)
+                    draggingEvent = nil
+                }
             )
         case .month:
             MonthGridView(
@@ -527,6 +548,39 @@ struct CalendarView: View {
     /// Resolve a drag-release of an already-placed event/task to a new slot and reschedule it.
     /// Task-derived tiles (id matches a TaskItem) update `scheduledAt` directly.
     /// Native CalendarEvents preserve their duration and move start/end.
+    /// Reschedule an already-placed event/task to the dropped grid slot (drag-to-reschedule).
+    private func performEventReschedule(event: CalendarEvent, at point: CGPoint) {
+        guard let column = dropColumns.first(where: { $0.frame.contains(point) }) else { return }
+        let hour = Double(CalendarLayout.startHour)
+            + Double(point.y - column.frame.minY) / Double(CalendarLayout.hourHeight)
+        let clamped = min(max(hour, Double(CalendarLayout.startHour)), Double(CalendarLayout.endHour) - 0.25)
+        let h = Int(clamped)
+        let minute = (Int((clamped - Double(h)) * 60) / 15) * 15
+        let cal = Calendar.current
+        guard var newStart = cal.date(bySettingHour: h, minute: minute, second: 0, of: column.date) else { return }
+
+        // Bump a past-today drop to the next 15-min boundary at/after now.
+        if cal.isDateInToday(newStart), newStart < state.now {
+            let nowMinutes = cal.component(.hour, from: state.now) * 60 + cal.component(.minute, from: state.now)
+            let snapped = ((nowMinutes / 15) + 1) * 15
+            if let next = cal.date(bySettingHour: snapped / 60, minute: snapped % 60, second: 0, of: column.date) {
+                newStart = next
+            }
+        }
+
+        withAnimation(.easeOut(duration: 0.2)) {
+            if state.tasks.contains(where: { $0.id == event.id }) {
+                state.schedule(taskId: event.id, at: newStart)
+            } else {
+                var updated = event
+                let duration = event.end.timeIntervalSince(event.start)
+                updated.start = newStart
+                updated.end = newStart.addingTimeInterval(duration)
+                state.updateEvent(updated)
+            }
+        }
+    }
+
     /// Auto-find-a-slot: scan the selected day for the first free gap that fits
     /// the task and schedule it there. No-op if the task is gone or the day's full.
     private func suggestSlot(for taskID: UUID) {
