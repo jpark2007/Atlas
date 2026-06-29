@@ -49,6 +49,7 @@ enum CommandResult: Identifiable {
     case project(Project)
     case task(TaskItem)
     case note(Note)
+    case event(CalendarEvent)
     case action(PaletteAction)
 
     var id: String {
@@ -56,6 +57,7 @@ enum CommandResult: Identifiable {
         case .project(let p): return "project-\(p.id)"
         case .task(let t): return "task-\(t.id)"
         case .note(let n): return "note-\(n.id)"
+        case .event(let e): return "event-\(e.id)"
         case .action(let a): return "action-\(a.id)"
         }
     }
@@ -288,6 +290,7 @@ struct CommandPaletteOverlay: View {
             projects: state.spaces.flatMap(\.projects),
             tasks: state.tasks,
             notes: state.notes,
+            events: state.events,
             quickActions: quickActions,
             createAction: createAction
         )
@@ -370,8 +373,12 @@ struct CommandPaletteOverlay: View {
         case .note(let note):
             state.presentSearch = false
             editingNote = note
-        case .task:
-            // Tasks have no dedicated route yet; close the palette.
+        case .task(let task):
+            state.route = .task(task.id)
+            dismiss()
+        case .event(let event):
+            state.calendarDetailItem = event
+            state.route = .calendarDetail
             dismiss()
         case .action(let action):
             action.run()
@@ -390,6 +397,7 @@ struct CommandPaletteOverlay: View {
         case .project(let p): return p.isClass ? "graduationcap.fill" : "folder.fill"
         case .task: return "checkmark.circle"
         case .note(let n): return n.isExternal ? "doc.text.fill" : "note.text"
+        case .event: return "calendar"
         case .action(let a): return a.icon
         }
     }
@@ -399,6 +407,7 @@ struct CommandPaletteOverlay: View {
         case .project(let p): return p.name
         case .task(let t): return t.title
         case .note(let n): return n.title
+        case .event(let e): return e.title
         case .action(let a): return a.title
         }
     }
@@ -412,6 +421,8 @@ struct CommandPaletteOverlay: View {
         case .note(let n):
             if let space = n.spaceName, !space.isEmpty { return "Note · \(space)" }
             return "Note"
+        case .event(let e):
+            return "Event · \(e.timeLabel)"
         case .action(let a): return a.subtitle
         }
     }

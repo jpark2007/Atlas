@@ -55,6 +55,11 @@ struct AllDayRowView: View {
                         Text(event.title)
                             .font(.system(size: 10, weight: .semibold))
                             .lineLimit(1)
+                        if event.hasSpecificTime {
+                            Text(event.timeLabel)
+                                .font(.system(size: 9, weight: .medium))
+                                .lineLimit(1)
+                        }
                     }
                     .foregroundStyle(event.color)
                     .padding(.horizontal, 6)

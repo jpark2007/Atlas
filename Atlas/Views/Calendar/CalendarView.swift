@@ -624,12 +624,16 @@ struct CalendarView: View {
     /// sidebar to `.project(id)`. Otherwise falls back to opening the editor
     /// so a click on any tile is never a dead end.
     func openSource(for event: CalendarEvent) {
-        // Clicking any tile / agenda row opens the full-page detail view — events,
-        // work-blocks, and read-only external items alike (the detail view discriminates
-        // mode from the item's own flags). Deadlines have no detail page.
+        // Deadlines have no detail page. A work-block IS a task, so open the richer task
+        // detail page (due date, scheduled time, project, notes); plain events open the
+        // calendar-item detail view.
         guard !event.isDeadline else { return }
-        state.calendarDetailItem = event
-        state.route = .calendarDetail
+        if event.isWorkBlock {
+            state.route = .task(event.id)   // work-block id == task id (AppState.scheduledWorkBlocks)
+        } else {
+            state.calendarDetailItem = event
+            state.route = .calendarDetail
+        }
     }
 
     // MARK: - Header helpers

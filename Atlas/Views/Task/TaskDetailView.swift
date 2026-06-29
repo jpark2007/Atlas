@@ -65,10 +65,20 @@ struct TaskDetailView: View {
 
     // MARK: Meta
 
+    /// "Today" / "Today · 5:00 PM" — appends the due time when the due date carries one.
+    private var dueChipLabel: String {
+        guard let due = live.dueDate else { return live.dueLabel }
+        let cal = Calendar.current
+        let h = cal.component(.hour, from: due), m = cal.component(.minute, from: due)
+        guard h != 0 || m != 0 else { return live.dueLabel }
+        let tf = DateFormatter(); tf.dateFormat = m == 0 ? "h a" : "h:mm a"
+        return "\(live.dueLabel) · \(tf.string(from: due))"
+    }
+
     private var metaRow: some View {
         HStack(spacing: 20) {
             if !live.dueLabel.isEmpty {
-                metaChip(icon: "calendar", label: "Due \(live.dueLabel)")
+                metaChip(icon: "calendar", label: "Due \(dueChipLabel)")
             }
             if let at = live.scheduledAt {
                 metaChip(icon: "clock", label: "Scheduled \(shortDate(at))")

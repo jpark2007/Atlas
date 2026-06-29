@@ -108,25 +108,29 @@ struct SidebarView: View {
     // MARK: - Search
 
     private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 12))
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-            Text("Search notes, classes…")
-                .font(.system(size: 12))
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-            Spacer()
-            Text("⌘K")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-                .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(AtlasTheme.Colors.bgElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+        Button { state.presentSearch = true } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                Text("Search notes, classes…")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                Spacer()
+                Text("⌘K")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(AtlasTheme.Colors.bgElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(AtlasTheme.Colors.bgElevated.opacity(0.6))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(AtlasTheme.Colors.bgElevated.opacity(0.6))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .buttonStyle(.plain)
     }
 
     // MARK: - Nav row

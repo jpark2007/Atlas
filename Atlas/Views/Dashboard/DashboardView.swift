@@ -114,11 +114,13 @@ struct ScheduleCard: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .frame(width: 50, alignment: .leading)
-            // Work-blocks (scheduled tasks) get a dashed bar so they read as planned work.
+            // Work-blocks (scheduled tasks) get a hollow circle (planned/unchecked);
+            // real events keep the solid bar (a committed block of time).
             if entry.isWorkBlock {
-                RoundedRectangle(cornerRadius: 2)
-                    .stroke(entry.color, style: StrokeStyle(lineWidth: 1, dash: [2.5, 2]))
-                    .frame(width: 4, height: 30)
+                Circle()
+                    .stroke(entry.color, lineWidth: 1.5)
+                    .frame(width: 9, height: 9)
+                    .frame(width: 3, alignment: .leading)
             } else {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(entry.color)

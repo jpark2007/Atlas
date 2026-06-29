@@ -94,6 +94,13 @@ struct CalendarEvent: Identifiable {
         return f.string(from: start)
     }
 
+    /// True when `start` carries a specific clock time (not midnight) — lets a deadline pill
+    /// show "5:00 PM" instead of a bare all-day "due today".
+    var hasSpecificTime: Bool {
+        let cal = Calendar.current
+        return cal.component(.hour, from: start) != 0 || cal.component(.minute, from: start) != 0
+    }
+
     /// "1h 15m" / "1h" / "45m" — human duration.
     var durationLabel: String {
         let minutes = max(0, Int(end.timeIntervalSince(start) / 60))

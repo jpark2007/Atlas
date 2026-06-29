@@ -42,6 +42,12 @@ enum CommandPaletteModel {
         return notes.filter { $0.title.lowercased().contains(q) }
     }
 
+    static func matchingEvents(query: String, events: [CalendarEvent]) -> [CalendarEvent] {
+        let q = normalized(query)
+        guard !q.isEmpty else { return [] }
+        return events.filter { $0.title.lowercased().contains(q) }
+    }
+
     /// The ordered sections for a query.
     ///
     /// - Empty query → a single "Quick actions" section (no Create row).
@@ -52,6 +58,7 @@ enum CommandPaletteModel {
                         projects: [Project],
                         tasks: [TaskItem],
                         notes: [Note],
+                        events: [CalendarEvent] = [],
                         quickActions: [PaletteAction],
                         createAction: PaletteAction) -> [PaletteSection] {
         guard !normalized(query).isEmpty else {
@@ -77,6 +84,11 @@ enum CommandPaletteModel {
         if !n.isEmpty {
             sections.append(PaletteSection(title: "Notes",
                                            items: n.map(CommandResult.note)))
+        }
+        let e = matchingEvents(query: query, events: events)
+        if !e.isEmpty {
+            sections.append(PaletteSection(title: "Events",
+                                           items: e.map(CommandResult.event)))
         }
         return sections
     }

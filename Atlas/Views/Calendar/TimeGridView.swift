@@ -273,6 +273,11 @@ struct DeadlineStrip: View {
                     Text(dl.title)
                         .font(.system(size: 11, weight: .semibold))
                         .lineLimit(1)
+                    if dl.hasSpecificTime {
+                        Text(dl.timeLabel)
+                            .font(.system(size: 10, weight: .medium))
+                            .lineLimit(1)
+                    }
                 }
                 .foregroundStyle(dl.color)
                 .padding(.horizontal, 9)
