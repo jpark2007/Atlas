@@ -39,7 +39,9 @@ struct AtlasMobileApp: App {
         }
     }
 
+    /// Re-plan notifications and refresh the widget snapshot from the latest data.
     private func reschedule() {
         scheduler.reschedule(snapshot: store.snapshot, prefs: prefs)
+        WidgetSnapshotWriter.write(store.snapshot)
     }
 }

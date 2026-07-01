@@ -8,6 +8,7 @@ Icon?
 Atlas.xcodeproj/
 Atlas/Info.plist
 AtlasMobile/Info.plist
+AtlasMobileWidgets/Info.plist
 build/
 DerivedData/
 *.xcuserstate
