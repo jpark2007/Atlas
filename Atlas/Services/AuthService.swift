@@ -1,6 +1,7 @@
 import Foundation
 import AuthenticationServices
 import CryptoKit
+import AtlasCore
 
 @MainActor
 final class AuthService: ObservableObject {

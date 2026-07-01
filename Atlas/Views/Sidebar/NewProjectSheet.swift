@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Lightweight identifier so the sidebar can drive `.sheet(item:)` with the
 /// space the user tapped "+" on.

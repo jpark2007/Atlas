@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Create-a-Space form (follow-up: add a top-level bucket). Presented from the
 /// sidebar's "+ Space" affordance under the SPACES header. On Create the new

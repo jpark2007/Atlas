@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>drive.file — does picking a folder cascade to its contents (and FUTURE files)?</title>
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script src="https://accounts.google.com/gsi/client"></script>
+  <style>
+    body { font-family: -apple-system, system-ui; max-width: 720px; margin: 40px auto; color: #222; }
+    button { font-size: 15px; padding: 8px 14px; margin: 4px 0; display: block; }
+    pre { background: #111; color: #0f0; padding: 14px; border-radius: 8px; white-space: pre-wrap; }
+    .step { color:#666; font-size: 13px; margin: 2px 0 10px; }
+  </style>
+</head>
+<body>
+  <h2>drive.file folder-cascade probe</h2>
+  <p>Proves whether a <b>drive.file</b> app, after a user <b>picks a folder</b>, can see that
+     folder's contents — and whether files <b>added later</b> show up too.</p>
+
+  <button id="auth">1 · Authorize (drive.file only)</button>
+  <button id="pick" disabled>2 · Pick a FOLDER (one with files you did NOT create)</button>
+  <button id="pickfiles" disabled>2b · Pick FILE(s) directly — the "import" path (should WORK)</button>
+  <button id="list" disabled>3 · List folder contents</button>
+  <div class="step">→ run step 3, then add a new doc to that folder in the Drive website, then run step 3 AGAIN.</div>
+  <button id="read" disabled>4 · Try to READ the first file's content</button>
+
+  <pre id="out"></pre>
+
+<script>
+// ---- FILLED IN (throwaway creds — user is rotating them) ----
+const CLIENT_ID     = '450945006140-dkjk5o0loq051vgm2lfhp7aseopf39sc.apps.googleusercontent.com';
+const API_KEY       = 'AIzaSyBomrItuRPww2ViKHT5f366jAs2hDl7vns';
+const PROJECT_NUMBER = '450945006140';
+// -------------------------------------------------------------
+
+// BROAD scope now — this is the "see everything in any folder" dream (the one that
+// triggers the audit at scale). Flip back to '.../auth/drive.file' to re-prove the limit.
+const SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
+
+let accessToken = null, pickedFolderId = null, firstFile = null, tokenClient;
+const out = document.getElementById('out');
+const log = (x) => { out.textContent += x + "\n"; };
+
+gapi.load('client:picker', async () => {
+  await gapi.client.init({
+    apiKey: API_KEY,
+    discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+  });
+  log('Drive client ready.');
+});
+
+tokenClient = google.accounts.oauth2.initTokenClient({
+  client_id: CLIENT_ID,
+  scope: SCOPE,
+  callback: (resp) => {
+    if (resp.error) { log('AUTH ERROR: ' + resp.error); return; }
+    accessToken = resp.access_token;
+    gapi.client.setToken({ access_token: accessToken });
+    log('Authorized. Scope actually granted: ' + resp.scope);
+    document.getElementById('pick').disabled = false;
+    document.getElementById('pickfiles').disabled = false;
+  },
+});
+
+document.getElementById('auth').onclick = () => tokenClient.requestAccessToken();
+
+document.getElementById('pick').onclick = () => {
+  const view = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
+      .setSelectFolderEnabled(true)
+      .setMimeTypes('application/vnd.google-apps.folder');
+  const picker = new google.picker.PickerBuilder()
+      .setAppId(PROJECT_NUMBER)
+      .setOAuthToken(accessToken)
+      .setDeveloperKey(API_KEY)
+      .addView(view)
+      .setCallback((data) => {
+        if (data.action === google.picker.Action.PICKED) {
+          pickedFolderId = data.docs[0].id;
+          log('\nPicked folder: "' + data.docs[0].name + '"  id=' + pickedFolderId);
+          document.getElementById('list').disabled = false;
+        }
+      })
+      .build();
+  picker.setVisible(true);
+};
+
+document.getElementById('list').onclick = async () => {
+  log('\n--- listing children of picked folder ---');
+  try {
+    const resp = await gapi.client.drive.files.list({
+      q: `'${pickedFolderId}' in parents and trashed=false`,
+      fields: 'files(id,name,mimeType,modifiedTime)',
+      pageSize: 100,
+    });
+    const files = resp.result.files || [];
+    log(files.length + ' file(s) VISIBLE to this drive.file app:');
+    files.forEach((f, i) => log('  ' + (i+1) + '. ' + f.name + '  [' + f.mimeType + ']'));
+    if (files.length) { firstFile = files[0]; document.getElementById('read').disabled = false; }
+  } catch (e) {
+    log('LIST ERROR: ' + JSON.stringify(e.result?.error || e));
+  }
+};
+
+document.getElementById('pickfiles').onclick = () => {
+  const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(false);
+  const picker = new google.picker.PickerBuilder()
+      .setAppId(PROJECT_NUMBER)
+      .setOAuthToken(accessToken)
+      .setDeveloperKey(API_KEY)
+      .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+      .addView(view)
+      .setCallback(async (data) => {
+        if (data.action !== google.picker.Action.PICKED) return;
+        log('\n=== IMPORT PATH: picked ' + data.docs.length + ' file(s) ===');
+        for (const d of data.docs) log('  • ' + d.name + ' [' + d.mimeType + ']');
+        const f = data.docs[0];
+        log('--- now reading "' + f.name + '" via Drive API ---');
+        try {
+          const isDoc = f.mimeType === 'application/vnd.google-apps.document';
+          const resp = isDoc
+            ? await gapi.client.drive.files.export({ fileId: f.id, mimeType: 'text/plain' })
+            : await gapi.client.drive.files.get({ fileId: f.id, alt: 'media' });
+          log('READ OK ✅  first 200 chars:\n' + String(resp.body).slice(0, 200));
+        } catch (e) {
+          log('READ ERROR: ' + JSON.stringify(e.result?.error || e));
+        }
+      })
+      .build();
+  picker.setVisible(true);
+};
+
+document.getElementById('read').onclick = async () => {
+  log('\n--- reading content of "' + firstFile.name + '" ---');
+  try {
+    const isDoc = firstFile.mimeType === 'application/vnd.google-apps.document';
+    const resp = isDoc
+      ? await gapi.client.drive.files.export({ fileId: firstFile.id, mimeType: 'text/plain' })
+      : await gapi.client.drive.files.get({ fileId: firstFile.id, alt: 'media' });
+    log('READ OK. First 200 chars:\n' + String(resp.body).slice(0, 200));
+  } catch (e) {
+    log('READ ERROR (visible in list but NOT readable?): ' + JSON.stringify(e.result?.error || e));
+  }
+};
+</script>
+</body>
+</html>

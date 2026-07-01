@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 struct SignInView: View {
     @EnvironmentObject private var auth: AuthService

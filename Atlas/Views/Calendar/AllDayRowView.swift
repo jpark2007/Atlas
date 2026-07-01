@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Horizontal all-day event strip placed between the column header and the time grid.
 ///
@@ -30,13 +31,16 @@ struct AllDayRowView: View {
     var body: some View {
         if hasAnyAllDayEvents {
             HStack(spacing: 0) {
-                Color.clear.frame(width: CalendarLayout.gutterWidth)
+                // Width-only spacers (height 0) — a plain Color.clear is flexible in
+                // BOTH axes and would stretch this strip to grab the grid's height.
+                // +6 mirrors HourGutter's trailing padding so cells align with columns.
+                Color.clear.frame(width: CalendarLayout.gutterWidth + 6, height: 0)
                 ForEach(Array(days.enumerated()), id: \.element) { index, day in
                     allDayCell(for: day)
                         .frame(width: columnWidth, height: CalendarLayout.allDayRowHeight)
                         .clipped()
                     if index < days.count - 1 {
-                        Color.clear.frame(width: 1)
+                        Color.clear.frame(width: 1, height: 0)
                     }
                 }
             }

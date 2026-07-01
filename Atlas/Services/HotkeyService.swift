@@ -1,4 +1,5 @@
 import Foundation
+import AtlasCore
 import Carbon
 import AppKit
 

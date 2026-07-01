@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// What the sidebar can select. Drives the detail pane.
 enum Route: Hashable {

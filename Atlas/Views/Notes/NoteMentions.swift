@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 // Helpers for the shared `Note` type (declared in Atlas/Models/Models.swift).
 // This file intentionally does NOT redeclare `Note` — only extends it.

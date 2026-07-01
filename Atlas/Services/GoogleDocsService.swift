@@ -1,4 +1,5 @@
 import Foundation
+import AtlasCore
 
 // MARK: - Pure mapping (testable, no network)
 

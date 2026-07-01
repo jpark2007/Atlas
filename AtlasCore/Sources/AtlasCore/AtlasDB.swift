@@ -3,11 +3,11 @@ import SwiftUI
 
 // MARK: - Errors
 
-enum AtlasDBError: LocalizedError {
+public enum AtlasDBError: LocalizedError {
     case notAuthenticated
     case requestFailed(Int, String)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .notAuthenticated:
             return "Not authenticated. Sign in before accessing the database."
@@ -23,10 +23,10 @@ enum AtlasDBError: LocalizedError {
 /// Only `spaces.color_token` is ever persisted. All other domain types receive
 /// `AtlasTheme.Colors.accent` as a placeholder on `toDomain()`; Task 2
 /// re-derives real colors from `spaceName` via `AppState.calendarSpaceColor(named:)`.
-enum ColorToken: String {
+public enum ColorToken: String {
     case school, personal, side, accent
 
-    var color: Color {
+    public var color: Color {
         switch self {
         case .school:   return AtlasTheme.Colors.school
         case .personal: return AtlasTheme.Colors.personal
@@ -36,7 +36,7 @@ enum ColorToken: String {
     }
 
     /// Best-effort mapping: compare against known theme colors; defaults to "accent".
-    static func token(for color: Color) -> String {
+    public static func token(for color: Color) -> String {
         if color == AtlasTheme.Colors.school   { return "school" }
         if color == AtlasTheme.Colors.personal { return "personal" }
         if color == AtlasTheme.Colors.side     { return "side" }
@@ -44,7 +44,7 @@ enum ColorToken: String {
     }
 
     /// Returns the `Color` for a stored token string; defaults to accent.
-    static func color(for token: String) -> Color {
+    public static func color(for token: String) -> Color {
         ColorToken(rawValue: token)?.color ?? AtlasTheme.Colors.accent
     }
 }
@@ -72,13 +72,22 @@ private let isoDecoder: JSONDecoder = {
 /// All domain types now use `var id = UUID()` so their memberwise inits accept `id:`
 /// as an overridable parameter. Each `toDomain()` call passes the row's UUID through,
 /// so DB identity is fully preserved on load. `CalendarEvent` was already correct.
-struct AtlasSnapshot {
-    var spaces: [Space]
-    var projects: [Project]
-    var tasks: [TaskItem]
-    var events: [CalendarEvent]
-    var notes: [Note]
-    var goals: [Goal]
+public struct AtlasSnapshot {
+    public var spaces: [Space]
+    public var projects: [Project]
+    public var tasks: [TaskItem]
+    public var events: [CalendarEvent]
+    public var notes: [Note]
+    public var goals: [Goal]
+
+    public init(spaces: [Space], projects: [Project], tasks: [TaskItem], events: [CalendarEvent], notes: [Note], goals: [Goal]) {
+        self.spaces = spaces
+        self.projects = projects
+        self.tasks = tasks
+        self.events = events
+        self.notes = notes
+        self.goals = goals
+    }
 }
 
 // MARK: - DTO Row structs
@@ -87,12 +96,12 @@ struct AtlasSnapshot {
 // SpaceRow
 // ─────────────────────────────────────────────────────────────────────────────
 
-struct SpaceRow: Codable {
-    var id: UUID
-    var userId: UUID?
-    var name: String
-    var colorToken: String
-    var sort: Int
+public struct SpaceRow: Codable {
+    public var id: UUID
+    public var userId: UUID?
+    public var name: String
+    public var colorToken: String
+    public var sort: Int
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -102,14 +111,14 @@ struct SpaceRow: Codable {
         case sort
     }
 
-    init(domain s: Space, sort: Int = 0) {
+    public init(domain s: Space, sort: Int = 0) {
         self.id         = s.id
         self.name       = s.name
         self.colorToken = ColorToken.token(for: s.color)
         self.sort       = sort
     }
 
-    func toDomain() -> Space {
+    public func toDomain() -> Space {
         Space(id: id, name: name, color: ColorToken.color(for: colorToken), projects: [])
     }
 }
@@ -118,17 +127,17 @@ struct SpaceRow: Codable {
 // ProjectRow
 // ─────────────────────────────────────────────────────────────────────────────
 
-struct ProjectRow: Codable {
-    var id: UUID
-    var userId: UUID?
-    var spaceName: String
-    var name: String
-    var code: String?
-    var isClass: Bool
-    var meetingInfo: String?
-    var instructor: String?
-    var canvasSynced: Bool
-    var overview: String
+public struct ProjectRow: Codable {
+    public var id: UUID
+    public var userId: UUID?
+    public var spaceName: String
+    public var name: String
+    public var code: String?
+    public var isClass: Bool
+    public var meetingInfo: String?
+    public var instructor: String?
+    public var canvasSynced: Bool
+    public var overview: String
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -143,7 +152,7 @@ struct ProjectRow: Codable {
         case overview
     }
 
-    init(domain p: Project) {
+    public init(domain p: Project) {
         self.id           = p.id
         self.spaceName    = p.spaceName
         self.name         = p.name
@@ -155,7 +164,7 @@ struct ProjectRow: Codable {
         self.overview     = p.overview
     }
 
-    func toDomain() -> Project {
+    public func toDomain() -> Project {
         // Nested display arrays (assignments, notes, pinned, backlinks) are NOT persisted;
         // toDomain() returns them as []. Task 2 re-nests projects into spaces via spaceName.
         Project(id: id, name: name, code: code, isClass: isClass,
@@ -170,20 +179,20 @@ struct ProjectRow: Codable {
 // TaskRow
 // ─────────────────────────────────────────────────────────────────────────────
 
-struct TaskRow: Codable {
-    var id: UUID
-    var userId: UUID?
-    var projectId: UUID?
-    var spaceName: String
-    var title: String
-    var dueDate: Date?
-    var status: String        // persisted as text — see encode/decode helpers below
-    var done: Bool
-    var scheduledAt: Date?
-    var notes: String?
-    var noteId: UUID?
-    var durationMin: Int?
-    var workBlockGoogleEventId: String?
+public struct TaskRow: Codable {
+    public var id: UUID
+    public var userId: UUID?
+    public var projectId: UUID?
+    public var spaceName: String
+    public var title: String
+    public var dueDate: Date?
+    public var status: String        // persisted as text — see encode/decode helpers below
+    public var done: Bool
+    public var scheduledAt: Date?
+    public var notes: String?
+    public var noteId: UUID?
+    public var durationMin: Int?
+    public var workBlockGoogleEventId: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -201,7 +210,7 @@ struct TaskRow: Codable {
         case workBlockGoogleEventId = "work_block_google_event_id"
     }
 
-    init(domain t: TaskItem) {
+    public init(domain t: TaskItem) {
         self.id          = t.id
         self.projectId   = nil // no projectId on TaskItem yet; map to nil
         self.spaceName   = t.spaceName
@@ -216,7 +225,7 @@ struct TaskRow: Codable {
         self.workBlockGoogleEventId = t.workBlockGoogleEventId
     }
 
-    func toDomain() -> TaskItem {
+    public func toDomain() -> TaskItem {
         TaskItem(id: id,
                  title: title,
                  dueLabel: TaskItem.dueLabel(for: dueDate),
@@ -233,7 +242,7 @@ struct TaskRow: Codable {
 
     // MARK: TaskStatus ↔ status text (explicit switch — enum has NO raw values)
 
-    static func encode(status: TaskStatus) -> String {
+    public static func encode(status: TaskStatus) -> String {
         switch status {
         case .open:      return "open"
         case .dueSoon:   return "due_soon"
@@ -242,7 +251,7 @@ struct TaskRow: Codable {
         }
     }
 
-    static func decode(status: String) -> TaskStatus {
+    public static func decode(status: String) -> TaskStatus {
         switch status {
         case "open":      return .open
         case "due_soon":  return .dueSoon
@@ -257,20 +266,20 @@ struct TaskRow: Codable {
 // EventRow
 // ─────────────────────────────────────────────────────────────────────────────
 
-struct EventRow: Codable {
-    var id: UUID
-    var userId: UUID?
-    var spaceName: String
-    var title: String
-    var subtitle: String
-    var startAt: Date
-    var endAt: Date
+public struct EventRow: Codable {
+    public var id: UUID
+    public var userId: UUID?
+    public var spaceName: String
+    public var title: String
+    public var subtitle: String
+    public var startAt: Date
+    public var endAt: Date
     // TODO Task 5: map notes/isAllDay/projectID once added to CalendarEvent
-    var notes: String?
-    var isAllDay: Bool
-    var projectId: UUID?
-    var googleEventId: String?
-    var noteId: UUID?
+    public var notes: String?
+    public var isAllDay: Bool
+    public var projectId: UUID?
+    public var googleEventId: String?
+    public var noteId: UUID?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -287,7 +296,7 @@ struct EventRow: Codable {
         case noteId    = "note_id"
     }
 
-    init(domain e: CalendarEvent) {
+    public init(domain e: CalendarEvent) {
         self.id        = e.id
         self.spaceName = e.spaceName
         self.title     = e.title
@@ -301,7 +310,7 @@ struct EventRow: Codable {
         self.noteId    = e.noteID
     }
 
-    func toDomain() -> CalendarEvent {
+    public func toDomain() -> CalendarEvent {
         // CalendarEvent has `var id: UUID = UUID()` — memberwise init exposes `id`
         // as an overridable parameter, so the DB UUID IS preserved here.
         CalendarEvent(id: id,
@@ -323,16 +332,16 @@ struct EventRow: Codable {
 // NoteRow
 // ─────────────────────────────────────────────────────────────────────────────
 
-struct NoteRow: Codable {
-    var id: UUID
-    var userId: UUID?
-    var spaceName: String?
-    var projectId: UUID?
-    var title: String
-    var body: String
-    var updatedAt: Date
-    var isExternal: Bool
-    var googleDocId: String?
+public struct NoteRow: Codable {
+    public var id: UUID
+    public var userId: UUID?
+    public var spaceName: String?
+    public var projectId: UUID?
+    public var title: String
+    public var body: String
+    public var updatedAt: Date
+    public var isExternal: Bool
+    public var googleDocId: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -346,7 +355,7 @@ struct NoteRow: Codable {
         case googleDocId = "google_doc_id"
     }
 
-    init(domain n: Note) {
+    public init(domain n: Note) {
         self.id          = n.id
         self.spaceName   = n.spaceName
         self.projectId   = n.projectID
@@ -357,7 +366,7 @@ struct NoteRow: Codable {
         self.googleDocId = n.googleDocId
     }
 
-    func toDomain() -> Note {
+    public func toDomain() -> Note {
         Note(id: id, title: title, body: body,
              spaceName: spaceName, projectID: projectId,
              updatedAt: updatedAt, isExternal: isExternal,
@@ -369,12 +378,12 @@ struct NoteRow: Codable {
 // GoalRow
 // ─────────────────────────────────────────────────────────────────────────────
 
-struct GoalRow: Codable {
-    var id: UUID
-    var userId: UUID?
-    var title: String
-    var progress: Double
-    var label: String
+public struct GoalRow: Codable {
+    public var id: UUID
+    public var userId: UUID?
+    public var title: String
+    public var progress: Double
+    public var label: String
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -384,14 +393,14 @@ struct GoalRow: Codable {
         case label
     }
 
-    init(domain g: Goal) {
+    public init(domain g: Goal) {
         self.id       = g.id
         self.title    = g.title
         self.progress = g.progress
         self.label    = g.label
     }
 
-    func toDomain() -> Goal {
+    public func toDomain() -> Goal {
         Goal(id: id, title: title, progress: progress, label: label)
     }
 }
@@ -404,11 +413,11 @@ struct GoalRow: Codable {
 ///
 /// If `session()` returns nil, every method throws `AtlasDBError.notAuthenticated`.
 /// Callers guard offline mode externally; this client fails cleanly rather than crashing.
-final class AtlasDB {
+public final class AtlasDB {
 
     private let sessionProvider: () -> SupabaseSession?
 
-    init(session: @escaping () -> SupabaseSession?) {
+    public init(session: @escaping () -> SupabaseSession?) {
         self.sessionProvider = session
     }
 
@@ -486,7 +495,7 @@ final class AtlasDB {
 
     /// Load all tables for the signed-in user. RLS scopes rows automatically.
     /// Returns a flat `AtlasSnapshot`; spaces have `projects: []` — re-nesting is Task 2's job.
-    func loadAll() async throws -> AtlasSnapshot {
+    public func loadAll() async throws -> AtlasSnapshot {
         // Stable ordering per table so sidebar/list order is deterministic across launches.
         async let spaceRows:   [SpaceRow]   = getAll("spaces",   order: "sort")
         async let projectRows: [ProjectRow] = getAll("projects", order: "id")
@@ -509,7 +518,7 @@ final class AtlasDB {
 
     /// Seed all tables from a snapshot (first-run). Upserts each row so it is safe
     /// to call if some rows already exist.
-    func seedInitial(_ snapshot: AtlasSnapshot) async throws {
+    public func seedInitial(_ snapshot: AtlasSnapshot) async throws {
         for (index, space) in snapshot.spaces.enumerated() { try await upsertSpace(space, sort: index) }
         for project in snapshot.projects { try await upsertProject(project) }
         for task    in snapshot.tasks    { try await upsertTask(task) }
@@ -520,7 +529,7 @@ final class AtlasDB {
 
     // MARK: Spaces / Projects
 
-    func upsertSpace(_ s: Space, sort: Int = 0) async throws {
+    public func upsertSpace(_ s: Space, sort: Int = 0) async throws {
         let sess = try requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
@@ -532,7 +541,7 @@ final class AtlasDB {
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
     }
 
-    func upsertProject(_ p: Project) async throws {
+    public func upsertProject(_ p: Project) async throws {
         let sess = try requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
@@ -546,7 +555,7 @@ final class AtlasDB {
 
     // MARK: Tasks
 
-    func upsertTask(_ t: TaskItem) async throws {
+    public func upsertTask(_ t: TaskItem) async throws {
         let sess = try requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
@@ -558,7 +567,7 @@ final class AtlasDB {
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
     }
 
-    func deleteTask(id: UUID) async throws {
+    public func deleteTask(id: UUID) async throws {
         let sess = try requireSession()
         try await send(method: "DELETE", table: "tasks",
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
@@ -568,7 +577,7 @@ final class AtlasDB {
 
     // MARK: Events
 
-    func upsertEvent(_ e: CalendarEvent) async throws {
+    public func upsertEvent(_ e: CalendarEvent) async throws {
         let sess = try requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
@@ -580,7 +589,7 @@ final class AtlasDB {
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
     }
 
-    func deleteEvent(id: UUID) async throws {
+    public func deleteEvent(id: UUID) async throws {
         let sess = try requireSession()
         try await send(method: "DELETE", table: "events",
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
@@ -590,7 +599,7 @@ final class AtlasDB {
 
     // MARK: Notes / Goals
 
-    func upsertNote(_ n: Note) async throws {
+    public func upsertNote(_ n: Note) async throws {
         let sess = try requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
@@ -602,7 +611,7 @@ final class AtlasDB {
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
     }
 
-    func upsertGoal(_ g: Goal) async throws {
+    public func upsertGoal(_ g: Goal) async throws {
         let sess = try requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")

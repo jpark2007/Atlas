@@ -2,30 +2,30 @@ import SwiftUI
 
 /// One row in the agenda (List) view — either a calendar event or a dated task,
 /// flattened into a common shape so the list renders and sorts them uniformly.
-struct AgendaItem: Identifiable {
-    enum Kind { case event, task }
+public struct AgendaItem: Identifiable {
+    public enum Kind { case event, task }
 
-    let id: UUID            // underlying CalendarEvent.id or TaskItem.id (for tap resolution)
-    let kind: Kind
-    let title: String
-    let date: Date          // the time it sorts/groups by
-    let endDate: Date?      // for a duration label; nil for date-only items
-    let allDay: Bool        // all-day events + due-only tasks render at the top of their day
-    let color: Color
-    let spaceName: String
+    public let id: UUID            // underlying CalendarEvent.id or TaskItem.id (for tap resolution)
+    public let kind: Kind
+    public let title: String
+    public let date: Date          // the time it sorts/groups by
+    public let endDate: Date?      // for a duration label; nil for date-only items
+    public let allDay: Bool        // all-day events + due-only tasks render at the top of their day
+    public let color: Color
+    public let spaceName: String
 }
 
 /// A day's worth of agenda items, in render order.
-struct AgendaSection: Identifiable {
-    let day: Date           // start-of-day key
-    let items: [AgendaItem]
-    var id: Date { day }
+public struct AgendaSection: Identifiable {
+    public let day: Date           // start-of-day key
+    public let items: [AgendaItem]
+    public var id: Date { day }
 }
 
 /// Pure builder that merges events + dated tasks into a chronological,
 /// day-grouped agenda. Kept free of `AppState` and SwiftUI layout so the
 /// ordering is unit-testable with an injected `Calendar`.
-enum AgendaBuilder {
+public enum AgendaBuilder {
 
     /// Build the upcoming agenda starting at the start of `from`'s day.
     ///
@@ -35,7 +35,7 @@ enum AgendaBuilder {
     ///   tasks are dropped the same way.
     /// - Sections are returned in ascending day order. Within a day: all-day
     ///   items first, then by `date`, ties broken by case-insensitive title.
-    static func build(
+    public static func build(
         events: [CalendarEvent],
         tasks: [TaskItem],
         from: Date = Date(),

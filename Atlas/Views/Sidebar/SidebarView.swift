@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 struct SidebarView: View {
     @EnvironmentObject var state: AppState

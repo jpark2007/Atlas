@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Dashboard card in the right-column 320-wide VStack.
 /// Shows a compact "at a glance" summary; tapping "Details" opens the popup.

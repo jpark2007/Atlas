@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atlas — UI Style Directions</title>
+<style>
+  /* ═══════════════════════════════════════════════════════════════
+     DESIGN SYSTEM — inherited from docs/specs/11-mobile-companion.md §9.
+     Adapted dark → light (neumorphism dropped). What CARRIES OVER and is
+     obeyed in every frame below:
+       • RULE  accent #ff8c42 = live / NOW / brand ONLY. Never a button fill.
+       • RULE  Capture = a refined glyph, never a solid fill (raised-neutral).
+       • RADII card 24 · control 18–20 · chip 13   (continuous)
+       • TYPE  SF Pro Rounded — title 22/800 · row-title 15.5/600 ·
+               time 14–15/700 tabular · label-caps 10.5–12/700 +.08em · meta 13/500
+       • Space dots keep their semantic colors · body text meets WCAG AA
+     Only the SURFACE treatment changes between the six. Color is held constant.
+     ═══════════════════════════════════════════════════════════════ */
+  :root{
+    --bg:#f2efe9;
+    --card:#ffffff;
+    --ink:#1a191d;                 /* AA on card */
+    --muted:#6c6a72;               /* ≈5.3:1 on white — AA */
+    --faint:#9a98a0;
+    --hair:rgba(20,18,24,.08);
+    --accent:#ff8c42;              /* BRAND — live/now only */
+    --accent-hi:#ff9d5c;
+    --work:#5a8dee; --health:#5cb27e; --errands:#d4a05a; --school:#9b8cf0;
+    --r-card:24px; --r-lg:28px; --r-control:19px; --r-chip:13px;
+    --font:"SF Pro Rounded", ui-rounded, -apple-system, system-ui, sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:#e7e3da; color:var(--ink); font-family:var(--font);
+       -webkit-font-smoothing:antialiased; padding:40px 32px 72px;}
+
+  /* ── page chrome ───────────────────────────────────────────── */
+  .top{max-width:1200px; margin:0 auto;}
+  .top h1{font-size:26px; font-weight:800; letter-spacing:-.02em;}
+  .top .sub{color:var(--muted); font-size:14px; line-height:1.55; margin-top:7px; max-width:730px;}
+  .top .sub b{color:var(--ink); font-weight:700;}
+
+  .rules{max-width:1200px; margin:20px auto 8px; display:flex; flex-wrap:wrap; gap:8px;}
+  .rule{font-size:11.5px; font-weight:600; color:var(--muted); background:#fff;
+        border:1px solid var(--hair); border-radius:var(--r-chip); padding:6px 11px;}
+  .rule .k{color:var(--accent); font-weight:800; letter-spacing:.02em;}
+
+  .palette{max-width:1200px; margin:12px auto 34px; display:flex; align-items:center; gap:16px;
+           flex-wrap:wrap; background:#fff; border:1px solid var(--hair);
+           border-radius:16px; padding:12px 16px;}
+  .plabel{font-size:10.5px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--faint);}
+  .sw{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted);}
+  .swbox{width:18px; height:18px; border-radius:5px; box-shadow:inset 0 0 0 1px rgba(0,0,0,.07);}
+  .swdot{width:11px; height:11px; border-radius:50%;}
+  .divider{width:1px; height:22px; background:var(--hair);}
+
+  /* ── gallery ───────────────────────────────────────────────── */
+  .gallery{max-width:1200px; margin:0 auto; display:grid;
+           grid-template-columns:repeat(auto-fill,minmax(316px,1fr)); gap:34px 28px;}
+  .cell .cap{margin:0 4px 13px;}
+  .cell .cap .name{font-size:16px; font-weight:800; letter-spacing:-.01em; display:flex; align-items:center; gap:9px;}
+  .cell .cap .num{font-size:11px; font-weight:800; color:#fff; background:var(--ink);
+        width:21px; height:21px; border-radius:50%; display:grid; place-items:center;}
+  .cell .cap .vibe{color:var(--muted); font-size:12.5px; margin-top:6px; line-height:1.45;}
+  .cell .cap .tr{font-size:11.5px; margin-top:6px;}
+  .cell .cap .tr .pro{color:#5e8a54; font-weight:700;} .cell .cap .tr .con{color:#b07a4a; font-weight:700;}
+
+  /* ── phone shell ───────────────────────────────────────────── */
+  .frame{border-radius:46px; padding:11px; background:linear-gradient(160deg,#e3ded4,#d3cdc1);
+         box-shadow:0 30px 60px -22px rgba(70,58,40,.5), inset 0 0 0 1px rgba(255,255,255,.55),
+                    inset 0 2px 3px rgba(255,255,255,.7);}
+  .screen{position:relative; height:600px; border-radius:36px; overflow:hidden;
+          display:flex; flex-direction:column;}
+  .safe{position:relative; z-index:2; flex:1; display:flex; flex-direction:column; padding:18px 19px 20px;}
+
+  /* status bar */
+  .statusbar{display:flex; align-items:center; justify-content:space-between;
+             padding:14px 24px 2px; font-size:14px; font-weight:700; color:var(--ink); position:relative; z-index:2;}
+  .statusbar .ic{display:flex; gap:6px; align-items:center;}
+  .statusbar svg{display:block;}
+
+  /* header */
+  .head{display:flex; align-items:flex-start; justify-content:space-between; margin:8px 0 20px;}
+  .h-title{font-size:26px; font-weight:800; letter-spacing:-.025em; line-height:1;}
+  .h-sub{font-size:13px; font-weight:500; color:var(--muted); margin-top:7px;}
+  .h-sub .cnt{color:var(--ink); font-weight:700;}
+  /* capture glyph — refined, NEVER a fill */
+  .cap-btn{width:44px; height:44px; border-radius:50%; display:grid; place-items:center; cursor:pointer; flex-shrink:0;}
+  .cap-btn svg{width:20px; height:20px; stroke:var(--ink); fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round;}
+  .cap-btn .spark{fill:var(--accent); stroke:none;}   /* tiny brand spark, not a fill */
+
+  /* list */
+  .list{display:flex; flex-direction:column;}
+  .row{position:relative; display:flex; align-items:center; gap:12px; padding:13px 14px;}
+  .row .time{font-size:14px; font-weight:700; width:44px; color:var(--ink); font-variant-numeric:tabular-nums;}
+  .row .dot{width:9px; height:9px; border-radius:50%; flex-shrink:0;}
+  .row .r-title{font-size:15.5px; font-weight:600; flex:1; letter-spacing:-.01em; color:var(--ink);}
+  .row .tag{font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--faint);}
+  .dot.work{background:var(--work);} .dot.health{background:var(--health);}
+  .dot.errands{background:var(--errands);} .dot.school{background:var(--school);}
+  /* the ONE live row — the only place orange appears */
+  .row.now::before{content:""; position:absolute; left:2px; top:11px; bottom:11px; width:3px;
+                   border-radius:3px; background:var(--accent);}
+  .row.now .time{color:var(--accent);}
+  .row.now .tag{color:var(--accent); font-weight:800;}
+
+  /* need-a-time chip */
+  .need{align-self:flex-start; display:flex; align-items:center; gap:8px; margin:15px 0 0;
+        padding:8px 12px; border-radius:var(--r-chip);
+        font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);}
+  .need .badge{background:var(--ink); color:#fff; font-size:11px; font-weight:800; letter-spacing:0;
+        min-width:19px; height:19px; padding:0 5px; border-radius:7px; display:grid; place-items:center;}
+
+  /* bottom capture affordance — raised-neutral, glyph-led, NO orange fill */
+  .capture{margin-top:auto; height:54px; border-radius:var(--r-control);
+           display:flex; align-items:center; justify-content:center; gap:10px; cursor:pointer;
+           font-size:15px; font-weight:700; color:var(--ink);}
+  .capture svg{width:19px; height:19px; stroke:var(--ink); fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round;}
+  .capture .spark{fill:var(--accent); stroke:none;}
+
+  /* ═══ 1 · CLEAN FLAT ═══ solid surfaces, hairlines, no depth ═══ */
+  .s1 .screen{background:#f7f5f1;}
+  .s1 .cap-btn{background:#fff; box-shadow:inset 0 0 0 1px var(--hair);}
+  .s1 .list{background:#fff; border-radius:var(--r-card); box-shadow:inset 0 0 0 1px var(--hair); overflow:hidden;}
+  .s1 .row + .row{box-shadow:inset 0 1px 0 var(--hair);}
+  .s1 .need{background:#eceae4;}
+  .s1 .capture{background:#fff; box-shadow:inset 0 0 0 1px var(--hair);}
+
+  /* ═══ 2 · FROSTED GLASS ═══ translucent blur panels ═══ */
+  .s2 .screen{background:linear-gradient(150deg,#eef1f7,#f4efe9 58%,#efe9f3);}
+  .s2 .blobs{position:absolute; inset:0; z-index:0;}
+  .s2 .blobs i{position:absolute; border-radius:50%; filter:blur(40px); opacity:.5;}
+  .s2 .blobs i:nth-child(1){width:190px; height:190px; background:#9cb6e8; top:-40px; right:-30px;}
+  .s2 .blobs i:nth-child(2){width:180px; height:180px; background:#e6b892; bottom:80px; left:-46px;}
+  .s2 .cap-btn{background:rgba(255,255,255,.5); backdrop-filter:blur(14px);
+        box-shadow:inset 0 0 0 1px rgba(255,255,255,.7), 0 4px 12px rgba(60,50,40,.12);}
+  .s2 .list{background:rgba(255,255,255,.44); backdrop-filter:blur(24px) saturate(1.5);
+        border-radius:var(--r-card); overflow:hidden;
+        box-shadow:inset 0 0 0 1px rgba(255,255,255,.6), 0 14px 34px -12px rgba(50,45,65,.3);}
+  .s2 .row + .row{box-shadow:inset 0 1px 0 rgba(255,255,255,.45);}
+  .s2 .need{background:rgba(255,255,255,.45); backdrop-filter:blur(12px);
+        box-shadow:inset 0 0 0 1px rgba(255,255,255,.55);}
+  .s2 .capture{background:rgba(255,255,255,.5); backdrop-filter:blur(16px);
+        box-shadow:inset 0 0 0 1px rgba(255,255,255,.7), 0 8px 20px -8px rgba(50,45,65,.25);}
+
+  /* ═══ 3 · SOFT ELEVATED ═══ warm base, one soft shadow ═══ */
+  .s3 .screen{background:#efe8de;}
+  .s3 .cap-btn{background:#fff; box-shadow:0 6px 15px -6px rgba(95,72,42,.35);}
+  .s3 .list{background:#fff; border-radius:var(--r-card); overflow:hidden;
+        box-shadow:0 20px 42px -22px rgba(95,72,42,.45), 0 2px 5px rgba(95,72,42,.06);}
+  .s3 .row + .row{box-shadow:inset 0 1px 0 rgba(95,72,42,.07);}
+  .s3 .need{background:#fff; box-shadow:0 6px 15px -8px rgba(95,72,42,.3);}
+  .s3 .capture{background:#fff; box-shadow:0 10px 24px -12px rgba(95,72,42,.4), 0 1px 3px rgba(95,72,42,.08);}
+
+  /* ═══ 4 · EDITORIAL MINIMAL ═══ big type, thin rules, no card ═══ */
+  .s4 .screen{background:#fbfaf7;}
+  .s4 .head{border-bottom:1.5px solid var(--ink); padding-bottom:15px; margin-bottom:6px;}
+  .s4 .h-title{font-size:32px; letter-spacing:-.03em;}
+  .s4 .cap-btn{background:transparent; box-shadow:inset 0 0 0 1.5px var(--ink);}
+  .s4 .row{padding:15px 2px; box-shadow:inset 0 -1px 0 var(--hair);}
+  .s4 .row .dot{width:6px; height:6px;}
+  .s4 .need{background:transparent; padding:12px 2px 0; color:var(--faint);}
+  .s4 .need .badge{background:transparent; color:var(--ink); box-shadow:inset 0 0 0 1.5px var(--ink);}
+  .s4 .capture{background:transparent; box-shadow:inset 0 0 0 1.5px var(--ink); border-radius:var(--r-control);}
+
+  /* ═══ 5 · WARM PAPER ═══ cream, faint grain, ink-thin borders ═══ */
+  .s5 .screen{background:#f0e7d6; background-image:radial-gradient(rgba(120,95,55,.055) 1px,transparent 1px);
+        background-size:4px 4px;}
+  .s5 .cap-btn{background:#f8f1e3; box-shadow:inset 0 0 0 1.5px rgba(120,95,55,.32);}
+  .s5 .list{background:#f8f2e6; border-radius:var(--r-card); overflow:hidden;
+        box-shadow:inset 0 0 0 1.5px rgba(120,95,55,.28);}
+  .s5 .row + .row{box-shadow:inset 0 1px 0 rgba(120,95,55,0); border-top:1px dashed rgba(120,95,55,.3);}
+  .s5 .row .r-title{color:#33291a;}
+  .s5 .need{background:transparent; box-shadow:inset 0 0 0 1.5px rgba(120,95,55,.3); color:#7a6544;}
+  .s5 .need .badge{background:#7a6544;}
+  .s5 .capture{background:#f8f1e3; box-shadow:inset 0 0 0 1.5px rgba(120,95,55,.32);}
+
+  /* ═══ 6 · SPATIAL / visionOS ═══ luminous translucent depth ═══ */
+  .s6 .screen{background:radial-gradient(135% 95% at 50% -5%, #ffffff, #eef0f5 55%, #e6e1ec);}
+  .s6 .cap-btn{background:rgba(255,255,255,.68); backdrop-filter:blur(20px);
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.95), inset 0 0 0 1px rgba(255,255,255,.6),
+                   0 8px 20px -6px rgba(80,80,115,.3);}
+  .s6 .list{background:rgba(255,255,255,.55); backdrop-filter:blur(30px) saturate(1.4);
+        border-radius:var(--r-lg); overflow:hidden;
+        box-shadow:inset 0 1.5px 0 rgba(255,255,255,.95), inset 0 0 0 1px rgba(255,255,255,.55),
+                   0 28px 54px -20px rgba(70,70,115,.42);}
+  .s6 .row + .row{box-shadow:inset 0 1px 0 rgba(255,255,255,.55);}
+  .s6 .need{background:rgba(255,255,255,.55); backdrop-filter:blur(16px);
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.9), inset 0 0 0 1px rgba(255,255,255,.55);}
+  .s6 .capture{background:rgba(255,255,255,.6); backdrop-filter:blur(20px);
+        box-shadow:inset 0 1.5px 0 rgba(255,255,255,.95), inset 0 0 0 1px rgba(255,255,255,.55),
+                   0 12px 28px -10px rgba(70,70,115,.35);}
+
+  .foot{max-width:1200px; margin:44px auto 0; text-align:center; color:var(--muted); font-size:13px; line-height:1.6;}
+  .foot b{color:var(--ink);}
+</style>
+</head>
+<body>
+
+  <div class="top">
+    <h1>Atlas — UI Style Directions</h1>
+    <p class="sub">Same screen (the <b>Today glance</b>, the surface we build first), same palette — six <b>surface
+    treatments</b>. Neumorphism is out. Every frame obeys the spec's rules, so what you're judging is <b>only the
+    style</b>: how surfaces, depth, borders and type feel. We tune exact color after you pick.</p>
+  </div>
+
+  <div class="rules">
+    <span class="rule"><span class="k">RULE</span> &nbsp;#ff8c42 = live / NOW / brand only</span>
+    <span class="rule"><span class="k">RULE</span> &nbsp;Capture = refined glyph, never a fill</span>
+    <span class="rule">Radii 24 · 19 · 13</span>
+    <span class="rule">SF Pro Rounded</span>
+    <span class="rule">WCAG-AA text</span>
+  </div>
+
+  <div class="palette">
+    <span class="plabel">Constant</span>
+    <div class="sw"><span class="swbox" style="background:#f2efe9"></span>bg</div>
+    <div class="sw"><span class="swbox" style="background:#1a191d"></span>ink</div>
+    <div class="sw"><span class="swbox" style="background:#6c6a72"></span>muted</div>
+    <div class="sw"><span class="swbox" style="background:#ff8c42"></span>accent</div>
+    <span class="divider"></span>
+    <span class="plabel">Spaces</span>
+    <div class="sw"><span class="swdot" style="background:#5a8dee"></span>Work</div>
+    <div class="sw"><span class="swdot" style="background:#5cb27e"></span>Health</div>
+    <div class="sw"><span class="swdot" style="background:#9b8cf0"></span>School</div>
+    <div class="sw"><span class="swdot" style="background:#d4a05a"></span>Errands</div>
+  </div>
+
+  <div class="gallery" id="g"></div>
+
+  <p class="foot">Same screen · same palette · rules obeyed · <b>only the surface changes.</b><br>
+  Tell me a number — or two to blend — and I'll build it into a full-fidelity screen (then tune color).</p>
+
+<script>
+/* one content template, rendered into all six wrappers so the ONLY
+   difference is the style class — no drift between frames. */
+const MIC = `<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 18v3"/><circle class="spark" cx="18.5" cy="5.5" r="2"/></svg>`;
+const PEN = `<svg viewBox="0 0 24 24"><path d="M4 20l4-1L19 8a2 2 0 0 0-3-3L5 16l-1 4z"/><circle class="spark" cx="19" cy="6" r="1.8"/></svg>`;
+
+const SCREEN = `
+  <div class="statusbar">
+    <span>9:41</span>
+    <span class="ic">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="#1a191d"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" stroke="#1a191d" stroke-width="1.4" stroke-linecap="round"><path d="M1 3.5a10 10 0 0 1 14 0"/><path d="M3.5 6a6.5 6.5 0 0 1 9 0"/><path d="M6 8.5a3 3 0 0 1 4 0"/></svg>
+      <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="21" height="10" rx="3" stroke="#1a191d" stroke-opacity=".4" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.5" fill="#1a191d"/><rect x="23" y="4" width="1.5" height="4" rx=".75" fill="#1a191d" fill-opacity=".4"/></svg>
+    </span>
+  </div>
+  <div class="safe">
+    <div class="head">
+      <div>
+        <div class="h-title">Today</div>
+        <div class="h-sub">Wednesday, Jul 1 · <span class="cnt">5 left</span></div>
+      </div>
+      <div class="cap-btn">${MIC}</div>
+    </div>
+    <div class="list">
+      <div class="row now"><span class="time">9:30</span><span class="dot work"></span><span class="r-title">Standup</span><span class="tag">Now</span></div>
+      <div class="row"><span class="time">11:00</span><span class="dot work"></span><span class="r-title">Q3 deck review</span><span class="tag">Work</span></div>
+      <div class="row"><span class="time">2:00</span><span class="dot health"></span><span class="r-title">Dentist</span><span class="tag">Health</span></div>
+      <div class="row"><span class="time">4:30</span><span class="dot errands"></span><span class="r-title">Dry cleaning</span><span class="tag">Errands</span></div>
+    </div>
+    <div class="need"><span class="badge">3</span> Need a time</div>
+    <div class="capture">${PEN} Capture a thought</div>
+  </div>`;
+
+const STYLES = [
+  ["s1","Clean Flat","iOS-native. Solid surfaces, hairline separators, zero depth tricks — invisible design that gets out of the way.","+ familiar, fast, ages well","– can read plain if color is timid"],
+  ["s2","Frosted Glass","Translucent blur panels over a soft backdrop. Layered, modern, Control-Center premium.","+ premium, dimensional","– needs a lively backdrop; heavier to render"],
+  ["s3","Soft Elevated","Warm base, white cards on one soft shadow. The friendly, high-contrast alternative to neumorphism.","+ warm, approachable, clear","– close to the consumer-default look"],
+  ["s4","Editorial Minimal","Big type, thin rules, no card chrome. Quiet-luxury and content-first.","+ distinctive, calm, timeless","– leans on type; feels less tappable"],
+  ["s5","Warm Paper","Cream with a whisper of grain and ink-thin borders. Cozy, analog, unmistakably yours.","+ human, memorable","– texture can date if overdone"],
+  ["s6","Spatial / visionOS","Luminous translucent panels with soft depth. 2025-forward, high-end.","+ futuristic, refined","– trend-coded; busy at tiny sizes"],
+];
+
+document.getElementById("g").innerHTML = STYLES.map(([cls,name,vibe,pro,con],i)=>`
+  <div class="cell ${cls}">
+    <div class="cap">
+      <div class="name"><span class="num">${i+1}</span> ${name}</div>
+      <div class="vibe">${vibe}</div>
+      <div class="tr"><span class="pro">${pro}</span> &nbsp;·&nbsp; <span class="con">${con}</span></div>
+    </div>
+    <div class="frame"><div class="screen">${cls==="s2"?'<div class="blobs"><i></i><i></i></div>':""}${SCREEN}</div></div>
+  </div>`).join("");
+</script>
+</body>
+</html>

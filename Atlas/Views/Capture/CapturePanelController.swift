@@ -1,4 +1,5 @@
 import AppKit
+import AtlasCore
 import SwiftUI
 
 /// Hosts the quick-capture command bar in a floating NSPanel summoned by ⌘⇧K.

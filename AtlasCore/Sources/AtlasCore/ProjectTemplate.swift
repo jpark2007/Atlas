@@ -5,11 +5,11 @@ import Foundation
 /// editable starter (prompt overview + a few sample-task placeholders the user
 /// can edit or delete). Class-appropriate vs generic content keys off
 /// `Project.isClass`. No persistence — these are editable defaults, not saved.
-enum ProjectTemplate {
+public enum ProjectTemplate {
 
     /// Returns a prompt overview and a few sample-task placeholders appropriate
     /// to the project kind. Deterministic for a given `project.isClass`.
-    static func starter(for project: Project) -> (overview: String, sampleTasks: [String]) {
+    public static func starter(for project: Project) -> (overview: String, sampleTasks: [String]) {
         if project.isClass {
             return (
                 overview: "What is this class about? Drop in the syllabus, the grading "

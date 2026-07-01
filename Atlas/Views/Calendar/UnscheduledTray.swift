@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// The right-hand tray of unscheduled tasks (`state.unscheduledTasks`). Each
 /// chip is `.draggable` onto a time slot; a context menu provides a click

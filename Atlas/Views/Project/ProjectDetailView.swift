@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 struct ProjectDetailView: View {
     @EnvironmentObject var state: AppState

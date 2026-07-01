@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// The List (agenda) view: a chronological, day-grouped list of upcoming events
 /// and scheduled/dated tasks. Ordering comes from the pure, unit-tested

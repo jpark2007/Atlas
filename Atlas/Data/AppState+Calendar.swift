@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Calendar-feature helpers on the shared store. METHODS ONLY (no stored
 /// properties) so this stays additive and merge-safe. The event/task source of

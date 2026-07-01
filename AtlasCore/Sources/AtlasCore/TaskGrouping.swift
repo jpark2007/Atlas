@@ -7,7 +7,7 @@ import Foundation
 /// derived purely from `TaskItem.dueDate`; tasks without a due date land in
 /// "No date". `now` and `calendar` are injectable so the logic is deterministic
 /// under test (no hidden `Date()` / locale dependency).
-enum TaskGrouping {
+public enum TaskGrouping {
 
     /// Stable bucket identity + display title, in render order.
     enum Bucket: Int, CaseIterable {
@@ -45,7 +45,7 @@ enum TaskGrouping {
     /// Group `tasks` by space name, ordered by `spaceOrder` (sidebar order).
     /// Within each group tasks are sorted by due date ascending (nil last), then title.
     /// Tasks with no space land in a trailing "No Space" bucket.
-    static func bySpace(
+    public static func bySpace(
         tasks: [TaskItem],
         spaceOrder: [String],
         calendar: Calendar = .current
@@ -91,7 +91,7 @@ enum TaskGrouping {
     /// Group `tasks` by due-date bucket. Returns `(title, tasks)` pairs in fixed
     /// bucket order, omitting empty buckets. Within a bucket tasks are sorted by
     /// `dueDate` ascending (nil last), then by title — deterministic for tests.
-    static func byDueBucket(
+    public static func byDueBucket(
         tasks: [TaskItem],
         now: Date = Date(),
         calendar: Calendar = .current

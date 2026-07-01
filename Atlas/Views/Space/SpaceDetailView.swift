@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 struct SpaceDetailView: View {
     @EnvironmentObject var state: AppState

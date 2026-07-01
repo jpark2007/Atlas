@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// A 6-week (6×7) month grid modeled on Image #1. Each day cell shows the day
 /// number (today highlighted, out-of-month days dimmed) and up to `maxChips`

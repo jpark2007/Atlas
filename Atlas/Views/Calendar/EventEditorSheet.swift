@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Create-or-edit form for a `CalendarEvent`, presented as a sheet.
 ///

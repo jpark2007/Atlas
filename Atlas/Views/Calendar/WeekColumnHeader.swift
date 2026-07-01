@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Sticky 7-day column header for the week grid.
 /// Each cell shows a weekday short name above a day-number badge;
@@ -9,14 +10,16 @@ struct WeekColumnHeader: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Blank gutter spacer — keeps header cells aligned above hour gutter
-            Color.clear.frame(width: CalendarLayout.gutterWidth)
+            // Blank gutter spacer — keeps header cells aligned above hour gutter.
+            // +6 mirrors HourGutter's trailing padding; height 0 so the spacer
+            // never stretches the header row vertically (it's width-only).
+            Color.clear.frame(width: CalendarLayout.gutterWidth + 6, height: 0)
             ForEach(Array(days.enumerated()), id: \.element) { index, day in
                 dayCell(day)
                     .frame(width: columnWidth)
                 if index < days.count - 1 {
                     // 1 pt spacer mirrors the 1 pt column dividers in the grid below
-                    Color.clear.frame(width: 1)
+                    Color.clear.frame(width: 1, height: 0)
                 }
             }
         }

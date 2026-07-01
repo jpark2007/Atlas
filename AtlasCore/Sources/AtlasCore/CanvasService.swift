@@ -7,31 +7,31 @@ import Foundation
 /// Function calling Canvas on the user's behalf), NOT in the client. This local
 /// store is for internal testing of the connect flow only.
 @MainActor
-final class CanvasService: ObservableObject {
+public final class CanvasService: ObservableObject {
 
-    enum Status: Equatable {
+    public enum Status: Equatable {
         case disconnected
         case connecting
         case connected(name: String)
         case failed(String)
     }
 
-    @Published private(set) var status: Status = .disconnected
-    @Published var host: String = UserDefaults.standard.string(forKey: hostKey) ?? ""
+    @Published public private(set) var status: Status = .disconnected
+    @Published public var host: String = UserDefaults.standard.string(forKey: hostKey) ?? ""
 
     private static let hostKey = "atlas.canvas.host"
     private static let tokenKey = "atlas.canvas.token"
 
-    var isConnected: Bool { if case .connected = status { return true }; return false }
+    public var isConnected: Bool { if case .connected = status { return true }; return false }
 
-    init() {
+    public init() {
         if UserDefaults.standard.string(forKey: Self.tokenKey) != nil, !host.isEmpty {
             Task { await validate(token: UserDefaults.standard.string(forKey: Self.tokenKey) ?? "") }
         }
     }
 
     /// Validate a token against `https://<host>/api/v1/users/self` and persist on success.
-    func connect(host rawHost: String, token: String) async {
+    public func connect(host rawHost: String, token: String) async {
         let cleanedHost = rawHost
             .trimmingCharacters(in: .whitespaces)
             .replacingOccurrences(of: "https://", with: "")
@@ -42,7 +42,7 @@ final class CanvasService: ObservableObject {
         await validate(token: token, persist: true)
     }
 
-    func disconnect() {
+    public func disconnect() {
         UserDefaults.standard.removeObject(forKey: Self.tokenKey)
         status = .disconnected
     }

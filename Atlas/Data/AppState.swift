@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Single source of truth for the UI. Backed by mock data today;
 /// the same surface will later be backed by Supabase (see docs/specs/01-architecture.md).

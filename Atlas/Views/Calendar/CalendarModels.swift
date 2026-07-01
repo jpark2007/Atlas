@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Day / Week / Month / List segmented mode for the calendar.
 enum CalendarMode: String, CaseIterable, Identifiable {

@@ -1,4 +1,5 @@
 import EventKit
+import AtlasCore
 import SwiftUI
 
 /// Thin wrapper around EventKit that provides read-only access to Apple Calendar

@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// The constrained Atlas notes editor (WS-10). A focused rich-text view over a
 /// `RichDoc` whose ONLY styling is the allowed subset:

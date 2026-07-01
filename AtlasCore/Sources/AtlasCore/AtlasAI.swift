@@ -5,15 +5,15 @@ import Foundation
 /// Decoded payload from the `capture` Edge Function.
 /// ISO date strings are left as `String` — the call site parses them when
 /// constructing domain objects so we never force a date strategy on this decoder.
-struct CaptureResult: Codable {
-    let kind: String          // "task" | "event" | "note"
-    let title: String
-    let spaceName: String
-    let projectName: String?
-    let dueISO: String?
-    let startISO: String?
-    let durationMin: Int?
-    let notes: String?
+public struct CaptureResult: Codable {
+    public let kind: String          // "task" | "event" | "note"
+    public let title: String
+    public let spaceName: String
+    public let projectName: String?
+    public let dueISO: String?
+    public let startISO: String?
+    public let durationMin: Int?
+    public let notes: String?
 }
 
 // MARK: - Context payload
@@ -22,36 +22,36 @@ struct CaptureResult: Codable {
 /// model uses to place an ambiguous capture: an optional short code and an
 /// optional SHORT description (the project's overview, truncated). The richer
 /// the description, the more confidently the AI routes.
-struct CaptureContextProject: Codable, Equatable {
-    let name: String
-    let code: String?
-    let overview: String?
+public struct CaptureContextProject: Codable, Equatable {
+    public let name: String
+    public let code: String?
+    public let overview: String?
 }
 
 /// One of the user's real Spaces + its projects (with descriptions), sent to the
 /// edge function so the model routes each captured item into an actual bucket
 /// (instead of the generic School/Work/Personal default list).
-struct CaptureContextSpace: Codable, Equatable {
-    let name: String
-    let projects: [CaptureContextProject]
+public struct CaptureContextSpace: Codable, Equatable {
+    public let name: String
+    public let projects: [CaptureContextProject]
 }
 
 /// Request body for the `capture` function. `spaces` is omitted entirely when
 /// the caller has no context to share, keeping old/default routing intact.
 /// `Codable` (not just `Encodable`) so tests can round-trip the produced body.
-struct CaptureRequest: Codable {
-    let text: String
-    let spaces: [CaptureContextSpace]?
+public struct CaptureRequest: Codable {
+    public let text: String
+    public let spaces: [CaptureContextSpace]?
 }
 
 // MARK: - Error
 
-enum AtlasAIError: LocalizedError {
+public enum AtlasAIError: LocalizedError {
     case notAuthenticated
     case httpError(Int, String)
     case decodingError(Error)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .notAuthenticated:
             return "No active session — cannot call the capture function."
@@ -73,12 +73,12 @@ enum AtlasAIError: LocalizedError {
 ///
 /// Decodes the response with a plain `JSONDecoder` (no date strategy —
 /// ISO strings stay as strings for the call site to parse).
-final class AtlasAI {
+public final class AtlasAI {
 
     private let sessionProvider: () -> SupabaseSession?
     private let urlSession: URLSession
 
-    init(session: @escaping () -> SupabaseSession?,
+    public init(session: @escaping () -> SupabaseSession?,
          urlSession: URLSession = .shared) {
         self.sessionProvider = session
         self.urlSession = urlSession
@@ -89,7 +89,7 @@ final class AtlasAI {
     /// Throws `AtlasAIError.notAuthenticated` if `session()` is nil.
     /// Throws `AtlasAIError.httpError` on non-2xx.
     /// Throws `AtlasAIError.decodingError` if the JSON can't be decoded.
-    func parse(_ text: String,
+    public func parse(_ text: String,
                spaces: [CaptureContextSpace] = []) async throws -> [CaptureResult] {
         guard let session = sessionProvider() else {
             throw AtlasAIError.notAuthenticated
@@ -125,7 +125,7 @@ final class AtlasAI {
     /// Map the user's live `Space` list into the lightweight context payload.
     /// Each project carries its name, optional code, and a SHORT description
     /// (overview truncated via `shortOverview`) so routing has real context.
-    static func context(from spaces: [Space]) -> [CaptureContextSpace] {
+    public static func context(from spaces: [Space]) -> [CaptureContextSpace] {
         spaces.map { space in
             CaptureContextSpace(
                 name: space.name,
@@ -144,7 +144,7 @@ final class AtlasAI {
     /// Trim and truncate an overview to ~`limit` chars for the routing payload.
     /// Returns `nil` for blank input so the key is omitted entirely. When longer
     /// than `limit`, keeps the first `limit` characters and appends an ellipsis.
-    static func shortOverview(_ text: String, limit: Int = 160) -> String? {
+    public static func shortOverview(_ text: String, limit: Int = 160) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         guard trimmed.count > limit else { return trimmed }
@@ -154,7 +154,7 @@ final class AtlasAI {
 
     /// Encode the POST body. `spaces` is dropped when empty so callers without
     /// context produce `{ "text": ... }` exactly as before.
-    static func requestBody(text: String, spaces: [CaptureContextSpace]) throws -> Data {
+    public static func requestBody(text: String, spaces: [CaptureContextSpace]) throws -> Data {
         let payload = CaptureRequest(text: text,
                                      spaces: spaces.isEmpty ? nil : spaces)
         return try JSONEncoder().encode(payload)
@@ -164,7 +164,7 @@ final class AtlasAI {
     /// (single object) still works:
     ///   1. `[ {...}, {...} ]`           → as-is
     ///   2. `{ ...one capture object }`  → wrapped as `[ {...} ]`
-    static func decodeResults(from data: Data) throws -> [CaptureResult] {
+    public static func decodeResults(from data: Data) throws -> [CaptureResult] {
         let decoder = JSONDecoder()
         if let array = try? decoder.decode([CaptureResult].self, from: data) {
             return array

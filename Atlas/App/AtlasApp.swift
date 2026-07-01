@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 import AppKit
 
 @main

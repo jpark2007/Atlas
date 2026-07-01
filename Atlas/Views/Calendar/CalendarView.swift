@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// The Atlas Calendar — the hero screen. Day / Week time grid with a space
 /// filter and a drag-to-schedule tray of unscheduled tasks. Reads/writes the

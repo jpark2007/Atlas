@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 // TODO: richer time-bucketed metrics once tasks carry completedAt
 //       (e.g. completedToday, completedThisWeek, streaks)

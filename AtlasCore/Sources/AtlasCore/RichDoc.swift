@@ -9,10 +9,10 @@ import Foundation
 /// No arbitrary fonts / sizes / colors / tables. The Google Doc is the styling
 /// MASTER (full fidelity); this model is the slimmed-down subset Atlas edits and
 /// maps cleanly onto Doc heading styles, lists, and bold/italic/underline.
-struct RichDoc: Equatable, Codable {
-    var blocks: [Block]
+public struct RichDoc: Equatable, Codable {
+    public var blocks: [Block]
 
-    init(blocks: [Block] = []) {
+    public init(blocks: [Block] = []) {
         self.blocks = blocks
     }
 }
@@ -23,35 +23,36 @@ extension RichDoc {
 
     /// A paragraph's block level. `heading`/`subheading`/`normal` are exclusive
     /// text levels; `bulleted`/`numbered` are list items.
-    enum BlockKind: String, Codable, CaseIterable {
+    public enum BlockKind: String, Codable, CaseIterable {
         case heading
         case subheading
         case normal
         case bulleted
         case numbered
 
-        var isList: Bool { self == .bulleted || self == .numbered }
+        public var isList: Bool { self == .bulleted || self == .numbered }
     }
 
     // MARK: - Inline marks
 
     /// The inline character styling Atlas supports. Stored as a bitset so a run
     /// can carry any combination of bold/italic/underline.
-    struct InlineMarks: OptionSet, Equatable {
-        let rawValue: Int
-        static let bold      = InlineMarks(rawValue: 1 << 0)
-        static let italic    = InlineMarks(rawValue: 1 << 1)
-        static let underline = InlineMarks(rawValue: 1 << 2)
+    public struct InlineMarks: OptionSet, Equatable {
+        public let rawValue: Int
+        public init(rawValue: Int) { self.rawValue = rawValue }
+        public static let bold      = InlineMarks(rawValue: 1 << 0)
+        public static let italic    = InlineMarks(rawValue: 1 << 1)
+        public static let underline = InlineMarks(rawValue: 1 << 2)
     }
 
     // MARK: - Run
 
     /// A maximal span of text sharing one set of inline marks.
-    struct Run: Equatable, Codable {
-        var text: String
-        var marks: InlineMarks
+    public struct Run: Equatable, Codable {
+        public var text: String
+        public var marks: InlineMarks
 
-        init(_ text: String, marks: InlineMarks = []) {
+        public init(_ text: String, marks: InlineMarks = []) {
             self.text = text
             self.marks = marks
         }
@@ -62,12 +63,12 @@ extension RichDoc {
     /// A single paragraph: a block level plus the inline runs that compose it.
     /// Canonical form keeps `runs` non-empty (an empty paragraph is `[Run("")]`)
     /// so the carrier run can still hold marks (e.g. a freshly bolded empty line).
-    struct Block: Equatable, Codable, Identifiable {
-        var id: UUID
-        var kind: BlockKind
-        var runs: [Run]
+    public struct Block: Equatable, Codable, Identifiable {
+        public var id: UUID
+        public var kind: BlockKind
+        public var runs: [Run]
 
-        init(id: UUID = UUID(), kind: BlockKind = .normal, runs: [Run] = [Run("")]) {
+        public init(id: UUID = UUID(), kind: BlockKind = .normal, runs: [Run] = [Run("")]) {
             self.id = id
             self.kind = kind
             self.runs = runs.isEmpty ? [Run("")] : runs
@@ -76,16 +77,16 @@ extension RichDoc {
         /// Content equality ignores `id` (which is identity-only, for `ForEach`).
         /// Two blocks are equal when their level and runs match — what
         /// `NoteSync.reconcile` and the Docs round-trip tests care about.
-        static func == (lhs: Block, rhs: Block) -> Bool {
+        public static func == (lhs: Block, rhs: Block) -> Bool {
             lhs.kind == rhs.kind && lhs.runs == rhs.runs
         }
 
         /// The block's plain text (no list glyphs).
-        var text: String { runs.map(\.text).joined() }
+        public var text: String { runs.map(\.text).joined() }
 
         /// Marks active across the *whole* block — a mark counts only when every
         /// run carries it. Drives the editor's B/I/U toggle highlight state.
-        var uniformMarks: InlineMarks {
+        public var uniformMarks: InlineMarks {
             guard let first = runs.first else { return [] }
             return runs.dropFirst().reduce(first.marks) { $0.intersection($1.marks) }
         }
@@ -93,7 +94,7 @@ extension RichDoc {
         /// Replaces the block's text wholesale (the plain-`TextField` edit path),
         /// collapsing to one run that inherits `marks` (defaults to the current
         /// uniform marks so toggling B then typing keeps bold).
-        mutating func setText(_ newText: String, marks: InlineMarks? = nil) {
+        public mutating func setText(_ newText: String, marks: InlineMarks? = nil) {
             runs = [Run(newText, marks: marks ?? uniformMarks)]
         }
 
@@ -101,7 +102,7 @@ extension RichDoc {
         /// or the whole block when `range` is nil. If every character in range
         /// already has the mark it's removed, otherwise added — then runs are
         /// re-coalesced so adjacent equal-mark spans merge.
-        mutating func toggleMark(_ mark: InlineMarks, range: Range<Int>? = nil) {
+        public mutating func toggleMark(_ mark: InlineMarks, range: Range<Int>? = nil) {
             let chars = Array(text)
             // Empty paragraph: toggle on the single carrier run.
             if chars.isEmpty {
@@ -124,14 +125,14 @@ extension RichDoc {
 
         /// Re-coalesces runs (merges adjacent equal-mark spans, drops the
         /// redundant structure). A no-op on already-canonical blocks.
-        mutating func normalize() {
+        public mutating func normalize() {
             let chars = Array(text)
             runs = chars.isEmpty ? [Run("", marks: runs.first?.marks ?? [])]
                                  : Self.buildRuns(chars: chars, marks: charMarks())
         }
 
         /// Per-character marks expanded from the runs.
-        func charMarks() -> [InlineMarks] {
+        public func charMarks() -> [InlineMarks] {
             var out: [InlineMarks] = []
             for run in runs {
                 out.append(contentsOf: Array(repeating: run.marks, count: run.text.count))
@@ -172,39 +173,39 @@ extension RichDoc {
 
     /// The whole document's plain text (blocks joined by newlines, no list
     /// glyphs) — what Atlas stores in `Note.body` for ⌘K search and `[[mentions]]`.
-    var plainText: String {
+    public var plainText: String {
         blocks.map(\.text).joined(separator: "\n")
     }
 
     /// Seeds a document from plain text: each line becomes a `.normal` block.
     /// An empty string yields a single empty block (never zero blocks).
-    static func fromPlainText(_ text: String) -> RichDoc {
+    public static func fromPlainText(_ text: String) -> RichDoc {
         let lines = text.isEmpty ? [""] : text.components(separatedBy: "\n")
         return RichDoc(blocks: lines.map { Block(kind: .normal, runs: [Run($0)]) })
     }
 
     /// Sets a block's level (no-op for an out-of-range index).
-    mutating func setKind(_ kind: BlockKind, at index: Int) {
+    public mutating func setKind(_ kind: BlockKind, at index: Int) {
         guard blocks.indices.contains(index) else { return }
         blocks[index].kind = kind
     }
 
     /// Toggles a list level: applies it, or reverts to `.normal` if the block is
     /// already that list kind (clicking "bulleted" twice un-bullets).
-    mutating func toggleListKind(_ kind: BlockKind, at index: Int) {
+    public mutating func toggleListKind(_ kind: BlockKind, at index: Int) {
         guard kind.isList, blocks.indices.contains(index) else { return }
         blocks[index].kind = (blocks[index].kind == kind) ? .normal : kind
     }
 
     /// Toggles an inline mark on a block (whole block, or a character range).
-    mutating func toggleMark(_ mark: InlineMarks, at index: Int, range: Range<Int>? = nil) {
+    public mutating func toggleMark(_ mark: InlineMarks, at index: Int, range: Range<Int>? = nil) {
         guard blocks.indices.contains(index) else { return }
         blocks[index].toggleMark(mark, range: range)
     }
 
     /// Inserts an empty `.normal` block after `index` and returns its id.
     @discardableResult
-    mutating func insertBlock(after index: Int, kind: BlockKind = .normal) -> UUID {
+    public mutating func insertBlock(after index: Int, kind: BlockKind = .normal) -> UUID {
         let block = Block(kind: kind)
         let target = blocks.indices.contains(index) ? index + 1 : blocks.count
         blocks.insert(block, at: target)
@@ -213,7 +214,7 @@ extension RichDoc {
 
     /// Removes a block, keeping at least one (clearing the last block instead of
     /// emptying the document).
-    mutating func removeBlock(at index: Int) {
+    public mutating func removeBlock(at index: Int) {
         guard blocks.indices.contains(index) else { return }
         if blocks.count == 1 {
             blocks[0] = Block()
@@ -223,7 +224,7 @@ extension RichDoc {
     }
 
     /// Re-coalesces every block's runs.
-    mutating func normalize() {
+    public mutating func normalize() {
         for i in blocks.indices { blocks[i].normalize() }
     }
 }
@@ -231,12 +232,12 @@ extension RichDoc {
 // MARK: - InlineMarks Codable
 
 extension RichDoc.InlineMarks: Codable {
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         self.init(rawValue: try container.decode(Int.self))
     }
 
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(rawValue)
     }

@@ -1,4 +1,5 @@
 import Foundation
+import AtlasCore
 
 /// A titled group of palette results. The view renders these in order; the
 /// model (below) decides which appear and how they're ordered. `title` doubles

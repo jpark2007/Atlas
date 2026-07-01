@@ -2,7 +2,7 @@ import Foundation
 
 /// Pure reconciliation helpers for Atlas ⇄ Google calendar sync. Deliberately free of
 /// network and app state so the data-loss-critical rules can be unit-tested in isolation.
-enum CalendarSync {
+public enum CalendarSync {
 
     /// Local ids of **Atlas-origin** events that were mirrored to Google but are now
     /// absent from a fresh Google listing for `[windowStart, windowEnd)` — i.e. deleted
@@ -14,7 +14,7 @@ enum CalendarSync {
     /// - **Pending-push guard (B2):** `eligibleGoogleIDs` is a snapshot of mirror ids taken
     ///   *before* the pull's fetch began. An id assigned during the fetch isn't in it, so a
     ///   freshly-created event can't be reaped by a listing that predates it.
-    static func reapableEventIDs(
+    public static func reapableEventIDs(
         events: [CalendarEvent],
         presentGoogleIDs: Set<String>,
         eligibleGoogleIDs: Set<String>,

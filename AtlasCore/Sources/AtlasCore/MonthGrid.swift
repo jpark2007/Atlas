@@ -6,18 +6,18 @@ import Foundation
 ///
 /// Kept free of SwiftUI / `AppState` so the boundary math is unit-testable with an
 /// injected `Calendar` (no hidden `Date()` / locale dependency).
-enum MonthGrid {
+public enum MonthGrid {
 
     /// Number of cells in the grid: a fixed 6-week (6×7) layout so the month view
     /// never changes height as you page between months.
-    static let cellCount = 42
+    public static let cellCount = 42
 
     /// The 42 consecutive days that fill the month grid containing `date`.
     ///
     /// The first cell is the `firstWeekday` (e.g. Sunday) on or before the 1st of
     /// the month, so the 1st always lands in the first row. Cells then run
     /// consecutively for `cellCount` days, spilling into the trailing month.
-    static func cells(for date: Date, calendar: Calendar = .current) -> [Date] {
+    public static func cells(for date: Date, calendar: Calendar = .current) -> [Date] {
         guard let monthInterval = calendar.dateInterval(of: .month, for: date) else { return [] }
         let firstOfMonth = monthInterval.start
 
@@ -30,7 +30,7 @@ enum MonthGrid {
     }
 
     /// True when `date` falls in the same month (and year) as `reference`.
-    static func isInMonth(_ date: Date, of reference: Date, calendar: Calendar = .current) -> Bool {
+    public static func isInMonth(_ date: Date, of reference: Date, calendar: Calendar = .current) -> Bool {
         calendar.isDate(date, equalTo: reference, toGranularity: .month)
     }
 }

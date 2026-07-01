@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Full-page detail / edit view for a calendar item — opened by clicking any tile or agenda
 /// row. One surface for Atlas events, scheduled-task work-blocks, and read-only external

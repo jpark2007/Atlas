@@ -1,13 +1,13 @@
 import SwiftUI
 
 /// Sample data mirroring the approved prototype. Swap for Supabase later.
-enum MockData {
+public enum MockData {
     /// Build a `Date` at a given hour/minute on today's date.
-    static func todayAt(_ hour: Int, _ minute: Int = 0) -> Date {
+    public static func todayAt(_ hour: Int, _ minute: Int = 0) -> Date {
         Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? Date()
     }
 
-    static let events: [CalendarEvent] = [
+    public static let events: [CalendarEvent] = [
         .init(title: "CS 201 Lecture",   subtitle: "Tech Hall 204",     start: todayAt(9),        end: todayAt(10, 15), color: AtlasTheme.Colors.school,   spaceName: "School"),
         .init(title: "Calculus II",      subtitle: "Recitation",        start: todayAt(11),       end: todayAt(12),     color: AtlasTheme.Colors.school,   spaceName: "School"),
         .init(title: "Lunch w/ Dev team", subtitle: "Trailhead standup", start: todayAt(13),       end: todayAt(14),     color: AtlasTheme.Colors.side,     spaceName: "Side Project"),
@@ -15,7 +15,7 @@ enum MockData {
         .init(title: "Dinner with mom",  subtitle: "Personal",          start: todayAt(18, 30),   end: todayAt(20),     color: AtlasTheme.Colors.personal, spaceName: "Personal"),
     ]
 
-    static let tasks: [TaskItem] = [
+    public static let tasks: [TaskItem] = [
         .init(title: "Finish DS problem set",     dueLabel: "Thu", spaceColor: AtlasTheme.Colors.school,   spaceName: "School"),
         .init(title: "Calc practice problems",    dueLabel: "Wed", spaceColor: AtlasTheme.Colors.school,   spaceName: "School"),
         .init(title: "Read History ch. 7",        dueLabel: "Fri", spaceColor: AtlasTheme.Colors.school,   spaceName: "School"),
@@ -23,19 +23,19 @@ enum MockData {
         .init(title: "Grocery run",               dueLabel: "",    spaceColor: AtlasTheme.Colors.personal, spaceName: "Personal"),
     ]
 
-    static let notes: [Note] = [
+    public static let notes: [Note] = [
         .init(title: "Midterm study plan", body: "Cover trees, heaps, and graph traversal. Re-derive Dijkstra from scratch. Pair complexity analysis with [[Calculus II]] limit review before the midterm.", spaceName: "School"),
         .init(title: "Graph algorithms", body: "Graph traversal — BFS vs DFS. Remember to track visited set. Priority-queue impl reused from [[Trailhead App]].", spaceName: "School"),
         .init(title: "Trailhead launch checklist", body: "Onboarding screens, app icon, TestFlight build, landing page copy.", spaceName: "Side Project"),
     ]
 
-    static let goals: [Goal] = [
+    public static let goals: [Goal] = [
         .init(title: "Get fit",          progress: 0.66, label: "2 / 3 this week"),
         .init(title: "Learn Spanish",    progress: 0.33, label: "1 / 3 blocks"),
         .init(title: "Ship Trailhead v1", progress: 0.60, label: "60%"),
     ]
 
-    static let spaces: [Space] = {
+    public static let spaces: [Space] = {
         let blue = AtlasTheme.Colors.school
         let green = AtlasTheme.Colors.personal
         let purple = AtlasTheme.Colors.side

@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 struct DashboardView: View {
     @EnvironmentObject var state: AppState

@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// A simple list of all notes that opens the editor in a sheet. Nice-to-have
 /// surface; not wired into RootView but compiles and runs standalone.

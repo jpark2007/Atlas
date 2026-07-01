@@ -3,7 +3,11 @@ options:
   bundleIdPrefix: com.atlas
   deploymentTarget:
     macOS: "14.0"
+    iOS: "17.0"
   createIntermediateGroups: true
+packages:
+  AtlasCore:
+    path: AtlasCore
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -27,6 +31,8 @@ targets:
           - "Atlas.entitlements"
       - path: Atlas/Atlas.entitlements
         buildPhase: none
+    dependencies:
+      - package: AtlasCore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.atlas.Atlas
@@ -61,6 +67,21 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+  # Phase-0 iOS companion skeleton: bare sign-in on the shared AtlasCore package.
+  AtlasMobile:
+    type: application
+    platform: iOS
+    sources:
+      - path: AtlasMobile
+    dependencies:
+      - package: AtlasCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.atlas.AtlasMobile
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
 schemes:
   Atlas:
     build:
@@ -70,3 +91,7 @@ schemes:
     test:
       targets:
         - AtlasTests
+  AtlasMobile:
+    build:
+      targets:
+        AtlasMobile: all

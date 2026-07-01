@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 // MARK: - Drag-to-schedule plumbing (custom pointer drag)
 
@@ -511,9 +512,11 @@ struct WeekGridView: View {
 
     var body: some View {
         GeometryReader { geo in
-            // columnWidth accounts for the gutter and the 8 pt trailing padding on the VStack.
-            // The 1 pt column dividers are additive (same as in the original layout).
-            let columnWidth = (geo.size.width - CalendarLayout.gutterWidth - 8) / CGFloat(days.count)
+            // columnWidth accounts for all fixed chrome around the day columns: the hour
+            // gutter + its 6 pt trailing padding, the VStack's 8 pt trailing padding, and
+            // the (days.count - 1) 1 pt column dividers.
+            let columnWidth = (geo.size.width - CalendarLayout.gutterWidth - 6 - 8
+                               - CGFloat(days.count - 1)) / CGFloat(days.count)
             VStack(spacing: 0) {
                 // ── Sticky weekday / date header ──────────────────────────────
                 WeekColumnHeader(days: days, columnWidth: columnWidth)

@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Focus mode — a Pomodoro timer styled in the Atlas dark + orange design language.
 ///

@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 import Charts
 
 // MARK: - Shared subviews (used by MetricsView, MetricsPopupView, MetricsCard)

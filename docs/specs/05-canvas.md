@@ -1,29 +1,40 @@
 # 05 — Canvas Integration
 
-Canvas (the LMS) feeds the **School** space.
+Canvas (the LMS) feeds assignments + due dates into the unified calendar.
+
+> **Connection changed (2026-07-01):** the original plan used a Canvas API access
+> token / OAuth held server-side. Both our schools (Rutgers, Princeton) **disable
+> student access tokens**, so that path is dead. Canvas now connects via the read-only
+> **Calendar Feed (ICS)** URL instead. Full design + rationale:
+> [2026-07-01-canvas-ics-sync-design.md](./2026-07-01-canvas-ics-sync-design.md).
 
 ## What syncs
 
-- **Classes → Projects.** Each Canvas course becomes a **Class** project in the School space.
-- **Assignments → Tasks.** Each assignment becomes a task **auto-populated with its due date and description/notes**, linked to its class project.
-- Scope is intentionally focused: **classes + assignments**. Not the whole Canvas surface (grades, discussions, etc.) — at least to start.
-
-## Behavior
-
-- A class project owns its recurring **meeting event** on the calendar (if class times are available).
-- Assignment tasks appear in the unified calendar by due date and can be dragged to schedule work time.
-- Re-sync periodically (scheduled Edge Function) to pick up new/changed assignments.
+- **Assignments → read-only deadlines.** Every assignment in the feed appears in the
+  unified calendar by due date, labeled by course. Zero setup — this is the default.
+- **Optional: course → project linking.** A course can be explicitly linked to a project
+  you've created (Atlas auto-suggests the match, you confirm). Linked assignments also
+  surface under that project and can be dragged to schedule work time.
+- Scope stays focused: **assignments + due dates**. Not grades, submissions, or to-dos.
 
 ## How it connects
 
-- Canvas API access via the backend (token/OAuth held server-side, per [01](./01-architecture.md)).
-- A **scheduled Supabase function** pulls updates; changes flow into the user's School space.
+- **Read-only Canvas Calendar Feed (ICS).** Per-user feed URL (Calendar → "Calendar Feed"),
+  pasted once into Settings. No token, no admin, no login — the URL carries its own secret,
+  and admins cannot disable it. Works on locked-down student accounts.
+- Fetched **client-side** on the same triggers as Apple/Google calendar (launch / focus /
+  refresh / manual). No scheduled Edge Function needed — there is no server-side secret.
+- Canvas is a third live read-only calendar **source** (`EventSource.canvas`), alongside
+  Apple (EventKit) and Google.
 
-## Auth approach (to decide)
+## Setting
 
-- Canvas API token vs. OAuth flow — pick during the Canvas phase. Token is simpler to start; OAuth is cleaner for other users later.
+- **Canvas assignments to show:** *All courses* (default) / *Only linked courses*.
 
-## Open questions
+## Resolved from the old open questions
 
-- Mapping Canvas course meeting times to recurring events (not all schools expose these cleanly).
-- De-duping if a user also has Canvas events in their Google/Apple calendar.
+- **Class meeting times:** surfaced only if cleanly present in the feed (not all schools
+  expose them) — best-effort, not required.
+- **De-duping vs. Google/Apple:** Atlas ingests the feed itself and tags items
+  `source = .canvas`; users should **not** also subscribe the same feed into Google/Apple,
+  which would double-show and mislabel it.
