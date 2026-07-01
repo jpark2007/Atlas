@@ -15,7 +15,7 @@ struct RootTabView: View {
         TabView(selection: $selection) {
             tab(EditorialPlaceholder(title: "Schedule"),
                 tag: .schedule, label: "Schedule", symbol: "calendar")
-            tab(EditorialPlaceholder(title: "Capture"),
+            tab(CaptureView(),
                 tag: .capture, label: "Capture", symbol: "mic")
             tab(EditorialPlaceholder(title: "Tasks"),
                 tag: .tasks, label: "Tasks", symbol: "checklist")
