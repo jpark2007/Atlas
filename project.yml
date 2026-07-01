@@ -89,6 +89,8 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
+        NSMicrophoneUsageDescription: "Atlas uses the microphone for click-to-talk capture, transcribing what you say into the capture bar. Recording only starts when you tap the mic."
+        NSSpeechRecognitionUsageDescription: "Atlas transcribes your speech on-device so you can dictate tasks and notes into the capture bar."
         CFBundleURLTypes:
           - CFBundleURLName: com.atlas.AtlasMobile
             CFBundleURLSchemes:

@@ -1,13 +1,14 @@
 import SwiftUI
 import AtlasCore
 
-/// The Capture hero. A small state machine drives the screen: empty → thinking →
-/// result (typed or, in Task 4, spoken). Offline dumps are held in
-/// `PendingCaptureQueue` and drained when Capture next appears / the app
+/// The Capture hero. A small state machine drives the screen: empty → listening /
+/// thinking → result (typed or spoken — one shared flow). Offline dumps are held
+/// in `PendingCaptureQueue` and drained when Capture next appears / the app
 /// foregrounds with a connection.
 struct CaptureView: View {
     @EnvironmentObject private var store: MobileStore
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
 
     /// Shared with Settings (Task 7) — the capture routing fallback space.
     @AppStorage("defaultSpaceName") private var defaultSpaceName = ""
@@ -22,14 +23,16 @@ struct CaptureView: View {
     @FocusState private var editorFocused: Bool
 
     @StateObject private var pending = PendingCaptureQueue()
+    @StateObject private var speech = SpeechCapture()
 
     var body: some View {
         ZStack {
             MobileTheme.bg.ignoresSafeArea()
             switch phase {
-            case .empty, .listening: emptyState   // .listening built in Task 4
-            case .thinking:          thinkingState
-            case .result:            resultState
+            case .empty:     emptyState
+            case .listening: listeningState
+            case .thinking:  thinkingState
+            case .result:    resultState
             }
         }
         .sheet(isPresented: $showManualAdd) {
@@ -41,6 +44,8 @@ struct CaptureView: View {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active { Task { await drainPending() } }
         }
+        .onAppear(perform: consumeMicDeepLink)
+        .onChange(of: store.autoStartMic) { _, _ in consumeMicDeepLink() }
     }
 
     // MARK: - Empty state (spec §4.2)
@@ -121,7 +126,7 @@ struct CaptureView: View {
             }
         }
         .frame(height: 200)
-        .overlay(alignment: .bottomTrailing) { micGlyph.padding(14) }
+        .overlay(alignment: .bottomTrailing) { micButton.padding(14) }
         .overlay(
             RoundedRectangle(cornerRadius: MobileTheme.radiusCard, style: .continuous)
                 .strokeBorder(MobileTheme.ink, lineWidth: MobileTheme.rule)
@@ -129,14 +134,16 @@ struct CaptureView: View {
         .contentShape(RoundedRectangle(cornerRadius: MobileTheme.radiusCard, style: .continuous))
     }
 
-    /// Refined mic glyph — outlined, never a fill. Faint (disabled-looking) until
-    /// Task 4 wires on-device speech.
-    private var micGlyph: some View {
-        Image(systemName: "mic")
-            .font(.system(size: 19, weight: .medium))
-            .foregroundStyle(MobileTheme.faint)
-            .frame(width: 44, height: 44)
-            .overlay(Circle().strokeBorder(MobileTheme.hairline, lineWidth: MobileTheme.rule))
+    /// Refined mic glyph — outlined, never a fill. Taps into on-device dictation.
+    private var micButton: some View {
+        Button(action: startListening) {
+            Image(systemName: "mic")
+                .font(.system(size: 19, weight: .medium))
+                .foregroundStyle(MobileTheme.ink)
+                .frame(width: 44, height: 44)
+                .overlay(Circle().strokeBorder(MobileTheme.ink, lineWidth: MobileTheme.rule))
+        }
+        .buttonStyle(.plain)
     }
 
     private var orDivider: some View {
@@ -157,6 +164,95 @@ struct CaptureView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    // MARK: - Listening state (on-device speech)
+
+    @ViewBuilder
+    private var listeningState: some View {
+        switch speech.state {
+        case .denied:      permissionExplainer
+        case .unavailable: unavailableNote
+        default:           liveListening
+        }
+    }
+
+    private var liveListening: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            HStack(spacing: 9) {
+                LiveDot()                       // the ONLY accent in this state
+                Text("Listening").edCapsLabel()
+            }
+
+            Text(speech.transcript.isEmpty ? "We’ll organise it for you" : speech.transcript)
+                .font(.system(size: 22, weight: .regular, design: .rounded))
+                .foregroundStyle(speech.transcript.isEmpty ? MobileTheme.faint : MobileTheme.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            LevelBars(level: speech.level)
+
+            Spacer()
+
+            Button(action: stopListening) {
+                Text("Stop")
+                    .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MobileTheme.ink)
+                    .frame(maxWidth: .infinity)
+                    .edOutlineControl()
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 28)
+        .padding(.top, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var permissionExplainer: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Microphone off").edScreenTitle()
+            Text("Atlas needs microphone and speech access to take dictation. You can turn them on in Settings.")
+                .font(.system(size: 15, weight: .regular, design: .rounded))
+                .foregroundStyle(MobileTheme.muted)
+
+            Button {
+                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+            } label: {
+                Text("Open Settings")
+                    .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MobileTheme.ink)
+                    .frame(maxWidth: .infinity)
+                    .edOutlineControl()
+            }
+            .buttonStyle(.plain)
+
+            Button { speech.stop(); phase = .empty } label: {
+                Text("Back").edCapsLabel()
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+
+            Spacer()
+        }
+        .padding(.horizontal, 28)
+        .padding(.top, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var unavailableNote: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Voice unavailable").edScreenTitle()
+            Text("Speech recognition isn’t available right now. You can type your dump instead.")
+                .font(.system(size: 15, weight: .regular, design: .rounded))
+                .foregroundStyle(MobileTheme.muted)
+            Button { speech.stop(); phase = .empty } label: {
+                Text("Back").edCapsLabel()
+            }
+            .buttonStyle(.plain)
+            Spacer()
+        }
+        .padding(.horizontal, 28)
+        .padding(.top, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
     // MARK: - Result state (shared card for voice + typed)
 
     private var resultState: some View {
@@ -166,6 +262,32 @@ struct CaptureView: View {
             onCommit: commitAll,
             onUndo: { drafts = []; phase = .empty }
         )
+    }
+
+    // MARK: - Voice control
+
+    private func startListening() {
+        note = nil
+        phase = .listening
+        speech.start()
+    }
+
+    /// Stop the mic and route the transcript through the same AI flow as typing.
+    private func stopListening() {
+        let spoken = speech.transcript
+        speech.stop()
+        if spoken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            phase = .empty
+        } else {
+            sortItOut(spoken)
+        }
+    }
+
+    /// Begin listening immediately for an `atlas://capture?mic=1` deep link.
+    private func consumeMicDeepLink() {
+        guard store.autoStartMic else { return }
+        store.autoStartMic = false
+        startListening()
     }
 
     // MARK: - AI flow
@@ -284,6 +406,38 @@ private struct PulsingCore: View {
             .opacity(on ? 1 : 0.45)
             .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: on)
             .onAppear { on = true }
+    }
+}
+
+/// The tiny live "recording" dot — the ONLY accent allowed in the listening state.
+private struct LiveDot: View {
+    @State private var on = false
+    var body: some View {
+        Circle()
+            .fill(MobileTheme.accent)
+            .frame(width: 8, height: 8)
+            .opacity(on ? 1 : 0.35)
+            .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: on)
+            .onAppear { on = true }
+    }
+}
+
+/// Simple animated waveform bars driven by the mic input level. Monochrome ink —
+/// accent is reserved for the live dot.
+private struct LevelBars: View {
+    let level: CGFloat
+    private let weights: [CGFloat] = [0.4, 0.7, 1.0, 0.85, 1.0, 0.6, 0.45]
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(weights.indices, id: \.self) { i in
+                Capsule()
+                    .fill(MobileTheme.ink.opacity(0.55))
+                    .frame(width: 4, height: 6 + level * 34 * weights[i])
+            }
+        }
+        .frame(height: 40, alignment: .center)
+        .animation(.easeOut(duration: 0.12), value: level)
     }
 }
 

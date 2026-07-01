@@ -13,6 +13,9 @@ final class MobileStore: ObservableObject {
     @Published var loading = false
     /// Set by `onOpenURL`; consumed by `RootTabView` to switch tabs.
     @Published var pendingDeepLink: DeepLink?
+    /// Raised by `atlas://capture?mic=1`; `CaptureView` consumes it to begin
+    /// listening as soon as the Capture screen appears, then resets it.
+    @Published var autoStartMic = false
 
     private let sessionStore = SessionStore()
     private let auth = SupabaseAuth()
@@ -107,7 +110,11 @@ final class MobileStore: ObservableObject {
     /// Record a parsed deep link (and apply its space filter). `RootTabView` reacts
     /// to `pendingDeepLink` to switch tabs.
     func handle(_ link: DeepLink) {
-        if case .todaySpace(let id) = link { spaceFilter = id }
+        switch link {
+        case .todaySpace(let id): spaceFilter = id
+        case .capture(let mic):   if mic { autoStartMic = true }
+        default: break
+        }
         pendingDeepLink = link
     }
 }
