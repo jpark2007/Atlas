@@ -17,7 +17,7 @@ struct RootTabView: View {
                 tag: .schedule, label: "Schedule", symbol: "calendar")
             tab(CaptureView(),
                 tag: .capture, label: "Capture", symbol: "mic")
-            tab(EditorialPlaceholder(title: "Tasks"),
+            tab(TasksView(),
                 tag: .tasks, label: "Tasks", symbol: "checklist")
         }
         .tint(MobileTheme.ink)
