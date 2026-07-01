@@ -37,7 +37,7 @@ struct RootTabView: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         NavigationLink {
-                            EditorialPlaceholder(title: "Settings")
+                            SettingsView()
                                 .navigationTitle("Settings")
                                 .navigationBarTitleDisplayMode(.inline)
                         } label: {
