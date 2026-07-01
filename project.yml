@@ -80,8 +80,19 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.atlas.AtlasMobile
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        # Explicit Info.plist (below) so we can register the atlas:// URL scheme —
+        # Xcode's INFOPLIST_KEY_* mechanism can't emit CFBundleURLTypes.
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: AtlasMobile/Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        CFBundleURLTypes:
+          - CFBundleURLName: com.atlas.AtlasMobile
+            CFBundleURLSchemes:
+              - atlas
 schemes:
   Atlas:
     build:

@@ -7,6 +7,7 @@ Icon?
 # Xcode — project is generated from project.yml via `xcodegen generate`
 Atlas.xcodeproj/
 Atlas/Info.plist
+AtlasMobile/Info.plist
 build/
 DerivedData/
 *.xcuserstate
