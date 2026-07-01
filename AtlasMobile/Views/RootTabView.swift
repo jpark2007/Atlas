@@ -13,7 +13,7 @@ struct RootTabView: View {
 
     var body: some View {
         TabView(selection: $selection) {
-            tab(EditorialPlaceholder(title: "Schedule"),
+            tab(ScheduleView(),
                 tag: .schedule, label: "Schedule", symbol: "calendar")
             tab(CaptureView(),
                 tag: .capture, label: "Capture", symbol: "mic")

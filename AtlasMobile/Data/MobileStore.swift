@@ -16,6 +16,9 @@ final class MobileStore: ObservableObject {
     /// Raised by `atlas://capture?mic=1`; `CaptureView` consumes it to begin
     /// listening as soon as the Capture screen appears, then resets it.
     @Published var autoStartMic = false
+    /// Raised by the Schedule-family deep links (`today`/`unscheduled`/`today?space`);
+    /// `ScheduleView` consumes it to snap back to today, then resets it.
+    @Published var scheduleFocusToday = false
 
     private let sessionStore = SessionStore()
     private let auth = SupabaseAuth()
@@ -111,9 +114,13 @@ final class MobileStore: ObservableObject {
     /// to `pendingDeepLink` to switch tabs.
     func handle(_ link: DeepLink) {
         switch link {
-        case .todaySpace(let id): spaceFilter = id
-        case .capture(let mic):   if mic { autoStartMic = true }
-        default: break
+        case .today, .unscheduled:
+            scheduleFocusToday = true
+        case .todaySpace(let id):
+            spaceFilter = id
+            scheduleFocusToday = true
+        case .capture(let mic):
+            if mic { autoStartMic = true }
         }
         pendingDeepLink = link
     }
