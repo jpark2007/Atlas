@@ -43,14 +43,11 @@ struct SettingsView: View {
             .padding(.top, 24)
             .padding(.bottom, 14)
 
-            Picker("", selection: $state.settingsSection) {
-                ForEach(SettingsSection.allCases) { section in
-                    Text(section.title).tag(section)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 360, alignment: .leading)
+            AtlasSegmentedPicker(
+                options: SettingsSection.allCases,
+                label: { $0.title },
+                selection: $state.settingsSection
+            )
             .padding(.horizontal, 28)
             .padding(.bottom, 14)
 

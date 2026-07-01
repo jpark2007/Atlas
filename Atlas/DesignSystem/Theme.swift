@@ -52,6 +52,45 @@ enum AtlasTheme {
     }
 }
 
+/// Dark-themed segmented picker that replaces the macOS default grey segmented control.
+/// Options must be `Hashable & Identifiable`. Pass a label closure to extract display text.
+struct AtlasSegmentedPicker<Option: Hashable & Identifiable>: View {
+    let options: [Option]
+    let label: (Option) -> String
+    @Binding var selection: Option
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(options) { option in
+                Button { selection = option } label: {
+                    Text(label(option))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(
+                            selection == option
+                                ? AtlasTheme.Colors.bgDeep
+                                : AtlasTheme.Colors.textSecondary
+                        )
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(selection == option ? AtlasTheme.Colors.accent : Color.clear)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(AtlasTheme.Colors.bgElevated)
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(AtlasTheme.Colors.border, lineWidth: 1)
+        )
+        .animation(.easeInOut(duration: 0.15), value: selection)
+    }
+}
+
 /// A standard Atlas content card.
 struct AtlasCard<Content: View>: View {
     @ViewBuilder var content: Content

@@ -387,11 +387,13 @@ struct DayCalendarView: View {
     }
 
     private var nowSentinel: some View {
-        let offsetY = CalendarLayout.offsetHours(for: Date()) * CalendarLayout.hourHeight + 6  // +6 for top padding
-        return Color.clear
-            .frame(width: 1, height: 1)
-            .offset(y: offsetY)
-            .id("nowAnchor")
+        // Use a VStack spacer so the anchor has the correct LAYOUT position — .offset() is
+        // visual-only and scrollTo uses the layout frame, which would always land at y=0.
+        let offsetY = CalendarLayout.offsetHours(for: Date()) * CalendarLayout.hourHeight + 6
+        return VStack(spacing: 0) {
+            Color.clear.frame(width: 1, height: offsetY)
+            Color.clear.frame(width: 1, height: 1).id("nowAnchor")
+        }
     }
 }
 
@@ -451,12 +453,13 @@ struct WeekGridView: View {
                             .padding(.top, 6)
                             .padding(.bottom, 16)
 
-                            // Zero-height sentinel anchored at the current-time Y.
+                            // Sentinel at the current-time Y — VStack spacer keeps the layout
+                            // position correct; .offset() is visual-only and scrollTo lands at y=0.
                             let offsetY = CalendarLayout.offsetHours(for: Date()) * CalendarLayout.hourHeight + 6
-                            Color.clear
-                                .frame(width: 1, height: 1)
-                                .offset(y: offsetY)
-                                .id("nowAnchor")
+                            VStack(spacing: 0) {
+                                Color.clear.frame(width: 1, height: offsetY)
+                                Color.clear.frame(width: 1, height: 1).id("nowAnchor")
+                            }
                         }
                     }
                     .onAppear {

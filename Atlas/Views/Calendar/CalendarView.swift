@@ -143,14 +143,11 @@ struct CalendarView: View {
             }
 
             HStack(spacing: 12) {
-                Picker("", selection: $mode) {
-                    ForEach(CalendarMode.allCases) { m in
-                        Text(m.rawValue).tag(m)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 280)
-                .labelsHidden()
+                AtlasSegmentedPicker(
+                    options: CalendarMode.allCases,
+                    label: { $0.rawValue },
+                    selection: $mode
+                )
 
                 Spacer()
                 searchField
