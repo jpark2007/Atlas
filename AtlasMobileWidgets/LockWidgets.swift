@@ -50,26 +50,44 @@ struct LockRectView: View {
             .widgetURL(URL(string: rows.isEmpty ? "atlas://capture" : "atlas://today")!)
     }
 
+    // Drew's wish in one widget: a leading "how many left" count column, a thin
+    // divider, then the existing "next item" content trailing.
     @ViewBuilder private var content: some View {
+        HStack(spacing: 8) {
+            VStack(spacing: 0) {
+                Text("\(snapshot.leftCount)")
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .minimumScaleFactor(0.6)
+                Text("LEFT")
+                    .font(.system(size: 8, weight: .semibold, design: .rounded))
+                    .tracking(0.6)
+                    .foregroundStyle(.secondary)
+            }
+            .fixedSize()
+
+            Divider()
+
+            nextUp
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder private var nextUp: some View {
         if let first = rows.first {
-            HStack(spacing: 6) {
-                Capsule().fill(.tint).frame(width: 2.5)   // thin leading accent bar (system-tinted)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("\(first.time)  \(first.title)")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(first.time)  \(first.title)")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                if rows.count > 1 {
+                    Text("then \(rows[1].title)")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    if rows.count > 1 {
-                        Text("then \(rows[1].title)")
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    } else if snapshot.needTimeCount > 0 {
-                        Text("\(snapshot.needTimeCount) need a time")
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
+                } else if snapshot.needTimeCount > 0 {
+                    Text("\(snapshot.needTimeCount) need a time")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
                 }
-                Spacer(minLength: 0)
             }
         } else {
             VStack(alignment: .leading, spacing: 1) {
@@ -101,15 +119,21 @@ struct LockCircularWidget: Widget {
 struct LockCircularView: View {
     let snapshot: SharedSnapshot
 
-    private var total: Int { max(snapshot.leftCount + snapshot.today.count, 1) }
-
+    // Honest count-only design: a full ring (no meaningless progress fill) around
+    // the number left today. The old gauge divided leftCount by an arbitrary total.
     var body: some View {
-        Gauge(value: Double(snapshot.leftCount), in: 0...Double(total)) {
-            Text("LEFT")
-        } currentValueLabel: {
-            Text("\(snapshot.leftCount)")
-                .font(.system(size: 15, weight: .heavy, design: .rounded))
+        ZStack {
+            AccessoryWidgetBackground()
+            Circle().stroke(.tint, lineWidth: 3).padding(2)
+            VStack(spacing: -1) {
+                Text("\(snapshot.leftCount)")
+                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    .minimumScaleFactor(0.5)
+                Text("LEFT")
+                    .font(.system(size: 8, weight: .semibold, design: .rounded))
+                    .tracking(0.5)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .gaugeStyle(.accessoryCircular)
     }
 }

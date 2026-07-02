@@ -52,7 +52,55 @@ enum WidgetSnapshotWriter {
             generatedAt: now)
 
         shared.write()
+        writeCache(snapshot)
         WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    // MARK: - Offline snapshot cache (G1)
+
+    /// Full-snapshot mirror for offline launch, kept next to `today.json` in the
+    /// app group. Encoded via the same Codable row DTOs the DB uses, so it reuses
+    /// their `init(domain:)`/`toDomain()` round-trip. Only the tables the mobile UI
+    /// renders are cached (notes/goals are unused there).
+    private struct SnapshotCache: Codable {
+        var spaces: [SpaceRow]
+        var projects: [ProjectRow]
+        var tasks: [TaskRow]
+        var events: [EventRow]
+    }
+
+    private static var cacheURL: URL? {
+        FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: SharedSnapshot.appGroup)?
+            .appendingPathComponent("snapshot-cache.json")
+    }
+
+    private static func writeCache(_ snapshot: AtlasSnapshot) {
+        guard let url = cacheURL else { return }
+        let cache = SnapshotCache(
+            spaces: snapshot.spaces.map { SpaceRow(domain: $0) },
+            projects: snapshot.projects.map { ProjectRow(domain: $0) },
+            tasks: snapshot.tasks.map { TaskRow(domain: $0) },
+            events: snapshot.events.map { EventRow(domain: $0) })
+        // Best-effort: a failed cache write just means no offline snapshot next launch.
+        try? JSONEncoder().encode(cache).write(to: url, options: .atomic)
+    }
+
+    /// Decode the last cached snapshot for an offline/first-frame launch. Row DTOs
+    /// don't persist colors, so events/projects come back stamped accent — the caller
+    /// (`MobileStore`) recolors from `spaceName`, exactly like a network load.
+    static func loadCache() -> AtlasSnapshot? {
+        guard let url = cacheURL,
+              let data = try? Data(contentsOf: url),
+              let cache = try? JSONDecoder().decode(SnapshotCache.self, from: data)
+        else { return nil }
+        return AtlasSnapshot(
+            spaces: cache.spaces.map { $0.toDomain() },
+            projects: cache.projects.map { $0.toDomain() },
+            tasks: cache.tasks.map { $0.toDomain() },
+            events: cache.events.map { $0.toDomain() },
+            notes: [],
+            goals: [])
     }
 
     // MARK: - Helpers
