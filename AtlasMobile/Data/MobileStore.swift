@@ -19,6 +19,10 @@ final class MobileStore: ObservableObject {
     /// Raised by the Schedule-family deep links (`today`/`unscheduled`/`today?space`);
     /// `ScheduleView` consumes it to snap back to today, then resets it.
     @Published var scheduleFocusToday = false
+    /// Raised by a long-press on a task row (Tasks or Needs-a-time). `RootTabView`
+    /// switches to the Schedule tab; `ScheduleView` consumes it to enter grid mode
+    /// with a floating placement chip (the same path as picking in `PlaceTaskSheet`).
+    @Published var pendingPlacement: TaskItem?
     /// Last failed-write message (calm copy). Views may surface it; nil = no error.
     @Published var lastError: String?
     /// Set only when a token refresh fails and we force a sign-out; `SignInView`

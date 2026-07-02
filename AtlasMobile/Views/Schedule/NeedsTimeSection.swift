@@ -11,6 +11,8 @@ struct NeedsTimeSection: View {
     let onSetTime: (TaskItem) -> Void
     let onOpen: (TaskItem) -> Void
     let onPlace: () -> Void
+    /// Long-press (0.4 s) a row → start drag-to-place for that task.
+    let onLongPress: (TaskItem) -> Void
     var compact: Bool = false
 
     var body: some View {
@@ -82,6 +84,11 @@ struct NeedsTimeSection: View {
             .buttonStyle(.plain)
         }
         .contentShape(Rectangle())
+        // Tap opens detail; a 0.4 s long-press starts placement (haptic in-gesture).
         .onTapGesture { onOpen(task) }
+        .onLongPressGesture(minimumDuration: 0.4) {
+            MobileTheme.Haptic.tap()
+            onLongPress(task)
+        }
     }
 }

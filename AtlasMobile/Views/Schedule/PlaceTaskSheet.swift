@@ -55,23 +55,34 @@ struct PlaceTaskSheet: View {
                 .font(.system(size: 15.5, weight: .semibold, design: .rounded))
                 .foregroundStyle(MobileTheme.ink)
             Spacer()
-            if !task.dueLabel.isEmpty {
-                Text(task.dueLabel).edCapsLabel().textCase(nil).fixedSize()
+            // Recompute so a clock-timed deadline always shows its time (e.g. "Fri 5 PM").
+            let label = TaskItem.dueLabel(for: task.dueDate)
+            if !label.isEmpty {
+                Text(label).edCapsLabel().textCase(nil).fixedSize()
             }
         }
         .contentShape(Rectangle())
     }
 
-    /// Open, unscheduled, space-filtered tasks — dated (needs-a-time) first, then
-    /// no-date, each group sorted by due date then title.
+    /// Open, unscheduled, space-filtered tasks in three groups — needs-a-time
+    /// (date-only due), then deadlines (clock-timed due), then no-date — each group
+    /// sorted by due date then title. Scheduling work time for a deadline is the point.
     private var placeable: [TaskItem] {
         store.snapshot.tasks
             .filter { !$0.done && $0.scheduledAt == nil && inFilter($0.spaceName) }
             .sorted { a, b in
-                if (a.dueDate != nil) != (b.dueDate != nil) { return a.dueDate != nil }
+                let ga = group(a), gb = group(b)
+                if ga != gb { return ga < gb }
                 if let ad = a.dueDate, let bd = b.dueDate, ad != bd { return ad < bd }
                 return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
             }
+    }
+
+    /// 0 = needs-a-time (date-only due), 1 = deadline (clock-timed due), 2 = no-date.
+    private func group(_ t: TaskItem) -> Int {
+        guard let due = t.dueDate else { return 2 }
+        let c = Calendar.current.dateComponents([.hour, .minute], from: due)
+        return (c.hour ?? 0) != 0 || (c.minute ?? 0) != 0 ? 1 : 0
     }
 
     private func inFilter(_ spaceName: String) -> Bool {

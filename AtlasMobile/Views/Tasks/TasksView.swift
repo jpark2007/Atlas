@@ -233,7 +233,11 @@ struct TasksView: View {
                 }
             }
             .contentShape(Rectangle())
+            // Tap opens detail; a 0.4 s long-press hands the task to drag-to-place on
+            // the Schedule tab. Attached after the tap so a quick tap still opens detail;
+            // the CheckCircle (its own button) and the row's swipe actions are unaffected.
             .onTapGesture { detail = .task(task) }
+            .onLongPressGesture(minimumDuration: 0.4) { startPlacement(task) }
         }
     }
 
@@ -343,5 +347,11 @@ struct TasksView: View {
 
     private func delete(_ task: TaskItem) {
         Task { await store.deleteTask(id: task.id) }
+    }
+
+    /// Long-press → hand this task to the Schedule tab's drag-to-place flow.
+    private func startPlacement(_ task: TaskItem) {
+        MobileTheme.Haptic.tap()
+        store.pendingPlacement = task
     }
 }

@@ -69,8 +69,9 @@ struct ScheduleView: View {
         .sheet(item: $detail) { detail in
             ItemDetailSheet(detail: detail).environmentObject(store)
         }
-        .onAppear(perform: consumeFocusToday)
+        .onAppear { consumeFocusToday(); consumePlacement() }
         .onChange(of: store.scheduleFocusToday) { _, _ in consumeFocusToday() }
+        .onChange(of: store.pendingPlacement?.id) { _, _ in consumePlacement() }
     }
 
     // MARK: - Header
@@ -98,6 +99,13 @@ struct ScheduleView: View {
                 Spacer()
                 spaceFilterMenu
                 viewToggle
+                // Permanent placement entry — always opens PlaceTaskSheet, even on days
+                // with no "needs a time" tasks (the section header's PLACE can't).
+                Button { showPlace = true } label: {
+                    Image(systemName: "calendar.badge.plus")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(MobileTheme.ink)
+                }
                 Button { showMonth = true } label: {
                     Image(systemName: "calendar")
                         .font(.system(size: 17, weight: .medium))
@@ -176,7 +184,8 @@ struct ScheduleView: View {
                 NeedsTimeSection(tasks: needsTime,
                                  onSetTime: { timing = $0 },
                                  onOpen: { detail = .task($0) },
-                                 onPlace: { showPlace = true })
+                                 onPlace: { showPlace = true },
+                                 onLongPress: { store.pendingPlacement = $0 })
                 DayTimelineView(
                     day: selectedDay,
                     now: context.date,
@@ -205,6 +214,7 @@ struct ScheduleView: View {
                                  onSetTime: { timing = $0 },
                                  onOpen: { detail = .task($0) },
                                  onPlace: { showPlace = true },
+                                 onLongPress: { store.pendingPlacement = $0 },
                                  compact: true)
                 DayGridView(
                     day: selectedDay,
@@ -343,5 +353,13 @@ struct ScheduleView: View {
         guard store.scheduleFocusToday else { return }
         store.scheduleFocusToday = false
         selectedDay = cal.startOfDay(for: Date())
+    }
+
+    /// A long-press elsewhere set `pendingPlacement`; pick it up (grid mode + chip)
+    /// exactly like a `PlaceTaskSheet` pick, then clear it.
+    private func consumePlacement() {
+        guard let task = store.pendingPlacement else { return }
+        store.pendingPlacement = nil
+        beginPlacing(task)
     }
 }

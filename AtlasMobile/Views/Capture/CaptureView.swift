@@ -138,7 +138,7 @@ struct CaptureView: View {
                 Button { showManualAdd = true } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "plus")
-                        Text("Add a task manually")
+                        Text("Add manually")
                     }
                     .font(.system(size: 11, weight: .bold, design: .rounded))
                     .tracking(0.88)

@@ -37,6 +37,11 @@ struct RootTabView: View {
             }
             store.pendingDeepLink = nil
         }
+        // Long-press placement (from Tasks / Needs-a-time) jumps to Schedule, where
+        // ScheduleView consumes `pendingPlacement`. TaskItem isn't Equatable → key on id.
+        .onChange(of: store.pendingPlacement?.id) { _, id in
+            if id != nil { selection = .schedule }
+        }
     }
 
     @ViewBuilder

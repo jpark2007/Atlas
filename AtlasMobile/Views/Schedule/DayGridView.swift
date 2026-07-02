@@ -297,7 +297,9 @@ struct DayGridView: View {
             out.append(Block(id: ev.id, detail: .event(ev), title: ev.title,
                              color: ev.color, startMin: s, endMin: e, task: nil))
         }
-        for t in tasks where !t.done {
+        // Completed scheduled tasks STAY on the grid (fill + strikethrough via blockView)
+        // — a done work-block is history, never an instant vanish (check-off contract).
+        for t in tasks {
             guard let at = t.scheduledAt, cal.isDate(at, inSameDayAs: day) else { continue }
             let s = clampMin(minutesFromStart(at))
             let e = min(1440, s + (t.durationMin ?? 60))
