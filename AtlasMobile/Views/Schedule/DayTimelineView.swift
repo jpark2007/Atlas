@@ -89,13 +89,8 @@ struct DayTimelineView: View {
     }
 
     private func checkCircle(_ task: TaskItem) -> some View {
-        Button { onToggle(task) } label: {
-            Image(systemName: task.done ? "largecircle.fill.circle" : "circle")
-                .font(.system(size: 17, weight: .regular))
-                .foregroundStyle(task.done ? task.spaceColor : MobileTheme.faint)
-        }
-        .buttonStyle(.plain)
-        .padding(.top, 1)
+        CheckCircle(done: task.done, color: task.spaceColor) { onToggle(task) }
+            .padding(.top, 1)
     }
 
     private func trailingTag(item: AgendaItem, event: CalendarEvent?, isNow: Bool) -> some View {

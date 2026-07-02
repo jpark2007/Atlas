@@ -10,6 +10,10 @@ struct TasksView: View {
     @AppStorage("tasksGrouping") private var grouping = "project"   // "project" | "due"
     @State private var timing: TaskItem?
 
+    /// Rows checked off in this session linger ~0.9 s (strikethrough + filled
+    /// check) before sliding out, so completion is felt, not a blink.
+    @State private var justCompleted: Set<UUID> = []
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Tasks").edScreenTitle()
@@ -103,16 +107,12 @@ struct TasksView: View {
 
     private func row(_ task: TaskItem) -> some View {
         HStack(spacing: 12) {
-            Button { toggle(task) } label: {
-                Image(systemName: task.done ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(task.done ? task.spaceColor : MobileTheme.faint)
-            }
-            .buttonStyle(.plain)
+            CheckCircle(done: task.done, color: task.spaceColor) { toggle(task) }
 
             Text(task.title)
                 .font(.system(size: 15.5, weight: .semibold, design: .rounded))
-                .foregroundStyle(MobileTheme.ink)
+                .foregroundStyle(task.done ? MobileTheme.faint : MobileTheme.ink)
+                .strikethrough(task.done, color: MobileTheme.faint)
 
             Spacer(minLength: 8)
 
@@ -138,7 +138,9 @@ struct TasksView: View {
     }
 
     private var openTasks: [TaskItem] {
-        store.snapshot.tasks.filter { !$0.done && inFilter($0.spaceName) }
+        store.snapshot.tasks.filter {
+            (!$0.done || justCompleted.contains($0.id)) && inFilter($0.spaceName)
+        }
     }
 
     private var groups: [(title: String, tasks: [TaskItem])] {
@@ -155,6 +157,13 @@ struct TasksView: View {
     private func toggle(_ task: TaskItem) {
         var updated = task
         updated.done.toggle()
+        if updated.done {
+            justCompleted.insert(task.id)
+            Task {
+                try? await Task.sleep(nanoseconds: 900_000_000)
+                _ = withAnimation(MobileTheme.spring) { justCompleted.remove(task.id) }
+            }
+        }
         Task { await store.updateTask(updated) }
     }
 
