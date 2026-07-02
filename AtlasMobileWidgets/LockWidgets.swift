@@ -51,13 +51,14 @@ struct LockRectView: View {
     }
 
     // Drew's wish in one widget: a leading "how many left" count column, a thin
-    // divider, then the existing "next item" content trailing.
+    // full-height divider, then the "next item" content taking the remaining width.
+    // iOS anchors lock widgets, so the CONTENT fills the whole frame edge to edge.
     @ViewBuilder private var content: some View {
         HStack(spacing: 8) {
             VStack(spacing: 0) {
                 Text("\(snapshot.leftCount)")
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .minimumScaleFactor(0.6)
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .minimumScaleFactor(0.5)
                 Text("LEFT")
                     .font(.system(size: 8, weight: .semibold, design: .rounded))
                     .tracking(0.6)
@@ -68,8 +69,9 @@ struct LockRectView: View {
             Divider()
 
             nextUp
-            Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder private var nextUp: some View {
