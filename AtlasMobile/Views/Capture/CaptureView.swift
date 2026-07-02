@@ -93,6 +93,27 @@ struct CaptureView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Keyboard-exit: floats bottom-trailing above the controls column while typing.
+            .overlay(alignment: .bottomTrailing) {
+                if editorFocused {
+                    Button {
+                        editorFocused = false
+                        MobileTheme.Haptic.selection()
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(MobileTheme.ink)
+                            .frame(width: 40, height: 40)
+                            .background(Circle().fill(MobileTheme.bg))
+                            .overlay(Circle().strokeBorder(MobileTheme.ink, lineWidth: MobileTheme.rule))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 22)
+                    .padding(.bottom, 6)
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .animation(MobileTheme.spring, value: editorFocused)
 
             VStack(spacing: 18) {
                 if let note {

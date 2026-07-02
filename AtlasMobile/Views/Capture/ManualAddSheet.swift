@@ -26,8 +26,15 @@ struct ManualAddSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text("New task").edScreenTitle()
-                    .padding(.bottom, 24)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("New task").edScreenTitle()
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Text("Cancel").edCapsLabel()
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.bottom, 24)
 
                 field("Title") {
                     TextField("", text: $title)
@@ -60,6 +67,13 @@ struct ManualAddSheet: View {
                 .disabled(!canAdd)
                 .opacity(canAdd ? 1 : 0.4)
                 .padding(.top, 28)
+
+                if spaces.isEmpty {
+                    Text("Create a space on your Mac first — tasks need a home.")
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .foregroundStyle(MobileTheme.muted)
+                        .padding(.top, 12)
+                }
             }
             .padding(.horizontal, 28)
             .padding(.top, 28)
