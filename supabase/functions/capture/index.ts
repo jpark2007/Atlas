@@ -90,11 +90,30 @@ ${lines.join("\n")}
 (without the code/description). Otherwise omit it.`;
 }
 
-function buildSystemPrompt(spaces: ContextSpace[] | undefined): string {
-  const nowISO = new Date().toISOString();
+/**
+ * "Now" rendered in the user's timezone for the prompt, e.g.
+ * "Thursday, July 2, 2026, 3:41 PM". Falls back to UTC on a bad identifier
+ * (Intl throws RangeError) so a malformed client can't 500 the function.
+ */
+function localNow(timezone: string): { tz: string; text: string } {
+  try {
+    const text = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      weekday: "long", year: "numeric", month: "long", day: "numeric",
+      hour: "numeric", minute: "2-digit", hour12: true,
+    }).format(new Date());
+    return { tz: timezone, text };
+  } catch {
+    return { tz: "UTC", text: new Date().toISOString() };
+  }
+}
+
+function buildSystemPrompt(spaces: ContextSpace[] | undefined, timezone: string): string {
+  const now = localNow(timezone);
   return `You are Atlas, a personal life-management AI. \
-Today's date and time (UTC) is: ${nowISO}. Use this as the reference for ALL relative \
-dates ("tomorrow", "next week", "Friday", etc.). \
+The user's timezone is ${now.tz}. Right now, the user's LOCAL date and time is: ${now.text}. \
+Resolve ALL dates and times ("tomorrow", "next Friday", "tonight", "at 5:30") in the \
+user's LOCAL time first, then convert to UTC for output. \
 Given a user's free-text capture, classify it and split it into one or more items. \
 A single paragraph can contain MULTIPLE items (e.g. "essay due thursday, gym 3x this \
 week, dinner with mom sunday" → three items). Return ONLY a JSON object of the form \
@@ -106,8 +125,9 @@ Each element of "items" matches this schema:
   "title": string,            // concise, actionable title
   "spaceName": string,        // see routing rules below
   "projectName"?: string,     // if the item belongs to a specific project/class
-  "dueISO"?: string,          // Full ISO 8601 UTC datetime, e.g. "2026-06-30T00:00:00Z" (tasks)
-  "startISO"?: string,        // Full ISO 8601 UTC datetime, e.g. "2026-06-30T09:00:00Z" (events)
+  "dueISO"?: string,          // Full ISO 8601 UTC instant converted from the user's local time,
+                              // e.g. a 5:30 PM PDT deadline → "2026-07-03T00:30:00Z" (tasks)
+  "startISO"?: string,        // Full ISO 8601 UTC instant, converted the same way (events)
   "durationMin"?: number,     // duration in minutes (events, default 60 if not specified)
   "notes"?: string            // extra detail / body text (notes, or longer event notes)
 }
@@ -122,6 +142,23 @@ Rules:
 - "event" = a meeting, appointment, session, or time-bound activity
 - "note"  = a thought, idea, reference, or piece of information to remember
 - If an item is ambiguous, prefer "task".
+- STATED TIMES ARE SACRED. If the user states a clock time ("at 5:30", "by noon",
+  "8pm"), it MUST appear in dueISO (tasks) or startISO (events), converted from the
+  user's LOCAL time to UTC. NEVER return a date-only/midnight value when a time was stated.
+- If a bare clock time has no AM/PM ("at 5:30", "pick up at 7"), pick the reading a
+  person plausibly means: when the AM reading falls earlier today than the current LOCAL
+  time above, use PM (e.g. if it is already 7 AM local, "5:30 today" and "at 7" mean PM).
+- Convert to UTC by ADDING the user's offset from UTC, and let the CALENDAR DATE roll
+  forward when the local time is afternoon/evening. For a UTC-behind zone like the
+  Americas, a PM local time usually lands on the NEXT UTC day: e.g. 5:30 PM local on
+  July 2 in a UTC-7 zone → "2026-07-03T00:30:00Z" (date advances to the 3rd), and 7 PM
+  local that day → "2026-07-03T02:00:00Z". Never leave the date on the local day if the
+  UTC instant has already crossed midnight. This applies even when the user says "today":
+  a deadline "at 5:30 today" still carries the correct UTC date, which may be tomorrow.
+- A time-bound errand or commitment ("pick him up at 5:30", "call mom at 8") is an
+  "event" starting at that local time — not a floating task with no deadline.
+- A deadline WITHOUT a stated time ("due Friday") = that LOCAL day at 00:00 user-local,
+  converted to UTC.
 - Always populate kind, title, and spaceName. All other fields are optional.`;
 }
 
@@ -169,6 +206,7 @@ Deno.serve(async (req: Request) => {
   // Parse request body
   let text: string;
   let spaces: ContextSpace[] | undefined;
+  let timezone = "UTC";
   try {
     const body = await req.json();
     if (typeof body?.text !== "string" || !body.text.trim()) {
@@ -180,6 +218,9 @@ Deno.serve(async (req: Request) => {
     text = body.text.trim();
     if (Array.isArray(body.spaces)) {
       spaces = body.spaces as ContextSpace[];
+    }
+    if (typeof body.timezone === "string" && body.timezone.trim()) {
+      timezone = body.timezone.trim();
     }
   } catch {
     return new Response(
@@ -211,7 +252,7 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         model: "openai/gpt-4o-mini",
         messages: [
-          { role: "system", content: buildSystemPrompt(spaces) },
+          { role: "system", content: buildSystemPrompt(spaces, timezone) },
           { role: "user", content: text },
         ],
         response_format: { type: "json_object" },
