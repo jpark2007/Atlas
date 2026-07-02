@@ -59,19 +59,22 @@ sources, timezone-correct capture, space-color system, motion/haptics, capture h
 pill). Capture edge function is deployed + timezone-aware. Drew TestFlight-tested; feedback
 became Wave 3.
 
-Order of operations from here:
-1. **Wave 3 — mobile fix/UX wave** (spec: docs/superpowers/specs/, no user review gate —
-   Drew tests on device; NO simulator pass this wave, code review + builds only).
-   Then **push the branch** and Drew sends Jonah the TestFlight build.
-2. **Server-side Google Calendar sync** — Supabase cron edge function + server-held Google
-   tokens; Mac ↔ Google ↔ iPhone all live-sync with nothing open. Free plan suffices.
-   (Un-parked from the monetization doc; calendar scope only, no CASA needed for testing.)
-3. **Google Docs ↔ notes link**, then **Canvas ICS** (adds task volume — mobile month
-   dots/lists must stay legible at scale).
-4. **Landing page** (new docket item): prelaunch/beta positioning, needed anyway for
-   privacy policy + ToS before App Store. Cool scroll animation (three.js ok), app
-   screenshots or generated visuals — Claude's call on direction.
-5. Publish the app after that.
+Order of operations from here (updated after Wave 3 + W4 mini-wave SHIPPED @ 035a975 —
+mobile v1 feature-final, pushed; Drew archives → TestFlight → Jonah):
+1. **Server-side Google Calendar sync** — THE FOUNDATION: Supabase cron edge function,
+   server-held Google tokens, sync-state tables, dedupe/conflict rules. Mac ↔ Google ↔
+   iPhone live-sync with nothing open. Free plan suffices. (Calendar scope only, no CASA
+   needed for personal/testing use.)
+2. **Canvas ICS sync** — server-side on the SAME cron rails (ICS feed URL, no OAuth:
+   fetch → parse → upsert). Cheapest project once #1 exists. Its task volume unlocks the
+   parked mobile items (search, real project grouping, post-commit undo) which land with it.
+3. **Google Docs ↔ notes link** — extends #1's server-held tokens with the Drive read
+   scope, then mostly Mac-side UX. Sequenced last of the three to let the Jonah
+   monetization/architecture talk settle.
+4. **Landing page** — independent web work (prelaunch/beta positioning; privacy policy +
+   ToS required before App Store; scroll animation, three.js ok — Claude's call on
+   direction). Runs IN PARALLEL with any of the above.
+5. Publish the app after that (and after the Mac revamp).
 
 Design language name (for the Jonah pitch): **Editorial Minimal** — paper bg, ink
 typography, no card chrome, clay brand accent, space colors = meaning.
