@@ -37,6 +37,39 @@ final class AppState: ObservableObject {
     /// Wire the Google account in so event write-back can reach it.
     func attachGoogle(_ auth: GoogleAuthService) { googleAuth = auth }
 
+    // MARK: - Server-owned Google sync (cloud sync)
+
+    private static let serverSyncKey = "calendar.sync.serverOwned"
+
+    /// True when the **server** owns Google↔DB sync — the Mac then makes ZERO Google
+    /// API calls (single-owner invariant): every write-back / backfill / reap / poll
+    /// path short-circuits, and Google events arrive as DB rows via `loadAll()`.
+    /// Persisted so it is authoritative from launch (before the bootstrap select
+    /// returns); re-derived from `google_connections.status` at bootstrap and flipped
+    /// by the Settings "Sync in the cloud" toggle. When false: exactly today's behavior.
+    @Published var serverSyncEnabled: Bool = UserDefaults.standard.bool(forKey: AppState.serverSyncKey) {
+        didSet { UserDefaults.standard.set(serverSyncEnabled, forKey: AppState.serverSyncKey) }
+    }
+
+    /// Snapshot of the user's `google_connections` row (nil = no cloud connection).
+    /// Drives Settings' "Last synced Xm ago" / error + Reconnect UI.
+    @Published var googleConnection: GoogleConnectionRow?
+
+    /// Re-reads the cloud connection and updates the server-owned gate. Server-owned
+    /// whenever a connection exists and isn't `revoked` (see `GoogleConnectionRow`).
+    /// Never throws to the caller and never flips to a state that could create a
+    /// second Google writer: on a read failure the persisted gate is left untouched.
+    func refreshGoogleConnection() async {
+        guard let db else { return }
+        do {
+            let conn = try await db.loadGoogleConnection()
+            self.googleConnection = conn
+            self.serverSyncEnabled = conn?.isServerOwned ?? false
+        } catch {
+            print("[AtlasDB] google_connections read failed — keeping current sync mode. Error: \(error.localizedDescription)")
+        }
+    }
+
     /// Guards against double-bootstrap if `bootstrap(db:)` is called more than once.
     private var didBootstrap = false
 
@@ -159,6 +192,9 @@ final class AppState: ObservableObject {
             // Keep existing in-memory MockData — never blank the UI on a DB error.
             print("[AtlasDB] bootstrap failed — keeping MockData. Error: \(error.localizedDescription)")
         }
+
+        // Re-derive server-owned Google sync mode from the cloud connection.
+        await refreshGoogleConnection()
     }
 
     func project(_ id: UUID) -> Project? {
@@ -406,7 +442,8 @@ final class AppState: ObservableObject {
     /// first schedule, patch on reschedule — storing the returned id on the task. Gated by
     /// the sync toggle. The task's *deadline* is never pushed (deadlines stay Atlas-native).
     private func pushWorkBlockToGoogle(taskID: UUID) {
-        guard UserDefaults.standard.bool(forKey: "calendar.google.enabled"),
+        guard !serverSyncEnabled,  // single-owner: server mirrors work-blocks when active
+              UserDefaults.standard.bool(forKey: "calendar.google.enabled"),
               let auth = googleAuth, auth.isConnected,
               let i = tasks.firstIndex(where: { $0.id == taskID }),
               let at = tasks[i].scheduledAt else { return }
@@ -528,14 +565,17 @@ final class AppState: ObservableObject {
     /// Patches an edited Google-origin event back to Google. Always appropriate when
     /// connected (the event came from Google) — not gated on the new-events picker.
     private func pushExternalGoogleEdit(_ event: CalendarEvent, googleEventID gid: String) {
-        guard let auth = googleAuth, auth.isConnected else { return }
+        // Single-owner: in server mode the edit persists to Supabase and the server
+        // reconciles it to Google — the Mac must not PATCH Google directly.
+        guard !serverSyncEnabled, let auth = googleAuth, auth.isConnected else { return }
         let service = GoogleCalendarService(auth: auth)
         Task { try? await service.updateEvent(googleEventID: gid, event) }
     }
 
     /// Deletes a Google-origin event on Google (when the user deletes it in Atlas).
     private func deleteGoogleEvent(googleEventID gid: String) {
-        guard let auth = googleAuth, auth.isConnected else { return }
+        // Single-owner: in server mode the Supabase delete drives the Google delete.
+        guard !serverSyncEnabled, let auth = googleAuth, auth.isConnected else { return }
         let service = GoogleCalendarService(auth: auth)
         Task { try? await service.deleteEvent(googleEventID: gid) }
     }
@@ -561,6 +601,9 @@ final class AppState: ObservableObject {
 
     /// True only for user-created events while the account is connected.
     private func shouldWriteBack(_ event: CalendarEvent) -> Bool {
+        // Single-owner invariant: when the server owns Google↔DB sync, the Mac never
+        // writes to Google. Gates the new / update / delete push paths below.
+        guard !serverSyncEnabled else { return false }
         guard let auth = googleAuth, auth.isConnected else { return false }
         // Gated by the single "Sync calendar with Google" toggle (calendar.google.enabled).
         guard UserDefaults.standard.bool(forKey: "calendar.google.enabled") else { return false }
@@ -572,6 +615,8 @@ final class AppState: ObservableObject {
     /// new events. Safe to call repeatedly: events that gained an id are skipped, and the
     /// reaper's pre-fetch snapshot guards a just-backfilled event from an in-flight pull.
     func backfillEventsToGoogle() {
+        // Single-owner: when the server owns sync it does the backfill, not the Mac.
+        guard !serverSyncEnabled else { return }
         for event in events where event.source == .atlas && event.googleEventId == nil {
             pushNewEventToGoogle(event)
         }

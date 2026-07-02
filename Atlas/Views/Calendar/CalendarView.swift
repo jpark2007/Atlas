@@ -442,7 +442,10 @@ struct CalendarView: View {
     /// a source toggles. External events NEVER enter `state.events`.
     private func loadAppleEventsIfNeeded() {
         let wantApple = appleCalendarEnabled && ekService.authorizationStatus() == .fullAccess
-        let wantGoogle = googleCalendarEnabled && googleAuth.isConnected
+        // Single-owner: when the server owns Google↔DB sync the Mac makes ZERO Google
+        // calls — no live pull, no reap, no `externalEvents` merge for Google. Google
+        // events instead arrive as `events` rows via `loadAll()`. Apple stays live here.
+        let wantGoogle = googleCalendarEnabled && googleAuth.isConnected && !state.serverSyncEnabled
         guard wantApple || wantGoogle else {
             state.externalEvents = []
             return

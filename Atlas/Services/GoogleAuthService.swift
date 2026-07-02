@@ -2,6 +2,7 @@ import Foundation
 import CryptoKit
 import Network
 import AppKit
+import AtlasCore
 
 // MARK: - Config
 
@@ -62,6 +63,7 @@ enum GoogleAuthError: LocalizedError, Equatable {
     case authorizationFailed(String)
     case stateMismatch
     case tokenExchangeFailed(String)
+    case serverSyncFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -75,6 +77,8 @@ enum GoogleAuthError: LocalizedError, Equatable {
             return "Google sign-in returned a mismatched state (possible CSRF) — try again."
         case .tokenExchangeFailed(let body):
             return "Google token exchange failed: \(body)"
+        case .serverSyncFailed(let body):
+            return "Cloud sync handoff failed: \(body)"
         }
     }
 }
@@ -288,6 +292,44 @@ final class GoogleAuthService: ObservableObject {
         tokens = nil
         GoogleKeychain.delete()
         errorMessage = nil
+    }
+
+    // MARK: Server-sync handoff
+
+    /// The Keychain refresh token, for handing off to the server-side sync. Nil when
+    /// not connected or when Google issued no refresh token.
+    var currentRefreshToken: String? { tokens?.refreshToken }
+
+    /// Hands the Keychain refresh token to the `google-connect` edge function so the
+    /// Supabase cron can own Google↔DB sync while every Atlas client is closed. `jwt`
+    /// is the caller's Supabase user access token (verified server-side by `auth.getUser`).
+    /// Throws on any non-2xx so the caller can stay in local mode + show a calm error.
+    func enableServerSync(jwt: String) async throws {
+        guard let refresh = tokens?.refreshToken else { throw GoogleAuthError.notConnected }
+        try await callConnect(method: "POST", jwt: jwt,
+                              body: try JSONSerialization.data(withJSONObject: ["refreshToken": refresh]))
+    }
+
+    /// Disconnects the server-side sync (`google-connect` DELETE) → returns to local mode.
+    func disableServerSync(jwt: String) async throws {
+        try await callConnect(method: "DELETE", jwt: jwt, body: nil)
+    }
+
+    private func callConnect(method: String, jwt: String, body: Data?) async throws {
+        let url = SupabaseConfig.functionsBase.appendingPathComponent("google-connect")
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue(SupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+        }
+        let (data, response) = try await urlSession.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let detail = String(data: data, encoding: .utf8) ?? "(no body)"
+            throw GoogleAuthError.serverSyncFailed(detail)
+        }
     }
 
     // MARK: Token access

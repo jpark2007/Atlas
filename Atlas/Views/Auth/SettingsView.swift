@@ -29,6 +29,10 @@ struct SettingsView: View {
     @State private var appleAccessGranted: Bool = false
     @State private var appleAccessChecked: Bool = false
 
+    // MARK: – Cloud-sync (server-owned) state
+    @State private var cloudSyncWorking = false
+    @State private var cloudSyncError: String? = nil
+
     private let ekService = EventKitService()
 
     var body: some View {
@@ -301,6 +305,13 @@ struct SettingsView: View {
                     .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
             )
 
+            // ── Sync in the cloud (server-owned) ────────────────────────
+            // Only when Google is connected locally: hands the refresh token to
+            // the server so sync runs with every Atlas client closed.
+            if googleAuth.isConnected {
+                cloudSyncRow
+            }
+
             // ── Default space mapping ──────────────────────────────────
             if !state.spaces.isEmpty {
                 HStack {
@@ -415,6 +426,140 @@ struct SettingsView: View {
         }
         if googleAuth.errorMessage != nil { return AtlasTheme.Colors.danger }
         return AtlasTheme.Colors.textMuted
+    }
+
+    // MARK: – Cloud sync (server-owned) row
+
+    private var cloudSyncRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: "cloud.fill")
+                    .foregroundStyle(AtlasTheme.Colors.accent)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sync in the cloud")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text(cloudSyncSubtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(cloudSyncSubtitleColor)
+                }
+                Spacer()
+                if cloudSyncWorking {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Toggle("", isOn: cloudSyncBinding)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .tint(AtlasTheme.Colors.accent)
+                }
+            }
+            // A degraded server connection (error/revoked) keeps the row so the user
+            // can restore it. A clean user-disconnect clears it (no nag).
+            if let conn = state.googleConnection, conn.status != "active" {
+                Button(cloudSyncWorking ? "Reconnecting…" : "Reconnect") { reconnectCloudSync() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(AtlasTheme.Colors.accent)
+                    .disabled(cloudSyncWorking)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
+        )
+    }
+
+    private var cloudSyncSubtitle: String {
+        if let err = cloudSyncError { return err }
+        switch state.googleConnection?.status {
+        case "active":
+            if let synced = state.googleConnection?.lastSyncedDate {
+                return "Last synced \(Self.relativeSync(from: synced))."
+            }
+            return "On — syncing in the cloud, even with Atlas closed."
+        case "error":
+            return "Sync paused — reconnect to resume cloud sync."
+        case "revoked":
+            return "Disconnected on the server — reconnect to resume."
+        default:
+            return "On to keep your calendar in sync with Atlas closed."
+        }
+    }
+
+    private var cloudSyncSubtitleColor: Color {
+        if cloudSyncError != nil { return AtlasTheme.Colors.danger }
+        switch state.googleConnection?.status {
+        case "active":            return AtlasTheme.Colors.green
+        case "error", "revoked":  return AtlasTheme.Colors.danger
+        default:                  return AtlasTheme.Colors.textMuted
+        }
+    }
+
+    /// Drives the toggle: flipping it runs the async connect/disconnect. The visible
+    /// state only changes after the network call succeeds, so a failure leaves the
+    /// mode untouched (calm error, no flip).
+    private var cloudSyncBinding: Binding<Bool> {
+        Binding(
+            get: { state.serverSyncEnabled },
+            set: { on in if on { enableCloudSync() } else { disableCloudSync() } }
+        )
+    }
+
+    private func enableCloudSync() {
+        guard let jwt = auth.session?.accessToken else {
+            cloudSyncError = "Sign in to Atlas to enable cloud sync."
+            return
+        }
+        guard googleAuth.currentRefreshToken != nil else {
+            cloudSyncError = "Reconnect Google above, then try again."
+            return
+        }
+        cloudSyncError = nil
+        cloudSyncWorking = true
+        Task {
+            do {
+                try await googleAuth.enableServerSync(jwt: jwt)
+                await state.refreshGoogleConnection()   // re-derive server-owned mode
+            } catch {
+                cloudSyncError = "Couldn't turn on cloud sync. Check your connection and try again."
+            }
+            cloudSyncWorking = false
+        }
+    }
+
+    private func disableCloudSync() {
+        guard let jwt = auth.session?.accessToken else {
+            cloudSyncError = "Sign in to Atlas to change cloud sync."
+            return
+        }
+        cloudSyncError = nil
+        cloudSyncWorking = true
+        Task {
+            do {
+                try await googleAuth.disableServerSync(jwt: jwt)
+                state.serverSyncEnabled = false
+                state.googleConnection = nil            // clean disconnect: no Reconnect nag
+            } catch {
+                cloudSyncError = "Couldn't turn off cloud sync. Check your connection and try again."
+            }
+            cloudSyncWorking = false
+        }
+    }
+
+    private func reconnectCloudSync() { enableCloudSync() }
+
+    /// Short relative label for "Last synced Xm ago".
+    private static func relativeSync(from date: Date) -> String {
+        let secs = max(0, Int(Date().timeIntervalSince(date)))
+        if secs < 60 { return "just now" }
+        let mins = secs / 60
+        if mins < 60 { return "\(mins)m ago" }
+        let hrs = mins / 60
+        if hrs < 24 { return "\(hrs)h ago" }
+        return "\(hrs / 24)d ago"
     }
 
     // MARK: – Calendar helpers

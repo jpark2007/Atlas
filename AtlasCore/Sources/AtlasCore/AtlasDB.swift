@@ -410,6 +410,49 @@ public struct GoalRow: Codable {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GoogleConnectionRow — server-owned Google sync state (read-only for the client)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A row from `google_connections` (migration `0006`). Present only when the user
+/// has enabled cloud sync. The client may read only the owner-granted columns —
+/// `vault_secret_id` is intentionally NOT granted, so a `select=*` would 403;
+/// `loadGoogleConnection()` selects explicit columns instead.
+///
+/// `lastSyncedAt` is decoded as a String because the server writes it with `now()`
+/// (microsecond precision) which the app's plain `.iso8601` decoder can't parse;
+/// `lastSyncedDate` parses it leniently for the UI.
+public struct GoogleConnectionRow: Codable {
+    public var status: String            // active | error | revoked
+    public var lastSyncedAt: String?
+    public var lastError: String?
+    public var calendarId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case lastSyncedAt = "last_synced_at"
+        case lastError    = "last_error"
+        case calendarId   = "calendar_id"
+    }
+
+    /// The server owns Google↔DB sync whenever a connection exists and hasn't been
+    /// revoked. `error` still counts as server-owned: the server holds the credential
+    /// and keeps retrying, so the Mac must stay stood down (single-owner invariant).
+    /// Only `revoked` (deliberate disconnect or `invalid_grant`) hands Google back to
+    /// the Mac's local sync.
+    public var isServerOwned: Bool { status != "revoked" }
+
+    /// `lastSyncedAt` parsed leniently (with or without fractional seconds).
+    public var lastSyncedDate: Date? {
+        guard let s = lastSyncedAt else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: s) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: s)
+    }
+}
+
 // MARK: - AtlasDB PostgREST Client
 
 /// Thin async PostgREST client. All requests mirror the `SupabaseAuth.request(...)` pattern:
@@ -453,6 +496,27 @@ public final class AtlasDB {
         req.setValue(SupabaseConfig.anonKey,               forHTTPHeaderField: "apikey")
         req.setValue("application/json",                   forHTTPHeaderField: "Accept")
         req.setValue("Bearer \(sess.accessToken)",         forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        try validate(response: response, data: data)
+        return try isoDecoder.decode([T].self, from: data)
+    }
+
+    /// GET `<restBase>/<table>?select=<columns>` and decode the JSON array. Used
+    /// where a `select=*` would be rejected because RLS column-grants hide some
+    /// columns (e.g. `google_connections.vault_secret_id`).
+    private func getColumns<T: Decodable>(_ table: String, columns: String) async throws -> [T] {
+        let sess = try requireSession()
+        var comps = URLComponents(
+            url: SupabaseConfig.restBase.appendingPathComponent(table),
+            resolvingAgainstBaseURL: false)!
+        comps.queryItems = [URLQueryItem(name: "select", value: columns)]
+
+        var req = URLRequest(url: comps.url!)
+        req.httpMethod = "GET"
+        req.setValue(SupabaseConfig.anonKey,       forHTTPHeaderField: "apikey")
+        req.setValue("application/json",           forHTTPHeaderField: "Accept")
+        req.setValue("Bearer \(sess.accessToken)", forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await URLSession.shared.data(for: req)
         try validate(response: response, data: data)
@@ -519,6 +583,16 @@ public final class AtlasDB {
             notes:    nr.map { $0.toDomain() },
             goals:    gr.map { $0.toDomain() }
         )
+    }
+
+    /// Reads the caller's `google_connections` row (server-owned Google sync state),
+    /// or nil when the user has no cloud connection. Selects only the owner-granted
+    /// columns; RLS scopes the query to the signed-in user.
+    public func loadGoogleConnection() async throws -> GoogleConnectionRow? {
+        let rows: [GoogleConnectionRow] = try await getColumns(
+            "google_connections",
+            columns: "status,last_synced_at,last_error,calendar_id")
+        return rows.first
     }
 
     /// Seed all tables from a snapshot (first-run). Upserts each row so it is safe
