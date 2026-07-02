@@ -159,6 +159,10 @@ Rules:
   "event" starting at that local time — not a floating task with no deadline.
 - A deadline WITHOUT a stated time ("due Friday") = that LOCAL day at 00:00 user-local,
   converted to UTC.
+- TITLES ARE CLEAN. The title must NOT contain the date/time words you parsed into
+  dueISO/startISO — strip phrases like "due next friday", "on friday", "at 5:30",
+  "tomorrow", "tonight" and leave a bare noun/verb phrase: "essay due next friday" →
+  "Essay"; "pick up Sam at 5:30" → "Pick up Sam"; "math exam on friday" → "Math exam".
 - Always populate kind, title, and spaceName. All other fields are optional.`;
 }
 
