@@ -201,6 +201,19 @@ function interval(start?: GTime, end?: GTime): { start: string; end: string; all
   return null;
 }
 
+// Text-field normalization. Google and the DB disagree on "empty": Google serializes
+// a blank description as "" while a never-set DB column is null. Treating those as
+// different made a just-pulled, untouched Google row (description:"" vs notes:null)
+// look locally edited, so PUSH re-PATCHed it back — the incident that aborted a run
+// on an immutable birthday. Canonicalize null / undefined / "" to a single value.
+function normText(v: string | null | undefined): string {
+  return v == null ? "" : v;
+}
+/** Google text → canonical DB form: empty/undefined description stored as NULL. */
+function normNotes(v: string | null | undefined): string | null {
+  return v == null || v === "" ? null : v;
+}
+
 /** Google write-body for insert/patch (mirrors GoogleCalendarMapper.eventBody). */
 function googleEventBody(row: EventRow): Record<string, unknown> {
   const body: Record<string, unknown> = { summary: row.title ?? "" };
@@ -226,10 +239,10 @@ interface MappedGoogle {
 function contentMatches(row: EventRow, u: MappedGoogle): boolean {
   const sameStart = row.start_at != null && new Date(row.start_at).getTime() === new Date(u.fields.start).getTime();
   const sameEnd = row.end_at != null && new Date(row.end_at).getTime() === new Date(u.fields.end).getTime();
-  return (row.title ?? "") === u.title &&
+  return normText(row.title) === normText(u.title) &&
     sameStart && sameEnd &&
     (!!row.is_all_day) === u.fields.allDay &&
-    ((row.notes ?? null) === u.notes);
+    normText(row.notes) === normText(u.notes);
 }
 
 // ── Google token refresh ────────────────────────────────────────
@@ -375,7 +388,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     upserts.set(gid, {
       fields: iv,
       title: ev.summary ?? "Untitled",
-      notes: ev.description ?? null,
+      notes: normNotes(ev.description),
       googleUpdated: new Date(gUpdatedISO).getTime(),
       googleUpdatedISO: gUpdatedISO,
     });
@@ -452,8 +465,10 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
       });
     } else {
       if (!defaultSpace) continue; // no space to file it under — skip insert (space_name is NOT NULL)
+      const newId = crypto.randomUUID();
+      syncTouched.add(newId); // just-pulled Google-origin row — never echo it back to Google this run
       inserts.push({
-        id: crypto.randomUUID(),
+        id: newId,
         user_id: userId,
         space_name: defaultSpace,
         title: u.title,
@@ -510,30 +525,56 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
   const { data: pushRows, error: pushErr } = await pushQ;
   if (pushErr) throw new Error(`push select failed: ${pushErr.message}`);
 
+  // Per-event push isolation: a single PATCH/POST failure records here and the loop
+  // CONTINUES. A per-event failure is NOT a run failure — the run still advances the
+  // sync token, stamps last_synced_at and clears the claim (step 5), recording a
+  // summary in last_error. This is why one immutable birthday no longer aborts the
+  // whole run and strands the connection in status='error'.
+  const pushErrors: { id: string; message: string }[] = [];
+
   for (const row of (pushRows ?? []) as EventRow[]) {
-    if (syncTouched.has(row.id)) continue; // just written by the pull this run
+    if (syncTouched.has(row.id)) continue; // just written by the pull this run (incl. fresh inserts)
     if (row.google_event_id) {
       // Already mirrored → PATCH (origin or not; the local edit is the newer side).
       result.pushedUpdated++;
       if (!dryRun) {
-        const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendar_id)}/events/${encodeURIComponent(row.google_event_id)}`, {
-          method: "PATCH",
-          headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify(googleEventBody(row)),
-        });
-        if (res.ok) {
-          const patched = await res.json();
-          // Record Google's new `updated` and freeze updated_at=runStart so the
-          // echo is gated on the next pull and this row isn't re-selected next run.
-          await admin
-            .from("events")
-            .update({ google_updated_at: patched.updated ?? null, updated_at: runStartISO })
-            .eq("id", row.id)
-            .eq("updated_at", row.updated_at);
-        } else if (res.status !== 404 && res.status !== 410) {
-          throw new Error(`google patch ${res.status}: ${(await res.text()).slice(0, 200)}`);
+        try {
+          const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendar_id)}/events/${encodeURIComponent(row.google_event_id)}`, {
+            method: "PATCH",
+            headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify(googleEventBody(row)),
+          });
+          if (res.ok) {
+            const patched = await res.json();
+            // Record Google's new `updated` and freeze updated_at=runStart so the
+            // echo is gated on the next pull and this row isn't re-selected next run.
+            await admin
+              .from("events")
+              .update({ google_updated_at: patched.updated ?? null, updated_at: runStartISO })
+              .eq("id", row.id)
+              .eq("updated_at", row.updated_at);
+          } else if (res.status === 404 || res.status === 410) {
+            // gone on Google; leave the row for a future pull cancellation.
+          } else {
+            const text = (await res.text()).slice(0, 200);
+            // Immutable event types (birthdays, etc.) reject PATCH with 400
+            // eventTypeRestriction. They are API-immutable, so freeze the row so it
+            // never re-qualifies — google_updated_at ≥ Google's own `updated` gates
+            // the pull, updated_at=runStart (≤ next last_synced_at) gates the push —
+            // and NEVER retry it.
+            if (res.status === 400 && text.includes("eventTypeRestriction")) {
+              const pulledUpdated = upserts.get(row.google_event_id)?.googleUpdatedISO ?? new Date().toISOString();
+              await admin
+                .from("events")
+                .update({ google_updated_at: pulledUpdated, updated_at: runStartISO })
+                .eq("id", row.id)
+                .eq("updated_at", row.updated_at);
+            }
+            throw new Error(`google patch ${res.status}: ${text}`);
+          }
+        } catch (e) {
+          pushErrors.push({ id: row.id, message: String((e as Error)?.message ?? e).slice(0, 200) });
         }
-        // 404/410 → gone on Google; leave the row for a future pull cancellation.
       }
     } else if (row.google_origin) {
       // Un-mirrored (detached) origin row → NEVER re-create on Google (no resurrection).
@@ -542,37 +583,47 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
       // Not yet mirrored Atlas row → create with a deterministic id (idempotent).
       result.pushedNew++;
       if (!dryRun) {
-        const gid = uuidToGoogleId(row.id);
-        const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendar_id)}/events`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ ...googleEventBody(row), id: gid }),
-        });
-        let googleUpdated: string | null = null;
-        if (res.ok) {
-          const created = await res.json();
-          googleUpdated = created.updated ?? null;
-        } else if (res.status !== 409) {
-          // 409 = identifier already exists ⇒ a prior POST landed but write-back
-          // didn't; treat as success (the next pull sets google_updated_at). Any
-          // other non-2xx is a real error.
-          throw new Error(`google insert ${res.status}: ${(await res.text()).slice(0, 200)}`);
+        try {
+          const gid = uuidToGoogleId(row.id);
+          const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendar_id)}/events`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ ...googleEventBody(row), id: gid }),
+          });
+          let googleUpdated: string | null = null;
+          if (res.ok) {
+            const created = await res.json();
+            googleUpdated = created.updated ?? null;
+          } else if (res.status !== 409) {
+            // 409 = identifier already exists ⇒ a prior POST landed but write-back
+            // didn't; treat as success (the next pull sets google_updated_at). Any
+            // other non-2xx is a real error.
+            throw new Error(`google insert ${res.status}: ${(await res.text()).slice(0, 200)}`);
+          }
+          // Write the (deterministic) id back and freeze updated_at so we don't re-push.
+          // Optimistic on updated_at: if a concurrent edit bumped it, this no-ops and
+          // the next run re-POSTs the SAME id → 409 → converges (no duplicate).
+          const patch: Record<string, unknown> = { google_event_id: gid, updated_at: runStartISO };
+          if (googleUpdated) patch.google_updated_at = googleUpdated;
+          await admin.from("events").update(patch).eq("id", row.id).eq("updated_at", row.updated_at);
+        } catch (e) {
+          pushErrors.push({ id: row.id, message: String((e as Error)?.message ?? e).slice(0, 200) });
         }
-        // Write the (deterministic) id back and freeze updated_at so we don't re-push.
-        // Optimistic on updated_at: if a concurrent edit bumped it, this no-ops and
-        // the next run re-POSTs the SAME id → 409 → converges (no duplicate).
-        const patch: Record<string, unknown> = { google_event_id: gid, updated_at: runStartISO };
-        if (googleUpdated) patch.google_updated_at = googleUpdated;
-        await admin.from("events").update(patch).eq("id", row.id).eq("updated_at", row.updated_at);
       }
     }
   }
 
-  // 5. Advance the cursor and release the lease (success only; skipped in dryRun).
+  // 5. Advance the cursor and release the lease. Per-event push failures DON'T fail
+  //    the run — they complete it and record a truncated summary in last_error, and
+  //    status stays 'active' so the connection keeps syncing.
+  const pushErrorSummary = pushErrors.length > 0
+    ? `push: ${pushErrors.length} event error(s): ${pushErrors.map((e) => `${e.id} ${e.message}`).join(" | ")}`.slice(0, 500)
+    : null;
+  if (pushErrorSummary) result.error = pushErrorSummary;
   if (!dryRun) {
     const { error } = await admin
       .from("google_connections")
-      .update({ sync_token: newSyncToken, last_synced_at: runStartISO, status: "active", last_error: null, claimed_until: null })
+      .update({ sync_token: newSyncToken, last_synced_at: runStartISO, status: "active", last_error: pushErrorSummary, claimed_until: null })
       .eq("user_id", userId);
     if (error) throw new Error(`connection update failed: ${error.message}`);
   }
@@ -617,7 +668,7 @@ Deno.serve(async (req: Request) => {
     const r = await admin
       .from("google_connections")
       .select("user_id, vault_secret_id, calendar_id, sync_token, last_synced_at")
-      .eq("status", "active")
+      .in("status", ["active", "error"]) // mirror claim_google_sync_users (0010): error connections self-heal
       .order("last_synced_at", { ascending: true, nullsFirst: true })
       .limit(BATCH_LIMIT);
     conns = r.data as Connection[] | null;
