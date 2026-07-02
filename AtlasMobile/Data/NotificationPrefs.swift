@@ -4,7 +4,7 @@ import Foundation
 /// (RawRepresentable below) under the key `notificationPrefs`. Task 8's
 /// `NotificationScheduler` reads the same key and maps this into
 /// `NotificationPlanner.Prefs` field-for-field.
-struct NotificationPrefs: Codable, Equatable {
+struct NotificationPrefs: Equatable {
     var enabled: Bool          // master
     var events: Bool
     var tasksDue: Bool
@@ -29,15 +29,38 @@ struct NotificationPrefs: Codable, Equatable {
 }
 
 // Allow `@AppStorage("notificationPrefs") var prefs = NotificationPrefs.default`.
+// NOTE: the type itself must NOT be Codable — combined with RawRepresentable,
+// Swift's stdlib `RawRepresentable.encode(to:)` witness makes `rawValue` ↔
+// `JSONEncoder.encode(self)` mutually recursive (stack-overflow crash at
+// launch). JSON goes through the private `Stored` mirror instead.
 extension NotificationPrefs: RawRepresentable {
+    private struct Stored: Codable {
+        var enabled: Bool
+        var events: Bool
+        var tasksDue: Bool
+        var digest: Bool
+        var overdue: Bool
+        var leadMinutes: Int
+        var digestHour: Int
+        var digestMinute: Int
+        var spaceIds: [UUID]?
+    }
+
     init?(rawValue: String) {
         guard let data = rawValue.data(using: .utf8),
-              let decoded = try? JSONDecoder().decode(NotificationPrefs.self, from: data) else { return nil }
-        self = decoded
+              let s = try? JSONDecoder().decode(Stored.self, from: data) else { return nil }
+        self = NotificationPrefs(
+            enabled: s.enabled, events: s.events, tasksDue: s.tasksDue,
+            digest: s.digest, overdue: s.overdue, leadMinutes: s.leadMinutes,
+            digestHour: s.digestHour, digestMinute: s.digestMinute, spaceIds: s.spaceIds)
     }
 
     var rawValue: String {
-        guard let data = try? JSONEncoder().encode(self),
+        let s = Stored(
+            enabled: enabled, events: events, tasksDue: tasksDue,
+            digest: digest, overdue: overdue, leadMinutes: leadMinutes,
+            digestHour: digestHour, digestMinute: digestMinute, spaceIds: spaceIds)
+        guard let data = try? JSONEncoder().encode(s),
               let string = String(data: data, encoding: .utf8) else { return "{}" }
         return string
     }

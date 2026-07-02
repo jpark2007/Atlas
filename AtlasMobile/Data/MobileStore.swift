@@ -77,17 +77,33 @@ final class MobileStore: ObservableObject {
         loading = true
         defer { loading = false }
         do {
-            snapshot = try await db.loadAll()
+            snapshot = recolored(try await db.loadAll())
         } catch AtlasDBError.requestFailed(401, _), AtlasDBError.notAuthenticated {
             if let fresh = await sessionStore.forceRefresh() {
                 session = fresh
-                snapshot = (try? await db.loadAll()) ?? snapshot
+                if let reloaded = try? await db.loadAll() { snapshot = recolored(reloaded) }
             } else {
                 signOut()
             }
         } catch {
             // Keep the existing snapshot; a later refresh retries.
         }
+    }
+
+    /// `EventRow.toDomain()` stamps every event `AtlasTheme.Colors.accent` and
+    /// leaves re-deriving the real color to the client (the Mac does it in
+    /// AppState bootstrap). Without this, every event dot renders accent
+    /// instead of its space color.
+    private func recolored(_ snap: AtlasSnapshot) -> AtlasSnapshot {
+        var s = snap
+        s.events = s.events.map { event in
+            var e = event
+            if let space = s.spaces.first(where: {
+                $0.name.caseInsensitiveCompare(e.spaceName) == .orderedSame
+            }) { e.color = space.color }
+            return e
+        }
+        return s
     }
 
     // MARK: - Mutations (optimistic local write, then persist)
