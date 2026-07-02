@@ -105,21 +105,29 @@ struct CaptureResultCard: View {
     // MARK: - Row
 
     private func row(_ draft: Binding<DraftItem>) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(draft.wrappedValue.title)
-                .font(.system(size: 15.5, weight: .semibold, design: .rounded))
-                .foregroundStyle(MobileTheme.ink)
+        HStack(alignment: .top, spacing: 12) {
+            // Space-color edge (spec §4): routing is visible at a glance.
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(color(for: draft.wrappedValue.spaceName))
+                .frame(width: 3)
+                .padding(.vertical, 2)
 
-            HStack(spacing: 10) {
-                spaceMenu(draft)
-                dot
-                Text(draft.wrappedValue.kind)
-                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                    .tracking(0.84).textCase(.uppercase)
-                    .foregroundStyle(MobileTheme.muted)
-                dot
-                Button { editingDueID = draft.wrappedValue.id } label: { dueLabel(draft.wrappedValue) }
-                    .buttonStyle(.plain)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(draft.wrappedValue.title)
+                    .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MobileTheme.ink)
+
+                HStack(spacing: 10) {
+                    spaceMenu(draft)
+                    dot
+                    Text(draft.wrappedValue.kind)
+                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                        .tracking(0.84).textCase(.uppercase)
+                        .foregroundStyle(MobileTheme.muted)
+                    dot
+                    Button { editingDueID = draft.wrappedValue.id } label: { dueLabel(draft.wrappedValue) }
+                        .buttonStyle(.plain)
+                }
             }
         }
     }
