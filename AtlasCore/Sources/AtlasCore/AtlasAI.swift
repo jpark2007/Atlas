@@ -38,10 +38,13 @@ public struct CaptureContextSpace: Codable, Equatable {
 
 /// Request body for the `capture` function. `spaces` is omitted entirely when
 /// the caller has no context to share, keeping old/default routing intact.
+/// `timezone` (IANA identifier) lets the model resolve times in the user's
+/// local day; omitted when nil so old deploys keep working.
 /// `Codable` (not just `Encodable`) so tests can round-trip the produced body.
 public struct CaptureRequest: Codable {
     public let text: String
     public let spaces: [CaptureContextSpace]?
+    public let timezone: String?
 }
 
 // MARK: - Error
@@ -101,7 +104,8 @@ public final class AtlasAI {
         request.setValue(SupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try AtlasAI.requestBody(text: text, spaces: spaces)
+        request.httpBody = try AtlasAI.requestBody(text: text, spaces: spaces,
+                                                   timezone: TimeZone.current.identifier)
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -152,11 +156,14 @@ public final class AtlasAI {
         return cut + "…"
     }
 
-    /// Encode the POST body. `spaces` is dropped when empty so callers without
-    /// context produce `{ "text": ... }` exactly as before.
-    public static func requestBody(text: String, spaces: [CaptureContextSpace]) throws -> Data {
+    /// Encode the POST body. `spaces` is dropped when empty and `timezone` when
+    /// nil, so callers without context produce `{ "text": ... }` exactly as before.
+    public static func requestBody(text: String,
+                                   spaces: [CaptureContextSpace],
+                                   timezone: String? = nil) throws -> Data {
         let payload = CaptureRequest(text: text,
-                                     spaces: spaces.isEmpty ? nil : spaces)
+                                     spaces: spaces.isEmpty ? nil : spaces,
+                                     timezone: timezone)
         return try JSONEncoder().encode(payload)
     }
 
