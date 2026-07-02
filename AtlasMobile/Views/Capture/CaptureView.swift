@@ -21,6 +21,8 @@ struct CaptureView: View {
     @State private var showManualAdd = false
     @State private var note: String?
     @State private var isDraining = false
+    @State private var thinkingText = ""
+    @State private var dissolve = false
     @FocusState private var editorFocused: Bool
 
     @StateObject private var pending = PendingCaptureQueue()
@@ -36,6 +38,7 @@ struct CaptureView: View {
             case .result:    resultState
             }
         }
+        .animation(MobileTheme.heroSpring, value: phase)
         .sheet(isPresented: $showManualAdd) {
             ManualAddSheet()
                 .environmentObject(store)
@@ -139,14 +142,27 @@ struct CaptureView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Thinking state (calm pulsing core, no spinner)
+    // MARK: - Thinking state (spec §6: the hero moment — breathing orb, words dissolve)
 
     private var thinkingState: some View {
-        VStack(spacing: 22) {
-            PulsingCore()
+        VStack(spacing: 44) {
+            Spacer()
+            HeroOrb()
+            Text(thinkingText)
+                .font(.system(size: 17, weight: .regular, design: .rounded))
+                .foregroundStyle(MobileTheme.muted)
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .padding(.horizontal, 44)
+                .blur(radius: dissolve ? 6 : 0)
+                .opacity(dissolve ? 0.15 : 1)
+                .offset(y: dissolve ? -28 : 0)
+                .animation(.easeIn(duration: 1.6), value: dissolve)
             Text("Sorting it out…").edCapsLabel()
+            Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { dissolve = true }
     }
 
     // MARK: - Listening state (on-device speech)
@@ -296,6 +312,8 @@ struct CaptureView: View {
         guard !raw.isEmpty else { return }
         editorFocused = false
         note = nil
+        thinkingText = raw
+        dissolve = false
         phase = .thinking
         Task {
             do {
@@ -396,17 +414,35 @@ struct CaptureView: View {
     }
 }
 
-/// A calm pulsing core for the thinking state — scale + opacity breathe, no spinner.
-private struct PulsingCore: View {
-    @State private var on = false
+/// The capture hero (spec §6): a breathing clay orb with expanding ripples — the
+/// app's ONE expressive animation moment. Accent = live/brand, allowed here.
+private struct HeroOrb: View {
+    @State private var breathe = false
+    @State private var ripple = false
+
     var body: some View {
-        Circle()
-            .fill(MobileTheme.accent)          // accent = live/brand, allowed here
-            .frame(width: 18, height: 18)
-            .scaleEffect(on ? 1.35 : 0.85)
-            .opacity(on ? 1 : 0.45)
-            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: on)
-            .onAppear { on = true }
+        ZStack {
+            ForEach(0..<2, id: \.self) { i in
+                Circle()
+                    .stroke(MobileTheme.accent.opacity(0.35), lineWidth: 1.5)
+                    .frame(width: 72, height: 72)
+                    .scaleEffect(ripple ? 2.6 : 1)
+                    .opacity(ripple ? 0 : 0.8)
+                    .animation(
+                        .easeOut(duration: 1.8)
+                            .repeatForever(autoreverses: false)
+                            .delay(Double(i) * 0.9),
+                        value: ripple)
+            }
+            Circle()
+                .fill(MobileTheme.accent)
+                .frame(width: 72, height: 72)
+                .scaleEffect(breathe ? 1.12 : 0.88)
+                .shadow(color: MobileTheme.accent.opacity(0.45), radius: breathe ? 34 : 14)
+                .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: breathe)
+        }
+        .frame(height: 100)
+        .onAppear { breathe = true; ripple = true }
     }
 }
 
