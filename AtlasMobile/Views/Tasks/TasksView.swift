@@ -9,6 +9,7 @@ struct TasksView: View {
 
     @AppStorage("tasksGrouping") private var grouping = "project"   // "project" | "due"
     @State private var timing: TaskItem?
+    @State private var detail: ItemDetailSheet.Detail?
     @State private var showSettings = false
 
     /// Rows checked off in this session linger ~0.9 s (strikethrough + filled
@@ -50,6 +51,9 @@ struct TasksView: View {
             SetTimeSheet(task: task, day: task.dueDate ?? Date()) { updated in
                 Task { await store.updateTask(updated) }
             }
+        }
+        .sheet(item: $detail) { detail in
+            ItemDetailSheet(detail: detail).environmentObject(store)
         }
         .sheet(isPresented: $showSettings) {
             SettingsSheet().environmentObject(store)
@@ -132,19 +136,25 @@ struct TasksView: View {
         HStack(spacing: 12) {
             CheckCircle(done: task.done, color: task.spaceColor) { toggle(task) }
 
-            Text(task.title)
-                .font(.system(size: 15.5, weight: .semibold, design: .rounded))
-                .foregroundStyle(task.done ? MobileTheme.faint : MobileTheme.ink)
-                .strikethrough(task.done, color: MobileTheme.faint)
+            // Tapping the content (not the check-circle) opens the detail sheet.
+            HStack(spacing: 12) {
+                Text(task.title)
+                    .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(task.done ? MobileTheme.faint : MobileTheme.ink)
+                    .strikethrough(task.done, color: MobileTheme.faint)
 
-            Spacer(minLength: 8)
+                Spacer(minLength: 8)
 
-            let due = TaskItem.dueLabel(for: task.dueDate)
-            if !due.isEmpty {
-                Text(due)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(MobileTheme.muted)
+                let due = TaskItem.dueLabel(for: task.dueDate)
+                if !due.isEmpty {
+                    let overdue = task.isOverdue(now: Date())
+                    Text(due)
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(overdue ? AtlasTheme.Colors.danger : MobileTheme.muted)
+                }
             }
+            .contentShape(Rectangle())
+            .onTapGesture { detail = .task(task) }
         }
     }
 

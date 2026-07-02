@@ -11,6 +11,7 @@ struct ScheduleView: View {
     @State private var showMonth = false
     @State private var showSettings = false
     @State private var timing: TaskItem?
+    @State private var detail: ItemDetailSheet.Detail?
 
     private let cal = Calendar.current
 
@@ -53,6 +54,9 @@ struct ScheduleView: View {
             SetTimeSheet(task: task, day: selectedDay) { updated in
                 Task { await store.updateTask(updated) }
             }
+        }
+        .sheet(item: $detail) { detail in
+            ItemDetailSheet(detail: detail).environmentObject(store)
         }
         .onAppear(perform: consumeFocusToday)
         .onChange(of: store.scheduleFocusToday) { _, _ in consumeFocusToday() }
@@ -132,7 +136,9 @@ struct ScheduleView: View {
         // TimelineView re-evaluates every minute so the NOW rail advances.
         TimelineView(.everyMinute) { context in
             List {
-                NeedsTimeSection(tasks: needsTime) { timing = $0 }
+                NeedsTimeSection(tasks: needsTime,
+                                 onSetTime: { timing = $0 },
+                                 onOpen: { detail = .task($0) })
                 DayTimelineView(
                     day: selectedDay,
                     now: context.date,
@@ -140,7 +146,9 @@ struct ScheduleView: View {
                     tasks: filteredTasks,
                     loading: store.loading,
                     onToggle: toggle,
-                    onDelete: delete
+                    onDelete: delete,
+                    onOpen: { detail = $0 },
+                    onDeleteEvent: deleteEvent
                 )
             }
             .listStyle(.plain)
@@ -212,6 +220,10 @@ struct ScheduleView: View {
 
     private func delete(_ task: TaskItem) {
         Task { await store.deleteTask(id: task.id) }
+    }
+
+    private func deleteEvent(_ event: CalendarEvent) {
+        Task { await store.deleteEvent(id: event.id) }
     }
 
     private func consumeFocusToday() {

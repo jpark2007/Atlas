@@ -14,6 +14,8 @@ struct DayTimelineView: View {
     let loading: Bool
     let onToggle: (TaskItem) -> Void
     let onDelete: (TaskItem) -> Void
+    let onOpen: (ItemDetailSheet.Detail) -> Void
+    let onDeleteEvent: (CalendarEvent) -> Void
 
     private var isToday: Bool { Calendar.current.isDateInToday(day) }
 
@@ -89,6 +91,12 @@ struct DayTimelineView: View {
                     .padding(.vertical, -6).offset(x: -16)
             }
         }
+        // Tapping the row (the check-circle handles its own taps) opens the detail sheet.
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if let task { onOpen(.task(task)) }
+            else if let event { onOpen(.event(event)) }
+        }
     }
 
     private func timeColumn(_ item: AgendaItem, isNow: Bool) -> some View {
@@ -123,6 +131,11 @@ struct DayTimelineView: View {
         if item.kind == .task, let task = tasks.first(where: { $0.id == item.id }),
            task.workBlockGoogleEventId == nil {
             Button(role: .destructive) { onDelete(task) } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        } else if item.kind == .event, let event = events.first(where: { $0.id == item.id }),
+                  event.source == .atlas {
+            Button(role: .destructive) { onDeleteEvent(event) } label: {
                 Label("Delete", systemImage: "trash")
             }
         }

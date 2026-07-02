@@ -45,6 +45,7 @@ final class MobileStore: ObservableObject {
     init() {
         session = sessionStore.session
         if session != nil {
+            if let cached = WidgetSnapshotWriter.loadCache() { snapshot = recolored(cached) }
             Task { await bootstrap() }
         }
     }
@@ -104,10 +105,11 @@ final class MobileStore: ObservableObject {
         }
     }
 
-    /// `EventRow.toDomain()` stamps every event `AtlasTheme.Colors.accent` and
-    /// leaves re-deriving the real color to the client (the Mac does it in
-    /// AppState bootstrap). Without this, every event dot renders accent
-    /// instead of its space color.
+    /// `EventRow.toDomain()`/`TaskRow.toDomain()` stamp every event/task
+    /// `AtlasTheme.Colors.accent` and leave re-deriving the real color to the client
+    /// (the Mac does it in AppState bootstrap). Without this, every event dot AND
+    /// task check-circle renders accent (the "orange circles" bug) instead of its
+    /// space color.
     private func recolored(_ snap: AtlasSnapshot) -> AtlasSnapshot {
         var s = snap
         s.events = s.events.map { event in
@@ -116,6 +118,13 @@ final class MobileStore: ObservableObject {
                 $0.name.caseInsensitiveCompare(e.spaceName) == .orderedSame
             }) { e.color = space.color }
             return e
+        }
+        s.tasks = s.tasks.map { task in
+            var t = task
+            if let space = s.spaces.first(where: {
+                $0.name.caseInsensitiveCompare(t.spaceName) == .orderedSame
+            }) { t.spaceColor = space.color }
+            return t
         }
         return s
     }
@@ -151,6 +160,25 @@ final class MobileStore: ObservableObject {
         snapshot.events.append(e)
         await persist({ try await self.db.upsertEvent(e) },
                       rollback: { self.snapshot.events.removeAll { $0.id == e.id } })
+    }
+
+    func updateEvent(_ e: CalendarEvent) async {
+        let prior = snapshot.events.first { $0.id == e.id }
+        if let i = snapshot.events.firstIndex(where: { $0.id == e.id }) {
+            snapshot.events[i] = e
+        }
+        await persist({ try await self.db.upsertEvent(e) },
+                      rollback: {
+                          guard let prior, let i = self.snapshot.events.firstIndex(where: { $0.id == e.id }) else { return }
+                          self.snapshot.events[i] = prior
+                      })
+    }
+
+    func deleteEvent(id: UUID) async {
+        let prior = snapshot.events.first { $0.id == id }
+        snapshot.events.removeAll { $0.id == id }
+        await persist({ try await self.db.deleteEvent(id: id) },
+                      rollback: { if let prior { self.snapshot.events.append(prior) } })
     }
 
     /// Run a persist call for an already-applied optimistic mutation: on a 401 do one

@@ -7,13 +7,13 @@ import AtlasCore
 struct NeedsTimeSection: View {
     let tasks: [TaskItem]
     let onSetTime: (TaskItem) -> Void
+    let onOpen: (TaskItem) -> Void
 
     var body: some View {
         if !tasks.isEmpty {
             Section {
                 ForEach(tasks) { task in
-                    Button { onSetTime(task) } label: { row(task) }
-                        .buttonStyle(.plain)
+                    row(task)
                         .listRowInsets(EdgeInsets(top: 14, leading: 28, bottom: 14, trailing: 28))
                         .listRowBackground(Color.clear)
                         .listRowSeparatorTint(MobileTheme.hairline)
@@ -35,13 +35,21 @@ struct NeedsTimeSection: View {
                 .font(.system(size: 15.5, weight: .semibold, design: .rounded))
                 .foregroundStyle(MobileTheme.ink)
             Spacer()
-            Text("set time")
-                .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                .tracking(0.84).textCase(.uppercase)
-                .foregroundStyle(MobileTheme.muted)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(MobileTheme.faint)
+            // The "set time" chip is its own tap target; the rest of the row opens detail.
+            Button { onSetTime(task) } label: {
+                HStack(spacing: 6) {
+                    Text("set time")
+                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                        .tracking(0.84).textCase(.uppercase)
+                        .foregroundStyle(MobileTheme.muted)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(MobileTheme.faint)
+                }
+            }
+            .buttonStyle(.plain)
         }
+        .contentShape(Rectangle())
+        .onTapGesture { onOpen(task) }
     }
 }
