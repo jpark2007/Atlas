@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Editorial sign-in: a big title on the bg, thin-rule fields, and an outlined
 /// button (never accent-filled). Shown while `store.session == nil`.
@@ -9,6 +10,10 @@ struct SignInView: View {
     @State private var password = ""
     @State private var busy = false
     @State private var error: String?
+    @State private var resetNote: String?
+
+    /// Stateless GoTrue client for the fire-and-forget password-reset request.
+    private let auth = SupabaseAuth()
 
     private var canSubmit: Bool {
         !busy && !email.isEmpty && !password.isEmpty
@@ -16,6 +21,12 @@ struct SignInView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {
+            if let notice = store.authNotice {
+                Text(notice)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(MobileTheme.muted)
+            }
+
             VStack(alignment: .leading, spacing: 6) {
                 Text("Atlas").edScreenTitle()
                 Text("Sign in to continue").edCapsLabel()
@@ -26,16 +37,31 @@ struct SignInView: View {
                 field("Password", text: $password, secure: true)
             }
 
-            Button(action: signIn) {
-                Text(busy ? "Signing in" : "Sign in")
-                    .font(.system(size: 15.5, weight: .semibold, design: .rounded))
-                    .foregroundStyle(MobileTheme.ink)
-                    .frame(maxWidth: .infinity)
-                    .edOutlineControl()
+            VStack(alignment: .leading, spacing: 16) {
+                Button(action: signIn) {
+                    Text(busy ? "Signing in" : "Sign in")
+                        .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(MobileTheme.ink)
+                        .frame(maxWidth: .infinity)
+                        .edOutlineControl()
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSubmit)
+                .opacity(canSubmit ? 1 : 0.4)
+
+                Button(action: resetPassword) {
+                    Text("Forgot password?").edCapsLabel()
+                }
+                .buttonStyle(.plain)
+                .disabled(busy || email.isEmpty)
+                .opacity(email.isEmpty ? 0.4 : 1)
             }
-            .buttonStyle(.plain)
-            .disabled(!canSubmit)
-            .opacity(canSubmit ? 1 : 0.4)
+
+            if let resetNote {
+                Text(resetNote)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(MobileTheme.muted)
+            }
 
             if let error {
                 Text(error)
@@ -86,6 +112,19 @@ struct SignInView: View {
                     ?? "Couldn't sign in. Check your email and password."
             }
             busy = false
+        }
+    }
+
+    /// Fire-and-forget: ask GoTrue to email a reset link to the typed address.
+    private func resetPassword() {
+        resetNote = nil
+        Task {
+            do {
+                try await auth.resetPassword(email: email)
+                resetNote = "Check your email for a reset link."
+            } catch {
+                resetNote = "Couldn't send the reset email."
+            }
         }
     }
 }

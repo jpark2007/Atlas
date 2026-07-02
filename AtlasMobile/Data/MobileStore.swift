@@ -21,6 +21,9 @@ final class MobileStore: ObservableObject {
     @Published var scheduleFocusToday = false
     /// Last failed-write message (calm copy). Views may surface it; nil = no error.
     @Published var lastError: String?
+    /// Set only when a token refresh fails and we force a sign-out; `SignInView`
+    /// surfaces it as a muted line. Cleared on the next successful `signIn`.
+    @Published var authNotice: String?
 
     /// Non-zero while an optimistic mutation is persisting — `refresh()` defers so a
     /// wholesale snapshot replace can't clobber an in-flight local write.
@@ -58,6 +61,7 @@ final class MobileStore: ObservableObject {
         let s = try await auth.signIn(email: email, password: password)
         sessionStore.save(s)
         session = s
+        authNotice = nil
         await refresh()
     }
 
@@ -93,6 +97,7 @@ final class MobileStore: ObservableObject {
                 }
             } else {
                 signOut()
+                authNotice = "Your session expired — please sign in again."
             }
         } catch {
             // Keep the existing snapshot; a later refresh retries.

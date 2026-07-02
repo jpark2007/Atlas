@@ -103,6 +103,13 @@ public struct SupabaseAuth {
         return try decodeSession(data)
     }
 
+    /// Send a password-reset email (GoTrue `recover`). Fire-and-forget: any 2xx
+    /// means Supabase accepted the request; it never reveals whether the address
+    /// exists, so success just means "if that's an account, a link is on its way."
+    public func resetPassword(email: String) async throws {
+        _ = try await request("recover", body: ["email": email])
+    }
+
     public func refresh(refreshToken: String) async throws -> SupabaseSession {
         let data = try await request("token", query: [.init(name: "grant_type", value: "refresh_token")],
                                      body: ["refresh_token": refreshToken])
