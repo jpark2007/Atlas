@@ -52,30 +52,53 @@ struct CaptureView: View {
     // MARK: - Empty state (spec §4.2)
 
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 28) {
+        VStack(alignment: .leading, spacing: 0) {
             Text("Capture").edScreenTitle()
+                .padding(.horizontal, 28)
+                .padding(.top, 24)
 
-            dumpBox
+            // The page IS the input (spec §6, Direction A) — no box, no chrome.
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $text)
+                    .focused($editorFocused)
+                    .font(.system(size: 22, weight: .regular, design: .rounded))
+                    .foregroundStyle(MobileTheme.ink)
+                    .tint(MobileTheme.accent)          // caret = brand accent, not a fill
+                    .scrollContentBackground(.hidden)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 10)
 
-            if !trimmedText.isEmpty {
-                Button { sortItOut(text) } label: {
-                    Text("Sort it out")
-                        .font(.system(size: 15.5, weight: .semibold, design: .rounded))
-                        .foregroundStyle(MobileTheme.ink)
-                        .frame(maxWidth: .infinity)
-                        .edOutlineControl()
+                if text.isEmpty {
+                    Text("What’s on your mind?")
+                        .font(.system(size: 22, weight: .regular, design: .rounded))
+                        .foregroundStyle(MobileTheme.faint)
+                        .padding(.horizontal, 27)
+                        .padding(.top, 18)
+                        .allowsHitTesting(false)
                 }
-                .buttonStyle(.plain)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if let note {
-                Text(note).edCapsLabel()
-            } else if !pending.items.isEmpty {
-                Text("Saved offline · \(pending.items.count) waiting").edCapsLabel()
-            }
+            VStack(spacing: 18) {
+                if let note {
+                    Text(note).edCapsLabel()
+                } else if !pending.items.isEmpty {
+                    Text("Saved offline · \(pending.items.count) waiting").edCapsLabel()
+                }
 
-            VStack(spacing: 22) {
-                orDivider
+                if trimmedText.isEmpty {
+                    micButton
+                } else {
+                    Button { sortItOut(text) } label: {
+                        Text("Sort it out")
+                            .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                            .foregroundStyle(MobileTheme.ink)
+                            .frame(maxWidth: .infinity)
+                            .edOutlineControl()
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 Button { showManualAdd = true } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "plus")
@@ -89,11 +112,10 @@ struct CaptureView: View {
                 .buttonStyle(.plain)
             }
             .frame(maxWidth: .infinity)
-
-            Spacer()
+            .padding(.horizontal, 28)
+            .padding(.bottom, 10)
+            .animation(MobileTheme.spring, value: trimmedText.isEmpty)
         }
-        .padding(.horizontal, 28)
-        .padding(.top, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
@@ -105,54 +127,16 @@ struct CaptureView: View {
         }
     }
 
-    /// Big outlined dump box (radius 24) with a placeholder + a refined mic glyph.
-    private var dumpBox: some View {
-        ZStack(alignment: .topLeading) {
-            TextEditor(text: $text)
-                .focused($editorFocused)
-                .font(.system(size: 18, weight: .regular, design: .rounded))
-                .foregroundStyle(MobileTheme.ink)
-                .tint(MobileTheme.accent)          // caret = brand accent, not a fill
-                .scrollContentBackground(.hidden)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-
-            if text.isEmpty {
-                Text("What’s on your mind?")
-                    .font(.system(size: 18, weight: .regular, design: .rounded))
-                    .foregroundStyle(MobileTheme.faint)
-                    .padding(.horizontal, 19)
-                    .padding(.vertical, 20)
-                    .allowsHitTesting(false)
-            }
-        }
-        .frame(height: 200)
-        .overlay(alignment: .bottomTrailing) { micButton.padding(14) }
-        .overlay(
-            RoundedRectangle(cornerRadius: MobileTheme.radiusCard, style: .continuous)
-                .strokeBorder(MobileTheme.ink, lineWidth: MobileTheme.rule)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: MobileTheme.radiusCard, style: .continuous))
-    }
-
-    /// Refined mic glyph — outlined, never a fill. Taps into on-device dictation.
+    /// The prominent voice entry — outlined, never a fill (mic 64 pt, thumb reach).
     private var micButton: some View {
         Button(action: startListening) {
             Image(systemName: "mic")
-                .font(.system(size: 19, weight: .medium))
+                .font(.system(size: 24, weight: .medium))
                 .foregroundStyle(MobileTheme.ink)
-                .frame(width: 44, height: 44)
+                .frame(width: 64, height: 64)
                 .overlay(Circle().strokeBorder(MobileTheme.ink, lineWidth: MobileTheme.rule))
         }
         .buttonStyle(.plain)
-    }
-
-    private var orDivider: some View {
-        HStack(spacing: 14) {
-            Rectangle().fill(MobileTheme.hairline).frame(height: 1)
-            Text("or").edCapsLabel().fixedSize()
-            Rectangle().fill(MobileTheme.hairline).frame(height: 1)
-        }
     }
 
     // MARK: - Thinking state (calm pulsing core, no spinner)
