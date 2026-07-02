@@ -67,6 +67,10 @@ rule (a source label must reflect where the event actually came from).
   real clock times; new hard rules — *if the user states a clock time it MUST appear in
   dueISO/startISO; never return a date-only deadline when a time was given; a time-bound
   errand ("pick X up at 5:30") is an event at that time.*
+- Relative dates ("next Friday", "tomorrow", "tonight") resolve against the user's LOCAL
+  calendar day, not UTC — late-evening captures currently compute these from the wrong day.
+  Applies identically to typed and spoken capture: both routes share the same `sortItOut`
+  flow and edge function, so this is one fix.
 - `dueLabel` gains the time when one is meaningful: "Today 5:30 PM" (suppress for
   midnight/start-of-day dates, which mean date-only). Applies wherever the label renders.
 - Model stays gpt-4o-mini for now; upgrade is a follow-up lever if accuracy is still poor
