@@ -49,3 +49,29 @@ Not a scope cut — the full app ships. This is the order two people build it so
 - iPad / Apple Notes sync.
 - Windows port (separate rebuild — only if there's a user base).
 - Monetization / public release.
+
+---
+
+## CURRENT STATE + NEAR-TERM ORDER (updated 2026-07-02)
+
+Mobile Polish v2 shipped on feat/mobile-phase1 @ bede132 (15 tasks: freshness, truthful
+sources, timezone-correct capture, space-color system, motion/haptics, capture hero, today
+pill). Capture edge function is deployed + timezone-aware. Drew TestFlight-tested; feedback
+became Wave 3.
+
+Order of operations from here:
+1. **Wave 3 — mobile fix/UX wave** (spec: docs/superpowers/specs/, no user review gate —
+   Drew tests on device; NO simulator pass this wave, code review + builds only).
+   Then **push the branch** and Drew sends Jonah the TestFlight build.
+2. **Server-side Google Calendar sync** — Supabase cron edge function + server-held Google
+   tokens; Mac ↔ Google ↔ iPhone all live-sync with nothing open. Free plan suffices.
+   (Un-parked from the monetization doc; calendar scope only, no CASA needed for testing.)
+3. **Google Docs ↔ notes link**, then **Canvas ICS** (adds task volume — mobile month
+   dots/lists must stay legible at scale).
+4. **Landing page** (new docket item): prelaunch/beta positioning, needed anyway for
+   privacy policy + ToS before App Store. Cool scroll animation (three.js ok), app
+   screenshots or generated visuals — Claude's call on direction.
+5. Publish the app after that.
+
+Design language name (for the Jonah pitch): **Editorial Minimal** — paper bg, ink
+typography, no card chrome, clay brand accent, space colors = meaning.
