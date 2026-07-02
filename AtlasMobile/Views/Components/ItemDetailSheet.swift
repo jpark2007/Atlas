@@ -261,7 +261,7 @@ struct ItemDetailSheet: View {
             .padding(.bottom, 8)
         labeledRow("Title", e.title)
         labeledRow("Space", e.spaceName)
-        labeledRow("When", startText(e.start))
+        labeledRow("When", e.isAllDay ? "All-day" : startText(e.start))
         labeledRow("Duration", e.durationLabel)
         if let n = e.notes, !n.isEmpty {
             labeledRow("Notes", n)

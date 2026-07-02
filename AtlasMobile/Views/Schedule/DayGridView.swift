@@ -205,6 +205,7 @@ struct DayGridView: View {
         }
         .frame(width: max(0, width - railWidth + 4))
         .offset(x: railWidth - 4, y: y - 1)
+        .allowsHitTesting(false)   // decorative — must not steal taps from blocks beneath
     }
 
     // MARK: - Placement chip + controls
