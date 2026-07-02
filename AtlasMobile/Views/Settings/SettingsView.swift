@@ -39,6 +39,11 @@ struct SettingsView: View {
     /// nil = not yet loaded; false = OS-denied (show honest off state); otherwise the app's own prefs UI.
     @State private var osAuthorized: Bool?
 
+    /// True once the server-side cron owns Google sync (`google_connections.status == "active"`).
+    /// Loaded async in `.task`; stays false until known and on any error, so the row degrades
+    /// gracefully to the snapshot-derived local-sync copy.
+    @State private var cloudSynced = false
+
     private let leadOptions = [0, 5, 15, 30, 60]
 
     var body: some View {
@@ -56,6 +61,13 @@ struct SettingsView: View {
         .task {
             let settings = await UNUserNotificationCenter.current().notificationSettings()
             osAuthorized = settings.authorizationStatus != .denied
+        }
+        .task {
+            // Server owns Google↔DB sync once a connection is active. On any error
+            // (offline, not signed in, no row) leave cloudSynced false → derived copy.
+            if let conn = try? await store.db.loadGoogleConnection() {
+                cloudSynced = conn.status == "active"
+            }
         }
     }
 
@@ -200,11 +212,18 @@ struct SettingsView: View {
 
     private var connectionsSection: some View {
         Section {
-            // Derived from the snapshot — Google events appear only once the Mac
-            // has synced them into Supabase. The phone never connects to Google
-            // itself, so the honest states are syncing / not syncing.
-            labeledRow("Google Calendar", value: googleConnected ? "Syncs via your Mac" : "Not syncing")
+            // "Synced automatically" once the server-side cron owns the sync; else
+            // derived from the snapshot — Google events appear only once the Mac has
+            // synced them into Supabase. The phone never connects to Google itself.
+            labeledRow("Google Calendar", value: googleStatusText)
         } header: { header("Connections") }
+    }
+
+    /// Cloud sync active → "Synced automatically"; otherwise the honest Mac-derived
+    /// syncing / not-syncing copy.
+    private var googleStatusText: String {
+        if cloudSynced { return "Synced automatically" }
+        return googleConnected ? "Syncs via your Mac" : "Not syncing"
     }
 
     // MARK: - Bindings & helpers
