@@ -197,18 +197,28 @@ public struct TaskItem: Identifiable {
 extension TaskItem {
     /// Short, human due label derived from a date. Deterministic given `now`.
     /// "" for nil; "Today"/"Tomorrow"; weekday ("Thu") within a week; else "MMM d".
+    /// A non-midnight time is appended ("Today 5:30 PM") — local midnight means
+    /// the deadline is date-only, so no time is shown.
     public static func dueLabel(for date: Date?, now: Date = Date()) -> String {
         guard let date else { return "" }
         let cal = Calendar.current
-        if cal.isDate(date, inSameDayAs: now) { return "Today" }
-        if let tomorrow = cal.date(byAdding: .day, value: 1, to: now),
-           cal.isDate(date, inSameDayAs: tomorrow) { return "Tomorrow" }
-        let days = cal.dateComponents([.day],
-                                      from: cal.startOfDay(for: now),
-                                      to: cal.startOfDay(for: date)).day ?? 0
-        let f = DateFormatter()
-        f.dateFormat = (days > 1 && days < 7) ? "EEE" : "MMM d"
-        return f.string(from: date)
+        let day: String
+        if cal.isDate(date, inSameDayAs: now) { day = "Today" }
+        else if let tomorrow = cal.date(byAdding: .day, value: 1, to: now),
+                cal.isDate(date, inSameDayAs: tomorrow) { day = "Tomorrow" }
+        else {
+            let days = cal.dateComponents([.day],
+                                          from: cal.startOfDay(for: now),
+                                          to: cal.startOfDay(for: date)).day ?? 0
+            let f = DateFormatter()
+            f.dateFormat = (days > 1 && days < 7) ? "EEE" : "MMM d"
+            day = f.string(from: date)
+        }
+        let c = cal.dateComponents([.hour, .minute], from: date)
+        guard c.hour != 0 || c.minute != 0 else { return day }
+        let t = DateFormatter()
+        t.dateFormat = c.minute == 0 ? "h a" : "h:mm a"
+        return "\(day) \(t.string(from: date))"
     }
 
     /// True only when the task has never been given a calendar slot. Once scheduled it
