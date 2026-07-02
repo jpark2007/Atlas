@@ -152,9 +152,10 @@ struct SettingsView: View {
 
     private var connectionsSection: some View {
         Section {
-            // Derived from the snapshot — a Google source appears only if Google
-            // events were actually ingested. Never a hardcoded label.
-            labeledRow("Google Calendar", value: googleConnected ? "Connected" : "Not connected")
+            // Derived from the snapshot — Google events appear only once the Mac
+            // has synced them into Supabase. The phone never connects to Google
+            // itself, so the honest states are syncing / not syncing.
+            labeledRow("Google Calendar", value: googleConnected ? "Syncs via your Mac" : "Not syncing")
         } header: { header("Connections") }
     }
 
