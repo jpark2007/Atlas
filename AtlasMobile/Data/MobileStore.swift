@@ -26,6 +26,9 @@ final class MobileStore: ObservableObject {
     /// wholesale snapshot replace can't clobber an in-flight local write.
     private var mutationsInFlight = 0
 
+    /// True while a `refresh()` is in flight so overlapping foreground/pull triggers coalesce.
+    private var isRefreshing = false
+
     private let sessionStore = SessionStore()
     private let auth = SupabaseAuth()
 
@@ -70,18 +73,24 @@ final class MobileStore: ObservableObject {
 
     // MARK: - Data
 
-    /// Load every table into `snapshot`. On a 401, try one token refresh + retry;
-    /// if that fails, sign out.
+    /// Load every table into `snapshot`. Two guarantees: overlapping calls coalesce
+    /// (`isRefreshing` gate), and a mutation that starts mid-load discards the stale
+    /// result instead of clobbering the local write (`mutationsInFlight` re-checked
+    /// after every `loadAll()`). On a 401, try one token refresh + retry; else sign out.
     func refresh() async {
-        guard session != nil, mutationsInFlight == 0 else { return }
+        guard session != nil, mutationsInFlight == 0, !isRefreshing else { return }
+        isRefreshing = true
         loading = true
-        defer { loading = false }
+        defer { isRefreshing = false; loading = false }
         do {
-            snapshot = recolored(try await db.loadAll())
+            let loaded = recolored(try await db.loadAll())
+            if mutationsInFlight == 0 { snapshot = loaded }
         } catch AtlasDBError.requestFailed(401, _), AtlasDBError.notAuthenticated {
             if let fresh = await sessionStore.forceRefresh() {
                 session = fresh
-                if let reloaded = try? await db.loadAll() { snapshot = recolored(reloaded) }
+                if let reloaded = try? await db.loadAll(), mutationsInFlight == 0 {
+                    snapshot = recolored(reloaded)
+                }
             } else {
                 signOut()
             }

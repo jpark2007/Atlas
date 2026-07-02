@@ -325,6 +325,9 @@ public struct EventRow: Codable {
                       projectID: projectId,
                       noteID: noteId,
                       // A row carrying a Google id came from Google — derive, never default.
+                      // Caveat: an Atlas-origin event mirrored TO Google also carries a
+                      // googleEventId, so it loads as .google (accepted trade-off; only
+                      // affects Mac reap eligibility for that edge, the fail-safe direction).
                       source: googleEventId != nil ? .google : .atlas,
                       googleEventId: googleEventId)
     }
