@@ -780,7 +780,7 @@ Expected: `BUILD SUCCEEDED`
 - [ ] **Step 6: Commit**
 
 ```bash
-git add AtlasMobile/Views/Components/CheckCircle.swift AtlasMobile/Views/Tasks/TasksView.swift AtlasMobile/Views/Schedule/DayTimelineView.swift Atlas.xcodeproj
+git add AtlasMobile/Views/Components/CheckCircle.swift AtlasMobile/Views/Tasks/TasksView.swift AtlasMobile/Views/Schedule/DayTimelineView.swift
 git commit -m "feat(mobile): check-off flagship — space-tinted CheckCircle, haptic, linger-then-leave"
 ```
 
