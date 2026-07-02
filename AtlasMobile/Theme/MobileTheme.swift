@@ -1,5 +1,6 @@
 import SwiftUI
 import AtlasCore
+import UIKit
 
 /// Editorial Minimal · LIGHT · clay — the iOS design system.
 ///
@@ -27,6 +28,20 @@ enum MobileTheme {
 
     /// Strong ink rule (header underlines, outlined controls).
     static let rule: CGFloat = 1.5
+
+    // MARK: Motion — ONE vocabulary, used everywhere (spec §5)
+    /// Standard spring — "satisfying but quiet". Every state change animates with this.
+    static let spring = Animation.spring(response: 0.35, dampingFraction: 0.8)
+    /// Hero spring — livelier. CAPTURE ONLY: the app's one expressive moment.
+    static let heroSpring = Animation.spring(response: 0.55, dampingFraction: 0.72)
+
+    /// The haptic map: tap = check-off and light actions, success = capture commit,
+    /// selection = toggles/filters. Views use these — never their own generators.
+    enum Haptic {
+        static func tap()       { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+        static func success()   { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+        static func selection() { UISelectionFeedbackGenerator().selectionChanged() }
+    }
 }
 
 // MARK: - Reusable view modifiers
