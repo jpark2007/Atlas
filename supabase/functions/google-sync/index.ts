@@ -1,32 +1,63 @@
 /**
  * Atlas — google-sync Edge Function (Deno)  ·  the two-way sync runner
  *
- * Invoked by pg_cron (Task 4) every 5 minutes with the service-role key. For each
- * active google_connections row (oldest last_synced_at first, batched) it:
+ * Invoked by pg_cron (Task 4) every 5 minutes with the service-role key. It leases
+ * a batch of due google_connections rows (claim_google_sync_users, 0009 — oldest
+ * last_synced_at first, single-flight via `for update skip locked`) and for each:
  *   PULL  Google → Supabase: incremental events.list with the stored sync_token
  *         (410 GONE → full −30d…+365d resync), upserting Google-origin rows and
  *         applying deletions.
- *   PUSH  Supabase → Google: Atlas-origin rows changed since last_synced_at —
- *         insert (write the returned id back) or PATCH — with newest-wins.
+ *   PUSH  Supabase → Google: rows changed since last_synced_at — POST a not-yet-
+ *         mirrored Atlas row (deterministic id), or PATCH a mirrored one.
  *
  * Single-owner / no-duplicates invariant is backstopped by the DB:
- *   • unique (user_id, google_event_id) where gid is not null  (0006)
- *   • events.google_origin bit                                  (0007)
+ *   • unique (user_id, google_event_id)         non-partial, so ON CONFLICT infers it (0009/C1)
+ *   • events.google_origin bit                  delete-vs-unmirror authority (0007)
+ *   • events.google_updated_at                  two-timestamp reconcile (0009/C2)
  *
- * events.google_origin semantics (0007): true ⇒ the runner must NEVER push this
- * row to Google. Set true on a Google-origin insert AND when un-mirroring an
- * Atlas row (its gid nulled after a Google-side delete) so the detached row is
- * never resurrected on Google. That single bit resolves BOTH the delete-vs-
- * un-mirror choice on cancel and the no-resurrection guarantee.
+ * events.google_origin semantics (0007): true ⇒ this row is Google-owned. It is
+ * still EDIT-synced back to Google (I2 — a local edit PATCHes it), a Google-side
+ * delete still deletes it locally, but it is NEVER re-CREATED on Google (no POST
+ * path for an origin row). It is set true on a Google-origin insert AND when
+ * un-mirroring an Atlas row (its gid nulled after a Google-side delete) so the
+ * detached row is never resurrected. Only google_origin=false + null-gid rows are
+ * POSTed as new Google events.
+ *
+ * Deterministic Google ids (C3): a new push derives the Google event id from the
+ * row UUID (base32hex-lowercase of its 16 bytes → [0-9a-v]{26}, inside Google's
+ * [a-v0-9]{5,1024}). POSTing that id is idempotent: if a prior POST succeeded but
+ * the id write-back didn't, the next cycle re-POSTs the SAME id → Google 409
+ * "already exists" → treated as success → converges with no duplicate.
+ *
+ * ── Storm termination (C2). The reviewer's perpetual push↔pull cycle was:
+ *   1. PULL applies a Google event to a mirrored row → trigger bumps updated_at.
+ *   2. PUSH sees updated_at > last_synced_at → PATCHes it back → Google bumps its `updated`.
+ *   3. PULL sees Google's newer `updated` → re-applies → bumps updated_at again.
+ *   4. PUSH re-PATCHes → … forever.
+ * The fix breaks every edge:
+ *   • Step 1→2: a PULL write stamps updated_at = runStart (explicit; the 0009
+ *     trigger honors it) and google_updated_at = google.updated. runStart equals
+ *     the NEXT run's last_synced_at, so the row fails `updated_at > last_synced_at`
+ *     and PUSH never re-selects a purely sync-applied row.
+ *   • Step 3: a PULL recency gate skips the write when google.updated <=
+ *     google_updated_at (same clock), plus a content no-op guard — so Google
+ *     echoing our own push (whose `updated` we stored at push time) re-applies
+ *     nothing and bumps nothing.
+ *   • A genuine user edit auto-stamps updated_at=now() (> last_synced_at) and its
+ *     content differs from Google's last, so it PUSHes exactly once; the push
+ *     write-back stamps updated_at=runStart and google_updated_at=response.updated,
+ *     so the next run neither re-selects (push) nor re-applies (pull). Converges in
+ *     one cycle. ∎
  *
  * Auth: service-role only. The bearer token MUST equal SUPABASE_SERVICE_ROLE_KEY
  * (rejects anon / user JWTs). There is no inbound user to carry a JWT — the cron
  * is the caller.
  *
- * Modes:  POST /functions/v1/google-sync            → run (reads + writes)
+ * Modes:  POST /functions/v1/google-sync            → run (reads + writes; leases users)
  *         POST /functions/v1/google-sync?dryRun=1   → read + log intended writes,
- *                                                      write NOTHING (DB, Google,
- *                                                      or connection rows).
+ *                                                      write NOTHING (DB, Google, or
+ *                                                      connection rows — and does NOT
+ *                                                      lease, so it never mutates).
  *
  * Env (SUPABASE_* auto-injected; GOOGLE_* set via `supabase secrets set`):
  *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
@@ -75,6 +106,30 @@ function jwtRole(token: string): string | null {
   }
 }
 
+/**
+ * Deterministic Google event id from a row UUID: base32hex-lowercase of the 16
+ * UUID bytes → 26 chars in [0-9a-v], inside Google's [a-v0-9]{5,1024}. Same UUID
+ * ⇒ same id every cycle, which is what makes a re-POST after a failed write-back
+ * idempotent (Google returns 409 "already exists" instead of creating a duplicate).
+ */
+function uuidToGoogleId(uuid: string): string {
+  const hex = uuid.replace(/-/g, "");
+  const alphabet = "0123456789abcdefghijklmnopqrstuv"; // RFC 4648 base32hex
+  let value = 0;
+  let bits = 0;
+  let out = "";
+  for (let i = 0; i < 16; i++) {
+    value = (value << 8) | parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    bits += 8;
+    while (bits >= 5) {
+      out += alphabet[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) out += alphabet[(value << (5 - bits)) & 31];
+  return out;
+}
+
 // ── Google types (only the fields we use) ───────────────────────
 interface GTime {
   dateTime?: string;
@@ -96,6 +151,7 @@ interface EventRow {
   google_event_id: string | null;
   google_origin: boolean;
   updated_at: string;
+  google_updated_at: string | null;
   space_name: string;
   title?: string;
   subtitle?: string;
@@ -157,6 +213,23 @@ function googleEventBody(row: EventRow): Record<string, unknown> {
     body.end = { dateTime: new Date(row.end_at!).toISOString() };
   }
   return body;
+}
+
+// Content the PULL would write vs. what the row already holds. Compares instants by
+// epoch (DB and Google serialize timestamps differently) so an identical event is a
+// true no-op — skipping the write avoids an updated_at trigger bump (C2 storm guard).
+interface MappedGoogle {
+  fields: { start: string; end: string; allDay: boolean };
+  title: string;
+  notes: string | null;
+}
+function contentMatches(row: EventRow, u: MappedGoogle): boolean {
+  const sameStart = row.start_at != null && new Date(row.start_at).getTime() === new Date(u.fields.start).getTime();
+  const sameEnd = row.end_at != null && new Date(row.end_at).getTime() === new Date(u.fields.end).getTime();
+  return (row.title ?? "") === u.title &&
+    sameStart && sameEnd &&
+    (!!row.is_all_day) === u.fields.allDay &&
+    ((row.notes ?? null) === u.notes);
 }
 
 // ── Google token refresh ────────────────────────────────────────
@@ -234,6 +307,7 @@ async function listEvents(accessToken: string, calendarId: string, syncToken: st
 async function syncUser(admin: SupabaseClient, conn: Connection, clientId: string, clientSecret: string, dryRun: boolean): Promise<UserResult> {
   const userId = conn.user_id;
   const runStart = new Date();
+  const runStartISO = runStart.toISOString();
   const result: UserResult = {
     userId,
     status: "active",
@@ -253,6 +327,21 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
   if (secretErr || !refreshToken) throw new Error("vault read failed");
   const accessToken = await refreshAccessToken(refreshToken as string, clientId, clientSecret);
 
+  // I1: gids of this user's Mac-owned work-block mirrors. Work-block mirroring is
+  //     Mac-owned and OFF in server mode (v1), but a legacy mirror may still exist
+  //     on Google — never ingest one as a duplicate `events` row.
+  const workBlockGids = new Set<string>();
+  {
+    const { data: wbRows } = await admin
+      .from("tasks")
+      .select("work_block_google_event_id")
+      .eq("user_id", userId)
+      .not("work_block_google_event_id", "is", null);
+    for (const r of (wbRows ?? []) as { work_block_google_event_id: string | null }[]) {
+      if (r.work_block_google_event_id) workBlockGids.add(r.work_block_google_event_id);
+    }
+  }
+
   // 2. PULL. Incremental when we hold a sync_token; on 410 (or no token) fall
   //    back to a full-window resync.
   let listing: ListResult = { items: [], nextSyncToken: null, gone: false };
@@ -266,38 +355,40 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
   const newSyncToken = listing.nextSyncToken ?? conn.sync_token;
 
   // Split incoming events into deletions and upserts, keyed by gid.
-  interface UpsertVal {
-    fields: { start: string; end: string; allDay: boolean };
-    title: string;
-    notes: string | null;
+  interface UpsertVal extends MappedGoogle {
     googleUpdated: number;
+    googleUpdatedISO: string;
   }
   const cancelledGids: string[] = [];
   const upserts = new Map<string, UpsertVal>();
   for (const ev of listing.items) {
     const gid = ev.id;
     if (!gid) continue;
+    if (workBlockGids.has(gid)) continue; // I1: never ingest a Mac-owned work-block mirror
     if (ev.status === "cancelled") {
       cancelledGids.push(gid);
       continue;
     }
     const iv = interval(ev.start, ev.end);
     if (!iv) continue; // unmappable (e.g. no times) — skip
+    const gUpdatedISO = ev.updated ? new Date(ev.updated).toISOString() : runStartISO;
     upserts.set(gid, {
       fields: iv,
       title: ev.summary ?? "Untitled",
       notes: ev.description ?? null,
-      googleUpdated: ev.updated ? new Date(ev.updated).getTime() : runStart.getTime(),
+      googleUpdated: new Date(gUpdatedISO).getTime(),
+      googleUpdatedISO: gUpdatedISO,
     });
   }
 
   // Existing local rows for every gid we saw (both upserts and cancellations).
+  // Content columns are needed for the no-op guard (C2).
   const seenGids = [...new Set([...upserts.keys(), ...cancelledGids])];
   const existingByGid = new Map<string, EventRow>();
   if (seenGids.length > 0) {
     const { data: rows, error } = await admin
       .from("events")
-      .select("id, google_event_id, google_origin, updated_at, space_name")
+      .select("id, google_event_id, google_origin, updated_at, google_updated_at, space_name, title, start_at, end_at, is_all_day, notes")
       .eq("user_id", userId)
       .in("google_event_id", seenGids);
     if (error) throw new Error(`events select failed: ${error.message}`);
@@ -332,21 +423,33 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     else toUnmirror.push(row.id); // Atlas mirror → keep event, detach from Google
   }
 
-  // 2b. Upserts (Google-origin inserts + newest-wins updates).
+  // 2b. Upserts (Google-origin inserts + newest-wins updates, same-clock recency).
   const inserts: Record<string, unknown>[] = [];
-  const updates: { id: string; patch: Record<string, unknown> }[] = [];
+  const updates: { id: string; expectUpdatedAt: string; patch: Record<string, unknown> }[] = [];
   for (const [gid, u] of upserts) {
     const row = existingByGid.get(gid);
     if (row) {
       syncTouched.add(row.id);
-      // Newest-wins: only let Google overwrite when its copy is at least as new.
-      if (u.googleUpdated >= new Date(row.updated_at).getTime()) {
-        updates.push({
-          id: row.id,
-          patch: { title: u.title, start_at: u.fields.start, end_at: u.fields.end, is_all_day: u.fields.allDay, notes: u.notes },
-        });
-      }
-      // else: Atlas edit is newer — leave it; PUSH will PATCH it back to Google.
+      // C2 recency (same clock): skip unless Google changed since we last applied/observed it.
+      const storedGU = row.google_updated_at ? new Date(row.google_updated_at).getTime() : -Infinity;
+      if (u.googleUpdated <= storedGU) continue;
+      // C2 no-op guard: identical mapped content ⇒ skip the write (no trigger bump).
+      if (contentMatches(row, u)) continue;
+      // Write Google's content; stamp updated_at=runStart so PUSH never re-selects
+      // it, and google_updated_at=google.updated so the next PULL sees it applied.
+      updates.push({
+        id: row.id,
+        expectUpdatedAt: row.updated_at,
+        patch: {
+          title: u.title,
+          start_at: u.fields.start,
+          end_at: u.fields.end,
+          is_all_day: u.fields.allDay,
+          notes: u.notes,
+          updated_at: runStartISO,
+          google_updated_at: u.googleUpdatedISO,
+        },
+      });
     } else {
       if (!defaultSpace) continue; // no space to file it under — skip insert (space_name is NOT NULL)
       inserts.push({
@@ -361,6 +464,8 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
         notes: u.notes,
         google_event_id: gid,
         google_origin: true,
+        updated_at: runStartISO,         // ≤ next last_synced_at ⇒ never echoed by PUSH
+        google_updated_at: u.googleUpdatedISO,
       });
     }
   }
@@ -372,12 +477,14 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
   // 3. Apply pull writes (skipped entirely in dryRun).
   if (!dryRun) {
     if (inserts.length > 0) {
-      // Idempotent: unique (user_id, google_event_id) makes a re-run a no-op.
+      // Idempotent: non-partial unique (user_id, google_event_id) makes a re-run a no-op.
       const { error } = await admin.from("events").upsert(inserts, { onConflict: "user_id,google_event_id" });
       if (error) throw new Error(`insert failed: ${error.message}`);
     }
     for (const u of updates) {
-      const { error } = await admin.from("events").update(u.patch).eq("id", u.id);
+      // Optimistic: only apply if the row is unchanged since we read it, so a
+      // concurrent Mac edit is never clobbered (it PUSHes next run instead).
+      const { error } = await admin.from("events").update(u.patch).eq("id", u.id).eq("updated_at", u.expectUpdatedAt);
       if (error) throw new Error(`update failed: ${error.message}`);
     }
     if (toDelete.length > 0) {
@@ -391,14 +498,14 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     }
   }
 
-  // 4. PUSH. Atlas-origin rows (google_origin=false) changed since last_synced_at.
-  //    First run (last_synced_at null) backfills all — parity with the Mac's
-  //    backfillEventsToGoogle on toggle-on.
+  // 4. PUSH. Rows changed since last_synced_at. First run (last_synced_at null)
+  //    backfills all — parity with the Mac's backfillEventsToGoogle on toggle-on.
+  //    google_origin=true rows are edit-synced too (I2): a mirrored gid ⇒ PATCH.
+  //    Only google_origin=false + null-gid rows are POSTed as new Google events.
   let pushQ = admin
     .from("events")
-    .select("id, google_event_id, google_origin, updated_at, space_name, title, start_at, end_at, is_all_day, notes")
-    .eq("user_id", userId)
-    .eq("google_origin", false);
+    .select("id, google_event_id, google_origin, updated_at, google_updated_at, space_name, title, start_at, end_at, is_all_day, notes")
+    .eq("user_id", userId);
   if (conn.last_synced_at) pushQ = pushQ.gt("updated_at", conn.last_synced_at);
   const { data: pushRows, error: pushErr } = await pushQ;
   if (pushErr) throw new Error(`push select failed: ${pushErr.message}`);
@@ -406,7 +513,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
   for (const row of (pushRows ?? []) as EventRow[]) {
     if (syncTouched.has(row.id)) continue; // just written by the pull this run
     if (row.google_event_id) {
-      // Already mirrored → PATCH (newest-wins: a push candidate is the newer side).
+      // Already mirrored → PATCH (origin or not; the local edit is the newer side).
       result.pushedUpdated++;
       if (!dryRun) {
         const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendar_id)}/events/${encodeURIComponent(row.google_event_id)}`, {
@@ -414,34 +521,58 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
           headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
           body: JSON.stringify(googleEventBody(row)),
         });
-        if (!res.ok && res.status !== 404 && res.status !== 410) {
+        if (res.ok) {
+          const patched = await res.json();
+          // Record Google's new `updated` and freeze updated_at=runStart so the
+          // echo is gated on the next pull and this row isn't re-selected next run.
+          await admin
+            .from("events")
+            .update({ google_updated_at: patched.updated ?? null, updated_at: runStartISO })
+            .eq("id", row.id)
+            .eq("updated_at", row.updated_at);
+        } else if (res.status !== 404 && res.status !== 410) {
           throw new Error(`google patch ${res.status}: ${(await res.text()).slice(0, 200)}`);
         }
+        // 404/410 → gone on Google; leave the row for a future pull cancellation.
       }
+    } else if (row.google_origin) {
+      // Un-mirrored (detached) origin row → NEVER re-create on Google (no resurrection).
+      continue;
     } else {
-      // Not yet mirrored → create on Google, write the returned id back.
+      // Not yet mirrored Atlas row → create with a deterministic id (idempotent).
       result.pushedNew++;
       if (!dryRun) {
+        const gid = uuidToGoogleId(row.id);
         const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendar_id)}/events`, {
           method: "POST",
           headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify(googleEventBody(row)),
+          body: JSON.stringify({ ...googleEventBody(row), id: gid }),
         });
-        if (!res.ok) throw new Error(`google insert ${res.status}: ${(await res.text()).slice(0, 200)}`);
-        const created = await res.json();
-        if (created.id) {
-          const { error } = await admin.from("events").update({ google_event_id: created.id }).eq("id", row.id);
-          if (error) throw new Error(`writeback failed: ${error.message}`);
+        let googleUpdated: string | null = null;
+        if (res.ok) {
+          const created = await res.json();
+          googleUpdated = created.updated ?? null;
+        } else if (res.status !== 409) {
+          // 409 = identifier already exists ⇒ a prior POST landed but write-back
+          // didn't; treat as success (the next pull sets google_updated_at). Any
+          // other non-2xx is a real error.
+          throw new Error(`google insert ${res.status}: ${(await res.text()).slice(0, 200)}`);
         }
+        // Write the (deterministic) id back and freeze updated_at so we don't re-push.
+        // Optimistic on updated_at: if a concurrent edit bumped it, this no-ops and
+        // the next run re-POSTs the SAME id → 409 → converges (no duplicate).
+        const patch: Record<string, unknown> = { google_event_id: gid, updated_at: runStartISO };
+        if (googleUpdated) patch.google_updated_at = googleUpdated;
+        await admin.from("events").update(patch).eq("id", row.id).eq("updated_at", row.updated_at);
       }
     }
   }
 
-  // 5. Advance the cursor (success only; skipped in dryRun).
+  // 5. Advance the cursor and release the lease (success only; skipped in dryRun).
   if (!dryRun) {
     const { error } = await admin
       .from("google_connections")
-      .update({ sync_token: newSyncToken, last_synced_at: runStart.toISOString(), status: "active", last_error: null })
+      .update({ sync_token: newSyncToken, last_synced_at: runStartISO, status: "active", last_error: null, claimed_until: null })
       .eq("user_id", userId);
     if (error) throw new Error(`connection update failed: ${error.message}`);
   }
@@ -477,13 +608,25 @@ Deno.serve(async (req: Request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // Batch: active connections, oldest last_synced_at first.
-  const { data: conns, error: connErr } = await admin
-    .from("google_connections")
-    .select("user_id, vault_secret_id, calendar_id, sync_token, last_synced_at")
-    .eq("status", "active")
-    .order("last_synced_at", { ascending: true, nullsFirst: true })
-    .limit(BATCH_LIMIT);
+  // Batch of due connections. dryRun reads read-only (no lease → no mutation); a
+  // real run LEASES them atomically (I3: claim_google_sync_users, for update skip
+  // locked) so two overlapping ticks never process the same user.
+  let conns: Connection[] | null = null;
+  let connErr: { message: string } | null = null;
+  if (dryRun) {
+    const r = await admin
+      .from("google_connections")
+      .select("user_id, vault_secret_id, calendar_id, sync_token, last_synced_at")
+      .eq("status", "active")
+      .order("last_synced_at", { ascending: true, nullsFirst: true })
+      .limit(BATCH_LIMIT);
+    conns = r.data as Connection[] | null;
+    connErr = r.error;
+  } else {
+    const r = await admin.rpc("claim_google_sync_users", { batch: BATCH_LIMIT });
+    conns = r.data as Connection[] | null;
+    connErr = r.error;
+  }
   if (connErr) return json({ error: "Failed to load connections" }, 500);
 
   const results: UserResult[] = [];
@@ -491,13 +634,14 @@ Deno.serve(async (req: Request) => {
     try {
       results.push(await syncUser(admin, conn, clientId, clientSecret, dryRun));
     } catch (e) {
-      // Per-user isolation: one failure never blocks the batch.
+      // Per-user isolation: one failure never blocks the batch. Release the lease
+      // so a transient error retries next tick instead of waiting out claimed_until.
       const revoked = e instanceof InvalidGrantError;
       const msg = revoked ? "invalid_grant" : String((e as Error)?.message ?? e).slice(0, 500);
       if (!dryRun) {
         await admin
           .from("google_connections")
-          .update({ status: revoked ? "revoked" : "error", last_error: msg })
+          .update({ status: revoked ? "revoked" : "error", last_error: msg, claimed_until: null })
           .eq("user_id", conn.user_id);
       }
       results.push({

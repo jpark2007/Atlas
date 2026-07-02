@@ -442,7 +442,7 @@ final class AppState: ObservableObject {
     /// first schedule, patch on reschedule — storing the returned id on the task. Gated by
     /// the sync toggle. The task's *deadline* is never pushed (deadlines stay Atlas-native).
     private func pushWorkBlockToGoogle(taskID: UUID) {
-        guard !serverSyncEnabled,  // single-owner: server mirrors work-blocks when active
+        guard !serverSyncEnabled,  // work-block mirroring is Mac-owned and OFF in server mode (v1)
               UserDefaults.standard.bool(forKey: "calendar.google.enabled"),
               let auth = googleAuth, auth.isConnected,
               let i = tasks.firstIndex(where: { $0.id == taskID }),
@@ -565,8 +565,8 @@ final class AppState: ObservableObject {
     /// Patches an edited Google-origin event back to Google. Always appropriate when
     /// connected (the event came from Google) — not gated on the new-events picker.
     private func pushExternalGoogleEdit(_ event: CalendarEvent, googleEventID gid: String) {
-        // Single-owner: in server mode the edit persists to Supabase and the server
-        // reconciles it to Google — the Mac must not PATCH Google directly.
+        // Single-owner: in server mode the edit persists to Supabase; the server's
+        // origin-edit pushback (I2) PATCHes it to Google — the Mac must not PATCH directly.
         guard !serverSyncEnabled, let auth = googleAuth, auth.isConnected else { return }
         let service = GoogleCalendarService(auth: auth)
         Task { try? await service.updateEvent(googleEventID: gid, event) }
