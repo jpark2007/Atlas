@@ -68,12 +68,14 @@ mobile v1 feature-final, pushed; Drew archives → TestFlight → Jonah):
 2. **Canvas ICS sync** — server-side on the SAME cron rails (ICS feed URL, no OAuth:
    fetch → parse → upsert). Cheapest project once #1 exists. Its task volume unlocks the
    parked mobile items (search, real project grouping, post-commit undo) which land with it.
-3. **Google Docs ↔ notes link** — extends #1's server-held tokens with the Drive read
-   scope, then mostly Mac-side UX. Sequenced last of the three to let the Jonah
-   monetization/architecture talk settle.
+3. **Google Docs ↔ notes link** — DECIDED (Drew, 2026-07-02): the **file-picker import
+   path** (`drive.file` scope — user picks specific files), NOT broad readonly/monetized
+   scopes. Keeps Google verification light so App Store publishing stays easy later.
+   Mostly Mac-side UX once #1's token infra exists.
 4. **Landing page** — independent web work (prelaunch/beta positioning; privacy policy +
    ToS required before App Store; scroll animation, three.js ok — Claude's call on
-   direction). Runs IN PARALLEL with any of the above.
+   direction). MUST include download links/buttons for the mobile AND Mac apps, even as
+   empty placeholders pre-launch. Runs IN PARALLEL with any of the above.
 5. Publish the app after that (and after the Mac revamp).
 
 Design language name (for the Jonah pitch): **Editorial Minimal** — paper bg, ink
