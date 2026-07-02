@@ -7,10 +7,14 @@ import AtlasCore
 struct TasksView: View {
     @EnvironmentObject private var store: MobileStore
 
-    @AppStorage("tasksGrouping") private var grouping = "project"   // "project" | "due"
+    @AppStorage("tasksGrouping") private var grouping = "project"   // "project" (shown "Space") | "due"
+    @AppStorage("defaultSpaceName") private var defaultSpaceName = ""
     @State private var timing: TaskItem?
     @State private var detail: ItemDetailSheet.Detail?
     @State private var showSettings = false
+
+    /// Space section headers the user has folded shut, keyed by space name.
+    @State private var collapsedSpaces: Set<String> = []
 
     /// Rows checked off in this session linger ~0.9 s (strikethrough + filled
     /// check) before sliding out, so completion is felt, not a blink.
@@ -34,7 +38,7 @@ struct TasksView: View {
                 .padding(.horizontal, 28)
                 .padding(.top, 16)
 
-            if groups.isEmpty {
+            if openTasks.isEmpty {
                 ScrollView {
                     emptyContent
                         .frame(maxWidth: .infinity)
@@ -42,6 +46,8 @@ struct TasksView: View {
                 }
                 .contentMargins(.bottom, 72, for: .scrollContent)
                 .refreshable { await store.refresh() }
+            } else if useHierarchy {
+                spaceList
             } else {
                 list
             }
@@ -75,7 +81,7 @@ struct TasksView: View {
     private var groupingToggle: some View {
         VStack(spacing: 10) {
             HStack(spacing: 28) {
-                segment("Project", value: "project")
+                segment("Space", value: "project")
                 segment("Due", value: "due")
                 Spacer()
             }
@@ -93,29 +99,14 @@ struct TasksView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - List
+    // MARK: - List (flat: Due buckets, or the no-spaces space fallback)
 
     private var list: some View {
         List {
             ForEach(groups, id: \.title) { group in
                 Section {
                     ForEach(group.tasks) { task in
-                        row(task)
-                            .listRowInsets(EdgeInsets(top: 14, leading: 28, bottom: 14, trailing: 28))
-                            .listRowBackground(Color.clear)
-                            .listRowSeparatorTint(MobileTheme.hairline)
-                            .swipeActions(edge: .trailing) {
-                                // Only Atlas-native tasks are deletable; Google work-blocks aren't.
-                                if task.workBlockGoogleEventId == nil {
-                                    Button(role: .destructive) { delete(task) } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                }
-                                Button { timing = task } label: {
-                                    Label("Set time", systemImage: "clock")
-                                }
-                                .tint(MobileTheme.muted)
-                            }
+                        taskRow(task)
                     }
                 } header: {
                     Text(group.title)
@@ -130,6 +121,94 @@ struct TasksView: View {
         .scrollContentBackground(.hidden)
         .contentMargins(.bottom, 72, for: .scrollContent)
         .refreshable { await store.refresh() }
+    }
+
+    // MARK: - Space list (hierarchical: space → project, fold-downs)
+
+    private var spaceList: some View {
+        List {
+            ForEach(spaceGroups, id: \.spaceName) { group in
+                Section {
+                    if !collapsedSpaces.contains(group.spaceName) {
+                        // No-project tasks lead; then a subgroup per project.
+                        ForEach(group.looseTasks) { task in
+                            taskRow(task)
+                        }
+                        ForEach(group.projectGroups, id: \.projectName) { pg in
+                            projectSubheader(pg.projectName)
+                            ForEach(pg.tasks) { task in
+                                taskRow(task)
+                            }
+                        }
+                    }
+                } header: {
+                    spaceHeader(group)
+                }
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.bottom, 72, for: .scrollContent)
+        .refreshable { await store.refresh() }
+    }
+
+    /// A collapsible space section header: a rotating chevron beside the caps name.
+    private func spaceHeader(_ group: SpaceGroup) -> some View {
+        let collapsed = collapsedSpaces.contains(group.spaceName)
+        return Button {
+            MobileTheme.Haptic.selection()
+            withAnimation(MobileTheme.spring) {
+                if collapsed { collapsedSpaces.remove(group.spaceName) }
+                else { collapsedSpaces.insert(group.spaceName) }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(MobileTheme.faint)
+                    .rotationEffect(.degrees(collapsed ? 0 : 90))
+                Text(group.spaceName)
+                    .edCapsLabel()
+                    .textCase(nil)
+                Spacer()
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// A project subheader — smaller/fainter than the space header above it.
+    private func projectSubheader(_ name: String) -> some View {
+        Text(name)
+            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .tracking(0.88)
+            .textCase(.uppercase)
+            .foregroundStyle(MobileTheme.faint)
+            .listRowInsets(EdgeInsets(top: 10, leading: 28, bottom: 4, trailing: 28))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+
+    /// One task row + its insets/separator/swipes — shared by both lists.
+    private func taskRow(_ task: TaskItem) -> some View {
+        row(task)
+            .listRowInsets(EdgeInsets(top: 14, leading: 28, bottom: 14, trailing: 28))
+            .listRowBackground(Color.clear)
+            .listRowSeparatorTint(MobileTheme.hairline)
+            .swipeActions(edge: .trailing) {
+                // Only Atlas-native tasks are deletable; Google work-blocks aren't.
+                if task.workBlockGoogleEventId == nil {
+                    Button(role: .destructive) { delete(task) } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+                Button { timing = task } label: {
+                    Label("Set time", systemImage: "clock")
+                }
+                .tint(MobileTheme.muted)
+            }
     }
 
     private func row(_ task: TaskItem) -> some View {
@@ -170,9 +249,35 @@ struct TasksView: View {
         return spaceName.caseInsensitiveCompare(name) == .orderedSame
     }
 
+    private var spaceNames: [String] { store.snapshot.spaces.map(\.name) }
+
+    /// The space orphan tasks fall back to: the default space when it's real,
+    /// else the first space. Nil only when there are no spaces at all.
+    private var fallbackSpaceName: String? {
+        guard let first = spaceNames.first else { return nil }
+        if !defaultSpaceName.isEmpty,
+           let match = spaceNames.first(where: { $0.caseInsensitiveCompare(defaultSpaceName) == .orderedSame }) {
+            return match
+        }
+        return first
+    }
+
+    /// Show the space → project hierarchy only when grouping by space AND spaces exist;
+    /// with zero spaces we fall back to the flat list.
+    private var useHierarchy: Bool { grouping == "project" && !store.snapshot.spaces.isEmpty }
+
     private var openTasks: [TaskItem] {
-        store.snapshot.tasks.filter {
-            (!$0.done || justCompleted.contains($0.id)) && inFilter($0.spaceName)
+        store.snapshot.tasks.compactMap { task in
+            guard !task.done || justCompleted.contains(task.id) else { return nil }
+            var remapped = task
+            // Kill "No Space": a task whose space matches no real one adopts the
+            // fallback space, so it never lands in an orphan bucket.
+            if let fallback = fallbackSpaceName,
+               !spaceNames.contains(where: { $0.caseInsensitiveCompare(task.spaceName) == .orderedSame }) {
+                remapped.spaceName = fallback
+            }
+            guard inFilter(remapped.spaceName) else { return nil }
+            return remapped
         }
     }
 
@@ -181,8 +286,44 @@ struct TasksView: View {
             return TaskGrouping.byDueBucket(tasks: openTasks)
         }
         return TaskGrouping
-            .bySpace(tasks: openTasks, spaceOrder: store.snapshot.spaces.map(\.name))
+            .bySpace(tasks: openTasks, spaceOrder: spaceNames)
             .map { (title: $0.spaceName, tasks: $0.tasks) }
+    }
+
+    /// One space's tasks split into no-project (loose) first, then a subgroup per project.
+    struct SpaceGroup {
+        let spaceName: String
+        let looseTasks: [TaskItem]
+        let projectGroups: [(projectName: String, tasks: [TaskItem])]
+    }
+
+    /// Hierarchical space → project groups, in sidebar order, skipping empty spaces.
+    /// openTasks are already remapped, so every task matches exactly one real space.
+    private var spaceGroups: [SpaceGroup] {
+        let tasks = openTasks
+        return store.snapshot.spaces.compactMap { space in
+            let inSpace = tasks.filter { $0.spaceName.caseInsensitiveCompare(space.name) == .orderedSame }
+            guard !inSpace.isEmpty else { return nil }
+            let loose = sortedByDue(inSpace.filter { $0.projectName.isEmpty })
+            let named = inSpace.filter { !$0.projectName.isEmpty }
+            let projectGroups = Array(Set(named.map(\.projectName)))
+                .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+                .map { name in (projectName: name, tasks: sortedByDue(named.filter { $0.projectName == name })) }
+            return SpaceGroup(spaceName: space.name, looseTasks: loose, projectGroups: projectGroups)
+        }
+    }
+
+    /// Due date ascending (nil last), then title — mirrors TaskGrouping's ordering.
+    private func sortedByDue(_ items: [TaskItem]) -> [TaskItem] {
+        items.sorted { a, b in
+            switch (a.dueDate, b.dueDate) {
+            case let (ad?, bd?):
+                return ad != bd ? ad < bd : a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+            case (nil, _?): return false
+            case (_?, nil): return true
+            case (nil, nil): return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+            }
+        }
     }
 
     // MARK: - Actions
