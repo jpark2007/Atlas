@@ -13,6 +13,9 @@ struct DayGridView: View {
     let tasks: [TaskItem]
     let onOpen: (ItemDetailSheet.Detail) -> Void
     let onToggle: (TaskItem) -> Void
+    /// Long-press on empty grid canvas → the pressed time (minutes-from-midnight,
+    /// snapped to 15, clamped 0–23:45). ScheduleView opens the picker in slot context.
+    var onLongPressSlot: (Int) -> Void = { _ in }
 
     // Placement (only active when `placing != nil`). `placeMinutes` is the live
     // start time (minutes-from-midnight, snapped to 15) the chip rides at.
@@ -28,6 +31,7 @@ struct DayGridView: View {
     private let cal = Calendar.current
 
     @State private var dragBase: Int?
+    @State private var slotArmed = false
 
     private var canvasHeight: CGFloat { hourHeight * 24 }
     private var dayStart: Date { cal.startOfDay(for: day) }
@@ -98,6 +102,31 @@ struct DayGridView: View {
             placementChip(width: width)
         }
         .frame(width: width, height: canvasHeight, alignment: .topLeading)
+        .contentShape(Rectangle())
+        .gesture(slotPress)   // BEHIND blocks: their .onTapGesture / the chip's highPriorityGesture win
+    }
+
+    // MARK: - Slot long-press (0.4 s hold on empty canvas → pressed time)
+
+    /// Sequenced hold-then-drag: the 0.4 s LongPress must complete before the
+    /// zero-distance drag activates, so a quick scroll never triggers it. We read the
+    /// drag's startLocation (≈ the press point) for the time; movement is ignored.
+    private var slotPress: some Gesture {
+        LongPressGesture(minimumDuration: 0.4)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+            .onChanged { value in
+                guard case .second(true, let drag?) = value, !slotArmed else { return }
+                slotArmed = true
+                MobileTheme.Haptic.tap()
+                onLongPressSlot(minuteFromY(drag.startLocation.y))
+            }
+            .onEnded { _ in slotArmed = false }
+    }
+
+    private func minuteFromY(_ y: CGFloat) -> Int {
+        let raw = Double(y / hourHeight) * 60
+        let snapped = (raw / 15).rounded() * 15
+        return min(1425, max(0, Int(snapped)))   // clamp 00:00–23:45
     }
 
     /// Hour rail + rules. Each hour is a real 56 pt row so `ScrollViewReader` can

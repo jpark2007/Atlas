@@ -18,6 +18,11 @@ struct ScheduleView: View {
     @State private var showPlace = false
     @State private var placing: TaskItem?
     @State private var placeMinutes = 9 * 60
+    // Slot long-press context: the pressed time (nil = header-button path, no slot).
+    @State private var slotMinute: Int?
+    // Create-here: captured while PlaceTaskSheet is open, presented on its dismiss.
+    @State private var pendingPrefill: ManualAddSheet.Prefill?
+    @State private var manualPrefill: ManualAddSheet.Prefill?
 
     private let cal = Calendar.current
 
@@ -54,9 +59,17 @@ struct ScheduleView: View {
             MonthPageView(selected: selectedDay) { selectedDay = $0 }
                 .environmentObject(store)
         }
-        .sheet(isPresented: $showPlace) {
-            PlaceTaskSheet { beginPlacing($0) }
+        .sheet(isPresented: $showPlace, onDismiss: finishPlaceSheet) {
+            PlaceTaskSheet(onPick: { beginPlacing($0) },
+                           slotMinute: slotMinute,
+                           onNewEvent: { pendingPrefill = prefill(kind: "event") },
+                           onNewTask: { pendingPrefill = prefill(kind: "task") })
                 .environmentObject(store)
+        }
+        .sheet(item: $manualPrefill) { prefill in
+            ManualAddSheet(prefill: prefill)
+                .environmentObject(store)
+                .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showSettings) {
             SettingsSheet().environmentObject(store)
@@ -223,6 +236,10 @@ struct ScheduleView: View {
                     tasks: filteredTasks,
                     onOpen: { detail = $0 },
                     onToggle: toggle,
+                    onLongPressSlot: { minute in
+                        slotMinute = minute
+                        showPlace = true
+                    },
                     placing: placing,
                     placeMinutes: $placeMinutes,
                     onConfirmPlace: confirmPlace,
@@ -322,11 +339,28 @@ struct ScheduleView: View {
     // MARK: - Placement
 
     /// Picked a task in PlaceTaskSheet → flip to grid mode with a floating chip.
+    /// A slot long-press spawns the chip at the pressed time; otherwise the default.
     private func beginPlacing(_ task: TaskItem) {
-        placeMinutes = initialPlaceMinutes()
+        placeMinutes = slotMinute ?? initialPlaceMinutes()
         withAnimation(MobileTheme.spring) {
             viewMode = "grid"
             placing = task
+        }
+    }
+
+    /// Build a ManualAddSheet prefill from the current slot context (day is always
+    /// the shown day; the time comes only from a slot long-press).
+    private func prefill(kind: String) -> ManualAddSheet.Prefill {
+        ManualAddSheet.Prefill(kind: kind, day: selectedDay, minute: slotMinute)
+    }
+
+    /// On PlaceTaskSheet dismiss: clear the slot, and if a create-here row was tapped,
+    /// present ManualAddSheet now (a second sheet can't open until the first is gone).
+    private func finishPlaceSheet() {
+        slotMinute = nil
+        if let p = pendingPrefill {
+            pendingPrefill = nil
+            manualPrefill = p
         }
     }
 

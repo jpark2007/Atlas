@@ -7,6 +7,13 @@ import AtlasCore
 /// (which flips Schedule into grid mode with a floating chip) and dismisses.
 struct PlaceTaskSheet: View {
     let onPick: (TaskItem) -> Void
+    /// Slot context: when the sheet is opened by a long-press on an empty grid slot,
+    /// this is the pressed time (minutes-from-midnight). Shown in the header and used
+    /// by the caller to spawn the chip / prefill ManualAddSheet at that time.
+    var slotMinute: Int? = nil
+    /// Quick actions — create an event / task right here (caller decides prefill).
+    var onNewEvent: () -> Void = {}
+    var onNewTask: () -> Void = {}
 
     @EnvironmentObject private var store: MobileStore
     @Environment(\.dismiss) private var dismiss
@@ -16,13 +23,27 @@ struct PlaceTaskSheet: View {
             HStack {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Place a task").edScreenTitle()
-                    Text("Pick one to drop on the grid").edCapsLabel().textCase(nil)
+                    if let m = slotMinute {
+                        Text(slotCaps(m))
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .tracking(0.88).textCase(.uppercase)
+                            .foregroundStyle(MobileTheme.ink)
+                    } else {
+                        Text("Pick one to drop on the grid").edCapsLabel().textCase(nil)
+                    }
                 }
                 Spacer()
                 Button { dismiss() } label: { Text("Cancel").edCapsLabel() }
                     .buttonStyle(.plain)
             }
             .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 12)
+
+            // Create-here actions — pinned above the task groups.
+            VStack(spacing: 10) {
+                quickAction("New event", systemImage: "calendar", action: onNewEvent)
+                quickAction("New task", systemImage: "checklist", action: onNewTask)
+            }
+            .padding(.horizontal, 28).padding(.bottom, 16)
 
             if placeable.isEmpty {
                 Text("Nothing to place")
@@ -46,6 +67,42 @@ struct PlaceTaskSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(MobileTheme.bg.ignoresSafeArea())
         .presentationDetents([.medium])
+    }
+
+    /// Editorial outlined row — icon + label + a trailing plus, matching the sheet.
+    private func quickAction(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+            dismiss()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(MobileTheme.ink)
+                Text(title)
+                    .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MobileTheme.ink)
+                Spacer()
+                Image(systemName: "plus")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(MobileTheme.muted)
+            }
+            .padding(.vertical, 13).padding(.horizontal, 18)
+            .overlay(RoundedRectangle(cornerRadius: MobileTheme.radiusControl, style: .continuous)
+                .strokeBorder(MobileTheme.ink, lineWidth: MobileTheme.rule))
+            .contentShape(RoundedRectangle(cornerRadius: MobileTheme.radiusControl, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// "AT 3:15 PM" — the pressed slot time for the header.
+    private func slotCaps(_ minute: Int) -> String {
+        let cal = Calendar.current
+        let base = cal.startOfDay(for: Date())
+        let date = cal.date(bySettingHour: (minute / 60) % 24, minute: minute % 60, second: 0, of: base) ?? base
+        let f = DateFormatter()
+        f.dateFormat = minute % 60 == 0 ? "h a" : "h:mm a"
+        return "AT " + f.string(from: date)
     }
 
     private func row(_ task: TaskItem) -> some View {

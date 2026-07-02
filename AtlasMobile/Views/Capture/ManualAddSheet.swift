@@ -24,6 +24,34 @@ struct ManualAddSheet: View {
 
     private let durations = [15, 30, 45, 60, 90, 120]
 
+    /// Optional slot-press prefill (Wave-3 §w5): a preselected kind, the shown
+    /// schedule day, and a pressed slot time. `nil` ⇒ a blank sheet, so the plain
+    /// `ManualAddSheet()` call site keeps compiling unchanged.
+    struct Prefill: Identifiable {
+        let id = UUID()
+        var kind: String = "task"     // "task" | "event"
+        var day: Date?
+        var minute: Int?              // minutes-from-midnight for the start / due time
+    }
+
+    init(prefill: Prefill? = nil) {
+        guard let p = prefill else { return }        // all fields keep their @State defaults
+        _mode = State(initialValue: p.kind)
+        if let day = p.day {
+            _dueDay = State(initialValue: day)
+            _eventDay = State(initialValue: day)
+            _hasDue = State(initialValue: true)      // a shown day means the task is due that day
+        }
+        if let minute = p.minute {
+            let cal = Calendar.current
+            let time = cal.date(bySettingHour: minute / 60, minute: minute % 60, second: 0,
+                                of: cal.startOfDay(for: Date())) ?? Date()
+            _startTime = State(initialValue: time)   // event start
+            _timeOfDay = State(initialValue: time)   // task due time
+            _setTime = State(initialValue: true)
+        }
+    }
+
     private var spaces: [Space] { store.snapshot.spaces }
     private var selectedSpace: Space? { spaces.first { $0.id == spaceID } ?? spaces.first }
     private var canAdd: Bool {
