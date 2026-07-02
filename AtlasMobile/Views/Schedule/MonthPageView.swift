@@ -53,6 +53,13 @@ struct MonthPageView: View {
 
     private var stepper: some View {
         HStack(spacing: 22) {
+            Button { month = Date() } label: {
+                Text("Today")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .tracking(0.88).textCase(.uppercase)
+                    .foregroundStyle(MobileTheme.ink)
+            }
+            .buttonStyle(.plain)
             Button { shift(-1) } label: { chevron("chevron.left") }
             Button { shift(1) } label: { chevron("chevron.right") }
         }

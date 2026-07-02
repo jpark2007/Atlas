@@ -19,6 +19,29 @@ struct ScheduleView: View {
             list
         }
         .background(MobileTheme.bg.ignoresSafeArea())
+        .overlay(alignment: .bottom) {
+            if !cal.isDateInToday(selectedDay) {
+                Button {
+                    MobileTheme.Haptic.selection()
+                    withAnimation(MobileTheme.spring) {
+                        selectedDay = cal.startOfDay(for: Date())
+                    }
+                } label: {
+                    Text("Today")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .tracking(0.96).textCase(.uppercase)
+                        .foregroundStyle(MobileTheme.ink)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 18)
+                        .background(Capsule().fill(MobileTheme.bg))
+                        .overlay(Capsule().strokeBorder(MobileTheme.ink, lineWidth: MobileTheme.rule))
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 14)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+        }
+        .animation(MobileTheme.spring, value: cal.isDateInToday(selectedDay))
         .sheet(isPresented: $showMonth) {
             MonthPageView(selected: selectedDay) { selectedDay = $0 }
         }
