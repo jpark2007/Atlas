@@ -324,6 +324,8 @@ public struct EventRow: Codable {
                       isAllDay: isAllDay,
                       projectID: projectId,
                       noteID: noteId,
+                      // A row carrying a Google id came from Google — derive, never default.
+                      source: googleEventId != nil ? .google : .atlas,
                       googleEventId: googleEventId)
     }
 }
