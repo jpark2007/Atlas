@@ -71,8 +71,11 @@ struct TasksView: View {
                             .listRowBackground(Color.clear)
                             .listRowSeparatorTint(MobileTheme.hairline)
                             .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) { delete(task) } label: {
-                                    Label("Delete", systemImage: "trash")
+                                // Only Atlas-native tasks are deletable; Google work-blocks aren't.
+                                if task.workBlockGoogleEventId == nil {
+                                    Button(role: .destructive) { delete(task) } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
                                 }
                                 Button { timing = task } label: {
                                     Label("Set time", systemImage: "clock")

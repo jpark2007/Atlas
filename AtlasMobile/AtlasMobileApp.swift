@@ -8,6 +8,10 @@ struct AtlasMobileApp: App {
 
     @AppStorage("notificationPrefs") private var prefs = NotificationPrefs.default
 
+    /// Debounce so the several triggers below (launch, prefs, load, scenePhase)
+    /// collapse into a single re-plan + widget write per burst.
+    @State private var rescheduleTask: Task<Void, Never>?
+
     var body: some Scene {
         WindowGroup {
             Group {
@@ -39,9 +43,15 @@ struct AtlasMobileApp: App {
         }
     }
 
-    /// Re-plan notifications and refresh the widget snapshot from the latest data.
+    /// Re-plan notifications and refresh the widget snapshot from the latest data,
+    /// debounced 1s so a burst of triggers does one removeAll+re-add+reload.
     private func reschedule() {
-        scheduler.reschedule(snapshot: store.snapshot, prefs: prefs)
-        WidgetSnapshotWriter.write(store.snapshot)
+        rescheduleTask?.cancel()
+        rescheduleTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            self.scheduler.reschedule(snapshot: self.store.snapshot, prefs: self.prefs)
+            WidgetSnapshotWriter.write(self.store.snapshot)
+        }
     }
 }

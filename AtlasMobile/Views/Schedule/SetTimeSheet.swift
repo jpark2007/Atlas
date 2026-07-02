@@ -10,7 +10,14 @@ struct SetTimeSheet: View {
     let onSet: (TaskItem) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var time = Date()
+    @State private var time: Date
+
+    init(task: TaskItem, day: Date, onSet: @escaping (TaskItem) -> Void) {
+        self.task = task
+        self.day = day
+        self.onSet = onSet
+        _time = State(initialValue: task.scheduledAt ?? Date())   // seed from an existing time
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {

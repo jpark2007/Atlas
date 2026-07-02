@@ -16,13 +16,17 @@ enum WidgetSnapshotWriter {
         let items = (sections.first { cal.isDate($0.day, inSameDayAs: day) }?.items ?? [])
             .filter { !($0.kind == .task && $0.allDay) }   // due-only tasks are the "needs a time" pill
 
-        let rows = items.map { item in
-            SharedSnapshot.Row(
+        let rows = items.map { item -> SharedSnapshot.Row in
+            let timed = !item.allDay
+            let start = timed ? item.date.timeIntervalSince1970 : 0
+            let end = timed ? (item.endDate ?? item.date.addingTimeInterval(3600)).timeIntervalSince1970 : 0
+            return SharedSnapshot.Row(
                 time: item.allDay ? "all-day" : clock(item.date, cal: cal),
                 title: item.title,
                 spaceName: item.spaceName,
                 spaceColorHex: hex(item.color),
-                isNow: isNow(item, now: now, cal: cal))
+                startEpoch: start,
+                endEpoch: end)
         }
 
         let needTime = snapshot.tasks.filter { task in
@@ -53,22 +57,16 @@ enum WidgetSnapshotWriter {
 
     // MARK: - Helpers
 
-    private static func isNow(_ item: AgendaItem, now: Date, cal: Calendar) -> Bool {
-        guard cal.isDateInToday(item.date), !item.allDay else { return false }
-        let end = item.endDate ?? item.date.addingTimeInterval(3600)
-        return item.date <= now && now < end
-    }
+    private static let clockHour: DateFormatter = { let f = DateFormatter(); f.dateFormat = "h a"; return f }()
+    private static let clockHourMinute: DateFormatter = { let f = DateFormatter(); f.dateFormat = "h:mm a"; return f }()
+    private static let dateLabelFormatter: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEE, MMM d"; return f }()
 
     private static func clock(_ date: Date, cal: Calendar) -> String {
-        let f = DateFormatter()
-        f.dateFormat = cal.component(.minute, from: date) == 0 ? "h a" : "h:mm a"
-        return f.string(from: date)
+        (cal.component(.minute, from: date) == 0 ? clockHour : clockHourMinute).string(from: date)
     }
 
     private static func dateLabel(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "EEE, MMM d"
-        return f.string(from: date)
+        dateLabelFormatter.string(from: date)
     }
 
     private static func hex(_ color: Color) -> String {

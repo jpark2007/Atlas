@@ -11,7 +11,17 @@ final class NotificationScheduler: NSObject, ObservableObject, UNUserNotificatio
     private let center = UNUserNotificationCenter.current()
 
     /// Set by the app to route a tapped notification's deep link into the store.
-    var onDeepLink: ((URL) -> Void)?
+    /// Assigning it flushes any link buffered before it was wired (cold-launch tap).
+    var onDeepLink: ((URL) -> Void)? {
+        didSet {
+            guard let handler = onDeepLink, let url = pendingURL else { return }
+            pendingURL = nil
+            handler(url)
+        }
+    }
+
+    /// A deep link received before `onDeepLink` was wired (cold launch), held until it is.
+    private var pendingURL: URL?
 
     override init() {
         super.init()
@@ -57,7 +67,8 @@ final class NotificationScheduler: NSObject, ObservableObject, UNUserNotificatio
                                             didReceive response: UNNotificationResponse) async {
         let deepLink = response.notification.request.content.userInfo["deepLink"] as? String
         await MainActor.run {
-            if let deepLink, let url = URL(string: deepLink) { onDeepLink?(url) }
+            guard let deepLink, let url = URL(string: deepLink) else { return }
+            if let onDeepLink { onDeepLink(url) } else { pendingURL = url }   // buffer until wired
         }
     }
 }

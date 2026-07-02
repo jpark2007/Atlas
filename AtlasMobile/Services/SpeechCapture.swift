@@ -23,6 +23,11 @@ final class SpeechCapture: ObservableObject {
     /// Smoothed input level, 0…1 — drives the waveform bars.
     @Published private(set) var level: CGFloat = 0
 
+    /// Fired once when dictation ends on its own (recognizer `isFinal` / error) while
+    /// still listening — a manual `stop()` never fires it. Carries the final
+    /// transcript so the caller can route it through the same flow as the Stop button.
+    var onFinish: ((String) -> Void)?
+
     var isListening: Bool { state == .listening }
 
     private let recognizer: SFSpeechRecognizer?
@@ -108,9 +113,20 @@ final class SpeechCapture: ObservableObject {
             guard let self else { return }
             Task { @MainActor in
                 if let result { self.transcript = result.bestTranscription.formattedString }
-                if error != nil || (result?.isFinal ?? false) { self.stop() }
+                if error != nil || (result?.isFinal ?? false) { self.finalize() }
             }
         }
+    }
+
+    /// Terminal path for a self-finalized recognition: tear down, go idle, and hand
+    /// the transcript to `onFinish`. Guards on `.listening` so a manual `stop()`
+    /// (which already routed the transcript) can't also fire the callback.
+    private func finalize() {
+        guard state == .listening else { return }
+        let final = transcript
+        endEngine()
+        state = .idle
+        onFinish?(final)
     }
 
     private func endEngine() {

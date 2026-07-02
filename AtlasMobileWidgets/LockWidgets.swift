@@ -16,8 +16,11 @@ struct LockProvider: TimelineProvider {
         completion(LockEntry(date: Date(), snapshot: SharedSnapshot.read() ?? .empty))
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<LockEntry>) -> Void) {
-        let entry = LockEntry(date: Date(), snapshot: SharedSnapshot.read() ?? .empty)
-        completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(15 * 60))))
+        let snapshot = SharedSnapshot.read() ?? .empty
+        let dates = SharedSnapshot.timelineDates(for: snapshot.today)
+        let entries = dates.map { LockEntry(date: $0, snapshot: snapshot) }
+        let refresh = (dates.last ?? Date()).addingTimeInterval(15 * 60)
+        completion(Timeline(entries: entries, policy: .after(refresh)))
     }
 }
 
@@ -26,9 +29,8 @@ struct LockProvider: TimelineProvider {
 struct LockRectangularWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "AtlasLockRect", provider: LockProvider()) { entry in
-            LockRectView(snapshot: entry.snapshot)
+            LockRectView(snapshot: entry.snapshot, date: entry.date)
                 .containerBackground(.clear, for: .widget)
-                .widgetURL(URL(string: "atlas://today")!)
         }
         .configurationDisplayName("Next up")
         .description("Your next item and what follows.")
@@ -38,17 +40,26 @@ struct LockRectangularWidget: Widget {
 
 struct LockRectView: View {
     let snapshot: SharedSnapshot
+    let date: Date
+
+    private var rows: [SharedSnapshot.Row] { snapshot.rows(notEndedAt: date) }
 
     var body: some View {
-        if let first = snapshot.today.first {
+        content
+            // Empty state deep-links to capture (spec §8); otherwise to today.
+            .widgetURL(URL(string: rows.isEmpty ? "atlas://capture" : "atlas://today")!)
+    }
+
+    @ViewBuilder private var content: some View {
+        if let first = rows.first {
             HStack(spacing: 6) {
                 Capsule().fill(.tint).frame(width: 2.5)   // thin leading accent bar (system-tinted)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(first.time)  \(first.title)")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .lineLimit(1)
-                    if snapshot.today.count > 1 {
-                        Text("then \(snapshot.today[1].title)")
+                    if rows.count > 1 {
+                        Text("then \(rows[1].title)")
                             .font(.system(size: 11, weight: .medium, design: .rounded))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)

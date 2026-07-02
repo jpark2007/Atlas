@@ -97,27 +97,30 @@ struct ScheduleView: View {
     // MARK: - List
 
     private var list: some View {
-        List {
-            NeedsTimeSection(tasks: needsTime) { timing = $0 }
-            DayTimelineView(
-                day: selectedDay,
-                now: Date(),
-                events: filteredEvents,
-                tasks: filteredTasks,
-                onToggle: toggle,
-                onDelete: delete
+        // TimelineView re-evaluates every minute so the NOW rail advances.
+        TimelineView(.everyMinute) { context in
+            List {
+                NeedsTimeSection(tasks: needsTime) { timing = $0 }
+                DayTimelineView(
+                    day: selectedDay,
+                    now: context.date,
+                    events: filteredEvents,
+                    tasks: filteredTasks,
+                    onToggle: toggle,
+                    onDelete: delete
+                )
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 30, coordinateSpace: .local)
+                    .onEnded { value in
+                        guard abs(value.translation.width) > abs(value.translation.height) * 1.5,
+                              abs(value.translation.width) > 50 else { return }
+                        changeDay(value.translation.width < 0 ? 1 : -1)
+                    }
             )
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 30, coordinateSpace: .local)
-                .onEnded { value in
-                    guard abs(value.translation.width) > abs(value.translation.height) * 1.5,
-                          abs(value.translation.width) > 50 else { return }
-                    changeDay(value.translation.width < 0 ? 1 : -1)
-                }
-        )
     }
 
     // MARK: - Data (space-filtered)
@@ -154,11 +157,9 @@ struct ScheduleView: View {
         return needsTime.count + timed.count
     }
 
-    private var dayLabel: String {
-        let f = DateFormatter()
-        f.dateFormat = "EEEE, MMM d"
-        return f.string(from: selectedDay)
-    }
+    private static let dayLabelFormatter: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEEE, MMM d"; return f }()
+
+    private var dayLabel: String { Self.dayLabelFormatter.string(from: selectedDay) }
 
     // MARK: - Actions
 

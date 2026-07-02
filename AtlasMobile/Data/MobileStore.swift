@@ -19,6 +19,12 @@ final class MobileStore: ObservableObject {
     /// Raised by the Schedule-family deep links (`today`/`unscheduled`/`today?space`);
     /// `ScheduleView` consumes it to snap back to today, then resets it.
     @Published var scheduleFocusToday = false
+    /// Last failed-write message (calm copy). Views may surface it; nil = no error.
+    @Published var lastError: String?
+
+    /// Non-zero while an optimistic mutation is persisting — `refresh()` defers so a
+    /// wholesale snapshot replace can't clobber an in-flight local write.
+    private var mutationsInFlight = 0
 
     private let sessionStore = SessionStore()
     private let auth = SupabaseAuth()
@@ -67,7 +73,7 @@ final class MobileStore: ObservableObject {
     /// Load every table into `snapshot`. On a 401, try one token refresh + retry;
     /// if that fails, sign out.
     func refresh() async {
-        guard session != nil else { return }
+        guard session != nil, mutationsInFlight == 0 else { return }
         loading = true
         defer { loading = false }
         do {
@@ -88,24 +94,69 @@ final class MobileStore: ObservableObject {
 
     func addTask(_ t: TaskItem) async {
         snapshot.tasks.append(t)
-        try? await db.upsertTask(t)
+        await persist({ try await self.db.upsertTask(t) },
+                      rollback: { self.snapshot.tasks.removeAll { $0.id == t.id } })
     }
 
     func updateTask(_ t: TaskItem) async {
+        let prior = snapshot.tasks.first { $0.id == t.id }
         if let i = snapshot.tasks.firstIndex(where: { $0.id == t.id }) {
             snapshot.tasks[i] = t
         }
-        try? await db.upsertTask(t)
+        await persist({ try await self.db.upsertTask(t) },
+                      rollback: {
+                          guard let prior, let i = self.snapshot.tasks.firstIndex(where: { $0.id == t.id }) else { return }
+                          self.snapshot.tasks[i] = prior
+                      })
     }
 
     func deleteTask(id: UUID) async {
+        let prior = snapshot.tasks.first { $0.id == id }
         snapshot.tasks.removeAll { $0.id == id }
-        try? await db.deleteTask(id: id)
+        await persist({ try await self.db.deleteTask(id: id) },
+                      rollback: { if let prior { self.snapshot.tasks.append(prior) } })
     }
 
     func addEvent(_ e: CalendarEvent) async {
         snapshot.events.append(e)
-        try? await db.upsertEvent(e)
+        await persist({ try await self.db.upsertEvent(e) },
+                      rollback: { self.snapshot.events.removeAll { $0.id == e.id } })
+    }
+
+    /// Run a persist call for an already-applied optimistic mutation: on a 401 do one
+    /// forced token refresh + retry; on final failure roll the local change back and
+    /// publish a calm `lastError`. Counted in `mutationsInFlight` so `refresh()` waits.
+    private func persist(_ op: @escaping () async throws -> Void, rollback: () -> Void) async {
+        mutationsInFlight += 1
+        defer { mutationsInFlight -= 1 }
+        do {
+            try await op()
+        } catch AtlasDBError.requestFailed(401, _), AtlasDBError.notAuthenticated {
+            if let fresh = await sessionStore.forceRefresh() {
+                session = fresh
+                do { try await op(); return } catch { /* fall through to rollback */ }
+            }
+            rollback()
+            lastError = "Couldn’t save that change — we’ll try again later."
+        } catch {
+            rollback()
+            lastError = "Couldn’t save that change — we’ll try again later."
+        }
+    }
+
+    // MARK: - AI context
+
+    /// Spaces with their projects re-nested from the flat `snapshot.projects`
+    /// (`loadAll()` returns spaces with `projects: []`). Feeds `AtlasAI.context` so
+    /// capture routing sees real project names/codes/overviews.
+    var contextSpaces: [Space] {
+        snapshot.spaces.map { space in
+            var s = space
+            s.projects = snapshot.projects.filter {
+                $0.spaceName.caseInsensitiveCompare(space.name) == .orderedSame
+            }
+            return s
+        }
     }
 
     // MARK: - Deep links

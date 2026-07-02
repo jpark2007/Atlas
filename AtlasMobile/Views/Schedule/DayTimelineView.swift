@@ -113,8 +113,9 @@ struct DayTimelineView: View {
 
     @ViewBuilder
     private func swipeActions(for item: AgendaItem) -> some View {
-        // Only Atlas-native tasks are destructible; external / read-only events aren't.
-        if item.kind == .task, let task = tasks.first(where: { $0.id == item.id }) {
+        // Only Atlas-native tasks are destructible; read-only events + Google work-blocks aren't.
+        if item.kind == .task, let task = tasks.first(where: { $0.id == item.id }),
+           task.workBlockGoogleEventId == nil {
             Button(role: .destructive) { onDelete(task) } label: {
                 Label("Delete", systemImage: "trash")
             }
@@ -130,10 +131,12 @@ struct DayTimelineView: View {
         return item.date <= now && now < end
     }
 
+    private static let clockHour: DateFormatter = { let f = DateFormatter(); f.dateFormat = "h a"; return f }()
+    private static let clockHourMinute: DateFormatter = { let f = DateFormatter(); f.dateFormat = "h:mm a"; return f }()
+
     private func clock(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = Calendar.current.component(.minute, from: date) == 0 ? "h a" : "h:mm a"
-        return f.string(from: date)
+        let onHour = Calendar.current.component(.minute, from: date) == 0
+        return (onHour ? Self.clockHour : Self.clockHourMinute).string(from: date)
     }
 
     private func sourceLabel(_ source: EventSource) -> String {

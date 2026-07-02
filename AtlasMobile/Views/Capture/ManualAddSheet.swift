@@ -85,7 +85,11 @@ struct ManualAddSheet: View {
         Menu {
             ForEach(spaces) { space in
                 Button { spaceID = space.id } label: {
-                    Label(space.name, systemImage: space.id == selectedSpace?.id ? "checkmark" : "")
+                    if space.id == selectedSpace?.id {
+                        Label(space.name, systemImage: "checkmark")
+                    } else {
+                        Text(space.name)
+                    }
                 }
             }
         } label: {

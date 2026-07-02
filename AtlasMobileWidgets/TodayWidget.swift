@@ -49,7 +49,14 @@ struct TodayProvider: AppIntentTimelineProvider {
         entry(configuration)
     }
     func timeline(for configuration: TodayConfigIntent, in context: Context) async -> Timeline<TodayEntry> {
-        Timeline(entries: [entry(configuration)], policy: .after(Date().addingTimeInterval(15 * 60)))
+        let snapshot = SharedSnapshot.read() ?? .empty
+        let dates = SharedSnapshot.timelineDates(for: snapshot.today)
+        let entries = dates.map { date in
+            TodayEntry(date: date, snapshot: snapshot,
+                       spaceId: configuration.space?.id, spaceName: configuration.space?.name)
+        }
+        let refresh = (dates.last ?? Date()).addingTimeInterval(15 * 60)
+        return Timeline(entries: entries, policy: .after(refresh))
     }
     private func entry(_ config: TodayConfigIntent) -> TodayEntry {
         TodayEntry(date: Date(), snapshot: SharedSnapshot.read() ?? .empty,
@@ -95,7 +102,7 @@ struct TodayWidgetView: View {
                 emptyState
             } else {
                 ForEach(Array(rows.prefix(maxRows).enumerated()), id: \.offset) { _, row in
-                    rowView(row)
+                    rowView(row, isNow: row.isNow(at: entry.date))
                 }
                 Spacer(minLength: 0)
                 if entry.snapshot.needTimeCount > 0 { needTimePill }
@@ -125,9 +132,9 @@ struct TodayWidgetView: View {
         }
     }
 
-    private func rowView(_ row: SharedSnapshot.Row) -> some View {
+    private func rowView(_ row: SharedSnapshot.Row, isNow: Bool) -> some View {
         HStack(spacing: 9) {
-            if row.isNow {
+            if isNow {
                 Capsule().fill(WidgetTheme.accent).frame(width: 3, height: 16)
             } else {
                 Capsule().fill(.clear).frame(width: 3, height: 16)
@@ -135,7 +142,7 @@ struct TodayWidgetView: View {
             Text(row.time)
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(row.isNow ? WidgetTheme.accentText : WidgetTheme.muted)
+                .foregroundStyle(isNow ? WidgetTheme.accentText : WidgetTheme.muted)
                 .frame(width: 52, alignment: .leading)
             Circle().fill(Color(hex: row.spaceColorHex)).frame(width: 7, height: 7)
             Text(row.title)
@@ -143,7 +150,7 @@ struct TodayWidgetView: View {
                 .foregroundStyle(WidgetTheme.ink)
                 .lineLimit(1)
             Spacer(minLength: 0)
-            if row.isNow {
+            if isNow {
                 Text("NOW")
                     .font(.system(size: 9, weight: .bold, design: .rounded))
                     .foregroundStyle(WidgetTheme.accentText)

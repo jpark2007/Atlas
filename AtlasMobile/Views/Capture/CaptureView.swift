@@ -20,6 +20,7 @@ struct CaptureView: View {
     @State private var drafts: [DraftItem] = []
     @State private var showManualAdd = false
     @State private var note: String?
+    @State private var isDraining = false
     @FocusState private var editorFocused: Bool
 
     @StateObject private var pending = PendingCaptureQueue()
@@ -269,6 +270,16 @@ struct CaptureView: View {
     private func startListening() {
         note = nil
         phase = .listening
+        // Route an auto-finalized transcript (recognizer hit isFinal / errored while
+        // the user was still on the Listening screen) through the same AI flow.
+        speech.onFinish = { spoken in
+            let trimmed = spoken.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                phase = .empty
+            } else {
+                sortItOut(trimmed)
+            }
+        }
         speech.start()
     }
 
@@ -304,7 +315,7 @@ struct CaptureView: View {
         phase = .thinking
         Task {
             do {
-                let ctx = AtlasAI.context(from: store.snapshot.spaces)
+                let ctx = AtlasAI.context(from: store.contextSpaces)
                 let results = try await store.ai.parse(raw, spaces: ctx)
                 text = ""
                 if results.isEmpty {
@@ -379,16 +390,22 @@ struct CaptureView: View {
     // MARK: - Offline drain
 
     /// Parse and commit any queued offline dumps. Stops at the first failure so the
-    /// rest stay queued (still offline / server down).
+    /// rest stay queued (still offline / server down). The `isDraining` guard
+    /// serializes the two triggers (`.task` + scenePhase); each item is removed from
+    /// the queue BEFORE parsing (restored on failure) so a crash mid-parse can't
+    /// double-commit it later.
     private func drainPending() async {
-        guard store.session != nil, !pending.items.isEmpty else { return }
-        let ctx = AtlasAI.context(from: store.snapshot.spaces)
+        guard !isDraining, store.session != nil, !pending.items.isEmpty else { return }
+        isDraining = true
+        defer { isDraining = false }
+        let ctx = AtlasAI.context(from: store.contextSpaces)
         for item in pending.items {
+            pending.remove(item.id)
             do {
                 let results = try await store.ai.parse(item.text, spaces: ctx)
                 for r in results { commit(DraftItem(r)) }
-                pending.remove(item.id)
             } catch {
+                pending.enqueue(item.text)
                 break
             }
         }

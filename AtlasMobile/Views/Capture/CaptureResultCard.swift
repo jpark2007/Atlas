@@ -35,7 +35,7 @@ struct CaptureResultCard: View {
     let onCommit: () -> Void
     let onUndo: () -> Void
 
-    @State private var editingDueIndex: Int?
+    @State private var editingDueID: UUID?
 
     private var hasNote: Bool { drafts.contains { $0.kind == "note" } }
 
@@ -50,8 +50,8 @@ struct CaptureResultCard: View {
             .padding(.bottom, 12)
 
             List {
-                ForEach(Array(drafts.enumerated()), id: \.element.id) { index, draft in
-                    row(draft, index: index)
+                ForEach($drafts) { $draft in
+                    row($draft)
                         .listRowInsets(EdgeInsets(top: 14, leading: 28, bottom: 14, trailing: 28))
                         .listRowBackground(Color.clear)
                         .listRowSeparatorTint(MobileTheme.hairline)
@@ -92,7 +92,7 @@ struct CaptureResultCard: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .sheet(isPresented: dueSheetPresented) {
-            if let i = editingDueIndex, drafts.indices.contains(i) {
+            if let id = editingDueID, let i = drafts.firstIndex(where: { $0.id == id }) {
                 dueEditor(index: i)
             }
         }
@@ -104,21 +104,21 @@ struct CaptureResultCard: View {
 
     // MARK: - Row
 
-    private func row(_ draft: DraftItem, index: Int) -> some View {
+    private func row(_ draft: Binding<DraftItem>) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(draft.title)
+            Text(draft.wrappedValue.title)
                 .font(.system(size: 15.5, weight: .semibold, design: .rounded))
                 .foregroundStyle(MobileTheme.ink)
 
             HStack(spacing: 10) {
-                spaceMenu(index)
+                spaceMenu(draft)
                 dot
-                Text(draft.kind)
+                Text(draft.wrappedValue.kind)
                     .font(.system(size: 10.5, weight: .bold, design: .rounded))
                     .tracking(0.84).textCase(.uppercase)
                     .foregroundStyle(MobileTheme.muted)
                 dot
-                Button { editingDueIndex = index } label: { dueLabel(draft) }
+                Button { editingDueID = draft.wrappedValue.id } label: { dueLabel(draft.wrappedValue) }
                     .buttonStyle(.plain)
             }
         }
@@ -128,15 +128,15 @@ struct CaptureResultCard: View {
         Text("·").font(.system(size: 13, weight: .bold)).foregroundStyle(MobileTheme.faint)
     }
 
-    private func spaceMenu(_ index: Int) -> some View {
+    private func spaceMenu(_ draft: Binding<DraftItem>) -> some View {
         Menu {
             ForEach(spaces) { s in
-                Button(s.name) { drafts[index].spaceName = s.name }
+                Button(s.name) { draft.wrappedValue.spaceName = s.name }
             }
         } label: {
             HStack(spacing: 6) {
-                Circle().fill(color(for: drafts[index].spaceName)).frame(width: 8, height: 8)
-                Text(drafts[index].spaceName)
+                Circle().fill(color(for: draft.wrappedValue.spaceName)).frame(width: 8, height: 8)
+                Text(draft.wrappedValue.spaceName)
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(MobileTheme.muted)
             }
@@ -152,8 +152,8 @@ struct CaptureResultCard: View {
     // MARK: - Due editor
 
     private var dueSheetPresented: Binding<Bool> {
-        Binding(get: { editingDueIndex != nil },
-                set: { if !$0 { editingDueIndex = nil } })
+        Binding(get: { editingDueID != nil },
+                set: { if !$0 { editingDueID = nil } })
     }
 
     private func dueEditor(index: Int) -> some View {
@@ -168,7 +168,7 @@ struct CaptureResultCard: View {
 
             Button {
                 drafts[index].due = nil
-                editingDueIndex = nil
+                editingDueID = nil
             } label: {
                 Text("Remove due date")
                     .font(.system(size: 13, weight: .medium, design: .rounded))
@@ -176,7 +176,7 @@ struct CaptureResultCard: View {
             }
             .buttonStyle(.plain)
 
-            Button { editingDueIndex = nil } label: {
+            Button { editingDueID = nil } label: {
                 Text("Done")
                     .font(.system(size: 15.5, weight: .semibold, design: .rounded))
                     .foregroundStyle(MobileTheme.ink)

@@ -95,11 +95,9 @@ struct MonthPageView: View {
         return Array(weekdaySymbols[shift...] + weekdaySymbols[..<shift])
     }
 
-    private var monthTitle: String {
-        let f = DateFormatter()
-        f.dateFormat = "LLLL yyyy"
-        return f.string(from: month)
-    }
+    private static let monthTitleFormatter: DateFormatter = { let f = DateFormatter(); f.dateFormat = "LLLL yyyy"; return f }()
+
+    private var monthTitle: String { Self.monthTitleFormatter.string(from: month) }
 
     private func shift(_ months: Int) {
         if let next = cal.date(byAdding: .month, value: months, to: month) { month = next }
