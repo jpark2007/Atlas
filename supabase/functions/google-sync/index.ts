@@ -4,24 +4,37 @@
  * Invoked by pg_cron (Task 4) every 5 minutes with the service-role key. It leases
  * a batch of due google_connections rows (claim_google_sync_users, 0009 — oldest
  * last_synced_at first, single-flight via `for update skip locked`) and for each:
+ *   DELETE Atlas → Google: process the user's tombstones FIRST (deleted_google_events,
+ *         0011) — an app-side delete of a mirrored row is replayed as a Google
+ *         DELETE /events/{id} (404/410 = already gone = success), then the tombstone
+ *         is cleared. "Deleted anywhere = deleted everywhere."
  *   PULL  Google → Supabase: incremental events.list with the stored sync_token
  *         (410 GONE → full −30d…+365d resync), upserting Google-origin rows and
- *         applying deletions.
+ *         DELETING any row whose Google event is cancelled (regardless of origin).
  *   PUSH  Supabase → Google: rows changed since last_synced_at — POST a not-yet-
  *         mirrored Atlas row (deterministic id), or PATCH a mirrored one.
  *
  * Single-owner / no-duplicates invariant is backstopped by the DB:
  *   • unique (user_id, google_event_id)         non-partial, so ON CONFLICT infers it (0009/C1)
- *   • events.google_origin bit                  delete-vs-unmirror authority (0007)
+ *   • events.google_origin bit                  never-re-create-on-Google authority (0007)
  *   • events.google_updated_at                  two-timestamp reconcile (0009/C2)
  *
  * events.google_origin semantics (0007): true ⇒ this row is Google-owned. It is
- * still EDIT-synced back to Google (I2 — a local edit PATCHes it), a Google-side
- * delete still deletes it locally, but it is NEVER re-CREATED on Google (no POST
- * path for an origin row). It is set true on a Google-origin insert AND when
- * un-mirroring an Atlas row (its gid nulled after a Google-side delete) so the
- * detached row is never resurrected. Only google_origin=false + null-gid rows are
- * POSTed as new Google events.
+ * still EDIT-synced back to Google (I2 — a local edit PATCHes it) but is NEVER
+ * re-CREATED on Google (no POST path for an origin row). It is set true on a
+ * Google-origin insert. Only google_origin=false + null-gid rows are POSTed as new
+ * Google events; the null-gid + origin=true PUSH guard now covers only LEGACY
+ * detached rows — un-mirroring was removed with the two-way-delete change, so a
+ * Google-side cancellation now DELETES the local row regardless of origin.
+ *
+ * ── Two-way delete (0011). deleted_google_events tombstones an app-side delete of
+ * a mirrored row (AFTER DELETE trigger on events, fired for Mac + phone alike). Each
+ * cycle the runner (a) replays the tombstones as Google deletes and clears them,
+ * (b) SKIPS any incoming pull event whose id still has a pending tombstone so a
+ * failed delete isn't resurrected, and (c) clears the tombstones its OWN pull-side
+ * deletes just wrote (Google already cancelled those) to avoid a redundant next-run
+ * DELETE. Work-block mirror gids live on `tasks`, not `events`, so the trigger never
+ * fires for them.
  *
  * Deterministic Google ids (C3): a new push derives the Google event id from the
  * row UUID (base32hex-lowercase of its 16 bytes → [0-9a-v]{26}, inside Google's
@@ -176,7 +189,7 @@ interface UserResult {
   inserted: number;
   updated: number;
   deleted: number;
-  unmirrored: number;
+  tombstoned: number;
   pushedNew: number;
   pushedUpdated: number;
   fullResync: boolean;
@@ -327,7 +340,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     inserted: 0,
     updated: 0,
     deleted: 0,
-    unmirrored: 0,
+    tombstoned: 0,
     pushedNew: 0,
     pushedUpdated: 0,
     fullResync: false,
@@ -355,6 +368,56 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     }
   }
 
+  // I4 (two-way delete). Replay this user's app-side deletions to Google FIRST. A
+  //     tombstone (deleted_google_events, 0011) is written by an AFTER DELETE trigger
+  //     whenever an events row carrying a google_event_id is deleted (Mac or phone).
+  //     Read the set up front: it both drives the Google deletes below AND gates the
+  //     PULL so a not-yet-deleted event is never resurrected.
+  const tombstonedGids = new Set<string>();
+  {
+    const { data: tombRows, error: tombErr } = await admin
+      .from("deleted_google_events")
+      .select("google_event_id")
+      .eq("user_id", userId);
+    if (tombErr) throw new Error(`tombstone select failed: ${tombErr.message}`);
+    for (const r of (tombRows ?? []) as { google_event_id: string }[]) {
+      if (r.google_event_id) tombstonedGids.add(r.google_event_id);
+    }
+  }
+  result.tombstoned = tombstonedGids.size;
+
+  // Per-event isolation mirrors the PUSH loop: one failed delete records and the
+  // loop continues; only successfully-deleted (or already-gone) tombstones clear,
+  // so a failure retries next cycle. dryRun issues no Google/DB writes.
+  const tombstoneErrors: { gid: string; message: string }[] = [];
+  if (!dryRun && tombstonedGids.size > 0) {
+    const cleared: string[] = [];
+    for (const gid of tombstonedGids) {
+      try {
+        const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendar_id)}/events/${encodeURIComponent(gid)}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        // 2xx deleted; 404/410 already gone — both success. Anything else is real.
+        if (res.ok || res.status === 404 || res.status === 410) {
+          cleared.push(gid);
+        } else {
+          throw new Error(`google delete ${res.status}: ${(await res.text()).slice(0, 200)}`);
+        }
+      } catch (e) {
+        tombstoneErrors.push({ gid, message: String((e as Error)?.message ?? e).slice(0, 200) });
+      }
+    }
+    if (cleared.length > 0) {
+      const { error } = await admin
+        .from("deleted_google_events")
+        .delete()
+        .eq("user_id", userId)
+        .in("google_event_id", cleared);
+      if (error) throw new Error(`tombstone clear failed: ${error.message}`);
+    }
+  }
+
   // 2. PULL. Incremental when we hold a sync_token; on 410 (or no token) fall
   //    back to a full-window resync.
   let listing: ListResult = { items: [], nextSyncToken: null, gone: false };
@@ -378,6 +441,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     const gid = ev.id;
     if (!gid) continue;
     if (workBlockGids.has(gid)) continue; // I1: never ingest a Mac-owned work-block mirror
+    if (tombstonedGids.has(gid)) continue; // I4: app-deleted (Google DELETE issued above) — never resurrect
     if (ev.status === "cancelled") {
       cancelledGids.push(gid);
       continue;
@@ -425,15 +489,18 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
   // pulled/un-mirrored row is never echoed back to Google in the same pass.
   const syncTouched = new Set<string>();
 
-  // 2a. Deletions (cancelled events).
+  // 2a. Deletions (cancelled events). "Deleted anywhere = deleted everywhere": a
+  //     Google-side cancellation DELETES the local row regardless of google_origin
+  //     (the former Atlas-mirror un-mirror branch is gone). deletedFromPullGids lets
+  //     step 3 clear the self-tombstones this delete will trigger.
   const toDelete: string[] = [];
-  const toUnmirror: string[] = [];
+  const deletedFromPullGids: string[] = [];
   for (const gid of cancelledGids) {
     const row = existingByGid.get(gid);
     if (!row) continue;
     syncTouched.add(row.id);
-    if (row.google_origin) toDelete.push(row.id); // Google owns it → remove
-    else toUnmirror.push(row.id); // Atlas mirror → keep event, detach from Google
+    toDelete.push(row.id);
+    deletedFromPullGids.push(gid);
   }
 
   // 2b. Upserts (Google-origin inserts + newest-wins updates, same-clock recency).
@@ -487,7 +554,6 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
   result.inserted = inserts.length;
   result.updated = updates.length;
   result.deleted = toDelete.length;
-  result.unmirrored = toUnmirror.length;
 
   // 3. Apply pull writes (skipped entirely in dryRun).
   if (!dryRun) {
@@ -505,11 +571,15 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     if (toDelete.length > 0) {
       const { error } = await admin.from("events").delete().in("id", toDelete);
       if (error) throw new Error(`delete failed: ${error.message}`);
-    }
-    if (toUnmirror.length > 0) {
-      // Detach: null the gid AND mark google_origin so it is never re-pushed.
-      const { error } = await admin.from("events").update({ google_event_id: null, google_origin: true }).in("id", toUnmirror);
-      if (error) throw new Error(`unmirror failed: ${error.message}`);
+      // The AFTER DELETE trigger (0011) just tombstoned each of these gids, but
+      // Google already cancelled them — clear those self-tombstones so the next run
+      // doesn't issue a redundant (404) Google DELETE.
+      const { error: tErr } = await admin
+        .from("deleted_google_events")
+        .delete()
+        .eq("user_id", userId)
+        .in("google_event_id", deletedFromPullGids);
+      if (tErr) throw new Error(`pull-delete tombstone clear failed: ${tErr.message}`);
     }
   }
 
@@ -577,7 +647,10 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
         }
       }
     } else if (row.google_origin) {
-      // Un-mirrored (detached) origin row → NEVER re-create on Google (no resurrection).
+      // Legacy detached origin row (null gid + origin=true) → NEVER re-create on
+      // Google. The runner no longer produces this state (un-mirroring was removed
+      // with the two-way delete); this guard only covers rows detached by the prior
+      // logic, so they are never resurrected.
       continue;
     } else {
       // Not yet mirrored Atlas row → create with a deterministic id (idempotent).
@@ -616,14 +689,19 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
   // 5. Advance the cursor and release the lease. Per-event push failures DON'T fail
   //    the run — they complete it and record a truncated summary in last_error, and
   //    status stays 'active' so the connection keeps syncing.
-  const pushErrorSummary = pushErrors.length > 0
-    ? `push: ${pushErrors.length} event error(s): ${pushErrors.map((e) => `${e.id} ${e.message}`).join(" | ")}`.slice(0, 500)
-    : null;
-  if (pushErrorSummary) result.error = pushErrorSummary;
+  const errorParts: string[] = [];
+  if (tombstoneErrors.length > 0) {
+    errorParts.push(`delete: ${tombstoneErrors.length} event error(s): ${tombstoneErrors.map((e) => `${e.gid} ${e.message}`).join(" | ")}`);
+  }
+  if (pushErrors.length > 0) {
+    errorParts.push(`push: ${pushErrors.length} event error(s): ${pushErrors.map((e) => `${e.id} ${e.message}`).join(" | ")}`);
+  }
+  const errorSummary = errorParts.length > 0 ? errorParts.join(" || ").slice(0, 500) : null;
+  if (errorSummary) result.error = errorSummary;
   if (!dryRun) {
     const { error } = await admin
       .from("google_connections")
-      .update({ sync_token: newSyncToken, last_synced_at: runStartISO, status: "active", last_error: pushErrorSummary, claimed_until: null })
+      .update({ sync_token: newSyncToken, last_synced_at: runStartISO, status: "active", last_error: errorSummary, claimed_until: null })
       .eq("user_id", userId);
     if (error) throw new Error(`connection update failed: ${error.message}`);
   }
@@ -698,7 +776,7 @@ Deno.serve(async (req: Request) => {
       results.push({
         userId: conn.user_id,
         status: revoked ? "revoked" : "error",
-        inserted: 0, updated: 0, deleted: 0, unmirrored: 0, pushedNew: 0, pushedUpdated: 0,
+        inserted: 0, updated: 0, deleted: 0, tombstoned: 0, pushedNew: 0, pushedUpdated: 0,
         fullResync: false, error: msg,
       });
     }
