@@ -147,14 +147,15 @@ struct DayTimelineView: View {
 
     @ViewBuilder
     private func swipeActions(for item: AgendaItem) -> some View {
-        // Only Atlas-native tasks are destructible; read-only events + Google work-blocks aren't.
+        // Atlas + Google events are deletable (deletes tombstone back to Google);
+        // Apple events stay read-only. Google work-block tasks aren't hand-deletable.
         if item.kind == .task, let task = tasks.first(where: { $0.id == item.id }),
            task.workBlockGoogleEventId == nil {
             Button(role: .destructive) { onDelete(task) } label: {
                 Label("Delete", systemImage: "trash")
             }
         } else if item.kind == .event, let event = events.first(where: { $0.id == item.id }),
-                  event.source == .atlas {
+                  event.source == .atlas || event.source == .google {
             Button(role: .destructive) { onDeleteEvent(event) } label: {
                 Label("Delete", systemImage: "trash")
             }

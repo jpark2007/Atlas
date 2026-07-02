@@ -109,17 +109,17 @@ struct ItemDetailSheet: View {
 
     @ViewBuilder
     private var editableFields: some View {
+        if isGoogleEvent {
+            Text("Syncs with Google Calendar")
+                .edCapsLabel()
+                .padding(.bottom, 8)
+        }
+
         field("Title") { titleField }
         field("Space") { spacePicker }
 
         if isTask {
-            field("Project") {
-                TextField("Optional", text: $projectName)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 17, weight: .regular, design: .rounded))
-                    .foregroundStyle(MobileTheme.ink)
-                    .tint(MobileTheme.accent)
-            }
+            field("Project") { projectPicker }
             dueSection
         } else {
             startSection
@@ -140,7 +140,11 @@ struct ItemDetailSheet: View {
     private var spacePicker: some View {
         Menu {
             ForEach(spaces) { space in
-                Button { spaceName = space.name } label: {
+                Button {
+                    spaceName = space.name
+                    // If the picked project no longer belongs to the new space, drop it.
+                    if !projectBelongsToSelectedSpace { projectName = "" }
+                } label: {
                     if space.name.caseInsensitiveCompare(spaceName) == .orderedSame {
                         Label(space.name, systemImage: "checkmark")
                     } else {
@@ -243,6 +247,40 @@ struct ItemDetailSheet: View {
         }
     }
 
+    /// Project — a Menu of the selected space's projects plus "None". Mirrors the
+    /// space picker; keeps the current value as the label even if it's off-list so
+    /// we never silently drop a task's existing project.
+    private var projectPicker: some View {
+        Menu {
+            Button { projectName = "" } label: {
+                if projectName.isEmpty {
+                    Label("None", systemImage: "checkmark")
+                } else {
+                    Text("None")
+                }
+            }
+            ForEach(spaceProjects) { project in
+                Button { projectName = project.name } label: {
+                    if project.name.caseInsensitiveCompare(projectName) == .orderedSame {
+                        Label(project.name, systemImage: "checkmark")
+                    } else {
+                        Text(project.name)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Text(projectName.isEmpty ? "None" : projectName)
+                    .font(.system(size: 17, weight: .regular, design: .rounded))
+                    .foregroundStyle(projectName.isEmpty ? MobileTheme.faint : MobileTheme.ink)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(MobileTheme.muted)
+            }
+        }
+    }
+
     private var notesEditor: some View {
         TextEditor(text: $notes)
             .scrollContentBackground(.hidden)
@@ -329,28 +367,50 @@ struct ItemDetailSheet: View {
 
     private var isTask: Bool { if case .task = detail { return true }; return false }
 
+    private var isGoogleEvent: Bool {
+        if case .event(let e) = detail, e.source == .google { return true }
+        return false
+    }
+
+    /// Atlas and Google events edit the same way — server-side sync PATCHes Atlas
+    /// edits back to Google and tombstones propagate deletes. Only Apple stays read-only.
     private var isEditable: Bool {
         switch detail {
         case .task:          return true
-        case .event(let e):  return e.source == .atlas
+        case .event(let e):  return e.source == .atlas || e.source == .google
         }
     }
 
     private var canDelete: Bool {
         switch detail {
         case .task:          return true
-        case .event(let e):  return e.source == .atlas
+        case .event(let e):  return e.source == .atlas || e.source == .google
         }
     }
 
     private var readOnlyEvent: CalendarEvent? {
-        if case .event(let e) = detail, e.source != .atlas { return e }
+        if case .event(let e) = detail, e.source == .apple { return e }
         return nil
     }
 
     private var spaces: [Space] { store.snapshot.spaces }
     private var selectedSpace: Space? {
         spaces.first { $0.name.caseInsensitiveCompare(spaceName) == .orderedSame }
+    }
+
+    /// Projects belonging to the currently-selected space (case-insensitive), the
+    /// same match `MobileStore.contextSpaces` uses to re-nest projects.
+    private var spaceProjects: [Project] {
+        store.snapshot.projects.filter {
+            $0.spaceName.caseInsensitiveCompare(spaceName) == .orderedSame
+        }
+    }
+
+    /// True when the picked project is empty or lives in the selected space.
+    private var projectBelongsToSelectedSpace: Bool {
+        projectName.isEmpty || spaceProjects.contains {
+            $0.name.caseInsensitiveCompare(projectName) == .orderedSame
+        }
     }
 
     private func startText(_ date: Date) -> String {
