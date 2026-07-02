@@ -8,6 +8,7 @@ struct MonthPageView: View {
     let selected: Date
     let onPick: (Date) -> Void
 
+    @EnvironmentObject private var store: MobileStore
     @Environment(\.dismiss) private var dismiss
     @State private var month: Date
 
@@ -76,19 +77,54 @@ struct MonthPageView: View {
         let isSelected = cal.isDate(day, inSameDayAs: selected)
         let isToday = cal.isDateInToday(day)
         return Button { onPick(cal.startOfDay(for: day)); dismiss() } label: {
-            Text("\(cal.component(.day, from: day))")
-                .font(.system(size: 16, weight: isToday ? .heavy : .regular, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(cellColor(inMonth: inMonth, isToday: isToday))
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .overlay {
-                    if isSelected {
-                        Circle().strokeBorder(MobileTheme.ink, lineWidth: MobileTheme.rule)
-                            .frame(width: 38, height: 38)
+            VStack(spacing: 2) {
+                Text("\(cal.component(.day, from: day))")
+                    .font(.system(size: 16, weight: isToday ? .heavy : .regular, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(cellColor(inMonth: inMonth, isToday: isToday))
+                    .overlay {
+                        if isSelected {
+                            Circle().strokeBorder(MobileTheme.ink, lineWidth: MobileTheme.rule)
+                                .frame(width: 38, height: 38)
+                        }
                     }
-                }
+                dotRow(for: day)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(.plain)
+    }
+
+    /// Up to 3 distinct space-color dots for the day, a faint 4th when there's more.
+    private func dotRow(for day: Date) -> some View {
+        let colors = dotColors(for: day)
+        return HStack(spacing: 3) {
+            ForEach(Array(colors.prefix(3).enumerated()), id: \.offset) { _, c in
+                Circle().fill(c).frame(width: 4, height: 4)
+            }
+            if colors.count > 3 {
+                Circle().fill(MobileTheme.faint.opacity(0.5)).frame(width: 4, height: 4)
+            }
+        }
+        .frame(height: 4)
+    }
+
+    /// Distinct space colors of the day's events (by start) + tasks (by scheduledAt
+    /// or dueDate), deduped by space name in encounter order.
+    private func dotColors(for day: Date) -> [Color] {
+        var seen: Set<String> = []
+        var colors: [Color] = []
+        func add(_ name: String, _ color: Color) {
+            if seen.insert(name.lowercased()).inserted { colors.append(color) }
+        }
+        for ev in store.snapshot.events where cal.isDate(ev.start, inSameDayAs: day) {
+            add(ev.spaceName, ev.color)
+        }
+        for t in store.snapshot.tasks where !t.done {
+            if let at = t.scheduledAt, cal.isDate(at, inSameDayAs: day) { add(t.spaceName, t.spaceColor) }
+            else if let due = t.dueDate, cal.isDate(due, inSameDayAs: day) { add(t.spaceName, t.spaceColor) }
+        }
+        return colors
     }
 
     private func cellColor(inMonth: Bool, isToday: Bool) -> Color {

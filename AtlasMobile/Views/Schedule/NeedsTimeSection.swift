@@ -1,30 +1,62 @@
 import SwiftUI
 import AtlasCore
 
-/// The "Needs a time" block pinned above the timeline: tasks due on the shown day
-/// with no time yet. Tapping a row opens `SetTimeSheet`. Rendered as a `List`
-/// section so it sits in the same scroll as the timeline.
+/// The "Needs a time" block: tasks due on the shown day with no time yet (date-only
+/// due — clock-timed deadlines render on the timeline/grid instead). Row tap opens
+/// detail; the "set time" chip sets a time; the header's "PLACE" button starts the
+/// drag-to-place flow. Renders as a `List` section (list mode) or a compact strip
+/// pinned above the hour grid (`compact`).
 struct NeedsTimeSection: View {
     let tasks: [TaskItem]
     let onSetTime: (TaskItem) -> Void
     let onOpen: (TaskItem) -> Void
+    let onPlace: () -> Void
+    var compact: Bool = false
 
     var body: some View {
         if !tasks.isEmpty {
-            Section {
-                ForEach(tasks) { task in
-                    row(task)
-                        .listRowInsets(EdgeInsets(top: 14, leading: 28, bottom: 14, trailing: 28))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparatorTint(MobileTheme.hairline)
-                }
-            } header: {
-                Text("Needs a time · \(tasks.count)")
-                    .edCapsLabel()
-                    .textCase(nil)
-                    .padding(.horizontal, 28)
-                    .padding(.top, 8)
+            if compact { compactBody } else { listSection }
+        }
+    }
+
+    private var listSection: some View {
+        Section {
+            ForEach(tasks) { task in
+                row(task)
+                    .listRowInsets(EdgeInsets(top: 14, leading: 28, bottom: 14, trailing: 28))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparatorTint(MobileTheme.hairline)
             }
+        } header: {
+            header.padding(.horizontal, 28).padding(.top, 8)
+        }
+    }
+
+    private var compactBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header.padding(.horizontal, 28).padding(.top, 10).padding(.bottom, 4)
+            ForEach(tasks.prefix(3)) { task in
+                row(task)
+                    .padding(.horizontal, 28).padding(.vertical, 10)
+                    .edHairlineBelow()
+            }
+        }
+        .overlay(alignment: .bottom) { Rectangle().fill(MobileTheme.hairline).frame(height: 1) }
+    }
+
+    private var header: some View {
+        HStack {
+            Text("Needs a time · \(tasks.count)")
+                .edCapsLabel()
+                .textCase(nil)
+            Spacer()
+            Button { onPlace() } label: {
+                Text("Place")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .tracking(0.88).textCase(.uppercase)
+                    .foregroundStyle(MobileTheme.ink)
+            }
+            .buttonStyle(.plain)
         }
     }
 

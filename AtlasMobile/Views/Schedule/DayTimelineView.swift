@@ -23,8 +23,13 @@ struct DayTimelineView: View {
         let cal = Calendar.current
         let sections = AgendaBuilder.build(events: events, tasks: tasks, from: day, now: now)
         let dayItems = sections.first { cal.isDate($0.day, inSameDayAs: day) }?.items ?? []
-        // Due-only tasks (kind .task && allDay) belong to the Needs-a-time block.
-        return dayItems.filter { !($0.kind == .task && $0.allDay) }
+        // Events + scheduled (timed) tasks stay. Among due-only tasks (kind .task &&
+        // allDay), keep the ones carrying a clock time — those render as deadline rows;
+        // date-only due tasks live in the Needs-a-time block.
+        return dayItems.filter { item in
+            guard item.kind == .task, item.allDay else { return true }
+            return hasClockTime(item.date)
+        }
     }
 
     var body: some View {
@@ -66,11 +71,19 @@ struct DayTimelineView: View {
         let isNow = isCurrent(item)
         let task = item.kind == .task ? tasks.first { $0.id == item.id } : nil
         let event = item.kind == .event ? events.first { $0.id == item.id } : nil
+        // A due-only task that survived the filter is a clock-timed deadline.
+        let isDeadline = item.kind == .task && item.allDay
+        let overdue = isDeadline && item.date < now
 
         HStack(alignment: .top, spacing: 12) {
-            timeColumn(item, isNow: isNow)
+            timeColumn(item, isNow: isNow, overdue: overdue)
 
-            if let task {
+            if isDeadline {
+                Image(systemName: "flag.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(AtlasTheme.Colors.danger)
+                    .padding(.top, 3)
+            } else if let task {
                 checkCircle(task)
             } else {
                 Circle().fill(item.color).frame(width: 9, height: 9).padding(.top, 4)
@@ -83,7 +96,7 @@ struct DayTimelineView: View {
 
             Spacer(minLength: 8)
 
-            trailingTag(item: item, event: event, isNow: isNow)
+            trailingTag(item: item, event: event, isNow: isNow, isDeadline: isDeadline, overdue: overdue)
         }
         .overlay(alignment: .leading) {
             if isNow {
@@ -99,11 +112,15 @@ struct DayTimelineView: View {
         }
     }
 
-    private func timeColumn(_ item: AgendaItem, isNow: Bool) -> some View {
-        Text(item.allDay ? "all-day" : clock(item.date))
+    private func timeColumn(_ item: AgendaItem, isNow: Bool, overdue: Bool) -> some View {
+        // Only genuine all-day events read "all-day"; a clock-timed deadline shows its due time.
+        let text = (item.allDay && item.kind == .event) ? "all-day" : clock(item.date)
+        let color: Color = overdue ? AtlasTheme.Colors.danger
+            : isNow ? MobileTheme.accentText : MobileTheme.muted
+        return Text(text)
             .font(.system(size: 14, weight: .bold, design: .rounded))
             .monospacedDigit()
-            .foregroundStyle(isNow ? MobileTheme.accentText : MobileTheme.muted)
+            .foregroundStyle(color)
             .frame(width: 66, alignment: .leading)
     }
 
@@ -112,16 +129,19 @@ struct DayTimelineView: View {
             .padding(.top, 1)
     }
 
-    private func trailingTag(item: AgendaItem, event: CalendarEvent?, isNow: Bool) -> some View {
+    private func trailingTag(item: AgendaItem, event: CalendarEvent?, isNow: Bool,
+                             isDeadline: Bool, overdue: Bool) -> some View {
         let text: String
-        if isNow { text = "NOW" }
-        else if let event { text = sourceLabel(event.source) }
-        else { text = item.spaceName }
+        let color: Color
+        if isNow { text = "NOW"; color = MobileTheme.accentText }
+        else if isDeadline { text = "DUE"; color = overdue ? AtlasTheme.Colors.danger : MobileTheme.faint }
+        else if let event { text = sourceLabel(event.source); color = MobileTheme.faint }
+        else { text = item.spaceName; color = MobileTheme.faint }
 
         return Text(text)
             .font(.system(size: 10.5, weight: .bold, design: .rounded))
             .tracking(0.84).textCase(.uppercase)
-            .foregroundStyle(isNow ? MobileTheme.accentText : MobileTheme.faint)
+            .foregroundStyle(color)
             .fixedSize()
     }
 
@@ -164,5 +184,12 @@ struct DayTimelineView: View {
         case .apple:  return "Apple"
         case .google: return "Google"
         }
+    }
+
+    /// True when a date carries a specific clock time (not local midnight) — the
+    /// signal that a due-only task is a real deadline, not a date-only "needs a time".
+    private func hasClockTime(_ date: Date) -> Bool {
+        let c = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return (c.hour ?? 0) != 0 || (c.minute ?? 0) != 0
     }
 }

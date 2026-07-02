@@ -7,18 +7,24 @@ import AtlasCore
 struct ScheduleView: View {
     @EnvironmentObject private var store: MobileStore
 
+    @AppStorage("scheduleViewMode") private var viewMode = "list"   // "list" | "grid"
+
     @State private var selectedDay = Calendar.current.startOfDay(for: Date())
     @State private var showMonth = false
     @State private var showSettings = false
     @State private var timing: TaskItem?
     @State private var detail: ItemDetailSheet.Detail?
+    // Drag-to-place scheduling.
+    @State private var showPlace = false
+    @State private var placing: TaskItem?
+    @State private var placeMinutes = 9 * 60
 
     private let cal = Calendar.current
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            list
+            content
         }
         .background(MobileTheme.bg.ignoresSafeArea())
         .overlay(alignment: .bottom) {
@@ -46,6 +52,11 @@ struct ScheduleView: View {
         .animation(MobileTheme.spring, value: cal.isDateInToday(selectedDay))
         .sheet(isPresented: $showMonth) {
             MonthPageView(selected: selectedDay) { selectedDay = $0 }
+                .environmentObject(store)
+        }
+        .sheet(isPresented: $showPlace) {
+            PlaceTaskSheet { beginPlacing($0) }
+                .environmentObject(store)
         }
         .sheet(isPresented: $showSettings) {
             SettingsSheet().environmentObject(store)
@@ -86,6 +97,7 @@ struct ScheduleView: View {
                 Text("\(leftCount) left").edCapsLabel()
                 Spacer()
                 spaceFilterMenu
+                viewToggle
                 Button { showMonth = true } label: {
                     Image(systemName: "calendar")
                         .font(.system(size: 17, weight: .medium))
@@ -130,15 +142,41 @@ struct ScheduleView: View {
         }
     }
 
-    // MARK: - List
+    private var viewToggle: some View {
+        HStack(spacing: 12) {
+            toggleGlyph("list.bullet", "list")
+            toggleGlyph("calendar.day.timeline.left", "grid")
+        }
+    }
 
-    private var list: some View {
+    private func toggleGlyph(_ name: String, _ mode: String) -> some View {
+        Button {
+            guard viewMode != mode else { return }
+            MobileTheme.Haptic.selection()
+            withAnimation(MobileTheme.spring) { viewMode = mode }
+        } label: {
+            Image(systemName: name)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(viewMode == mode ? MobileTheme.ink : MobileTheme.faint)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Body (list ↔ grid)
+
+    @ViewBuilder
+    private var content: some View {
+        if viewMode == "grid" { gridBody } else { listBody }
+    }
+
+    private var listBody: some View {
         // TimelineView re-evaluates every minute so the NOW rail advances.
         TimelineView(.everyMinute) { context in
             List {
                 NeedsTimeSection(tasks: needsTime,
                                  onSetTime: { timing = $0 },
-                                 onOpen: { detail = .task($0) })
+                                 onOpen: { detail = .task($0) },
+                                 onPlace: { showPlace = true })
                 DayTimelineView(
                     day: selectedDay,
                     now: context.date,
@@ -155,15 +193,44 @@ struct ScheduleView: View {
             .scrollContentBackground(.hidden)
             .contentMargins(.bottom, 72, for: .scrollContent)
             .refreshable { await store.refresh() }
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 30, coordinateSpace: .local)
-                    .onEnded { value in
-                        guard abs(value.translation.width) > abs(value.translation.height) * 1.5,
-                              abs(value.translation.width) > 50 else { return }
-                        changeDay(value.translation.width < 0 ? 1 : -1)
-                    }
-            )
+            .simultaneousGesture(daySwipe)
         }
+    }
+
+    private var gridBody: some View {
+        // TimelineView re-evaluates every minute so the NOW line advances.
+        TimelineView(.everyMinute) { context in
+            VStack(spacing: 0) {
+                NeedsTimeSection(tasks: needsTime,
+                                 onSetTime: { timing = $0 },
+                                 onOpen: { detail = .task($0) },
+                                 onPlace: { showPlace = true },
+                                 compact: true)
+                DayGridView(
+                    day: selectedDay,
+                    now: context.date,
+                    events: filteredEvents,
+                    tasks: filteredTasks,
+                    onOpen: { detail = $0 },
+                    onToggle: toggle,
+                    placing: placing,
+                    placeMinutes: $placeMinutes,
+                    onConfirmPlace: confirmPlace,
+                    onCancelPlace: { withAnimation(MobileTheme.spring) { placing = nil } }
+                )
+            }
+            .simultaneousGesture(daySwipe)
+        }
+    }
+
+    /// Horizontal fling changes the day (stays usable while placing).
+    private var daySwipe: some Gesture {
+        DragGesture(minimumDistance: 30, coordinateSpace: .local)
+            .onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.5,
+                      abs(value.translation.width) > 50 else { return }
+                changeDay(value.translation.width < 0 ? 1 : -1)
+            }
     }
 
     // MARK: - Data (space-filtered)
@@ -181,23 +248,27 @@ struct ScheduleView: View {
     private var filteredEvents: [CalendarEvent] { store.snapshot.events.filter { inFilter($0.spaceName) } }
     private var filteredTasks: [TaskItem] { store.snapshot.tasks.filter { inFilter($0.spaceName) } }
 
-    /// Tasks due on the shown day with no time yet.
+    /// Tasks due on the shown day that truly need a time — date-only due, unscheduled.
+    /// Clock-timed due tasks are deadlines and render on the timeline/grid instead.
     private var needsTime: [TaskItem] {
         filteredTasks
             .filter { task in
-                guard let due = task.dueDate, task.scheduledAt == nil, !task.done else { return false }
-                return cal.isDate(due, inSameDayAs: selectedDay)
+                guard let due = task.dueDate, task.scheduledAt == nil, !task.done,
+                      cal.isDate(due, inSameDayAs: selectedDay) else { return false }
+                let c = cal.dateComponents([.hour, .minute], from: due)
+                return (c.hour ?? 0) == 0 && (c.minute ?? 0) == 0
             }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
-    /// "N left" — incomplete tasks for the day (needs-a-time + timed, not done).
+    /// "N left" — every incomplete task landing on the day (scheduled + any due).
     private var leftCount: Int {
-        let timed = filteredTasks.filter { task in
-            guard let at = task.scheduledAt, !task.done else { return false }
-            return cal.isDate(at, inSameDayAs: selectedDay)
-        }
-        return needsTime.count + timed.count
+        filteredTasks.filter { task in
+            guard !task.done else { return false }
+            if let at = task.scheduledAt { return cal.isDate(at, inSameDayAs: selectedDay) }
+            if let due = task.dueDate { return cal.isDate(due, inSameDayAs: selectedDay) }
+            return false
+        }.count
     }
 
     private static let dayLabelFormatter: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEEE, MMM d"; return f }()
@@ -224,6 +295,36 @@ struct ScheduleView: View {
 
     private func deleteEvent(_ event: CalendarEvent) {
         Task { await store.deleteEvent(id: event.id) }
+    }
+
+    // MARK: - Placement
+
+    /// Picked a task in PlaceTaskSheet → flip to grid mode with a floating chip.
+    private func beginPlacing(_ task: TaskItem) {
+        placeMinutes = initialPlaceMinutes()
+        withAnimation(MobileTheme.spring) {
+            viewMode = "grid"
+            placing = task
+        }
+    }
+
+    /// Initial chip time: next 15-min slot after now (today) else 9:00 AM.
+    private func initialPlaceMinutes() -> Int {
+        guard cal.isDateInToday(selectedDay) else { return 9 * 60 }
+        let c = cal.dateComponents([.hour, .minute], from: Date())
+        let m = (c.hour ?? 9) * 60 + (c.minute ?? 0)
+        return min(1425, ((m / 15) + 1) * 15)
+    }
+
+    private func confirmPlace() {
+        guard let task = placing else { return }
+        var updated = task
+        updated.scheduledAt = cal.date(bySettingHour: placeMinutes / 60,
+                                       minute: placeMinutes % 60, second: 0,
+                                       of: cal.startOfDay(for: selectedDay))
+        Task { await store.updateTask(updated) }
+        MobileTheme.Haptic.success()
+        withAnimation(MobileTheme.spring) { placing = nil }
     }
 
     private func consumeFocusToday() {
