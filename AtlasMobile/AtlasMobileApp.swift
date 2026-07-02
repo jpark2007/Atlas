@@ -31,6 +31,7 @@ struct AtlasMobileApp: App {
                             if !isLoading { reschedule() }   // snapshot just refreshed
                         }
                         .onChange(of: scenePhase) { _, phase in
+                            if phase == .active { Task { await store.refresh() } }
                             if phase == .active || phase == .background { reschedule() }
                         }
                 }

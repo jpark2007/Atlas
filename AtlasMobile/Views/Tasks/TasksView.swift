@@ -21,9 +21,13 @@ struct TasksView: View {
                 .padding(.top, 16)
 
             if groups.isEmpty {
-                Text("all clear")
-                    .edCapsLabel()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ScrollView {
+                    Text("all clear")
+                        .edCapsLabel()
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 120)
+                }
+                .refreshable { await store.refresh() }
             } else {
                 list
             }
@@ -94,6 +98,7 @@ struct TasksView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .refreshable { await store.refresh() }
     }
 
     private func row(_ task: TaskItem) -> some View {

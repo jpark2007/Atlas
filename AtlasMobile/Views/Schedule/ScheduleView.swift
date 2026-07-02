@@ -112,6 +112,7 @@ struct ScheduleView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .refreshable { await store.refresh() }
             .simultaneousGesture(
                 DragGesture(minimumDistance: 30, coordinateSpace: .local)
                     .onEnded { value in
