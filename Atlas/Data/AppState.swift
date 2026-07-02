@@ -70,6 +70,24 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Snapshot of the user's `canvas_connections` row (nil = no Canvas connection).
+    /// Drives Settings' Canvas "Last synced Xm ago" / error + paste-form UI. There is
+    /// no client-side Canvas polling to stand down: the old `CanvasService` only
+    /// validated a token and never imported, so this is a display signal only (unlike
+    /// `serverSyncEnabled`, which gates the Mac's live Google writers).
+    @Published var canvasConnection: CanvasConnectionRow?
+
+    /// Re-reads the Canvas connection for Settings. Never throws to the caller; on a
+    /// read failure the current snapshot is left untouched. Mirrors `refreshGoogleConnection()`.
+    func refreshCanvasConnection() async {
+        guard let db else { return }
+        do {
+            self.canvasConnection = try await db.loadCanvasConnection()
+        } catch {
+            print("[AtlasDB] canvas_connections read failed — keeping current state. Error: \(error.localizedDescription)")
+        }
+    }
+
     /// Guards against double-bootstrap if `bootstrap(db:)` is called more than once.
     private var didBootstrap = false
 
@@ -195,6 +213,8 @@ final class AppState: ObservableObject {
 
         // Re-derive server-owned Google sync mode from the cloud connection.
         await refreshGoogleConnection()
+        // Load the Canvas connection so Settings shows its live status from launch.
+        await refreshCanvasConnection()
     }
 
     func project(_ id: UUID) -> Project? {

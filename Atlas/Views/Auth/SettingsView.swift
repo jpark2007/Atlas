@@ -16,7 +16,11 @@ struct SettingsView: View {
     /// Space new / quick-captured tasks fall into when none is inferred.
     @AppStorage("tasks.defaultSpaceName") private var defaultTaskSpace: String = "Personal"
 
-    @State private var canvasToken = ""
+    // MARK: – Canvas server-sync state
+    @State private var canvasFeedURL = ""
+    @State private var canvasSpaceName = "School"
+    @State private var canvasWorking = false
+    @State private var canvasError: String? = nil
 
     // MARK: – Shortcut recorder state
     @State private var recordingAction: ShortcutAction? = nil
@@ -131,35 +135,188 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: – Canvas (server-side ICS feed sync)
+
+    /// Canvas now syncs server-side from the user's Calendar Feed URL (migration 0012 +
+    /// `canvas-connect`/`canvas-sync`): assignments + events flow in on a cron with every
+    /// Atlas client closed. When connected, the persisted status comes from
+    /// `state.canvasConnection`; when not, the user pastes their feed link.
     private var canvasSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             label("CANVAS")
-            switch canvas.status {
-            case .connected(let name):
-                row(icon: "checkmark.seal.fill", tint: AtlasTheme.Colors.green,
-                    title: "Connected as \(name)", subtitle: canvas.host)
-                Button("Disconnect") { canvas.disconnect() }
-                    .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(AtlasTheme.Colors.danger)
-            default:
-                input("school.instructure.com", text: Binding(get: { canvas.host }, set: { canvas.host = $0 }))
-                input("Canvas access token", text: $canvasToken, secure: true)
-                if case .failed(let msg) = canvas.status {
-                    Text(msg).font(.system(size: 11)).foregroundStyle(AtlasTheme.Colors.danger)
-                }
-                Button {
-                    Task { await canvas.connect(host: canvas.host, token: canvasToken) }
-                } label: {
-                    Text(canvas.status == .connecting ? "Connecting…" : "Connect Canvas")
-                        .font(.system(size: 13, weight: .medium)).foregroundStyle(AtlasTheme.Colors.bgDeep)
-                        .frame(maxWidth: .infinity).padding(.vertical, 9)
-                        .background(AtlasTheme.Colors.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                Text("Account → Settings → Approved Integrations → New Access Token")
-                    .font(.system(size: 10)).foregroundStyle(AtlasTheme.Colors.textMuted)
+            Text("Import Canvas assignments and events on a server schedule — no need to keep Atlas open.")
+                .font(.system(size: 10))
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+
+            if let conn = state.canvasConnection, conn.isServerOwned {
+                canvasConnectedRow(conn)
+            } else {
+                canvasConnectForm(repaste: state.canvasConnection?.status == "revoked")
             }
         }
+    }
+
+    @ViewBuilder
+    private func canvasConnectedRow(_ conn: CanvasConnectionRow) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: "graduationcap.fill")
+                    .foregroundStyle(AtlasTheme.Colors.school)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Canvas feed connected")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text(canvasStatusSubtitle(conn))
+                        .font(.system(size: 11))
+                        .foregroundStyle(canvasStatusColor(conn))
+                }
+                Spacer()
+                if canvasWorking {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button("Disconnect") { disconnectCanvas() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AtlasTheme.Colors.danger)
+                }
+            }
+            if let err = canvasError {
+                Text(err).font(.system(size: 11)).foregroundStyle(AtlasTheme.Colors.danger)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
+        )
+    }
+
+    @ViewBuilder
+    private func canvasConnectForm(repaste: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if repaste {
+                Text("Your Canvas feed link expired — paste a fresh one to resume.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(AtlasTheme.Colors.warning)
+            }
+
+            input("https://school.instructure.com/feeds/calendars/…ics", text: $canvasFeedURL)
+
+            if !state.spaces.isEmpty {
+                HStack {
+                    Text("Items land in")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                    Spacer()
+                    Picker("Canvas space", selection: $canvasSpaceName) {
+                        ForEach(state.spaces) { space in
+                            Text(space.name).tag(space.name)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 140)
+                    .tint(AtlasTheme.Colors.accent)
+                    .onAppear {
+                        // Seed to "School" (spec default) if present, else the first space.
+                        if !state.spaces.contains(where: { $0.name == canvasSpaceName }) {
+                            canvasSpaceName = state.spaces.contains(where: { $0.name == "School" })
+                                ? "School"
+                                : (state.spaces.first?.name ?? "School")
+                        }
+                    }
+                }
+            }
+
+            if let err = canvasError {
+                Text(err).font(.system(size: 11)).foregroundStyle(AtlasTheme.Colors.danger)
+            }
+
+            Button { connectCanvas() } label: {
+                Text(canvasWorking ? "Connecting…" : "Connect Canvas")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(AtlasTheme.Colors.bgDeep)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+                    .background(AtlasTheme.Colors.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(canvasWorking)
+
+            Text("Canvas → Calendar → Calendar Feed (copy the .ics link)")
+                .font(.system(size: 10))
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+        }
+    }
+
+    private func canvasStatusSubtitle(_ conn: CanvasConnectionRow) -> String {
+        if conn.status == "error" {
+            return "Sync paused — Atlas will retry automatically."
+        }
+        let dest = conn.spaceName.map { " → \($0)" } ?? ""
+        if let synced = conn.lastSyncedDate {
+            return "Last synced \(Self.relativeSync(from: synced))\(dest)."
+        }
+        return "Connected — first sync runs shortly\(dest)."
+    }
+
+    private func canvasStatusColor(_ conn: CanvasConnectionRow) -> Color {
+        conn.status == "error" ? AtlasTheme.Colors.warning : AtlasTheme.Colors.green
+    }
+
+    private func connectCanvas() {
+        let feed = canvasFeedURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard validCanvasFeedURL(feed) else {
+            canvasError = "That doesn't look like a Canvas feed link. Copy it from Canvas → Calendar → Calendar Feed."
+            return
+        }
+        guard let jwt = auth.session?.accessToken else {
+            canvasError = "Sign in to Atlas to connect Canvas."
+            return
+        }
+        canvasError = nil
+        canvasWorking = true
+        Task {
+            do {
+                try await canvas.connect(feedUrl: feed, spaceName: canvasSpaceName, jwt: jwt)
+                await state.refreshCanvasConnection()
+                canvasFeedURL = ""   // don't retain the capability URL in the field
+            } catch {
+                canvasError = "Couldn't connect Canvas. Check the link and your connection, then try again."
+            }
+            canvasWorking = false
+        }
+    }
+
+    private func disconnectCanvas() {
+        guard let jwt = auth.session?.accessToken else {
+            canvasError = "Sign in to Atlas to change Canvas sync."
+            return
+        }
+        canvasError = nil
+        canvasWorking = true
+        Task {
+            do {
+                try await canvas.disconnect(jwt: jwt)
+                state.canvasConnection = nil   // clean disconnect: back to the paste form
+            } catch {
+                canvasError = "Couldn't disconnect Canvas. Check your connection and try again."
+            }
+            canvasWorking = false
+        }
+    }
+
+    /// Client-side shape check: https + a Canvas ICS feed path. A calm gate before we
+    /// bother the server (which re-validates and Vaults the URL).
+    private func validCanvasFeedURL(_ raw: String) -> Bool {
+        guard let url = URL(string: raw),
+              url.scheme?.lowercased() == "https",
+              !(url.host ?? "").isEmpty else { return false }
+        let path = url.path.lowercased()
+        return path.hasSuffix(".ics") || path.contains("/feeds/calendars")
     }
 
     private var integrations: some View {
@@ -230,11 +387,15 @@ struct SettingsView: View {
                         .font(.system(size: 13))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Group {
-                        if case .connected(let name) = canvas.status {
-                            Text("Connected as \(name)")
-                                .foregroundStyle(AtlasTheme.Colors.green)
+                        if let conn = state.canvasConnection, conn.isServerOwned {
+                            Text(conn.status == "error"
+                                 ? "Connected — sync paused, retrying"
+                                 : "Connected — syncing in the cloud")
+                                .foregroundStyle(conn.status == "error"
+                                                 ? AtlasTheme.Colors.warning
+                                                 : AtlasTheme.Colors.green)
                         } else {
-                            Text("Not connected — event import deferred (v2)")
+                            Text("Not connected — add your feed in Integrations")
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                         }
                     }
@@ -244,7 +405,7 @@ struct SettingsView: View {
                 Image(systemName: "eye.fill")
                     .font(.system(size: 11))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    .help("Read-only display")
+                    .help("Read-only import")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

@@ -453,6 +453,48 @@ public struct GoogleConnectionRow: Codable {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CanvasConnectionRow — server-owned Canvas ICS sync state (read-only for the client)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A row from `canvas_connections` (migration `0012`). Present only when the user
+/// has connected a Canvas feed. The client may read only the owner-granted columns —
+/// `vault_secret_id` (the feed-URL pointer) is intentionally NOT granted, so a
+/// `select=*` would 403; `loadCanvasConnection()` selects explicit columns instead.
+///
+/// Mirrors `GoogleConnectionRow`. `lastSyncedAt` is a String because the server writes
+/// it with microsecond precision the plain `.iso8601` decoder can't parse;
+/// `lastSyncedDate` parses it leniently for the UI.
+public struct CanvasConnectionRow: Codable {
+    public var status: String            // active | error | revoked
+    public var lastSyncedAt: String?
+    public var lastError: String?
+    public var spaceName: String?        // Atlas space unmatched Canvas items land in
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case lastSyncedAt = "last_synced_at"
+        case lastError    = "last_error"
+        case spaceName    = "space_name"
+    }
+
+    /// The server owns Canvas→DB sync whenever a connection exists and hasn't been
+    /// revoked. `error` still counts as server-owned (the server keeps retrying); only
+    /// `revoked` (a reset feed URL needing a re-paste) hands nothing back — the client
+    /// shows the paste form again. Mirrors `GoogleConnectionRow.isServerOwned`.
+    public var isServerOwned: Bool { status != "revoked" }
+
+    /// `lastSyncedAt` parsed leniently (with or without fractional seconds).
+    public var lastSyncedDate: Date? {
+        guard let s = lastSyncedAt else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: s) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: s)
+    }
+}
+
 // MARK: - AtlasDB PostgREST Client
 
 /// Thin async PostgREST client. All requests mirror the `SupabaseAuth.request(...)` pattern:
@@ -592,6 +634,16 @@ public final class AtlasDB {
         let rows: [GoogleConnectionRow] = try await getColumns(
             "google_connections",
             columns: "status,last_synced_at,last_error,calendar_id")
+        return rows.first
+    }
+
+    /// Reads the caller's `canvas_connections` row (server-owned Canvas sync state),
+    /// or nil when the user has no Canvas connection. Selects only the owner-granted
+    /// columns; RLS scopes the query to the signed-in user. Mirrors `loadGoogleConnection()`.
+    public func loadCanvasConnection() async throws -> CanvasConnectionRow? {
+        let rows: [CanvasConnectionRow] = try await getColumns(
+            "canvas_connections",
+            columns: "status,last_synced_at,last_error,space_name")
         return rows.first
     }
 
