@@ -36,6 +36,7 @@ struct CaptureResultCard: View {
     let onUndo: () -> Void
 
     @State private var editingDueID: UUID?
+    @State private var appeared = false
 
     private var hasNote: Bool { drafts.contains { $0.kind == "note" } }
 
@@ -51,7 +52,12 @@ struct CaptureResultCard: View {
 
             List {
                 ForEach($drafts) { $draft in
+                    let index = drafts.firstIndex { $0.id == draft.id } ?? 0
                     row($draft)
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 14)
+                        .animation(MobileTheme.heroSpring.delay(Double(index) * 0.07),
+                                   value: appeared)
                         .listRowInsets(EdgeInsets(top: 14, leading: 28, bottom: 14, trailing: 28))
                         .listRowBackground(Color.clear)
                         .listRowSeparatorTint(MobileTheme.hairline)
@@ -91,6 +97,7 @@ struct CaptureResultCard: View {
             .padding(.bottom, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear { appeared = true }
         .sheet(isPresented: dueSheetPresented) {
             if let id = editingDueID, let i = drafts.firstIndex(where: { $0.id == id }) {
                 dueEditor(index: i)

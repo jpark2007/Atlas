@@ -340,9 +340,24 @@ struct CaptureView: View {
     }
 
     private func commitAll() {
+        MobileTheme.Haptic.success()
+        note = commitSummary(drafts)
         for draft in drafts { commit(draft) }
         drafts = []
         phase = .empty
+    }
+
+    /// "Added 3 · 2 School, 1 Personal" — the calm confirmation shown back on
+    /// the empty screen after a commit. Spaces resolved the same way commit() does.
+    private func commitSummary(_ drafts: [DraftItem]) -> String {
+        let bySpace = Dictionary(grouping: drafts) {
+            resolveSpace($0.spaceName)?.name ?? $0.spaceName
+        }
+        let parts = bySpace
+            .sorted { $0.value.count > $1.value.count }
+            .map { "\($0.value.count) \($0.key)" }
+            .joined(separator: ", ")
+        return "Added \(drafts.count) · \(parts)"
     }
 
     /// Map one draft into a real domain object and persist it through the store.
