@@ -11,8 +11,9 @@ public enum CaptureDateParser {
         if let d = f.date(from: iso) { return d }
         f.formatOptions = [.withInternetDateTime]
         if let d = f.date(from: iso) { return d }
-        // Model sometimes returns date-only: "2026-06-30"
+        // Model sometimes returns date-only: "2026-06-30" — the user's LOCAL day.
         f.formatOptions = [.withFullDate]
+        f.timeZone = .current
         return f.date(from: iso)
     }
 }
