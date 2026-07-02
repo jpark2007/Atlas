@@ -261,14 +261,26 @@ struct ScheduleView: View {
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
-    /// "N left" — every incomplete task landing on the day (scheduled + any due).
+    /// "N left" — what's still ahead on the shown day: open tasks landing on it
+    /// (scheduled OR any due — the needs-time + timed + clock-deadline populations, !done)
+    /// PLUS events that haven't ended. For today an event counts while `end > now`; for a
+    /// future day all its events count; for a past day none do (the day is over).
     private var leftCount: Int {
-        filteredTasks.filter { task in
+        let now = Date()
+        let tasks = filteredTasks.filter { task in
             guard !task.done else { return false }
             if let at = task.scheduledAt { return cal.isDate(at, inSameDayAs: selectedDay) }
             if let due = task.dueDate { return cal.isDate(due, inSameDayAs: selectedDay) }
             return false
         }.count
+
+        let events = filteredEvents.filter { event in
+            guard cal.isDate(event.start, inSameDayAs: selectedDay) else { return false }
+            if cal.isDateInToday(selectedDay) { return event.end > now }     // today: not yet ended
+            return selectedDay > cal.startOfDay(for: now)                    // future day: all; past: none
+        }.count
+
+        return tasks + events
     }
 
     private static let dayLabelFormatter: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEEE, MMM d"; return f }()

@@ -39,6 +39,12 @@ enum WidgetSnapshotWriter {
             return cal.isDate(at, inSameDayAs: day)
         }.count
 
+        // Events still ahead today also count toward "N left" (aligns with ScheduleView's
+        // leftCount): an event counts while it hasn't ended.
+        let liveEvents = snapshot.events.filter { event in
+            cal.isDate(event.start, inSameDayAs: day) && event.end > now
+        }.count
+
         let spaces = snapshot.spaces.map {
             SharedSnapshot.SpaceRef(id: $0.id.uuidString, name: $0.name, colorHex: hex($0.color))
         }
@@ -46,7 +52,7 @@ enum WidgetSnapshotWriter {
         let shared = SharedSnapshot(
             today: rows,
             needTimeCount: needTime,
-            leftCount: needTime + timed,
+            leftCount: needTime + timed + liveEvents,
             dateLabel: dateLabel(now),
             spaces: spaces,
             generatedAt: now)
