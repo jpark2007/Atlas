@@ -9,6 +9,7 @@ struct ScheduleView: View {
 
     @State private var selectedDay = Calendar.current.startOfDay(for: Date())
     @State private var showMonth = false
+    @State private var showSettings = false
     @State private var timing: TaskItem?
 
     private let cal = Calendar.current
@@ -45,6 +46,9 @@ struct ScheduleView: View {
         .sheet(isPresented: $showMonth) {
             MonthPageView(selected: selectedDay) { selectedDay = $0 }
         }
+        .sheet(isPresented: $showSettings) {
+            SettingsSheet().environmentObject(store)
+        }
         .sheet(item: $timing) { task in
             SetTimeSheet(task: task, day: selectedDay) { updated in
                 Task { await store.updateTask(updated) }
@@ -67,6 +71,11 @@ struct ScheduleView: View {
                     .layoutPriority(1)
                 Button { changeDay(1) } label: { chevron("chevron.right") }
                 Spacer()
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(MobileTheme.ink)
+                }
             }
 
             HStack(spacing: 14) {
@@ -129,12 +138,14 @@ struct ScheduleView: View {
                     now: context.date,
                     events: filteredEvents,
                     tasks: filteredTasks,
+                    loading: store.loading,
                     onToggle: toggle,
                     onDelete: delete
                 )
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .contentMargins(.bottom, 72, for: .scrollContent)
             .refreshable { await store.refresh() }
             .simultaneousGesture(
                 DragGesture(minimumDistance: 30, coordinateSpace: .local)

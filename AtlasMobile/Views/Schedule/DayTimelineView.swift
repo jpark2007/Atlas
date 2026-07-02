@@ -11,6 +11,7 @@ struct DayTimelineView: View {
     let now: Date
     let events: [CalendarEvent]
     let tasks: [TaskItem]
+    let loading: Bool
     let onToggle: (TaskItem) -> Void
     let onDelete: (TaskItem) -> Void
 
@@ -27,9 +28,7 @@ struct DayTimelineView: View {
     var body: some View {
         Section {
             if items.isEmpty {
-                Text("Nothing scheduled")
-                    .edCapsLabel()
-                    .textCase(nil)
+                emptyContent
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .listRowInsets(EdgeInsets(top: 20, leading: 28, bottom: 20, trailing: 28))
                     .listRowBackground(Color.clear)
@@ -43,6 +42,18 @@ struct DayTimelineView: View {
                         .swipeActions(edge: .trailing) { swipeActions(for: item) }
                 }
             }
+        }
+    }
+
+    /// The empty-day row: a spinner while the store is loading, else the calm copy.
+    @ViewBuilder
+    private var emptyContent: some View {
+        if loading {
+            ProgressView().tint(MobileTheme.muted)
+        } else {
+            Text("Nothing scheduled")
+                .edCapsLabel()
+                .textCase(nil)
         }
     }
 

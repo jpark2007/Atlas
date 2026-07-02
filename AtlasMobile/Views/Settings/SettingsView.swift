@@ -2,6 +2,28 @@ import SwiftUI
 import AtlasCore
 import Speech
 import AVFoundation
+import UserNotifications
+
+/// The gear-presented Settings sheet: SettingsView under an inline nav bar with a
+/// Done button. Each tab's inline gear presents this.
+struct SettingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            SettingsView()
+                .navigationTitle("Settings")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { dismiss() }
+                            .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                            .foregroundStyle(MobileTheme.ink)
+                    }
+                }
+        }
+    }
+}
 
 /// In-app settings (spec §4.4 + §7): account, the capture-fallback default space,
 /// notification preferences, voice permission, and a derived Google-connected
@@ -13,6 +35,9 @@ struct SettingsView: View {
     /// Shared with CaptureView (Task 3) — the capture routing fallback.
     @AppStorage("defaultSpaceName") private var defaultSpaceName = ""
     @AppStorage("notificationPrefs") private var prefs = NotificationPrefs.default
+
+    /// nil = not yet loaded; false = OS-denied (show honest off state); otherwise the app's own prefs UI.
+    @State private var osAuthorized: Bool?
 
     private let leadOptions = [0, 5, 15, 30, 60]
 
@@ -28,6 +53,10 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(MobileTheme.bg.ignoresSafeArea())
         .tint(MobileTheme.ink)
+        .task {
+            let settings = await UNUserNotificationCenter.current().notificationSettings()
+            osAuthorized = settings.authorizationStatus != .denied
+        }
     }
 
     // MARK: - Account
@@ -74,6 +103,25 @@ struct SettingsView: View {
 
     private var notificationsSection: some View {
         Section {
+            if osAuthorized == false {
+                // Notifications are OFF at the OS level — the in-app toggles would lie.
+                labeledRow("Notifications", value: "Off — enable in Settings")
+                Button {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                } label: {
+                    Text("Open Settings").rowValue().foregroundStyle(MobileTheme.ink)
+                }
+                .buttonStyle(.plain)
+                .rowStyle()
+            } else {
+                notificationPrefsRows
+            }
+        } header: { header("Notifications") }
+    }
+
+    @ViewBuilder
+    private var notificationPrefsRows: some View {
+        Group {
             Toggle(isOn: bind(\.enabled)) { Text("Notifications").rowLabel() }.rowStyle()
 
             if prefs.enabled {
@@ -105,7 +153,7 @@ struct SettingsView: View {
 
                 spacesPicker
             }
-        } header: { header("Notifications") }
+        }
     }
 
     @ViewBuilder

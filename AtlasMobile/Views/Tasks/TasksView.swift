@@ -9,6 +9,7 @@ struct TasksView: View {
 
     @AppStorage("tasksGrouping") private var grouping = "project"   // "project" | "due"
     @State private var timing: TaskItem?
+    @State private var showSettings = false
 
     /// Rows checked off in this session linger ~0.9 s (strikethrough + filled
     /// check) before sliding out, so completion is felt, not a blink.
@@ -16,9 +17,17 @@ struct TasksView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Tasks").edScreenTitle()
-                .padding(.horizontal, 28)
-                .padding(.top, 12)
+            HStack {
+                Text("Tasks").edScreenTitle()
+                Spacer()
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(MobileTheme.ink)
+                }
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 12)
 
             groupingToggle
                 .padding(.horizontal, 28)
@@ -26,11 +35,11 @@ struct TasksView: View {
 
             if groups.isEmpty {
                 ScrollView {
-                    Text("all clear")
-                        .edCapsLabel()
+                    emptyContent
                         .frame(maxWidth: .infinity)
                         .padding(.top, 120)
                 }
+                .contentMargins(.bottom, 72, for: .scrollContent)
                 .refreshable { await store.refresh() }
             } else {
                 list
@@ -41,6 +50,19 @@ struct TasksView: View {
             SetTimeSheet(task: task, day: task.dueDate ?? Date()) { updated in
                 Task { await store.updateTask(updated) }
             }
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsSheet().environmentObject(store)
+        }
+    }
+
+    /// Empty-state body: a spinner while loading, else the calm "all clear" copy.
+    @ViewBuilder
+    private var emptyContent: some View {
+        if store.loading {
+            ProgressView().tint(MobileTheme.muted)
+        } else {
+            Text("all clear").edCapsLabel()
         }
     }
 
@@ -102,6 +124,7 @@ struct TasksView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .contentMargins(.bottom, 72, for: .scrollContent)
         .refreshable { await store.refresh() }
     }
 

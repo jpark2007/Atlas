@@ -23,6 +23,7 @@ struct CaptureView: View {
     @State private var isDraining = false
     @State private var thinkingText = ""
     @State private var dissolve = false
+    @State private var showSettings = false
     @FocusState private var editorFocused: Bool
 
     @StateObject private var pending = PendingCaptureQueue()
@@ -44,6 +45,9 @@ struct CaptureView: View {
                 .environmentObject(store)
                 .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showSettings) {
+            SettingsSheet().environmentObject(store)
+        }
         .task { await drainPending() }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active { Task { await drainPending() } }
@@ -56,9 +60,17 @@ struct CaptureView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Capture").edScreenTitle()
-                .padding(.horizontal, 28)
-                .padding(.top, 24)
+            HStack {
+                Text("Capture").edScreenTitle()
+                Spacer()
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(MobileTheme.ink)
+                }
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 24)
 
             // The page IS the input (spec §6, Direction A) — no box, no chrome.
             ZStack(alignment: .topLeading) {
