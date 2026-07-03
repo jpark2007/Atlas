@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Privacy Policy — Atlas</title>
+<meta name="description" content="What Atlas collects, why, and who touches it. Specific to what the app actually does — no filler." />
+<meta name="theme-color" content="#fbfaf7" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,340..600;1,9..144,340..600&family=Nunito:ital,wght@0,400..800;1,400..700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+
+<a class="skip" href="#main">Skip to content</a>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="site-head">
+  <div class="wrap site-head__inner">
+    <a class="brand" href="index.html" aria-label="Atlas — home">
+      <svg class="brand__mark" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="9.2" />
+        <ellipse cx="12" cy="12" rx="9.2" ry="3.4" />
+        <ellipse cx="12" cy="12" rx="3.4" ry="9.2" />
+      </svg>
+      <span class="brand__word">Atlas</span>
+      <span class="brand__beta">Beta</span>
+    </a>
+    <nav class="site-nav" aria-label="Primary">
+      <a href="index.html#features">Features</a>
+      <a class="site-nav__cta" href="index.html#waitlist">Join the waitlist</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="legal">
+  <div class="wrap legal__inner">
+    <a class="legal__back" href="index.html">&larr; Back to Atlas</a>
+    <p class="kicker" style="margin-top:1.5rem">Privacy Policy</p>
+    <h1 class="legal__title">Your data, plainly.</h1>
+    <p class="legal__date">Effective July 3, 2026</p>
+
+    <div class="prose">
+      <p>Atlas is built by Andrew Khalil and Jonah Park. Questions or requests: <a href="mailto:lets.flowstate@gmail.com">lets.flowstate@gmail.com</a>.</p>
+      <p>Atlas is a native Mac and iPhone life manager, currently in <strong>prelaunch beta</strong>. This policy explains what we collect, why, and who touches it. We&rsquo;ve kept it specific to what Atlas actually does &mdash; no filler about cookies or trackers we don&rsquo;t use.</p>
+
+      <h2>The short version</h2>
+      <ul>
+        <li>We store the data you put into Atlas and the email you sign up (or join the waitlist) with.</li>
+        <li>We use it to run the app for you. <strong>We don&rsquo;t sell your data and we don&rsquo;t use it for advertising.</strong></li>
+        <li>Connections you choose to add (Google Calendar, Canvas) are stored encrypted on our server and used only to sync your calendar.</li>
+        <li>You can have everything deleted by emailing <a href="mailto:lets.flowstate@gmail.com">lets.flowstate@gmail.com</a>.</li>
+      </ul>
+
+      <h2>The waitlist</h2>
+      <p>If you join the waitlist on our site, we store the email address you submit in our database so we can tell you when Atlas opens up. That email is the only thing the form collects. Our site doesn&rsquo;t set advertising cookies or run third-party trackers. (Our hosting provider may keep standard server request logs, as web hosts do.)</p>
+
+      <h2>Your account</h2>
+      <p>Atlas accounts and data run on <strong>Supabase</strong>, our backend and authentication provider. When you create an account, your email and sign-in details are stored there. The data you create in Atlas &mdash; spaces, projects, tasks, calendar events, notes, and goals &mdash; is stored per-account and protected by row-level security, so only your signed-in account can read your own rows.</p>
+
+      <h2>Connections you choose to add</h2>
+      <p>Atlas works fine on its own. These integrations are optional, and each is only active if you turn it on.</p>
+
+      <h3>Google Calendar (two-way sync)</h3>
+      <p>If you connect Google Calendar, Atlas keeps your events in sync in both directions &mdash; including while the app is closed &mdash; using a server-side sync runner. To do that, your Google <strong>refresh token</strong> is stored <strong>encrypted in Supabase Vault, reachable only by our server, and never returned to any app or client</strong>. We use it only to read and write your calendar events for the sync. The permission we request is limited to your Google Calendar. You can disconnect at any time; disconnecting deletes the stored token.</p>
+
+      <h3>Canvas (assignments and course events)</h3>
+      <p>If you add a Canvas calendar feed, you paste your personal Canvas feed URL. That URL is itself a secret &mdash; anyone holding it can read your feed &mdash; so we store it <strong>encrypted in Supabase Vault, server-only</strong>, and use it solely to pull your assignments and course events into Atlas. Canvas data is <strong>read-only</strong>: Atlas never writes back to Canvas. Disconnecting removes the stored feed URL.</p>
+
+      <h3>Apple Calendar</h3>
+      <p>On Mac, Atlas can show your Apple Calendar events using macOS&rsquo;s calendar access on your device, if you grant permission.</p>
+
+      <h3>AI capture</h3>
+      <p>Atlas has a capture box: you type or paste free text (&ldquo;essay due Friday, gym 3x this week, dinner Sunday&rdquo;) and Atlas turns it into tasks, events, and notes. To do that, <strong>the text you capture</strong> is sent to our server and then to a third-party AI model provider (currently <strong>OpenRouter</strong>, which routes to a model such as GPT-4o-mini) to classify it. We send only the text you choose to capture, plus the names of your spaces and projects so the item lands in the right place. We don&rsquo;t send the rest of your Atlas data to the model.</p>
+
+      <h3>Google Drive import (coming, not yet in the app)</h3>
+      <p>We&rsquo;re building an optional Drive import for notes. It will use Google&rsquo;s <strong>drive.file</strong> permission, which only ever gives Atlas access to the specific files <strong>you pick</strong> &mdash; never your whole Drive. It isn&rsquo;t shipped yet; when it is, it will only touch files you select.</p>
+
+      <h2>Who processes your data</h2>
+      <p>We don&rsquo;t sell your data or use it for advertising. We rely on a few service providers to run Atlas, and your data passes through them only to provide the service:</p>
+      <ul>
+        <li><strong>Supabase</strong> &mdash; database, authentication, encrypted secret storage, and server functions (also where waitlist emails are stored).</li>
+        <li><strong>OpenRouter</strong> &mdash; the AI provider that processes capture text.</li>
+        <li><strong>Google and Canvas</strong> &mdash; only the accounts you connect, and only for the sync you asked for.</li>
+      </ul>
+
+      <h2>Keeping data secure</h2>
+      <ul>
+        <li>Per-account row-level security so accounts can&rsquo;t read each other&rsquo;s data.</li>
+        <li>Connection secrets (your Google refresh token, your Canvas feed URL) are kept in encrypted Vault storage, reachable only by our server and never returned to a client.</li>
+      </ul>
+      <p>No system is perfectly secure, and this is beta software &mdash; see the caveat below.</p>
+
+      <h2>Deleting your data</h2>
+      <p>Email <a href="mailto:lets.flowstate@gmail.com">lets.flowstate@gmail.com</a> and we&rsquo;ll delete your account and its data. You can also disconnect Google or Canvas inside Atlas at any time, which immediately removes the stored credential for that connection.</p>
+
+      <h2>Children</h2>
+      <p>Atlas isn&rsquo;t directed at children under 13, and we don&rsquo;t knowingly collect their data.</p>
+
+      <h2>Beta caveat</h2>
+      <p>Atlas is prelaunch beta software built by two students. Features, data flows, and this policy will change as we build. When we make a meaningful change, we&rsquo;ll update the effective date and, where we can, notify waitlisted or registered users. Continuing to use Atlas after a change means you accept the updated policy.</p>
+
+      <h2>Contact</h2>
+      <p>Andrew Khalil and Jonah Park &mdash; <a href="mailto:lets.flowstate@gmail.com">lets.flowstate@gmail.com</a></p>
+    </div>
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap site-foot__inner">
+    <div class="site-foot__brand">
+      <span class="brand__word">Atlas</span>
+      <p>A life manager for Mac and iPhone. In beta, built in the open.</p>
+    </div>
+    <div class="site-foot__meta">
+      <p>Made by Andrew Khalil and Jonah Park.</p>
+      <p><a href="mailto:lets.flowstate@gmail.com">lets.flowstate@gmail.com</a></p>
+      <p class="site-foot__links">
+        <a href="privacy.html">Privacy</a>
+        <span aria-hidden="true">·</span>
+        <a href="terms.html">Terms</a>
+      </p>
+      <p class="site-foot__copy">&copy; 2026 Atlas</p>
+    </div>
+  </div>
+</footer>
