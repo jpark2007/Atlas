@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Create-a-Space form (follow-up: add a top-level bucket). Presented from the
 /// sidebar's "+ Space" affordance under the SPACES header. On Create the new
@@ -22,11 +23,11 @@ struct NewSpaceSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerBar
-            Divider().overlay(AtlasTheme.Colors.border)
+            Divider().overlay(AtlasTheme.Colors.hairline)
             formBody
         }
         .frame(width: 420, alignment: .topLeading)
-        .background(AtlasTheme.Colors.bgCard)
+        .background(AtlasTheme.Colors.bgBase)
     }
 
     // MARK: - Header
@@ -35,23 +36,23 @@ struct NewSpaceSheet: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("New Space")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Text("A new top-level bucket alongside your other spaces.")
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
             }
             Spacer()
             Button("Cancel") { dismiss() }
                 .buttonStyle(.plain)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .keyboardShortcut(.cancelAction)
 
             Button("Create") { save() }
                 .buttonStyle(.plain)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(trimmedName.isEmpty ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.accent)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(trimmedName.isEmpty ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.accentText)
                 .disabled(trimmedName.isEmpty)
                 .keyboardShortcut(.return, modifiers: .command)
         }
@@ -69,7 +70,7 @@ struct NewSpaceSheet: View {
                 boxedField {
                     TextField("Space name", text: $name)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
@@ -109,9 +110,7 @@ struct NewSpaceSheet: View {
     private func fieldGroup<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(label)
-                .font(AtlasTheme.Font.kicker())
-                .tracking(1.2)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                .atlasCapsLabel()
             content()
         }
     }
@@ -119,8 +118,6 @@ struct NewSpaceSheet: View {
     @ViewBuilder
     private func boxedField<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
-            .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-            .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
                     .stroke(AtlasTheme.Colors.border, lineWidth: 1)

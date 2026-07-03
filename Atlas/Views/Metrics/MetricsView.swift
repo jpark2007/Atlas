@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 import Charts
 
 // MARK: - Shared subviews (used by MetricsView, MetricsPopupView, MetricsCard)
@@ -12,8 +13,8 @@ struct MetricsStatCell: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(accent ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textPrimary)
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                .foregroundStyle(accent ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textPrimary)
             Text(label)
                 .font(AtlasTheme.Font.small())
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
@@ -49,21 +50,20 @@ struct MetricsCompletionDonut: View {
                         angularInset: 1.5
                     )
                     .cornerRadius(4)
-                    .foregroundStyle(AtlasTheme.Colors.bgElevated)
+                    .foregroundStyle(AtlasTheme.Colors.border)
                 }
                 .chartLegend(.hidden)
                 .frame(width: size, height: size)
 
-                VStack(spacing: 1) {
-                    Text("\(Int((clamped * 100).rounded()))%")
-                        .font(.system(size: size * 0.24, weight: .semibold))
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text(label)
-                        .font(AtlasTheme.Font.sectionLabel())
-                        .tracking(1.0)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                }
+                Text("\(Int((clamped * 100).rounded()))%")
+                    .font(.system(size: size * 0.24, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
             }
+
+            Text(label)
+                .font(AtlasTheme.Font.sectionLabel())
+                .tracking(1.0)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
         .frame(maxWidth: .infinity)
     }
@@ -98,7 +98,7 @@ struct MetricsSpaceDonut: View {
                         HStack(spacing: 8) {
                             Circle().fill(load.color).frame(width: 7, height: 7)
                             Text(load.spaceName)
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
                                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             Spacer(minLength: 10)
                             Text("\(load.openCount) open / \(load.totalCount) total")
@@ -111,7 +111,7 @@ struct MetricsSpaceDonut: View {
             }
         } else {
             Text("No task data yet.")
-                .font(.system(size: 12))
+                .font(.system(size: 12, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
@@ -138,7 +138,7 @@ struct MetricsView: View {
                     Button { state.presentGraph = true } label: {
                         HStack(spacing: 6) {
                             BrandLogo(size: 16).opacity(0.85)
-                            Text("Graph").font(.system(size: 12, weight: .medium))
+                            Text("Graph").font(.system(size: 12, weight: .medium, design: .rounded))
                                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                         }
                     }
@@ -217,11 +217,10 @@ struct MetricsView: View {
     private func cardTitle(_ title: String, icon: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 12))
-                .foregroundStyle(AtlasTheme.Colors.accent)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
             Text(title)
-                .font(AtlasTheme.Font.cardTitle())
-                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                .atlasCapsLabel()
         }
     }
 }

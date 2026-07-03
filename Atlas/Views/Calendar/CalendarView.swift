@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// The Atlas Calendar — the hero screen. Day / Week time grid with a space
 /// filter and a drag-to-schedule tray of unscheduled tasks. Reads/writes the
@@ -48,6 +49,7 @@ struct CalendarView: View {
 
                 UnscheduledTray(
                     tasks: state.unscheduledTasks,
+                    now: state.now,
                     hiddenSpaces: hiddenSpaces,
                     spaceOrder: state.spaces.map(\.name),
                     onSchedule: { taskID, hour in
@@ -130,11 +132,13 @@ struct CalendarView: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("CALENDAR")
-                        .font(AtlasTheme.Font.kicker())
-                        .tracking(1.4)
-                        .foregroundStyle(AtlasTheme.Colors.accent)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .tracking(0.88)
+                        .textCase(.uppercase)
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
                     Text(titleLabel)
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .tracking(-0.4)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 }
                 Spacer()
@@ -165,7 +169,7 @@ struct CalendarView: View {
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             TextField("Search", text: $searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(.system(size: 12, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .frame(width: 150)
             if !searchText.isEmpty {
@@ -179,11 +183,9 @@ struct CalendarView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(AtlasTheme.Colors.border, lineWidth: 1)
+            RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                .strokeBorder(AtlasTheme.Colors.borderStrong, lineWidth: 1)
         )
         .fixedSize()
     }
@@ -215,18 +217,18 @@ struct CalendarView: View {
                     .fill(isHidden ? AtlasTheme.Colors.textMuted.opacity(0.4) : space.color)
                     .frame(width: 8, height: 8)
                 Text(space.name)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundStyle(isHidden ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                     .strikethrough(isHidden, color: AtlasTheme.Colors.textMuted)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(
-                (isHidden ? Color.clear : space.color.opacity(0.12))
+                (isHidden ? Color.clear : space.color.opacity(0.14))
             )
             .clipShape(Capsule())
             .overlay(
-                Capsule().stroke(
+                Capsule().strokeBorder(
                     isHidden ? AtlasTheme.Colors.border : space.color.opacity(0.4),
                     lineWidth: 1
                 )
@@ -244,13 +246,15 @@ struct CalendarView: View {
                 Image(systemName: "plus")
                     .font(.system(size: 11, weight: .bold))
                 Text("Add event")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
             }
+            .foregroundStyle(AtlasTheme.Colors.textPrimary)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(AtlasTheme.Colors.accent)
-            .foregroundStyle(AtlasTheme.Colors.bgDeep)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                    .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
+            )
         }
         .buttonStyle(.plain)
     }
@@ -265,12 +269,15 @@ struct CalendarView: View {
 
             Button { selectedDate = Calendar.current.startOfDay(for: Date()) } label: {
                 Text("Today")
-                    .font(.system(size: 12, weight: .semibold))
-                    .padding(.horizontal, 12)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .tracking(0.88)
+                    .textCase(.uppercase)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .padding(.horizontal, 14)
                     .padding(.vertical, 6)
-                    .background(AtlasTheme.Colors.accent.opacity(0.14))
-                    .foregroundStyle(AtlasTheme.Colors.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        Capsule().strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
+                    )
             }
             .buttonStyle(.plain)
 
@@ -280,7 +287,7 @@ struct CalendarView: View {
             .buttonStyle(.plain)
             .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
-        .font(.system(size: 13, weight: .semibold))
+        .font(.system(size: 13, weight: .semibold, design: .rounded))
     }
 
     // MARK: - Grid
@@ -292,6 +299,7 @@ struct CalendarView: View {
             DayCalendarView(
                 date: selectedDate,
                 events: filteredEvents(on: selectedDate),
+                now: state.now,
                 onTapEmpty: handleTapEmpty,
                 onTapEvent: openSource(for:),
                 onDragEvent: { event, point in
@@ -307,6 +315,7 @@ struct CalendarView: View {
             WeekGridView(
                 days: weekDays,
                 eventsProvider: { filteredEvents(on: $0) },
+                now: state.now,
                 onTapEmpty: handleTapEmpty,
                 onTapEvent: openSource(for:),
                 onDragEvent: { event, point in
@@ -435,7 +444,10 @@ struct CalendarView: View {
     /// a source toggles. External events NEVER enter `state.events`.
     private func loadAppleEventsIfNeeded() {
         let wantApple = appleCalendarEnabled && ekService.authorizationStatus() == .fullAccess
-        let wantGoogle = googleCalendarEnabled && googleAuth.isConnected
+        // Single-owner: when the server owns Google↔DB sync the Mac makes ZERO Google
+        // calls — no live pull, no reap, no `externalEvents` merge for Google. Google
+        // events instead arrive as `events` rows via `loadAll()`. Apple stays live here.
+        let wantGoogle = googleCalendarEnabled && googleAuth.isConnected && !state.serverSyncEnabled
         guard wantApple || wantGoogle else {
             state.externalEvents = []
             return
@@ -599,9 +611,9 @@ struct CalendarView: View {
         let minute = (Int((clamped - Double(h)) * 60) / 15) * 15
         guard var dropped = cal.date(bySettingHour: h, minute: minute, second: 0, of: date) else { return false }
 
-        // An explicit drop in the past (earlier today than "now") would instantly
-        // resurface to the tray via isEffectivelyUnscheduled. Bump it to the next
-        // 15-min boundary at/after now so a deliberate drop always sticks.
+        // An explicit drop in the past (earlier today than "now") would land already
+        // "passed" (dimmed) the instant it's placed. Bump it to the next 15-min boundary
+        // at/after now so a deliberate drop is actionable, not instantly elapsed.
         if cal.isDateInToday(dropped), dropped < state.now {
             let nowMinutes = cal.component(.hour, from: state.now) * 60 + cal.component(.minute, from: state.now)
             let snapped = ((nowMinutes / 15) + 1) * 15

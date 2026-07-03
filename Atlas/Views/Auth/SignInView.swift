@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 struct SignInView: View {
     @EnvironmentObject private var auth: AuthService
@@ -12,7 +13,6 @@ struct SignInView: View {
     var body: some View {
         ZStack {
             AtlasTheme.Colors.bgBase.ignoresSafeArea()
-            backdrop
 
             VStack(spacing: 22) {
                 logo
@@ -25,7 +25,7 @@ struct SignInView: View {
                         message(error, color: AtlasTheme.Colors.danger)
                     }
                     if let info = auth.infoMessage {
-                        message(info, color: AtlasTheme.Colors.accent)
+                        message(info, color: AtlasTheme.Colors.accentText)
                     }
 
                     primaryButton
@@ -38,9 +38,9 @@ struct SignInView: View {
                             auth.errorMessage = nil; auth.infoMessage = nil
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(AtlasTheme.Colors.accent)
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
                     }
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, design: .rounded))
                     .padding(.top, 2)
                 }
 
@@ -53,17 +53,15 @@ struct SignInView: View {
 
                 Button("Continue without an account") { auth.continueOffline() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .padding(.top, 4)
             }
             .frame(width: 360)
             .padding(36)
-            .background(glassCard)
             .overlay(alignment: .top) { if auth.isWorking { ProgressView().controlSize(.small).padding(10) } }
         }
         .frame(minWidth: 720, minHeight: 560)
-        .preferredColorScheme(.dark)
     }
 
     // MARK: - Pieces
@@ -71,13 +69,17 @@ struct SignInView: View {
     private var logo: some View {
         VStack(spacing: 10) {
             BrandLogo(size: 76)
-            Text("Atlas").font(.system(size: 24, weight: .bold))
+            Text("Atlas")
+                .font(.system(size: 30, weight: .heavy, design: .rounded))
+                .tracking(-0.9)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Text(mode == .signIn ? "Your whole life, one place." : "Create your account.")
-                .font(.system(size: 13)).foregroundStyle(AtlasTheme.Colors.textSecondary)
+                .font(.system(size: 13, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
     }
 
+    /// Editorial field: no fill, no box — an icon + input over a hairline rule.
     private func field(icon: String, placeholder: String, text: Binding<String>, secure: Bool) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon).font(.system(size: 13))
@@ -87,15 +89,12 @@ struct SignInView: View {
                 else { TextField(placeholder, text: text) }
             }
             .textFieldStyle(.plain)
-            .font(.system(size: 14))
+            .font(.system(size: 15, design: .rounded))
             .foregroundStyle(AtlasTheme.Colors.textPrimary)
-            .tint(AtlasTheme.Colors.accent)
+            .tint(AtlasTheme.Colors.accent)   // caret = brand accent, not a fill
         }
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .stroke(AtlasTheme.Colors.border, lineWidth: 1))
+        .padding(.vertical, 12)
+        .atlasHairlineBelow()
     }
 
     private var primaryButton: some View {
@@ -106,41 +105,36 @@ struct SignInView: View {
             }
         } label: {
             Text(mode == .signIn ? "Sign in" : "Create account")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(AtlasTheme.Colors.bgDeep)
-                .frame(maxWidth: .infinity).padding(.vertical, 12)
-                .background(LinearGradient(colors: [AtlasTheme.Colors.accent, AtlasTheme.Colors.accentDeep],
-                                           startPoint: .leading, endPoint: .trailing))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                .frame(maxWidth: .infinity)
+                .atlasOutlineControl()
         }
         .buttonStyle(.plain)
         .disabled(auth.isWorking)
+        .opacity(auth.isWorking ? 0.5 : 1)
     }
 
     private var appleButton: some View {
-        providerButton(title: "Sign in with Apple", system: "apple.logo", fg: .white,
-                       bg: Color.black) { Task { await auth.signInWithApple() } }
+        providerButton(title: "Sign in with Apple", system: "apple.logo") { Task { await auth.signInWithApple() } }
     }
 
     private var googleButton: some View {
-        providerButton(title: "Continue with Google", system: "g.circle.fill",
-                       fg: AtlasTheme.Colors.textPrimary,
-                       bg: AtlasTheme.Colors.bgElevated) { Task { await auth.signInWithGoogle() } }
+        providerButton(title: "Continue with Google", system: "g.circle.fill") { Task { await auth.signInWithGoogle() } }
     }
 
-    private func providerButton(title: String, system: String, fg: Color, bg: Color,
+    /// Outlined ink control — the editorial system never fills a button.
+    private func providerButton(title: String, system: String,
                                 action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: system).font(.system(size: 15))
-                Text(title).font(.system(size: 13, weight: .medium))
+                Text(title).font(.system(size: 13, weight: .medium, design: .rounded))
             }
-            .foregroundStyle(fg)
-            .frame(maxWidth: .infinity).padding(.vertical, 11)
-            .background(bg)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(AtlasTheme.Colors.border, lineWidth: 1))
+            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+            .frame(maxWidth: .infinity).padding(.vertical, 12)
+            .overlay(RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule))
         }
         .buttonStyle(.plain)
         .disabled(auth.isWorking)
@@ -148,30 +142,14 @@ struct SignInView: View {
 
     private var dividerOr: some View {
         HStack(spacing: 12) {
-            Rectangle().fill(AtlasTheme.Colors.border).frame(height: 1)
-            Text("or").font(.system(size: 11)).foregroundStyle(AtlasTheme.Colors.textMuted)
-            Rectangle().fill(AtlasTheme.Colors.border).frame(height: 1)
+            Rectangle().fill(AtlasTheme.Colors.hairline).frame(height: 1)
+            Text("or").font(.system(size: 11, design: .rounded)).foregroundStyle(AtlasTheme.Colors.textMuted)
+            Rectangle().fill(AtlasTheme.Colors.hairline).frame(height: 1)
         }
     }
 
     private func message(_ text: String, color: Color) -> some View {
-        Text(text).font(.system(size: 11)).foregroundStyle(color)
+        Text(text).font(.system(size: 11, design: .rounded)).foregroundStyle(color)
             .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var glassCard: some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(AtlasTheme.Colors.bgCard.opacity(0.5)))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(AtlasTheme.Colors.border, lineWidth: 1))
-            .shadow(color: .black.opacity(0.5), radius: 40, y: 20)
-    }
-
-    private var backdrop: some View {
-        RadialGradient(colors: [AtlasTheme.Colors.accent.opacity(0.10), .clear],
-                       center: .top, startRadius: 0, endRadius: 480)
-            .ignoresSafeArea()
     }
 }

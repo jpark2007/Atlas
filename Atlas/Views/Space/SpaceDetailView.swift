@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 struct SpaceDetailView: View {
     @EnvironmentObject var state: AppState
@@ -42,11 +43,12 @@ struct SpaceDetailView: View {
         HStack(spacing: 12) {
             Circle().fill(space.color).frame(width: 14, height: 14)
             Text(space.name)
-                .font(.system(size: 26, weight: .bold))
+                .font(.system(size: 26, weight: .bold, design: .rounded))
+                .tracking(-0.4)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Spacer()
             Text("\(spaceTasks.count) tasks · \(spaceEvents.count) events")
-                .font(.system(size: 12))
+                .font(.system(size: 12, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
@@ -60,13 +62,10 @@ struct SpaceDetailView: View {
                 ForEach(Array(spaceTasks.enumerated()), id: \.element.id) { i, task in
                     taskRow(task)
                     if i < spaceTasks.count - 1 {
-                        Divider().overlay(AtlasTheme.Colors.border)
+                        Divider().overlay(AtlasTheme.Colors.hairline)
                     }
                 }
             }
-            .background(AtlasTheme.Colors.bgCard)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(AtlasTheme.Colors.border, lineWidth: 1))
         }
     }
 
@@ -84,12 +83,12 @@ struct SpaceDetailView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(task.title)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
                         .strikethrough(task.done)
                         .foregroundStyle(task.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                     if !task.dueLabel.isEmpty {
                         Text("Due \(task.dueLabel)")
-                            .font(.system(size: 11))
+                            .font(.system(size: 11, design: .rounded))
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                 }
@@ -100,7 +99,6 @@ struct SpaceDetailView: View {
                     .font(.system(size: 9))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
-            .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .contentShape(Rectangle())
         }
@@ -116,13 +114,10 @@ struct SpaceDetailView: View {
                 ForEach(Array(spaceEvents.enumerated()), id: \.element.id) { i, event in
                     eventRow(event)
                     if i < spaceEvents.count - 1 {
-                        Divider().overlay(AtlasTheme.Colors.border)
+                        Divider().overlay(AtlasTheme.Colors.hairline)
                     }
                 }
             }
-            .background(AtlasTheme.Colors.bgCard)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(AtlasTheme.Colors.border, lineWidth: 1))
         }
     }
 
@@ -133,15 +128,14 @@ struct SpaceDetailView: View {
                 .frame(width: 3, height: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Text("\(event.timeLabel) · \(event.durationLabel)")
-                    .font(.system(size: 11))
+                    .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             Spacer()
         }
-        .padding(.horizontal, 14)
         .padding(.vertical, 10)
     }
 
@@ -153,7 +147,7 @@ struct SpaceDetailView: View {
                 .font(.system(size: 28, weight: .light))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Text("No tasks or events in \(space.name) yet.")
-                .font(.system(size: 13))
+                .font(.system(size: 13, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
         .frame(maxWidth: .infinity)
@@ -161,9 +155,6 @@ struct SpaceDetailView: View {
     }
 
     private func sectionLabel(_ text: String) -> some View {
-        Text(text)
-            .font(AtlasTheme.Font.sectionLabel())
-            .tracking(0.8)
-            .foregroundStyle(AtlasTheme.Colors.textMuted)
+        Text(text).atlasCapsLabel()
     }
 }

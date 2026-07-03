@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// The List (agenda) view: a chronological, day-grouped list of upcoming events
 /// and scheduled/dated tasks. Ordering comes from the pure, unit-tested
@@ -49,10 +50,10 @@ struct AgendaListView: View {
                 .font(.system(size: 30, weight: .light))
                 .foregroundStyle(AtlasTheme.Colors.accent)
             Text("Nothing upcoming")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Text("Scheduled events and dated tasks will show up here.")
-                .font(.system(size: 12))
+                .font(.system(size: 12, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -65,21 +66,21 @@ struct AgendaListView: View {
             HStack(spacing: 8) {
                 if let tag = relativeTag(for: section.day) {
                     Text(tag.uppercased())
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
                         .tracking(0.8)
-                        .foregroundStyle(AtlasTheme.Colors.accent)
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
                 Text(Self.dayHeaderFormat.string(from: section.day))
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Spacer()
                 Text("\(section.items.count)")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             Divider().overlay(AtlasTheme.Colors.border)
 
-            VStack(spacing: 6) {
+            VStack(spacing: 0) {
                 ForEach(section.items) { item in
                     row(item)
                 }
@@ -90,7 +91,7 @@ struct AgendaListView: View {
     private func row(_ item: AgendaItem) -> some View {
         HStack(spacing: 12) {
             Text(timeLabel(item))
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .frame(width: 70, alignment: .trailing)
 
@@ -106,31 +107,28 @@ struct AgendaListView: View {
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     Text(item.title)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         .lineLimit(1)
                 }
                 if !item.spaceName.isEmpty {
                     Text(item.spaceName)
-                        .font(.system(size: 10))
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
             }
             Spacer(minLength: 0)
             if let end = item.endDate, !item.allDay {
                 Text(durationLabel(from: item.date, to: end))
-                    .font(.system(size: 10))
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(AtlasTheme.Colors.bgCard)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(AtlasTheme.Colors.border, lineWidth: 1)
-        )
+        // No card chrome — the row sits on the cream bg, separated by a hairline
+        // rule below (editorial list idiom from the mobile timeline).
+        .padding(.horizontal, 4)
+        .padding(.vertical, 10)
+        .atlasHairlineBelow()
         .contentShape(Rectangle())
         .onTapGesture { onSelect(item) }
     }

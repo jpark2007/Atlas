@@ -1,20 +1,25 @@
 import SwiftUI
+import AtlasCore
 
 /// Sticky 7-day column header for the week grid.
-/// Each cell shows a weekday short name above a day-number badge;
-/// today's badge is filled with `AtlasTheme.Colors.accent`.
+/// Each cell shows a weekday short name above a day number; today reads in clay
+/// text (accent = graphics/brand only — never a filled badge).
 struct WeekColumnHeader: View {
     let days: [Date]
     let columnWidth: CGFloat
 
     var body: some View {
         HStack(spacing: 0) {
-            Color.clear.frame(width: CalendarLayout.gutterWidth)
+            // Blank gutter spacer — keeps header cells aligned above hour gutter.
+            // +6 mirrors HourGutter's trailing padding; height 0 so the spacer
+            // never stretches the header row vertically (it's width-only).
+            Color.clear.frame(width: CalendarLayout.gutterWidth + 6, height: 0)
             ForEach(Array(days.enumerated()), id: \.element) { index, day in
                 dayCell(day)
                     .frame(width: columnWidth)
                 if index < days.count - 1 {
-                    Color.clear.frame(width: 1)
+                    // 1 pt spacer mirrors the 1 pt column dividers in the grid below
+                    Color.clear.frame(width: 1, height: 0)
                 }
             }
         }
@@ -26,14 +31,13 @@ struct WeekColumnHeader: View {
         let dayNum  = Calendar.current.component(.day, from: day)
         return HStack(spacing: 4) {
             Text(CalendarFormat.weekdayShort.string(from: day).uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(0.5)
-                .foregroundStyle(isToday ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(0.8)
+                .foregroundStyle(isToday ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textMuted)
             Text("\(dayNum)")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(isToday ? AtlasTheme.Colors.bgDeep : AtlasTheme.Colors.textPrimary)
-                .frame(width: 20, height: 20)
-                .background(Circle().fill(isToday ? AtlasTheme.Colors.accent : .clear))
+                .font(.system(size: 13, weight: isToday ? .heavy : .semibold, design: .rounded))
+                .foregroundStyle(isToday ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textPrimary)
+                .frame(width: 22, height: 22)
         }
     }
 }

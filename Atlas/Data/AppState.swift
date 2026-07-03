@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Single source of truth for the UI. Backed by mock data today;
 /// the same surface will later be backed by Supabase (see docs/specs/01-architecture.md).
@@ -12,6 +13,13 @@ final class AppState: ObservableObject {
     @Published var tasks: [TaskItem] = MockData.tasks
     @Published var notes: [Note] = MockData.notes
     @Published var goals: [Goal] = MockData.goals
+
+    /// Docs → Notes import: the project-scoped reference pool. Empty until the
+    /// notes-import migration (0013) is live and references are imported; the
+    /// write-through CRUD lives in `AppState+References.swift`.
+    @Published var references: [Reference] = []
+    /// Reference ⇄ task/event attachments (many-to-many join rows).
+    @Published var referenceAttachments: [ReferenceAttachment] = []
 
     /// Last Google calendar sync error (nil when the most recent pull succeeded). Set on
     /// the main actor by the calendar load path; surfaced as a small status indicator so
@@ -38,6 +46,57 @@ final class AppState: ObservableObject {
 
     /// Wire the Google account in so event write-back can reach it.
     func attachGoogle(_ auth: GoogleAuthService) { googleAuth = auth }
+
+    // MARK: - Server-owned Google sync (cloud sync)
+
+    private static let serverSyncKey = "calendar.sync.serverOwned"
+
+    /// True when the **server** owns Google↔DB sync — the Mac then makes ZERO Google
+    /// API calls (single-owner invariant): every write-back / backfill / reap / poll
+    /// path short-circuits, and Google events arrive as DB rows via `loadAll()`.
+    /// Persisted so it is authoritative from launch (before the bootstrap select
+    /// returns); re-derived from `google_connections.status` at bootstrap and flipped
+    /// by the Settings "Sync in the cloud" toggle. When false: exactly today's behavior.
+    @Published var serverSyncEnabled: Bool = UserDefaults.standard.bool(forKey: AppState.serverSyncKey) {
+        didSet { UserDefaults.standard.set(serverSyncEnabled, forKey: AppState.serverSyncKey) }
+    }
+
+    /// Snapshot of the user's `google_connections` row (nil = no cloud connection).
+    /// Drives Settings' "Last synced Xm ago" / error + Reconnect UI.
+    @Published var googleConnection: GoogleConnectionRow?
+
+    /// Re-reads the cloud connection and updates the server-owned gate. Server-owned
+    /// whenever a connection exists and isn't `revoked` (see `GoogleConnectionRow`).
+    /// Never throws to the caller and never flips to a state that could create a
+    /// second Google writer: on a read failure the persisted gate is left untouched.
+    func refreshGoogleConnection() async {
+        guard let db else { return }
+        do {
+            let conn = try await db.loadGoogleConnection()
+            self.googleConnection = conn
+            self.serverSyncEnabled = conn?.isServerOwned ?? false
+        } catch {
+            print("[AtlasDB] google_connections read failed — keeping current sync mode. Error: \(error.localizedDescription)")
+        }
+    }
+
+    /// Snapshot of the user's `canvas_connections` row (nil = no Canvas connection).
+    /// Drives Settings' Canvas "Last synced Xm ago" / error + paste-form UI. There is
+    /// no client-side Canvas polling to stand down: the old `CanvasService` only
+    /// validated a token and never imported, so this is a display signal only (unlike
+    /// `serverSyncEnabled`, which gates the Mac's live Google writers).
+    @Published var canvasConnection: CanvasConnectionRow?
+
+    /// Re-reads the Canvas connection for Settings. Never throws to the caller; on a
+    /// read failure the current snapshot is left untouched. Mirrors `refreshGoogleConnection()`.
+    func refreshCanvasConnection() async {
+        guard let db else { return }
+        do {
+            self.canvasConnection = try await db.loadCanvasConnection()
+        } catch {
+            print("[AtlasDB] canvas_connections read failed — keeping current state. Error: \(error.localizedDescription)")
+        }
+    }
 
     /// Guards against double-bootstrap if `bootstrap(db:)` is called more than once.
     private var didBootstrap = false
@@ -137,6 +196,8 @@ final class AppState: ObservableObject {
             self.events = snapshot.events
             self.notes  = snapshot.notes
             self.goals  = snapshot.goals
+            self.references = snapshot.references
+            self.referenceAttachments = snapshot.referenceAttachments
 
             // Re-derive colors from spaceName.
             // Spaces already carry real colors from `color_token` — don't touch those.
@@ -161,6 +222,11 @@ final class AppState: ObservableObject {
             // Keep existing in-memory MockData — never blank the UI on a DB error.
             print("[AtlasDB] bootstrap failed — keeping MockData. Error: \(error.localizedDescription)")
         }
+
+        // Re-derive server-owned Google sync mode from the cloud connection.
+        await refreshGoogleConnection()
+        // Load the Canvas connection so Settings shows its live status from launch.
+        await refreshCanvasConnection()
     }
 
     func project(_ id: UUID) -> Project? {
@@ -273,13 +339,15 @@ final class AppState: ObservableObject {
     }
 
     /// Scheduled tasks rendered as work-block events for `date` — the calendar's
-    /// drag-to-schedule tiles. Excludes tasks whose slot has elapsed unmet (they resurface
-    /// in the tray) and completed tasks. Shared by the calendar grid and the dashboard so
-    /// both show the same scheduled work.
+    /// drag-to-schedule tiles. Excludes completed tasks; a scheduled block whose slot has
+    /// elapsed but isn't yet overdue STAYS on the grid (rendered dimmed/"passed"). Once it is
+    /// overdue AND its slot has elapsed (`needsReplan`) it leaves the grid and returns to the
+    /// tray to be re-planned. Shared by the calendar grid and the dashboard.
     func scheduledWorkBlocks(on date: Date) -> [CalendarEvent] {
         let cal = Calendar.current
         return tasks.compactMap { task in
-            guard !task.isEffectivelyUnscheduled(now: now),
+            guard !task.done,
+                  !task.needsReplan(now: now),
                   let at = task.scheduledAt,
                   cal.isDate(at, inSameDayAs: date) else { return nil }
             let end = cal.date(byAdding: .minute, value: task.durationMin ?? 60, to: at) ?? at
@@ -298,28 +366,60 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Open to-dos that need a (new) slot — the calendar's drag-to-schedule tray.
-    /// Includes never-scheduled tasks AND tasks whose slot has elapsed without
-    /// being completed (non-destructive resurface; see
-    /// `TaskItem.isEffectivelyUnscheduled(now:)`). Completed tasks are excluded.
+    /// Open to-dos that need a (new) slot — the calendar's drag-to-schedule tray. Includes
+    /// never-scheduled tasks AND scheduled tasks that have gone overdue with their slot
+    /// elapsed (`needsReplan`), which return here (shown red) to be re-planned. A scheduled
+    /// task whose slot merely passed (not yet overdue) stays on the grid, not here.
     var unscheduledTasks: [TaskItem] {
-        tasks.filter { $0.isEffectivelyUnscheduled(now: now) && !$0.done }
+        tasks.filter { !$0.done && ($0.scheduledAt == nil || $0.needsReplan(now: now)) }
+    }
+
+    /// The space a new/quick-captured task falls into when none is otherwise chosen.
+    /// Reads the `tasks.defaultSpaceName` setting, falls back to "Personal", and
+    /// finally to the first space — so a created task is never space-less.
+    var defaultTaskSpaceName: String {
+        if let stored = UserDefaults.standard.string(forKey: "tasks.defaultSpaceName"),
+           spaces.contains(where: { $0.name == stored }) {
+            return stored
+        }
+        if spaces.contains(where: { $0.name == "Personal" }) { return "Personal" }
+        return spaces.first?.name ?? "Personal"
+    }
+
+    /// Pick the real space a created task should live in — never empty. Order:
+    /// 1. an explicit `hint` (AI/capture category, or caller-supplied) that names
+    ///    a real space (case-insensitive), 2. a case-insensitive mention of a
+    ///    space name inside `text`, 3. the configured default space.
+    func resolvedTaskSpaceName(hint: String = "", text: String = "") -> String {
+        let trimmedHint = hint.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedHint.isEmpty,
+           let match = spaces.first(where: { $0.name.caseInsensitiveCompare(trimmedHint) == .orderedSame }) {
+            return match.name
+        }
+        let lower = text.lowercased()
+        if !lower.isEmpty,
+           let mentioned = spaces.first(where: { !$0.name.isEmpty && lower.contains($0.name.lowercased()) }) {
+            return mentioned.name
+        }
+        return defaultTaskSpaceName
     }
 
     /// Quick-capture entry point. Appends a task with an optional due date and space.
+    /// Every task ends up in a real space (guess → default), so `spaceName` here is
+    /// a HINT — the resolver matches it (or the title) against existing spaces.
     @discardableResult
     func addTask(title: String,
                  dueDate: Date? = nil,
                  durationMin: Int? = nil,
                  spaceName: String = "",
                  projectName: String = "") -> TaskItem {
-        let spaceColor = spaceName.isEmpty ? AtlasTheme.Colors.accent : calendarSpaceColor(named: spaceName)
+        let resolvedSpace = resolvedTaskSpaceName(hint: spaceName, text: title)
         var task = TaskItem(title: title,
                             dueLabel: TaskItem.dueLabel(for: dueDate),
                             dueDate: dueDate,
                             durationMin: durationMin)
-        task.spaceName = spaceName
-        task.spaceColor = spaceColor
+        task.spaceName = resolvedSpace
+        task.spaceColor = calendarSpaceColor(named: resolvedSpace)
         task.projectName = projectName
         tasks.append(task)
         Task { try? await self.db?.upsertTask(task) }
@@ -333,6 +433,20 @@ final class AppState: ObservableObject {
             let updated = tasks[i]
             Task { try? await self.db?.upsertTask(updated) }
         }
+    }
+
+    /// Move a task to a different space, syncing its brand color and dropping a
+    /// project that doesn't belong to the new space (the project picker re-scopes).
+    func setTaskSpace(taskId: UUID, spaceName: String) {
+        guard let i = tasks.firstIndex(where: { $0.id == taskId }) else { return }
+        tasks[i].spaceName = spaceName
+        tasks[i].spaceColor = calendarSpaceColor(named: spaceName)
+        let projects = spaces.first { $0.name == spaceName }?.projects ?? []
+        if !projects.contains(where: { $0.name == tasks[i].projectName }) {
+            tasks[i].projectName = ""
+        }
+        let updated = tasks[i]
+        Task { try? await self.db?.upsertTask(updated) }
     }
 
     /// Set (or clear) a task's structured due date, keeping the derived
@@ -360,7 +474,8 @@ final class AppState: ObservableObject {
     /// first schedule, patch on reschedule — storing the returned id on the task. Gated by
     /// the sync toggle. The task's *deadline* is never pushed (deadlines stay Atlas-native).
     private func pushWorkBlockToGoogle(taskID: UUID) {
-        guard UserDefaults.standard.bool(forKey: "calendar.google.enabled"),
+        guard !serverSyncEnabled,  // work-block mirroring is Mac-owned and OFF in server mode (v1)
+              UserDefaults.standard.bool(forKey: "calendar.google.enabled"),
               let auth = googleAuth, auth.isConnected,
               let i = tasks.firstIndex(where: { $0.id == taskID }),
               let at = tasks[i].scheduledAt else { return }
@@ -376,6 +491,10 @@ final class AppState: ObservableObject {
                 guard let gid = try? await service.createEvent(block), !gid.isEmpty else { return }
                 if let j = self.tasks.firstIndex(where: { $0.id == taskID }) {
                     self.tasks[j].workBlockGoogleEventId = gid
+                    // Persist the freshly-created Google id so the read-back de-dupe survives
+                    // relaunch — without this the column stays NULL and the block duplicates.
+                    let persisted = self.tasks[j]
+                    try? await self.db?.upsertTask(persisted)
                 }
             }
         }
@@ -435,9 +554,25 @@ final class AppState: ObservableObject {
 
     // MARK: - Event CRUD (in-memory + DB write-through + Google write-back)
 
-    func addEvent(_ event: CalendarEvent) {
+    func addEvent(_ event: CalendarEvent, attachingReferences refIDs: Set<UUID> = []) {
         events.append(event)
-        Task { try? await self.db?.upsertEvent(event) }
+        // Optimistic in-memory attachments (dedup against any already present).
+        var newAttachments: [ReferenceAttachment] = []
+        for rid in refIDs
+        where !referenceAttachments.contains(where: { $0.referenceID == rid && $0.eventID == event.id }) {
+            let attachment = ReferenceAttachment(referenceID: rid, eventID: event.id)
+            referenceAttachments.append(attachment)
+            newAttachments.append(attachment)
+        }
+        // Sequence the writes: the `events` row must land before its attachments, or
+        // the reference_attachments.event_id FK rejects them (they'd survive only in
+        // memory until a reload dropped them).
+        Task {
+            try? await self.db?.upsertEvent(event)
+            for attachment in newAttachments {
+                try? await self.db?.upsertReferenceAttachment(attachment)
+            }
+        }
         pushNewEventToGoogle(event)
     }
 
@@ -478,14 +613,17 @@ final class AppState: ObservableObject {
     /// Patches an edited Google-origin event back to Google. Always appropriate when
     /// connected (the event came from Google) — not gated on the new-events picker.
     private func pushExternalGoogleEdit(_ event: CalendarEvent, googleEventID gid: String) {
-        guard let auth = googleAuth, auth.isConnected else { return }
+        // Single-owner: in server mode the edit persists to Supabase; the server's
+        // origin-edit pushback (I2) PATCHes it to Google — the Mac must not PATCH directly.
+        guard !serverSyncEnabled, let auth = googleAuth, auth.isConnected else { return }
         let service = GoogleCalendarService(auth: auth)
         Task { try? await service.updateEvent(googleEventID: gid, event) }
     }
 
     /// Deletes a Google-origin event on Google (when the user deletes it in Atlas).
     private func deleteGoogleEvent(googleEventID gid: String) {
-        guard let auth = googleAuth, auth.isConnected else { return }
+        // Single-owner: in server mode the Supabase delete drives the Google delete.
+        guard !serverSyncEnabled, let auth = googleAuth, auth.isConnected else { return }
         let service = GoogleCalendarService(auth: auth)
         Task { try? await service.deleteEvent(googleEventID: gid) }
     }
@@ -511,6 +649,9 @@ final class AppState: ObservableObject {
 
     /// True only for user-created events while the account is connected.
     private func shouldWriteBack(_ event: CalendarEvent) -> Bool {
+        // Single-owner invariant: when the server owns Google↔DB sync, the Mac never
+        // writes to Google. Gates the new / update / delete push paths below.
+        guard !serverSyncEnabled else { return false }
         guard let auth = googleAuth, auth.isConnected else { return false }
         // Gated by the single "Sync calendar with Google" toggle (calendar.google.enabled).
         guard UserDefaults.standard.bool(forKey: "calendar.google.enabled") else { return false }
@@ -522,6 +663,8 @@ final class AppState: ObservableObject {
     /// new events. Safe to call repeatedly: events that gained an id are skipped, and the
     /// reaper's pre-fetch snapshot guards a just-backfilled event from an in-flight pull.
     func backfillEventsToGoogle() {
+        // Single-owner: when the server owns sync it does the backfill, not the Mac.
+        guard !serverSyncEnabled else { return }
         for event in events where event.source == .atlas && event.googleEventId == nil {
             pushNewEventToGoogle(event)
         }

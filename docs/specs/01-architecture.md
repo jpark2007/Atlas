@@ -39,7 +39,7 @@
 
 ## Key principles
 
-- **Secrets never live in the app.** OpenRouter key, Google/Canvas/Gmail OAuth secrets all live in Supabase Edge Functions. The app calls *our* backend, never third-party APIs with embedded keys.
+- **Secrets never live in the app.** OpenRouter key and Google/Gmail OAuth secrets live in Supabase Edge Functions. The app calls *our* backend, never third-party APIs with embedded keys. (Exception: **Canvas** uses a read-only **ICS Calendar Feed** — a per-user URL with no server-side secret — fetched directly client-side; see [05-canvas.md](./05-canvas.md).)
 - **Offline-first.** The app holds a local copy of the user's data; reads/writes hit local storage immediately and sync to Supabase in the background. Apple Calendar (EventKit) is read/written directly on-device.
 - **Multi-user from day one.** Supabase auth means every person has their own account. Sharing (spaces/projects/availability) is enforced with Postgres Row-Level Security so users only see what they're allowed to.
 - **Realtime sync.** Supabase realtime pushes changes so your phone, your Mac, and collaborators stay current without manual refresh.
@@ -47,7 +47,8 @@
 ## What talks to what
 
 - **Apple Calendar** → directly on-device via **EventKit** (read + write).
-- **Google Calendar / Drive, Canvas, Gmail** → via Supabase Edge Functions (OAuth + secrets server-side). Scheduled functions handle periodic pulls (Canvas sync, email scan).
+- **Google Calendar / Drive, Gmail** → via Supabase Edge Functions (OAuth + secrets server-side). Scheduled functions handle periodic pulls (email scan).
+- **Canvas** → read-only **ICS Calendar Feed**, fetched **client-side** (no token, no Edge Function); a third read-only calendar source alongside Apple/Google. See [05-canvas.md](./05-canvas.md).
 - **OpenRouter (AI)** → only ever via an Edge Function that injects the key.
 
 ## Free-tier note

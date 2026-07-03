@@ -1,5 +1,13 @@
 # Notes ↔ Google Docs — architecture (how it's wired & what's deferred)
 
+> ⚠️ **OPEN DECISION — read this first, then ask the user.**
+> This doc describes the *target* model, but the **Drive scope** that makes it possible is an
+> **unresolved decision** (pending partner review, 2026-06-29). The "folder per project, see the
+> Docs inside" model below works cleanly on `drive.file` only for Atlas-created notes; auto-seeing
+> pre-existing/Google-side files needs a **restricted scope + audit**. Before wiring the live Google
+> layer, read **[notes-drive-architecture-decision.md](./notes-drive-architecture-decision.md)** and
+> **ask the user which path (A `drive.file` / B `drive.readonly` / C per-org Workspace) to build.**
+
 The model Atlas is building toward: **a Google Drive folder per class/project; each
 note is a Google Doc inside that folder; write in Docs (e.g. during class) or in
 Atlas and both stay in sync.** This doc captures the structure so the live Google

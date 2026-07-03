@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 struct DashboardView: View {
     @EnvironmentObject var state: AppState
@@ -36,10 +37,9 @@ struct DashboardView: View {
                 Text(todayKicker)
                     .font(AtlasTheme.Font.kicker())
                     .tracking(1.4)
-                    .foregroundStyle(AtlasTheme.Colors.accent)
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
                 Text("\(greeting), \(state.userName)")
-                    .font(AtlasTheme.Font.greeting())
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .atlasScreenTitle()
             }
             Spacer()
         }
@@ -76,16 +76,15 @@ struct ScheduleCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Text("Today's schedule")
-                        .font(AtlasTheme.Font.cardTitle())
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .atlasCapsLabel()
                     Spacer()
                     Button { state.route = .calendar } label: {
                         HStack(spacing: 4) {
                             Text("Open calendar")
-                            Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+                            Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold, design: .rounded))
                         }
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(AtlasTheme.Colors.accent)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
                     }
                     .buttonStyle(.plain)
                 }
@@ -93,7 +92,7 @@ struct ScheduleCard: View {
 
                 if entries.isEmpty {
                     Text("Nothing scheduled today.")
-                        .font(.system(size: 12))
+                        .font(.system(size: 12, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .padding(.vertical, 18)
                 } else {
@@ -111,7 +110,7 @@ struct ScheduleCard: View {
     private func scheduleRow(_ entry: CalendarEvent) -> some View {
         HStack(alignment: .center, spacing: 14) {
             Text(entry.timeLabel)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .frame(width: 50, alignment: .leading)
             // Work-blocks (scheduled tasks) get a hollow circle (planned/unchecked);
@@ -128,15 +127,15 @@ struct ScheduleCard: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Text(entry.subtitle)
-                    .font(.system(size: 11))
+                    .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             Spacer()
             Text(entry.durationLabel)
-                .font(.system(size: 11))
+                .font(.system(size: 11, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
         .frame(height: rowHeight)
@@ -174,7 +173,7 @@ struct DashboardTasksSection: View {
 
                 if groups.isEmpty {
                     Text("No tasks yet — add one above.")
-                        .font(.system(size: 12))
+                        .font(.system(size: 12, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .padding(.vertical, 14)
                 } else {
@@ -194,10 +193,9 @@ struct DashboardTasksSection: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Text("Tasks").font(AtlasTheme.Font.cardTitle())
-                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+            Text("Tasks").atlasCapsLabel()
             Text("\(visibleTasks.count)")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Spacer()
         }
@@ -231,7 +229,7 @@ struct DashboardTasksSection: View {
                 .tracking(1.1)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Text("\(count)")
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Spacer()
         }
@@ -243,19 +241,22 @@ struct DashboardTasksSection: View {
         Button { state.presentCapture = true } label: {
             HStack(spacing: 8) {
                 Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(AtlasTheme.Colors.accent)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
                 Text("Add a task — Atlas files it for you")
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()
                 Text("⌘⇧K")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(AtlasTheme.Colors.bgElevated.opacity(0.6))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous)
+                    .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -272,7 +273,7 @@ struct DashboardTasksSection: View {
             } label: {
                 Image(systemName: task.done ? "checkmark.square.fill" : "square")
                     .font(.system(size: 14))
-                    .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
+                    .foregroundStyle(task.done ? task.spaceColor : AtlasTheme.Colors.textMuted)
             }
             .buttonStyle(.plain)
 
@@ -280,14 +281,14 @@ struct DashboardTasksSection: View {
             Button { state.route = .task(task.id) } label: {
                 HStack(spacing: 0) {
                     Text(task.title)
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, design: .rounded))
                         .strikethrough(task.done)
                         .foregroundStyle(task.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                     Spacer()
                     if !task.dueLabel.isEmpty {
                         Text(task.dueLabel)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(AtlasTheme.Colors.accent.opacity(0.85))
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     }
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9))
@@ -320,16 +321,14 @@ struct FocusCard: View {
             HStack(spacing: 12) {
                 Image(systemName: "timer")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(AtlasTheme.Colors.accent)
+                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     .frame(width: 34, height: 34)
-                    .background(AtlasTheme.Colors.accent.opacity(0.12))
-                    .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Focus session")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text("25 min · Pomodoro")
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer()
@@ -351,29 +350,27 @@ struct GoalsCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 6) {
                     Image(systemName: "target")
-                        .font(.system(size: 12))
-                        .foregroundStyle(AtlasTheme.Colors.accent)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
                     Text("Long-term goals")
-                        .font(AtlasTheme.Font.cardTitle())
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .atlasCapsLabel()
                 }
                 ForEach(goals) { goal in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text(goal.title)
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
                                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             Spacer()
                             Text(goal.label)
-                                .font(.system(size: 10))
+                                .font(.system(size: 10, design: .rounded))
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                         }
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
-                                Capsule().fill(AtlasTheme.Colors.bgElevated)
+                                Capsule().fill(AtlasTheme.Colors.hairline)
                                 Capsule()
-                                    .fill(LinearGradient(colors: [AtlasTheme.Colors.accent, AtlasTheme.Colors.accentDeep],
-                                                         startPoint: .leading, endPoint: .trailing))
+                                    .fill(AtlasTheme.Colors.accent)
                                     .frame(width: max(6, geo.size.width * goal.progress))
                             }
                         }

@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// A simple list of all notes that opens the editor in a sheet. Nice-to-have
 /// surface; not wired into RootView but compiles and runs standalone.
@@ -10,18 +11,18 @@ struct NotesListView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Notes")
-                        .font(AtlasTheme.Font.greeting())
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text("Notes").atlasScreenTitle()
                     Spacer()
                     Button(action: newNote) {
                         Label("New", systemImage: "plus")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(AtlasTheme.Colors.accent)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(AtlasTheme.Colors.accent.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                                    .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
+                            )
                     }
                     .buttonStyle(.plain)
                 }
@@ -51,12 +52,18 @@ struct NotesListView: View {
         editingNote = Note(title: "", body: "")
     }
 
+    /// A note is a linked Doc-note when a `.docNote` reference points back at it.
+    private func isLinkedDoc(_ note: Note) -> Bool {
+        state.references.contains { $0.kind == .docNote && $0.noteID == note.id }
+    }
+
     private func row(_ note: Note) -> some View {
-        AtlasCard {
+        let linkedDoc = isLinkedDoc(note)
+        return AtlasCard {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: note.isExternal ? "doc.text.fill" : "note.text")
+                Image(systemName: linkedDoc ? "doc.richtext" : (note.isExternal ? "doc.text.fill" : "note.text"))
                     .font(.system(size: 14))
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .foregroundStyle(linkedDoc ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textMuted)
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(note.title)
@@ -68,10 +75,16 @@ struct NotesListView: View {
                         .lineLimit(2)
                 }
                 Spacer()
-                if note.isExternal {
+                if linkedDoc {
+                    Text("Google Doc")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .tracking(0.5)
+                        .textCase(.uppercase)
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
+                } else if note.isExternal {
                     Text("Open ↗")
                         .font(AtlasTheme.Font.small())
-                        .foregroundStyle(AtlasTheme.Colors.accent)
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
             }
         }

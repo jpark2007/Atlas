@@ -2,10 +2,10 @@
 
 **A deliberately-minimal iPhone companion: capture on the go, glance at your day.**
 
-- **Status:** Preliminary design draft — approved in brainstorm, parked for later review (build the macOS app first)
+- **Status:** **Phase 0 COMPLETE (2026-07-01)** — the shared `AtlasCore` Swift package + a minimal `AtlasMobile` iOS target build green on **both** platforms; iOS signs in against the same Supabase. Next: **Phase 1 = the Capture screen.** Structure/flows in this spec still stand; only the *visual style* is being re-decided (see §9–§10).
 - **Date:** 2026-06-28
 - **Scope:** iOS app + widgets only. NOT a port of the Mac cockpit.
-- **Reviewers:** drew + design partner (capture mockups approved as direction; visuals to be molded to the macOS rebrand)
+- **Reviewers:** drew + design partner. **UPDATE 2026-07-01:** partner has **vetoed neumorphism**; a light/off-white direction is under exploration (`docs/experiments/ui-style-directions.html`, shortlist: Soft Elevated / Editorial / Warm Paper / Spatial). The approved *flows* stand; only the surface style is changing.
 
 > Read [`../atlas-vision.md`](../atlas-vision.md) and [`01-architecture.md`](./01-architecture.md) first. This spec assumes the Supabase backend + data model already exist (they do — the phone is another client on them).
 
@@ -192,7 +192,9 @@ One idea — **your day at a glance + one-tap capture** — surfaced where you'l
 
 ## 9. Design tokens
 
-Visual style **inherits the macOS rebrand** (leaning faded-neumorphic). Tokens below are the agreed starting system.
+> **SUPERSEDED 2026-07-01 — neumorphism vetoed.** The palette is moving from dark → **light/off-white**, so the dark colors and neumorphic shadows below **no longer apply.** What **carries over** (enforced in every mock): accent `#ff8c42` = live / NOW / brand **only** · capture is a refined glyph, **never a fill** · radii (widget 24 · control 18–20 · chip 13) · SF Pro Rounded type scale · space-dot colors · WCAG-AA text. Light-mode style options live in `docs/experiments/ui-style-directions.html` (shortlist: Soft Elevated / Editorial / Warm Paper / Spatial). The block below is kept as the *prior* dark reference only.
+
+Visual style (PRIOR dark direction, superseded above). Tokens below were the agreed starting system before the veto.
 
 **Color**
 - bg radial `#18181d → #101013 → #0b0b0b` · card grad 160° `#16161b → #0e0e11`
@@ -216,7 +218,7 @@ Visual style **inherits the macOS rebrand** (leaning faded-neumorphic). Tokens b
 
 ## 10. Open / TBD
 
-- Final visual style inherits the **macOS rebrand** (faded-neumorphic lean).
+- Final visual style: **light / off-white, NOT neumorphic** (partner veto, 2026-07-01). Pick from the shortlist in `docs/experiments/ui-style-directions.html`; may intentionally diverge from the Mac look for now.
 - "Orange overused" refinement on the capture screen (the big solid-orange confirm bar reads generic — reserve orange for live/now/brand, use raised-neutral for confirmations). Parked for the visual pass.
 - Lock-screen visual redesign (concept approved, look TBD).
 - Tab-naming reconcile (mockup said Today/Spaces/You; spec is Schedule/Capture/Tasks).
@@ -225,7 +227,9 @@ Visual style **inherits the macOS rebrand** (leaning faded-neumorphic). Tokens b
 
 ## 11. Where this sits in the build order
 
-**After** the macOS daily-driver lands and the backend is exercised end-to-end (see [`10-roadmap.md`](./10-roadmap.md)). The shared Swift package is the bridge: extract `Models`/`AtlasDB`/`AtlasAI` into it during the Mac work so the iOS app is mostly views + widgets on day one. When ready to build, run the brainstorming → writing-plans flow to turn this spec into an implementation plan.
+**✅ Phase 0 landed (2026-07-01).** The shared-package bridge is built: `AtlasCore` (a local SwiftPM package, `platforms: [.macOS(.v14), .iOS(.v17)]`) now holds Models / Theme / Supabase(Config·Auth) / AtlasAI / AtlasDB / AgendaBuilder / CalendarSync / CanvasService / RichDoc / TaskGrouping / etc., all `public` with explicit inits. Both the macOS `Atlas` app and a new bare-bones `AtlasMobile` iOS target build green against it; iOS signs in on the same Supabase. `Metrics` + `SlotFinder` deliberately stay in the Mac app (Mac-only), and `GoogleAuthService` + `HotkeyService` are the only AppKit-locked files. (Gotcha: `Config/Secrets.xcconfig` is gitignored, so run `cp Config/Secrets.example.xcconfig Config/Secrets.xcconfig` before `xcodegen generate` on a fresh checkout.)
+
+**Next: Phase 1 = the Capture screen** (the hero) — mostly views on top of `AtlasCore`, no new plumbing. Lock-screen + home-screen widgets are to be built **together** as one unit when that phase comes. Run the brainstorming → writing-plans flow once the visual style is picked.
 
 ---
 

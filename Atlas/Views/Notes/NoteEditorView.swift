@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// The constrained Atlas notes editor (WS-10). A focused rich-text view over a
 /// `RichDoc` whose ONLY styling is the allowed subset:
@@ -12,10 +13,18 @@ import SwiftUI
 struct NoteEditorView: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    /// The two-way Google-Doc write-back surface. Nil until `integrate` injects one
+    /// (the concrete impl is a Supabase edge function — see `DocNoteWriteBack`).
+    @Environment(\.docNoteWriteBack) private var writeBackService
 
     @State private var draft: Note
     @State private var doc: RichDoc
     @FocusState private var focusedBlock: UUID?
+    /// True while a write-back is in flight — disables Done to avoid double-submits.
+    @State private var isPushing = false
+    /// Set when the write-back guard reports the Doc changed in Google since our pull.
+    @State private var showStaleConflict = false
 
     private let onDone: ((Note) -> Void)?
 
@@ -29,11 +38,13 @@ struct NoteEditorView: View {
         VStack(alignment: .leading, spacing: 0) {
             TextField("Title", text: $draft.title)
                 .textFieldStyle(.plain)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .padding(.horizontal, 18)
                 .padding(.top, 18)
                 .padding(.bottom, 10)
+
+            if let ref = docReference { docBadgeRow(ref) }
 
             styleBar
 
@@ -62,6 +73,84 @@ struct NoteEditorView: View {
             RoundedRectangle(cornerRadius: AtlasTheme.Radius.lg, style: .continuous)
                 .stroke(AtlasTheme.Colors.border, lineWidth: 1)
         )
+        // A linked Doc-note stores its body as Markdown (the two-way transport form),
+        // so parse it structurally rather than as plain text. Native notes keep the
+        // plain-text path from `init`.
+        .onAppear { if docReference != nil { doc = RichDoc.fromMarkdown(draft.body) } }
+        .confirmationDialog("This Doc changed in Google Docs",
+                            isPresented: $showStaleConflict, titleVisibility: .visible) {
+            Button("Overwrite Google Doc", role: .destructive) {
+                if let ref = docReference, let service = writeBackService {
+                    isPushing = true
+                    Task { await push(ref: ref, service: service, overwrite: true) }
+                }
+            }
+            Button("Keep Google's version") {
+                // Discard local edits; the cron re-pulls the newer Doc into the note.
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Your edits and the Google Doc have diverged. Overwrite replaces the Doc with your version; keeping Google's discards your local edits.")
+        }
+    }
+
+    // MARK: - Linked Google Doc
+
+    /// The `.docNote` reference backing this note, if any — the source of the linked
+    /// badge, last-synced, "Open in Google Docs", and the write-back target.
+    private var docReference: Reference? {
+        state.references.first { $0.kind == .docNote && $0.noteID == draft.id }
+    }
+
+    private var docURL: URL? { docReference?.externalURL }
+
+    /// A subtle linked badge + sync state, with the "Open in Google Docs" escape hatch.
+    private func docBadgeRow(_ ref: Reference) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "doc.richtext")
+                .font(.system(size: 11))
+                .foregroundStyle(AtlasTheme.Colors.accentText)
+            Text("Google Doc")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .tracking(0.6)
+                .foregroundStyle(AtlasTheme.Colors.accentText)
+            if let sub = syncSubtitle(ref) {
+                Text("· \(sub)")
+                    .font(AtlasTheme.Font.small())
+                    .foregroundStyle(ref.syncState == .stale
+                                     ? AtlasTheme.Colors.accentText
+                                     : AtlasTheme.Colors.textMuted)
+            }
+            Spacer()
+            if let url = docURL {
+                Button { openURL(url) } label: {
+                    HStack(spacing: 3) {
+                        Text("Open in Google Docs")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                        Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .semibold))
+                    }
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 6)
+    }
+
+    private func syncSubtitle(_ ref: Reference) -> String? {
+        switch ref.syncState {
+        case .stale:   return "Changed in Google — save to overwrite"
+        case .error:   return "Sync error"
+        case .pending: return "Not yet synced"
+        case .synced:
+            if let d = ref.lastSyncedAt {
+                let f = RelativeDateTimeFormatter(); f.unitsStyle = .abbreviated
+                return "Last synced \(f.localizedString(for: d, relativeTo: Date()))"
+            }
+            return "Synced"
+        }
     }
 
     // MARK: - Style bar (the only styling Atlas allows)
@@ -90,38 +179,50 @@ struct NoteEditorView: View {
     }
 
     private func levelButton(_ title: String, kind: RichDoc.BlockKind) -> some View {
-        Button { doc.setKind(kind, at: activeIndex) } label: {
+        let active = isActiveKind(kind)
+        return Button { doc.setKind(kind, at: activeIndex) } label: {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(isActiveKind(kind) ? AtlasTheme.Colors.bgDeep : AtlasTheme.Colors.textSecondary)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(active ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(isActiveKind(kind) ? AtlasTheme.Colors.accent : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(active ? AtlasTheme.Colors.textPrimary : Color.clear,
+                                      lineWidth: AtlasTheme.rule)
+                )
         }
         .buttonStyle(.plain)
     }
 
     private func markButton(_ systemImage: String, mark: RichDoc.InlineMarks) -> some View {
-        Button { doc.toggleMark(mark, at: activeIndex) } label: {
+        let active = isActiveMark(mark)
+        return Button { doc.toggleMark(mark, at: activeIndex) } label: {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isActiveMark(mark) ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textSecondary)
+                .foregroundStyle(active ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                 .frame(width: 24, height: 22)
-                .background(isActiveMark(mark) ? AtlasTheme.Colors.accent.opacity(0.14) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(active ? AtlasTheme.Colors.textPrimary : Color.clear,
+                                      lineWidth: AtlasTheme.rule)
+                )
         }
         .buttonStyle(.plain)
     }
 
     private func listButton(_ systemImage: String, kind: RichDoc.BlockKind) -> some View {
-        Button { doc.toggleListKind(kind, at: activeIndex) } label: {
+        let active = isActiveKind(kind)
+        return Button { doc.toggleListKind(kind, at: activeIndex) } label: {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isActiveKind(kind) ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textSecondary)
+                .foregroundStyle(active ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                 .frame(width: 24, height: 22)
-                .background(isActiveKind(kind) ? AtlasTheme.Colors.accent.opacity(0.14) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(active ? AtlasTheme.Colors.textPrimary : Color.clear,
+                                      lineWidth: AtlasTheme.rule)
+                )
         }
         .buttonStyle(.plain)
     }
@@ -168,28 +269,31 @@ struct NoteEditorView: View {
 
     private var footer: some View {
         HStack {
-            Text(draft.googleDocId == nil
+            Text(docReference == nil
                  ? "Saved in Atlas · constrained editor"
-                 : "Synced with Google Doc")
+                 : "Two-way with Google Doc")
                 .font(AtlasTheme.Font.small())
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Spacer()
             Button { addBlockAfter(doc.blocks.count - 1) } label: {
                 Label("Block", systemImage: "plus")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
             }
             .buttonStyle(.plain)
             Button(action: commit) {
                 Text("Done")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AtlasTheme.Colors.bgDeep)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 7)
-                    .background(AtlasTheme.Colors.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                            .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
+                    )
             }
             .buttonStyle(.plain)
+            .disabled(isPushing)
             .keyboardShortcut(.return, modifiers: .command)
         }
         .padding(.horizontal, 18)
@@ -230,18 +334,100 @@ struct NoteEditorView: View {
 
     private func font(for kind: RichDoc.BlockKind) -> Font {
         switch kind {
-        case .heading:    return .system(size: 22, weight: .bold)
-        case .subheading: return .system(size: 17, weight: .semibold)
+        case .heading:    return .system(size: 22, weight: .bold, design: .rounded)
+        case .subheading: return .system(size: 17, weight: .semibold, design: .rounded)
         case .normal, .bulleted, .numbered: return AtlasTheme.Font.body()
         }
     }
 
     private func commit() {
         doc.normalize()
+        if let ref = docReference {
+            commitDocNote(ref)
+        } else {
+            var updated = draft
+            updated.body = doc.plainText
+            state.updateNote(updated)
+            onDone?(updated)
+            dismiss()
+        }
+    }
+
+    /// Save path for a linked Doc-note: persist the Markdown body locally, then push
+    /// to Google through the write-back guard. With no service wired yet the local
+    /// save still lands and the cron reconciles later.
+    private func commitDocNote(_ ref: Reference) {
+        guard let service = writeBackService else {
+            persistDocNoteBody()
+            dismiss()
+            return
+        }
+        isPushing = true
+        Task { await push(ref: ref, service: service, overwrite: false) }
+    }
+
+    @MainActor
+    private func push(ref: Reference, service: DocNoteWriteBack, overwrite: Bool) async {
+        defer { isPushing = false }
+        do {
+            switch try await service.writeBack(reference: ref, markdown: doc.markdown, overwrite: overwrite) {
+            case .written(let modifiedTime):
+                // Sync the in-memory baseline to what the server just re-stored, so a
+                // second save this session doesn't compare against a now-stale time.
+                if let modifiedTime { state.markReferenceSynced(ref.id, modifiedTime: modifiedTime) }
+                persistDocNoteBody()
+                dismiss()
+            case .changedInGoogle:
+                showStaleConflict = true   // surface refresh/overwrite; stay open
+            }
+        } catch {
+            // Never lose the user's work: keep the local Markdown copy and close;
+            // the cron will push it on the next tick.
+            persistDocNoteBody()
+            dismiss()
+        }
+    }
+
+    /// Stores the RichDoc as Markdown — the two-way transport form — so a linked
+    /// Doc-note's structure survives the round-trip (native notes stay plain text).
+    private func persistDocNoteBody() {
         var updated = draft
-        updated.body = doc.plainText
+        updated.body = doc.markdown
         state.updateNote(updated)
         onDone?(updated)
-        dismiss()
+    }
+}
+
+// MARK: - Write-back surface (integrate wires a concrete impl)
+
+/// The outcome of a Google-Doc write-back attempt.
+enum DocWriteBackOutcome {
+    /// Guard passed; the Doc was rewritten from the note's Markdown. Carries Drive's
+    /// new `modifiedTime` (the re-baselined value the server stored) so the client can
+    /// refresh its in-memory reference and not false-trip the guard on a rapid re-save.
+    case written(modifiedTime: Date?)
+    /// Drive moved past our stored `modifiedTime` — surface refresh/overwrite rather
+    /// than blind-writing (the design doc's staleness guard).
+    case changedInGoogle
+}
+
+/// Narrow client surface for the two-way Google-Doc write-back the design doc mandates:
+/// a Supabase edge function takes the note's Markdown + the reference's expected
+/// `modifiedTime`, performs the guard, and converts Markdown → Doc via Drive update.
+/// No concrete impl exists yet — `integrate` injects one via `\.docNoteWriteBack`.
+protocol DocNoteWriteBack {
+    /// Push `markdown` to the Doc backing `reference`. `overwrite` skips the guard
+    /// (used after the user chose "Overwrite Google Doc" on a stale conflict).
+    func writeBack(reference: Reference, markdown: String, overwrite: Bool) async throws -> DocWriteBackOutcome
+}
+
+private struct DocNoteWriteBackKey: EnvironmentKey {
+    static let defaultValue: DocNoteWriteBack? = nil
+}
+
+extension EnvironmentValues {
+    var docNoteWriteBack: DocNoteWriteBack? {
+        get { self[DocNoteWriteBackKey.self] }
+        set { self[DocNoteWriteBackKey.self] = newValue }
     }
 }

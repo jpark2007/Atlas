@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 struct TaskDetailView: View {
     @EnvironmentObject var state: AppState
@@ -13,20 +14,28 @@ struct TaskDetailView: View {
     @State private var isEditingNotes = false
     @State private var isEditingDueDate = false
     @State private var dueDateDraft: Date? = nil
+    @State private var dueHover = false
+    @State private var showRefPicker = false
+    @State private var referenceSelection: Set<UUID> = []
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 header
                 metaRow
+                spacePicker
                 projectPicker
                 notesSection
+                referencesSection
             }
             .padding(28)
         }
         .background(AtlasTheme.Colors.bgBase)
         .onAppear { notesDraft = live.notes }
         .sheet(isPresented: $isEditingDueDate) { dueDateEditor }
+        .sheet(isPresented: $showRefPicker, onDismiss: syncTaskAttachments) {
+            AttachReferencePicker(projectID: taskProjectID, selection: $referenceSelection)
+        }
     }
 
     // MARK: Header
@@ -45,7 +54,8 @@ struct TaskDetailView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(live.title)
-                    .font(.system(size: 24, weight: .bold))
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .tracking(-0.4)
                     .strikethrough(live.done)
                     .foregroundStyle(live.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -56,7 +66,7 @@ struct TaskDetailView: View {
                             .fill(live.spaceColor)
                             .frame(width: 7, height: 7)
                         Text(live.spaceName)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
                             .foregroundStyle(live.spaceColor)
                     }
                 }
@@ -79,17 +89,14 @@ struct TaskDetailView: View {
     }
 
     private var metaRow: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 16) {
             // Space the task belongs to.
             if !live.spaceName.isEmpty {
                 HStack(spacing: 5) {
                     Circle().fill(live.spaceColor).frame(width: 7, height: 7)
-                    Text(live.spaceName).font(.system(size: 12))
+                    Text(live.spaceName).font(.system(size: 12, weight: .medium, design: .rounded))
                 }
                 .foregroundStyle(live.spaceColor)
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-                .clipShape(Capsule())
             }
             // Due date — tap to edit (set/change/clear, with a time).
             Button {
@@ -99,20 +106,24 @@ struct TaskDetailView: View {
                 HStack(spacing: 5) {
                     Image(systemName: "calendar").font(.system(size: 11))
                     Text(live.dueLabel.isEmpty ? "Set due date" : "Due \(dueChipLabel)")
-                        .font(.system(size: 12))
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
                 }
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-                .clipShape(Capsule())
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous)
+                        .fill(Color.black.opacity(dueHover ? 0.05 : 0))
+                )
             }
             .buttonStyle(.plain)
+            .onHover { dueHover = $0 }
             if let at = live.scheduledAt {
                 metaChip(icon: "clock", label: "Scheduled \(shortDate(at))")
             }
             if live.done {
                 metaChip(icon: "checkmark.circle", label: "Completed")
             }
+            Spacer()
         }
     }
 
@@ -120,7 +131,7 @@ struct TaskDetailView: View {
     private var dueDateEditor: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Due date")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 16, weight: .bold, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             DatePicker("", selection: Binding(
                 get: { dueDateDraft ?? Date() },
@@ -128,28 +139,32 @@ struct TaskDetailView: View {
             ), displayedComponents: [.date, .hourAndMinute])
             .datePickerStyle(.graphical)
             .labelsHidden()
+            .tint(AtlasTheme.Colors.accentText)
             HStack {
                 Button("Clear") {
                     state.setDueDate(taskId: task.id, date: nil)
                     isEditingDueDate = false
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.danger)
                 Spacer()
                 Button("Cancel") { isEditingDueDate = false }
                     .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 Button("Save") {
                     state.setDueDate(taskId: task.id, date: dueDateDraft)
                     isEditingDueDate = false
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(AtlasTheme.Colors.accent)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
             }
         }
         .padding(20)
         .frame(width: 360)
-        .background(AtlasTheme.Colors.bgCard)
+        .background(AtlasTheme.Colors.bgBase)
     }
 
     private func metaChip(icon: String, label: String) -> some View {
@@ -157,12 +172,40 @@ struct TaskDetailView: View {
             Image(systemName: icon)
                 .font(.system(size: 11))
             Text(label)
-                .font(.system(size: 12))
+                .font(.system(size: 12, design: .rounded))
         }
         .foregroundStyle(AtlasTheme.Colors.textSecondary)
-        .padding(.horizontal, 10).padding(.vertical, 5)
-        .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-        .clipShape(Capsule())
+    }
+
+    // MARK: Space picker
+
+    private var spacePicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("SPACE").atlasCapsLabel()
+
+            Menu {
+                ForEach(state.spaces) { space in
+                    Button(space.name) {
+                        state.setTaskSpace(taskId: live.id, spaceName: space.name)
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(live.spaceColor)
+                        .frame(width: 8, height: 8)
+                    Text(live.spaceName.isEmpty ? "None" : live.spaceName)
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .foregroundStyle(live.spaceName.isEmpty
+                                 ? AtlasTheme.Colors.textMuted
+                                 : live.spaceColor)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
     }
 
     // MARK: Project picker
@@ -172,10 +215,7 @@ struct TaskDetailView: View {
             .first { $0.name == live.spaceName }?.projects ?? []
 
         return VStack(alignment: .leading, spacing: 8) {
-            Text("PROJECT")
-                .font(AtlasTheme.Font.sectionLabel())
-                .tracking(0.8)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
+            Text("PROJECT").atlasCapsLabel()
 
             Menu {
                 Button("None") {
@@ -194,16 +234,13 @@ struct TaskDetailView: View {
                     Image(systemName: "folder")
                         .font(.system(size: 11))
                     Text(live.projectName.isEmpty ? "None" : live.projectName)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 8, weight: .semibold))
+                        .font(.system(size: 9, weight: .semibold))
                 }
                 .foregroundStyle(live.projectName.isEmpty
                                  ? AtlasTheme.Colors.textMuted
-                                 : AtlasTheme.Colors.accent)
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                                 : AtlasTheme.Colors.accentText)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -215,10 +252,7 @@ struct TaskDetailView: View {
     private var notesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("DESCRIPTION")
-                    .font(AtlasTheme.Font.sectionLabel())
-                    .tracking(0.8)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                Text("DESCRIPTION").atlasCapsLabel()
                 Spacer()
                 if !isEditingNotes {
                     Button {
@@ -241,13 +275,13 @@ struct TaskDetailView: View {
                     isEditingNotes = true
                 } label: {
                     Text("Add a description…")
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
             } else {
                 Text(live.notes)
-                    .font(.system(size: 13))
+                    .font(.system(size: 13, design: .rounded))
                     .lineSpacing(4)
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -260,26 +294,20 @@ struct TaskDetailView: View {
             ZStack(alignment: .topLeading) {
                 if notesDraft.isEmpty {
                     Text("Add description, context, links…")
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                        .padding(.leading, 5).padding(.top, 1)
                         .allowsHitTesting(false)
                 }
                 TextEditor(text: $notesDraft)
-                    .font(.system(size: 13))
+                    .font(.system(size: 13, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+                    .tint(AtlasTheme.Colors.accent)
                     .frame(minHeight: 120)
             }
-            .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-            .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
-                    .stroke(AtlasTheme.Colors.border, lineWidth: 1)
-            )
+            .padding(.vertical, 4)
+            .atlasHairlineBelow()
 
             HStack {
                 Spacer()
@@ -288,7 +316,7 @@ struct TaskDetailView: View {
                     isEditingNotes = false
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .keyboardShortcut(.cancelAction)
 
@@ -297,8 +325,8 @@ struct TaskDetailView: View {
                     isEditingNotes = false
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(AtlasTheme.Colors.accent)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .keyboardShortcut(.return, modifiers: .command)
             }
         }
@@ -308,5 +336,56 @@ struct TaskDetailView: View {
         let f = DateFormatter()
         f.dateFormat = "MMM d, h:mm a"
         return f.string(from: date)
+    }
+
+    // MARK: References
+
+    /// The task's project UUID — resolved from its space + project names, since
+    /// `TaskItem` links to a project by name. References are project-scoped.
+    private var taskProjectID: UUID? {
+        state.spaces.first { $0.name == live.spaceName }?
+            .projects.first { $0.name == live.projectName }?.id
+    }
+
+    private var referencesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("REFERENCES").atlasCapsLabel()
+                Spacer()
+                Button {
+                    referenceSelection = Set(state.references(forTask: live.id).map(\.id))
+                    showRefPicker = true
+                } label: {
+                    Label("Add", systemImage: "plus")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            let refs = state.references(forTask: live.id)
+            if refs.isEmpty {
+                Text("No references attached.")
+                    .font(.system(size: 13, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+            } else {
+                ForEach(refs) { ref in
+                    ReferenceListRow(reference: ref) {
+                        state.detachReference(ref.id, fromTask: live.id)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Applies the picker's selection to the task's attachments (diff → attach/detach).
+    private func syncTaskAttachments() {
+        let current = Set(state.references(forTask: live.id).map(\.id))
+        for added in referenceSelection.subtracting(current) {
+            state.attachReference(added, toTask: live.id)
+        }
+        for removed in current.subtracting(referenceSelection) {
+            state.detachReference(removed, fromTask: live.id)
+        }
     }
 }

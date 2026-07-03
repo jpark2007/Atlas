@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Create-or-edit form for a `CalendarEvent`, presented as a sheet.
 ///
@@ -19,6 +20,10 @@ struct EventEditorSheet: View {
     @State private var startDate: Date
     @State private var endDate: Date
     @State private var notes: String
+    @State private var showRefPicker = false
+    /// References chosen while composing — attached to the event once it's saved
+    /// (the attachment FK needs the `events` row to exist first).
+    @State private var referenceSelection: Set<UUID> = []
 
     init(seed: CalendarEvent) {
         self.seed = seed
@@ -39,7 +44,10 @@ struct EventEditorSheet: View {
             formBody
         }
         .frame(width: 420, alignment: .topLeading)
-        .background(AtlasTheme.Colors.bgCard)
+        .background(AtlasTheme.Colors.bgBase)
+        .sheet(isPresented: $showRefPicker) {
+            AttachReferencePicker(projectID: seed.projectID, selection: $referenceSelection)
+        }
         .onChange(of: startDate) { _, newStart in
             // Keep end >= start + 15 minutes when start shifts past end
             if endDate <= newStart {
@@ -59,59 +67,55 @@ struct EventEditorSheet: View {
 
     private var headerBar: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(isEditingExisting ? "Edit Event" : "New Event")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
-            }
+            Text(isEditingExisting ? "Edit Event" : "New Event")
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .tracking(-0.3)
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Spacer()
-            Button("Cancel") {
-                state.presentEventEditor = false
+            Button { state.presentEventEditor = false } label: {
+                Text("Cancel").atlasCapsLabel()
             }
             .buttonStyle(.plain)
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(AtlasTheme.Colors.textSecondary)
 
-            Button("Save") {
-                save()
+            Button { save() } label: {
+                Text("Save")
+                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(trimmedTitle.isEmpty ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
+                    .padding(.horizontal, 16).padding(.vertical, 6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                            .strokeBorder(trimmedTitle.isEmpty ? AtlasTheme.Colors.border : AtlasTheme.Colors.textPrimary,
+                                          lineWidth: AtlasTheme.rule)
+                    )
             }
             .buttonStyle(.plain)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(trimmedTitle.isEmpty ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.accent)
             .disabled(trimmedTitle.isEmpty)
             .keyboardShortcut(.return, modifiers: .command)
         }
         .padding(.horizontal, 24)
         .padding(.top, 22)
-        .padding(.bottom, 18)
+        .padding(.bottom, 16)
     }
 
     private var formBody: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 0) {
 
                 // ── Title ─────────────────────────────────────────────────
-                fieldGroup(label: "TITLE") {
+                field("Title") {
                     TextField("Event title", text: $title)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-                        .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
-                                .stroke(AtlasTheme.Colors.border, lineWidth: 1)
-                        )
+                        .tint(AtlasTheme.Colors.accent)
                 }
 
                 // ── Space picker ──────────────────────────────────────────
-                fieldGroup(label: "SPACE") {
+                field("Space") {
                     HStack(spacing: 8) {
                         Circle()
                             .fill(state.calendarSpaceColor(named: selectedSpaceName))
-                            .frame(width: 8, height: 8)
+                            .frame(width: 9, height: 9)
                         Picker("Space", selection: $selectedSpaceName) {
                             ForEach(state.spaces) { space in
                                 Text(space.name).tag(space.name)
@@ -120,38 +124,22 @@ struct EventEditorSheet: View {
                         .labelsHidden()
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-                    .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
-                            .stroke(AtlasTheme.Colors.border, lineWidth: 1)
-                    )
                 }
 
                 // ── All Day toggle ────────────────────────────────────────
                 HStack {
-                    Text("All Day")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text("All Day").atlasCapsLabel()
                     Spacer()
                     Toggle("", isOn: $isAllDay)
                         .labelsHidden()
                         .toggleStyle(.switch)
-                        .tint(AtlasTheme.Colors.accent)
+                        .tint(AtlasTheme.Colors.textPrimary)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-                .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
-                        .stroke(AtlasTheme.Colors.border, lineWidth: 1)
-                )
+                .padding(.vertical, 12)
+                .atlasHairlineBelow()
 
                 // ── Start date / time ─────────────────────────────────────
-                fieldGroup(label: "STARTS") {
+                field("Starts") {
                     DatePicker(
                         "",
                         selection: $startDate,
@@ -159,11 +147,12 @@ struct EventEditorSheet: View {
                     )
                     .labelsHidden()
                     .datePickerStyle(.compact)
+                    .tint(AtlasTheme.Colors.accentText)
                 }
 
                 // ── End date / time (timed events only) ───────────────────
                 if !isAllDay {
-                    fieldGroup(label: "ENDS") {
+                    field("Ends") {
                         DatePicker(
                             "",
                             selection: $endDate,
@@ -172,51 +161,72 @@ struct EventEditorSheet: View {
                         )
                         .labelsHidden()
                         .datePickerStyle(.compact)
+                        .tint(AtlasTheme.Colors.accentText)
                     }
                 }
 
                 // ── Notes ─────────────────────────────────────────────────
-                fieldGroup(label: "NOTES") {
+                field("Notes") {
                     ZStack(alignment: .topLeading) {
                         if notes.isEmpty {
                             Text("Add notes…")
-                                .font(.system(size: 13))
+                                .font(.system(size: 13, design: .rounded))
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 10)
+                                .padding(.leading, 5).padding(.top, 1)
                                 .allowsHitTesting(false)
                         }
                         TextEditor(text: $notes)
-                            .font(.system(size: 13))
+                            .font(.system(size: 13, design: .rounded))
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             .scrollContentBackground(.hidden)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
+                            .tint(AtlasTheme.Colors.accent)
                             .frame(minHeight: 80)
                     }
-                    .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-                    .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
-                            .stroke(AtlasTheme.Colors.border, lineWidth: 1)
-                    )
+                }
+
+                // ── References (new events with a project) ─────────────────
+                if !isEditingExisting, seed.projectID != nil {
+                    field("References") { referencesField }
                 }
             }
-            .padding(24)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 6)
+        }
+    }
+
+    /// Selected references + an "Add reference" affordance. Selection is held locally
+    /// and attached to the event on save.
+    private var referencesField: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            let selected = referenceSelection.compactMap { rid in
+                state.references.first { $0.id == rid }
+            }
+            ForEach(selected) { ref in
+                ReferenceListRow(reference: ref) { referenceSelection.remove(ref.id) }
+            }
+            Button { showRefPicker = true } label: {
+                Label("Add reference", systemImage: "plus")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, selected.isEmpty ? 0 : 10)
         }
     }
 
     // MARK: - Helper Views
 
+    /// Editorial field row — a caps label over a transparent control, hairline below.
     @ViewBuilder
-    private func fieldGroup<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(label)
-                .font(AtlasTheme.Font.kicker())
-                .tracking(1.2)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
+    private func field<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label).atlasCapsLabel()
             content()
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .atlasHairlineBelow()
     }
 
     // MARK: - Logic
@@ -270,7 +280,9 @@ struct EventEditorSheet: View {
         if isEditingExisting {
             state.updateEvent(event)
         } else {
-            state.addEvent(event)
+            // Attach chosen references — addEvent sequences the writes so the event
+            // row lands before the attachment FKs reference it.
+            state.addEvent(event, attachingReferences: referenceSelection)
         }
 
         state.presentEventEditor = false

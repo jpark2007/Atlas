@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 import AppKit
 
 @main
@@ -6,6 +7,9 @@ struct AtlasApp: App {
     @StateObject private var state = AppState()
     @StateObject private var auth = AuthService()
     @StateObject private var canvas = CanvasService()
+    /// Server-side Canvas ICS connect client (AtlasCore) — distinct from the local
+    /// token-based `CanvasService` above; Settings' feed-URL section uses this one.
+    @StateObject private var canvasFeed = AtlasCore.CanvasService()
     @StateObject private var shortcuts = ShortcutStore()
     @StateObject private var googleAuth = GoogleAuthService()
 
@@ -15,14 +19,19 @@ struct AtlasApp: App {
                 .environmentObject(state)
                 .environmentObject(auth)
                 .environmentObject(canvas)
+                .environmentObject(canvasFeed)
                 .environmentObject(shortcuts)
                 .environmentObject(googleAuth)
+                // Two-way Google-Doc write-back for linked Doc-notes: the concrete
+                // edge-function client, reading the live Supabase JWT on each save.
+                .environment(\.docNoteWriteBack,
+                             GoogleDocWriteBackClient(accessToken: { auth.session?.accessToken }))
                 .frame(minWidth: 960, minHeight: 600)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(.light)
                 .background(GlobalHotkeyInstaller(state: state, auth: auth))
         }
         // .hiddenTitleBar gives the transparent, full-size-content title bar (edge-to-edge
-        // dark content, no gray strip, no title) while KEEPING the standard traffic-light
+        // light content, no gray strip, no title) while KEEPING the standard traffic-light
         // controls — it does not suppress them. The buttons were actually being removed by
         // `.toolbar(.hidden, for: .windowToolbar)` in RootView, which strips the whole
         // window toolbar (controls included); that line has been removed.

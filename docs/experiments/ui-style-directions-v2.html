@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atlas — UI Style Directions v2 (accurate)</title>
+<style>
+  /* ═══════════════════════════════════════════════════════════════
+     V2 — the ACCURATE comparison. Differences from v1:
+       • Real Mac tokens from AtlasCore Theme.swift (warm near-black),
+         shown in a live Mac reference strip so you judge phone-next-to-Mac.
+       • LIGHT / DARK toggle — dark = matched to the actual Mac palette.
+       • ACCENT picker — current orange vs 4 candidates, recolors
+         everything live including the Mac strip.
+       • Real spaces: School #5b9bd5 · Personal #5fb98e · Side #b48ad9.
+       • Three real screens per style: Schedule (home), Capture (empty),
+         Capture (result card) — the Phase-1 surfaces.
+     Carried over from spec §9: accent = live/NOW/brand ONLY · capture is
+     a refined glyph, never a fill · radii 24/19/13 · SF Pro Rounded ·
+     WCAG-AA body text (accent TEXT auto-darkens in light mode).
+     Open in Safari for true SF Pro Rounded (ui-rounded).
+     ═══════════════════════════════════════════════════════════════ */
+  :root{
+    --r-card:24px; --r-lg:28px; --r-control:19px; --r-chip:13px;
+    --font:"SF Pro Rounded", ui-rounded, -apple-system, system-ui, sans-serif;
+    /* real space colors — Theme.swift */
+    --school:#5b9bd5; --personal:#5fb98e; --side:#b48ad9;
+    /* page chrome (the doc itself — always light, not part of the test) */
+    --pg-ink:#26241f; --pg-muted:#7d786e; --pg-hair:rgba(40,34,24,.1);
+  }
+  /* ── accent candidates ─────────────────────────────────────────
+     --accent      graphics: NOW bar, ring, dot, spark (any surface)
+     --accent-inkL text-safe darkened version for LIGHT surfaces      */
+  body[data-accent="orange"]{ --accent:#ff8c42; --accent-inkL:#c25a0e; }
+  body[data-accent="coral"] { --accent:#ff6f61; --accent-inkL:#d63f30; }
+  body[data-accent="clay"]  { --accent:#d97757; --accent-inkL:#b04f2f; }
+  body[data-accent="gold"]  { --accent:#eaa945; --accent-inkL:#8f6516; }
+  body[data-accent="indigo"]{ --accent:#7c86ff; --accent-inkL:#4b53d9; }
+
+  /* ── phone theme ───────────────────────────────────────────────
+     light = the partner-approved direction · dark = Mac-matched
+     (Theme.swift: bg 100e0c→211d18 · text f3ede4/a89b8a/6f655a)     */
+  body[data-theme="light"]{
+    --ink:#1a191d; --muted:#6c6a72; --faint:#9a98a0;
+    --hair:rgba(20,18,24,.08); --hair-strong:rgba(20,18,24,.16);
+    --accent-ink:var(--accent-inkL);
+  }
+  body[data-theme="dark"]{
+    --ink:#f3ede4; --muted:#a89b8a; --faint:#6f655a;
+    --hair:rgba(255,255,255,.08); --hair-strong:rgba(255,255,255,.16);
+    --accent-ink:var(--accent);
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:#e9e5dc; color:var(--pg-ink); font-family:var(--font);
+       -webkit-font-smoothing:antialiased; padding:36px 32px 72px;}
+
+  /* ── page chrome ───────────────────────────────────────────── */
+  .top{max-width:1280px; margin:0 auto 18px;}
+  .top h1{font-size:26px; font-weight:800; letter-spacing:-.02em;}
+  .top .sub{color:var(--pg-muted); font-size:14px; line-height:1.55; margin-top:7px; max-width:820px;}
+  .top .sub b{color:var(--pg-ink); font-weight:700;}
+
+  /* ── sticky control deck ───────────────────────────────────── */
+  .deck{position:sticky; top:0; z-index:50; background:rgba(233,229,220,.92);
+        backdrop-filter:blur(10px); margin:0 -32px; padding:12px 32px;
+        border-bottom:1px solid var(--pg-hair);}
+  .deck-in{max-width:1280px; margin:0 auto; display:flex; gap:20px; align-items:stretch; flex-wrap:wrap;}
+  .controls{display:flex; flex-direction:column; gap:10px; justify-content:center;}
+  .ctl{display:flex; align-items:center; gap:8px;}
+  .ctl .lab{font-size:10.5px; font-weight:800; letter-spacing:.09em; text-transform:uppercase;
+            color:var(--pg-muted); width:92px;}
+  .seg{display:flex; background:#fff; border:1px solid var(--pg-hair); border-radius:12px; padding:3px; gap:2px;}
+  .seg button{border:0; background:transparent; font:inherit; font-size:12.5px; font-weight:700;
+              color:var(--pg-muted); padding:6px 14px; border-radius:9px; cursor:pointer;}
+  .seg button.on{background:#26241f; color:#fff;}
+  .swatches{display:flex; gap:6px;}
+  .swatches button{border:0; background:#fff; border:1px solid var(--pg-hair); border-radius:12px;
+              display:flex; align-items:center; gap:7px; font:inherit; font-size:12px; font-weight:700;
+              color:var(--pg-muted); padding:6px 11px; cursor:pointer;}
+  .swatches button i{width:13px; height:13px; border-radius:50%; display:block;}
+  .swatches button.on{border-color:#26241f; color:#26241f; box-shadow:inset 0 0 0 1px #26241f;}
+  .deck-note{font-size:11.5px; color:var(--pg-muted); margin-top:2px; max-width:360px; line-height:1.45;}
+  .deck-note b{color:var(--pg-ink);}
+
+  /* ── Mac reference strip — ACTUAL Theme.swift tokens, always dark ── */
+  .mac{flex:1; min-width:420px; max-width:640px; border-radius:14px; overflow:hidden;
+       display:flex; background:#16130f; box-shadow:0 14px 34px -16px rgba(30,20,8,.55);
+       border:1px solid rgba(255,255,255,.06); font-family:var(--font);}
+  .mac *{--ink:#f3ede4; --muted:#a89b8a; --faint:#6f655a;} /* Mac is dark regardless of toggle */
+  .mac .side{width:148px; background:#1a140f; padding:11px 12px; flex-shrink:0;
+             border-right:1px solid rgba(255,255,255,.06);}
+  :is(.mac,.macp) .lights{display:flex; gap:6px; margin-bottom:12px;}
+  :is(.mac,.macp) .lights i{width:10px; height:10px; border-radius:50%;}
+  :is(.mac,.macp) .lights i:nth-child(1){background:#ff5f57;} :is(.mac,.macp) .lights i:nth-child(2){background:#febc2e;}
+  :is(.mac,.macp) .lights i:nth-child(3){background:#28c840;}
+  .mac .brand{font-size:10px; font-weight:800; letter-spacing:.12em; color:#6f655a; margin-bottom:8px;}
+  .mac .item{display:flex; align-items:center; gap:7px; font-size:11.5px; font-weight:600;
+             color:#a89b8a; padding:4.5px 7px; border-radius:7px;}
+  .mac .item.on{background:#211d18; color:#f3ede4;}
+  .mac .item .sd{width:8px; height:8px; border-radius:50%;}
+  .mac .main{flex:1; background:#16130f; padding:13px 15px;}
+  .mac .hi{font-size:16px; font-weight:600; color:#f3ede4; letter-spacing:-.015em;}
+  .mac .card{margin-top:10px; background:#1c1814; border:1px solid rgba(255,255,255,.06);
+             border-radius:12px; padding:10px 12px;}
+  .mac .mrow{position:relative; display:flex; align-items:center; gap:9px; padding:6px 4px 6px 10px;
+             font-size:12px; font-weight:600; color:#f3ede4;}
+  .mac .mrow .t{font-variant-numeric:tabular-nums; font-weight:700; width:34px; color:#a89b8a;}
+  .mac .mrow .sd{width:7px; height:7px; border-radius:50%;}
+  .mac .mrow .tg{margin-left:auto; font-size:9.5px; font-weight:700; letter-spacing:.08em;
+                 text-transform:uppercase; color:#6f655a;}
+  .mac .mrow.now::before{content:""; position:absolute; left:0; top:7px; bottom:7px; width:3px;
+                 border-radius:3px; background:var(--accent);}
+  .mac .mrow.now .t,.mac .mrow.now .tg{color:var(--accent);}
+  .mac-cap{font-size:10.5px; color:var(--pg-muted); margin-top:5px;}
+  .mac-cap b{color:var(--pg-ink);}
+  .macwrap{flex:1; min-width:420px; display:flex; flex-direction:column;}
+
+  /* ── Mac RESTYLED preview — one per style section, follows the
+        theme + accent toggles. This is what "matching the Mac to the
+        winner" would roughly look like. Surfaces come from --mp-* vars
+        each style defines below. ───────────────────────────────── */
+  .macline{margin-top:22px; max-width:660px;}
+  .macp{display:flex; border-radius:14px; overflow:hidden; color:var(--ink);
+        background-color:var(--mp-bg-color,transparent);
+        background-image:var(--mp-bg-img,none); background-size:var(--mp-bg-size,auto);
+        border:1px solid var(--hair);
+        box-shadow:0 18px 40px -20px rgba(40,30,15,.35);}
+  .macp .mside{width:150px; padding:11px 12px; flex-shrink:0;
+        background:var(--mp-side,transparent); backdrop-filter:var(--mp-side-blur,none);
+        border-right:var(--mp-side-border,1px solid var(--hair));}
+  .macp .brand{font-size:10px; font-weight:800; letter-spacing:.12em; color:var(--faint); margin-bottom:8px;}
+  .macp .mitem{display:flex; align-items:center; gap:7px; font-size:11.5px; font-weight:600;
+        color:var(--muted); padding:4.5px 7px; border-radius:7px;}
+  .macp .mitem.on{background:rgba(127,120,110,.16); color:var(--ink);}
+  .macp .mitem .sd{width:8px; height:8px; border-radius:50%;}
+  .macp .mmain{flex:1; padding:13px 15px;}
+  .macp .hi{font-size:16px; font-weight:600; color:var(--ink); letter-spacing:-.015em;}
+  .macp .mcard{margin-top:10px; border-radius:12px; padding:10px 12px;
+        background:var(--mp-card,transparent); backdrop-filter:var(--mp-card-blur,none);
+        box-shadow:var(--mp-card-shadow,none);}
+  .macp .mrow{position:relative; display:flex; align-items:center; gap:9px; padding:6px 4px 6px 10px;
+        font-size:12px; font-weight:600; color:var(--ink);}
+  .macp .mrow .t{font-variant-numeric:tabular-nums; font-weight:700; width:34px; color:var(--muted);}
+  .macp .mrow .sd{width:7px; height:7px; border-radius:50%;}
+  .macp .mrow .tg{margin-left:auto; font-size:9.5px; font-weight:700; letter-spacing:.08em;
+        text-transform:uppercase; color:var(--faint);}
+  .macp .mrow.now::before{content:""; position:absolute; left:0; top:7px; bottom:7px; width:3px;
+        border-radius:3px; background:var(--accent);}
+  .macp .mrow.now .t,.macp .mrow.now .tg{color:var(--accent-ink);}
+
+  /* per-style Mac surfaces */
+  body[data-theme="light"] .s3{--mp-bg-color:#efe8de; --mp-side:#e7dfd2; --mp-card:#fff;
+        --mp-card-shadow:0 14px 30px -18px rgba(95,72,42,.5);}
+  body[data-theme="dark"]  .s3{--mp-bg-color:#16130f; --mp-side:#1a140f; --mp-card:#211d18;
+        --mp-card-shadow:0 16px 32px -18px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.05);}
+  body[data-theme="light"] .s4{--mp-bg-color:#fbfaf7; --mp-side-border:1.5px solid var(--ink);
+        --mp-card-shadow:inset 0 0 0 1.5px var(--ink);}
+  body[data-theme="dark"]  .s4{--mp-bg-color:#100e0c; --mp-side-border:1.5px solid var(--ink);
+        --mp-card-shadow:inset 0 0 0 1.5px var(--ink);}
+  body[data-theme="light"] .s5{--mp-bg-color:#f0e7d6;
+        --mp-bg-img:radial-gradient(rgba(120,95,55,.055) 1px,transparent 1px); --mp-bg-size:4px 4px;
+        --mp-side:rgba(120,95,55,.07); --mp-card:#f8f2e6;
+        --mp-card-shadow:inset 0 0 0 1.5px rgba(120,95,55,.28);}
+  body[data-theme="dark"]  .s5{--mp-bg-color:#1a1409;
+        --mp-bg-img:radial-gradient(rgba(240,229,210,.05) 1px,transparent 1px); --mp-bg-size:4px 4px;
+        --mp-side:rgba(240,229,210,.045); --mp-card:#231c10;
+        --mp-card-shadow:inset 0 0 0 1.5px rgba(240,229,210,.24);}
+  body[data-theme="light"] .s6{--mp-bg-img:radial-gradient(120% 130% at 20% -10%, #ffffff, #eef0f5 55%, #e6e1ec);
+        --mp-side:rgba(255,255,255,.42); --mp-side-blur:blur(18px);
+        --mp-card:rgba(255,255,255,.55); --mp-card-blur:blur(24px) saturate(1.4);
+        --mp-card-shadow:inset 0 1.5px 0 rgba(255,255,255,.95), inset 0 0 0 1px rgba(255,255,255,.55),
+                         0 20px 40px -18px rgba(70,70,115,.4);}
+  body[data-theme="dark"]  .s6{--mp-bg-img:radial-gradient(120% 130% at 20% -10%, #37302a, #17120d 55%, #0b0908);
+        --mp-side:rgba(255,255,255,.045); --mp-side-blur:blur(18px);
+        --mp-card:rgba(255,255,255,.065); --mp-card-blur:blur(24px) saturate(1.3);
+        --mp-card-shadow:inset 0 1.5px 0 rgba(255,255,255,.13), inset 0 0 0 1px rgba(255,255,255,.08),
+                         0 20px 40px -18px rgba(0,0,0,.6);}
+
+  /* ── gallery ───────────────────────────────────────────────── */
+  .style-block{max-width:1280px; margin:40px auto 0;}
+  .style-block .cap{margin:0 4px 14px;}
+  .style-block .cap .name{font-size:17px; font-weight:800; letter-spacing:-.01em;
+        display:flex; align-items:center; gap:9px;}
+  .style-block .cap .num{font-size:11px; font-weight:800; color:#fff; background:#26241f;
+        width:22px; height:22px; border-radius:50%; display:grid; place-items:center;}
+  .style-block .cap .vibe{color:var(--pg-muted); font-size:12.5px; margin-top:5px; line-height:1.45; max-width:760px;}
+  .style-block .cap .tr{font-size:11.5px; margin-top:5px;}
+  .style-block .cap .tr .pro{color:#5e8a54; font-weight:700;} .style-block .cap .tr .con{color:#b07a4a; font-weight:700;}
+  .phones{display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:22px;}
+  .phone-cap{text-align:center; font-size:11px; font-weight:700; letter-spacing:.08em;
+        text-transform:uppercase; color:var(--pg-muted); margin-top:10px;}
+
+  /* ── phone shell (hardware — constant) ─────────────────────── */
+  .frame{border-radius:46px; padding:11px; background:linear-gradient(160deg,#dcd6ca,#c8c1b3);
+         box-shadow:0 26px 54px -22px rgba(66,54,36,.5), inset 0 0 0 1px rgba(255,255,255,.5),
+                    inset 0 2px 3px rgba(255,255,255,.65);}
+  .screen{position:relative; height:632px; border-radius:36px; overflow:hidden;
+          display:flex; flex-direction:column; color:var(--ink);}
+  .safe{position:relative; z-index:2; flex:1; display:flex; flex-direction:column;
+        padding:14px 19px 8px; min-height:0;}
+
+  /* status bar */
+  .statusbar{display:flex; align-items:center; justify-content:space-between;
+             padding:14px 24px 0; font-size:14px; font-weight:700; color:var(--ink);
+             position:relative; z-index:2;}
+  .statusbar .ic{display:flex; gap:6px; align-items:center;}
+  .statusbar svg{display:block;}
+  .statusbar .fill{fill:var(--ink);} .statusbar .strk{stroke:var(--ink);}
+  .statusbar .dim{opacity:.4;}
+
+  /* header */
+  .head{display:flex; align-items:flex-start; justify-content:space-between; margin:6px 0 16px;}
+  .h-title{font-size:26px; font-weight:800; letter-spacing:-.025em; line-height:1; color:var(--ink);}
+  .h-sub{font-size:13px; font-weight:500; color:var(--muted); margin-top:7px;}
+  .h-sub .cnt{color:var(--ink); font-weight:700;}
+  .h-sub .chv{color:var(--faint); font-weight:700; padding:0 3px;}
+  /* capture glyph — refined, NEVER a fill */
+  .cap-btn{width:42px; height:42px; border-radius:50%; display:grid; place-items:center; cursor:pointer; flex-shrink:0;}
+  .cap-btn svg{width:19px; height:19px; stroke:var(--ink); fill:none; stroke-width:1.7;
+               stroke-linecap:round; stroke-linejoin:round;}
+  .spark{fill:var(--accent); stroke:none;}
+
+  /* pinned needs-a-time (spec §4.1 — pinned on TOP) */
+  .pin{margin-bottom:14px; padding:11px 14px; border-radius:16px;}
+  .pin .pl{display:flex; align-items:center; gap:8px; font-size:10.5px; font-weight:800;
+           letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:7px;}
+  .pin .pl .badge{background:var(--ink); color:var(--card-flip,#fff); font-size:10.5px; font-weight:800;
+           min-width:18px; height:18px; padding:0 5px; border-radius:6px; display:grid; place-items:center;}
+  .pin .pr{display:flex; align-items:center; gap:8px; font-size:14px; font-weight:600;
+           color:var(--ink); padding:4px 1px;}
+  .pin .pr .arr{color:var(--faint); font-size:11px;}
+  .pin .pr .due{margin-left:auto; font-size:11px; font-weight:700; color:var(--faint);
+           letter-spacing:.05em; text-transform:uppercase;}
+
+  /* timeline list */
+  .list{display:flex; flex-direction:column;}
+  .row{position:relative; display:flex; align-items:center; gap:12px; padding:12.5px 14px;}
+  .row .time{font-size:14px; font-weight:700; width:46px; color:var(--ink); font-variant-numeric:tabular-nums;}
+  .row .dot{width:9px; height:9px; border-radius:50%; flex-shrink:0;}
+  .row .r-title{font-size:15.5px; font-weight:600; flex:1; letter-spacing:-.01em; color:var(--ink);}
+  .row .tag{font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--faint);}
+  .dot.school{background:var(--school);} .dot.personal{background:var(--personal);} .dot.side{background:var(--side);}
+  /* the ONE live row — the only place the accent appears */
+  .row.now::before{content:""; position:absolute; left:2px; top:11px; bottom:11px; width:3px;
+                   border-radius:3px; background:var(--accent);}
+  .row.now .time{color:var(--accent-ink);}
+  .row.now .tag{color:var(--accent-ink); font-weight:800;}
+
+  /* ── capture (empty) ───────────────────────────────────────── */
+  .dump{border-radius:var(--r-card); padding:18px; height:216px; display:flex; flex-direction:column;}
+  .dump .ph{font-size:17px; font-weight:600; color:var(--faint); letter-spacing:-.01em;}
+  .dump .foot{margin-top:auto; display:flex; align-items:center; justify-content:space-between;}
+  .dump .hint{font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--faint);}
+  .manual{margin-top:16px; text-align:center; font-size:13.5px; font-weight:700; color:var(--muted);}
+  .manual .or{font-size:10.5px; font-weight:800; letter-spacing:.1em; text-transform:uppercase;
+              color:var(--faint); display:block; margin-bottom:9px;}
+
+  /* ── capture (result card) ─────────────────────────────────── */
+  .result{border-radius:var(--r-card); padding:16px 16px 14px;}
+  .result .rt{font-size:17px; font-weight:800; letter-spacing:-.015em; color:var(--ink);}
+  .result .rs{font-size:12.5px; font-weight:500; color:var(--muted); margin:3px 0 10px;}
+  .ritem{display:flex; flex-direction:column; gap:3px; padding:10px 2px;}
+  .ritem + .ritem{box-shadow:inset 0 1px 0 var(--hair);}
+  .ritem .it{font-size:14.5px; font-weight:600; color:var(--ink); letter-spacing:-.01em;}
+  .ritem .im{display:flex; align-items:center; gap:7px; font-size:11.5px; font-weight:600; color:var(--muted);}
+  .ritem .im .sd{width:7px; height:7px; border-radius:50%;}
+  .ritem .im .sep{color:var(--faint);}
+  .ritem .im .due{font-weight:700;}
+  /* confirm = raised NEUTRAL (spec §10: never a solid accent bar) */
+  .confirm{margin-top:12px; height:48px; border-radius:var(--r-control); display:flex; align-items:center;
+           justify-content:center; gap:9px; font-size:14.5px; font-weight:700; color:var(--ink); cursor:pointer;}
+  .confirm svg{width:16px; height:16px; stroke:var(--ink); fill:none; stroke-width:2;
+           stroke-linecap:round; stroke-linejoin:round;}
+  .undo{margin-top:11px; text-align:center; font-size:12.5px; font-weight:600; color:var(--faint);}
+
+  /* ── tab bar (Schedule* / Capture / Tasks — spec §3) ───────── */
+  .tabs{margin-top:auto; display:flex; align-items:center; padding:9px 6px 2px;}
+  .tab{flex:1; display:flex; flex-direction:column; align-items:center; gap:3.5px;
+       font-size:10px; font-weight:700; letter-spacing:.02em; color:var(--faint);}
+  .tab svg{width:21px; height:21px; stroke:var(--faint); fill:none; stroke-width:1.7;
+           stroke-linecap:round; stroke-linejoin:round;}
+  .tab.on{color:var(--ink);}
+  .tab.on svg{stroke:var(--ink);}
+  .homebar{width:120px; height:5px; border-radius:3px; background:var(--ink); opacity:.28;
+           margin:7px auto 0;}
+  .spacer{flex:1;}
+
+  /* ═══ 3 · SOFT ELEVATED ═══ */
+  body[data-theme="light"] .s3 .screen{background:#efe8de;}
+  body[data-theme="light"] .s3 :is(.list,.result,.dump){background:#fff;
+        box-shadow:0 20px 42px -22px rgba(95,72,42,.45), 0 2px 5px rgba(95,72,42,.06);}
+  body[data-theme="light"] .s3 .cap-btn{background:#fff; box-shadow:0 6px 15px -6px rgba(95,72,42,.35);}
+  body[data-theme="light"] .s3 .pin{background:#fff; box-shadow:0 8px 20px -12px rgba(95,72,42,.35);}
+  body[data-theme="light"] .s3 .confirm{background:#f4efe7; box-shadow:0 8px 18px -10px rgba(95,72,42,.35), 0 1px 3px rgba(95,72,42,.08);}
+  .s3 .list,.s3 .result,.s3 .dump{border-radius:var(--r-card); overflow:hidden;}
+  .s3 .row + .row{box-shadow:inset 0 1px 0 var(--hair);}
+  body[data-theme="dark"] .s3 .screen{background:#16130f;}
+  body[data-theme="dark"] .s3 :is(.list,.result,.dump){background:#211d18;
+        box-shadow:0 22px 44px -20px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.05);}
+  body[data-theme="dark"] .s3 .cap-btn{background:#211d18; box-shadow:0 6px 15px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.06);}
+  body[data-theme="dark"] .s3 .pin{background:#1c1814; box-shadow:inset 0 1px 0 rgba(255,255,255,.04);}
+  body[data-theme="dark"] .s3 .confirm{background:#2a251f; box-shadow:inset 0 1px 0 rgba(255,255,255,.06);}
+  body[data-theme="dark"] .s3 .pin .pl .badge{--card-flip:#16130f;}
+
+  /* ═══ 4 · EDITORIAL MINIMAL ═══ */
+  body[data-theme="light"] .s4 .screen{background:#fbfaf7;}
+  body[data-theme="dark"]  .s4 .screen{background:#100e0c;}
+  .s4 .head{border-bottom:1.5px solid var(--ink); padding-bottom:14px; margin-bottom:4px;}
+  .s4 .h-title{font-size:31px; letter-spacing:-.03em;}
+  .s4 .cap-btn{background:transparent; box-shadow:inset 0 0 0 1.5px var(--ink);}
+  .s4 .row{padding:14px 2px; box-shadow:inset 0 -1px 0 var(--hair);}
+  .s4 .row.now{padding-left:14px;}
+  .s4 .row .dot{width:6px; height:6px;}
+  .s4 .pin{padding:12px 2px; border-radius:0; box-shadow:inset 0 -1.5px 0 var(--ink);}
+  .s4 .pin .pl .badge{background:transparent; color:var(--ink); box-shadow:inset 0 0 0 1.5px var(--ink);}
+  .s4 :is(.dump,.result){background:transparent; box-shadow:inset 0 0 0 1.5px var(--ink); border-radius:var(--r-control);}
+  .s4 .confirm{background:transparent; box-shadow:inset 0 0 0 1.5px var(--ink);}
+  .s4 .ritem + .ritem{box-shadow:inset 0 1px 0 var(--hair-strong);}
+
+  /* ═══ 5 · WARM PAPER ═══ */
+  body[data-theme="light"] .s5 .screen{background:#f0e7d6;
+        background-image:radial-gradient(rgba(120,95,55,.055) 1px,transparent 1px); background-size:4px 4px;}
+  body[data-theme="light"] .s5 :is(.list,.result,.dump,.pin){background:#f8f2e6;
+        box-shadow:inset 0 0 0 1.5px rgba(120,95,55,.28);}
+  body[data-theme="light"] .s5 .cap-btn{background:#f8f1e3; box-shadow:inset 0 0 0 1.5px rgba(120,95,55,.32);}
+  body[data-theme="light"] .s5 .confirm{background:#f8f1e3; box-shadow:inset 0 0 0 1.5px rgba(120,95,55,.32);}
+  body[data-theme="light"] .s5 .row + .row{border-top:1px dashed rgba(120,95,55,.3);}
+  body[data-theme="light"] .s5 .ritem + .ritem{box-shadow:none; border-top:1px dashed rgba(120,95,55,.3);}
+  body[data-theme="dark"] .s5 .screen{background:#1a1409;
+        background-image:radial-gradient(rgba(240,229,210,.05) 1px,transparent 1px); background-size:4px 4px;}
+  body[data-theme="dark"] .s5 :is(.list,.result,.dump,.pin){background:#231c10;
+        box-shadow:inset 0 0 0 1.5px rgba(240,229,210,.24);}
+  body[data-theme="dark"] .s5 .cap-btn{background:#231c10; box-shadow:inset 0 0 0 1.5px rgba(240,229,210,.28);}
+  body[data-theme="dark"] .s5 .confirm{background:#2a2114; box-shadow:inset 0 0 0 1.5px rgba(240,229,210,.28);}
+  body[data-theme="dark"] .s5 .row + .row{border-top:1px dashed rgba(240,229,210,.26);}
+  body[data-theme="dark"] .s5 .ritem + .ritem{box-shadow:none; border-top:1px dashed rgba(240,229,210,.26);}
+  .s5 :is(.list,.result,.dump){border-radius:var(--r-card); overflow:hidden;}
+  .s5 .pin{border-radius:16px;}
+
+  /* ═══ 6 · SPATIAL / visionOS ═══ */
+  body[data-theme="light"] .s6 .screen{background:radial-gradient(135% 95% at 50% -5%, #ffffff, #eef0f5 55%, #e6e1ec);}
+  body[data-theme="light"] .s6 :is(.list,.result,.dump,.pin){background:rgba(255,255,255,.55);
+        backdrop-filter:blur(30px) saturate(1.4);
+        box-shadow:inset 0 1.5px 0 rgba(255,255,255,.95), inset 0 0 0 1px rgba(255,255,255,.55),
+                   0 28px 54px -20px rgba(70,70,115,.42);}
+  body[data-theme="light"] .s6 .cap-btn{background:rgba(255,255,255,.68); backdrop-filter:blur(20px);
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.95), inset 0 0 0 1px rgba(255,255,255,.6),
+                   0 8px 20px -6px rgba(80,80,115,.3);}
+  body[data-theme="light"] .s6 .confirm{background:rgba(255,255,255,.6); backdrop-filter:blur(20px);
+        box-shadow:inset 0 1.5px 0 rgba(255,255,255,.95), inset 0 0 0 1px rgba(255,255,255,.55),
+                   0 12px 28px -10px rgba(70,70,115,.35);}
+  body[data-theme="light"] .s6 .row + .row{box-shadow:inset 0 1px 0 rgba(255,255,255,.55);}
+  body[data-theme="dark"] .s6 .screen{background:radial-gradient(135% 95% at 50% -5%, #37302a, #17120d 55%, #0b0908);}
+  body[data-theme="dark"] .s6 :is(.list,.result,.dump,.pin){background:rgba(255,255,255,.065);
+        backdrop-filter:blur(30px) saturate(1.3);
+        box-shadow:inset 0 1.5px 0 rgba(255,255,255,.13), inset 0 0 0 1px rgba(255,255,255,.08),
+                   0 28px 54px -20px rgba(0,0,0,.6);}
+  body[data-theme="dark"] .s6 .cap-btn{background:rgba(255,255,255,.08); backdrop-filter:blur(20px);
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.15), inset 0 0 0 1px rgba(255,255,255,.09);}
+  body[data-theme="dark"] .s6 .confirm{background:rgba(255,255,255,.08); backdrop-filter:blur(20px);
+        box-shadow:inset 0 1.5px 0 rgba(255,255,255,.14), inset 0 0 0 1px rgba(255,255,255,.09);}
+  body[data-theme="dark"] .s6 .row + .row{box-shadow:inset 0 1px 0 rgba(255,255,255,.07);}
+  .s6 :is(.list,.result,.dump){border-radius:var(--r-lg); overflow:hidden;}
+  .s6 .pin{border-radius:18px;}
+  body[data-theme="dark"] .s6 .pin .pl .badge,
+  body[data-theme="dark"] .s3 .pin .pl .badge,
+  body[data-theme="dark"] .s5 .pin .pl .badge{--card-flip:#16130f;}
+
+  .foot{max-width:1280px; margin:46px auto 0; text-align:center; color:var(--pg-muted); font-size:13px; line-height:1.7;}
+  .foot b{color:var(--pg-ink);}
+  .typenote{max-width:1280px; margin:34px auto 0; font-size:11.5px; color:var(--pg-muted);
+            text-align:center; line-height:1.6;}
+</style>
+</head>
+<body data-theme="light" data-accent="orange">
+
+  <div class="top">
+    <h1>Atlas — UI Style Directions <span style="color:#b07a4a">v2</span></h1>
+    <p class="sub">The <b>accurate</b> comparison. Real Mac tokens (<b>Theme.swift</b>) in the reference strip,
+    real spaces (School · Personal · Side), the real Phase-1 screens (Schedule home · Capture empty · Capture result),
+    and the real type scale — open in <b>Safari</b> for true SF Pro Rounded. The winner becomes the system for
+    <b>both apps</b>: each section ends with the <b>Mac restyled in that direction</b>, and everything follows the
+    <b>Light/Dark</b> + <b>accent</b> controls, so you're choosing the shared look — not just a phone skin.</p>
+  </div>
+
+  <div class="deck">
+    <div class="deck-in">
+      <div class="controls">
+        <div class="ctl">
+          <span class="lab">Phone theme</span>
+          <div class="seg" id="themeSeg">
+            <button data-v="light" class="on">Light</button>
+            <button data-v="dark">Dark (Mac-matched)</button>
+          </div>
+        </div>
+        <div class="ctl">
+          <span class="lab">Accent</span>
+          <div class="swatches" id="accentSw">
+            <button data-v="orange" class="on"><i style="background:#ff8c42"></i>Orange · current</button>
+            <button data-v="coral"><i style="background:#ff6f61"></i>Coral</button>
+            <button data-v="clay"><i style="background:#d97757"></i>Clay</button>
+            <button data-v="gold"><i style="background:#eaa945"></i>Gold</button>
+            <button data-v="indigo"><i style="background:#7c86ff"></i>Indigo</button>
+          </div>
+        </div>
+        <p class="deck-note"><b>Accent rule holds everywhere:</b> it marks live / NOW / brand only — never a button
+        fill. In light mode accent <i>text</i> auto-darkens to stay WCAG-AA; bars/dots keep the pure color.</p>
+      </div>
+      <div class="macwrap">
+        <div class="mac">
+          <div class="side">
+            <div class="lights"><i></i><i></i><i></i></div>
+            <div class="brand">ATLAS</div>
+            <div class="item on">Dashboard</div>
+            <div class="item">Calendar</div>
+            <div class="item"><span class="sd" style="background:#5b9bd5"></span>School</div>
+            <div class="item"><span class="sd" style="background:#5fb98e"></span>Personal</div>
+            <div class="item"><span class="sd" style="background:#b48ad9"></span>Side</div>
+          </div>
+          <div class="main">
+            <div class="hi">Good morning, Drew</div>
+            <div class="card">
+              <div class="mrow now"><span class="t">9:30</span><span class="sd" style="background:#5b9bd5"></span>CS 351 Lecture<span class="tg">Now</span></div>
+              <div class="mrow"><span class="t">11:30</span><span class="sd" style="background:#5fb98e"></span>Gym<span class="tg">Personal</span></div>
+              <div class="mrow"><span class="t">2:00</span><span class="sd" style="background:#5b9bd5"></span>Office hours<span class="tg">School</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="mac-cap"><b>Mac app today</b> — the actual Theme.swift palette (warm near-black
+        #100e0c–#211d18 · text #f3ede4), your baseline. The Mac gets restyled to whatever wins —
+        each section below shows it in that direction.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="gallery"></div>
+
+  <p class="typenote">Type scale (spec §9, carried over) — title 26/800 · row-title 15.5/600 · time 14/700 tabular ·
+  caps-label 10.5/700 +.08em · meta 13/500 · SF Pro Rounded. Radii — card 24 · control 19 · chip 13.</p>
+
+  <p class="foot">Same three screens · same data · same rules — <b>only the surface changes.</b><br>
+  Tell me: <b>a style number (3–6)</b> + <b>light or dark</b> + <b>an accent</b> — or two styles to blend —
+  and that becomes the design system for the phone <b>and, later, the Mac restyle.</b></p>
+
+<script>
+/* one set of content templates rendered into every style wrapper —
+   the ONLY difference between frames is the style class. */
+const MIC = `<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 18v3"/><circle class="spark" cx="18.5" cy="5.5" r="2"/></svg>`;
+const PEN = `<svg viewBox="0 0 24 24"><path d="M4 20l4-1L19 8a2 2 0 0 0-3-3L5 16l-1 4z"/><circle class="spark" cx="19" cy="6" r="1.8"/></svg>`;
+const CHECK = `<svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>`;
+
+const STATUS = `
+  <div class="statusbar">
+    <span>9:41</span>
+    <span class="ic">
+      <svg width="17" height="11" viewBox="0 0 17 11"><g class="fill" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></g></svg>
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" class="strk" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 3.5a10 10 0 0 1 14 0"/><path d="M3.5 6a6.5 6.5 0 0 1 9 0"/><path d="M6 8.5a3 3 0 0 1 4 0"/></svg>
+      <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="21" height="10" rx="3" stroke="currentColor" stroke-opacity=".4" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.5" fill="currentColor"/><rect x="23" y="4" width="1.5" height="4" rx=".75" fill="currentColor" fill-opacity=".4"/></svg>
+    </span>
+  </div>`;
+
+const TABS = (active) => `
+  <div class="tabs">
+    <div class="tab ${active==='schedule'?'on':''}">
+      <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
+      Schedule
+    </div>
+    <div class="tab ${active==='capture'?'on':''}">
+      <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 18v3"/></svg>
+      Capture
+    </div>
+    <div class="tab ${active==='tasks'?'on':''}">
+      <svg viewBox="0 0 24 24"><path d="M4 6.5l1.7 1.7L9 4.9M4 13.5l1.7 1.7L9 11.9M4 20.2l1.7 1.7"/><path d="M12.5 7h8M12.5 14h8M12.5 21h5"/></svg>
+      Tasks
+    </div>
+  </div>
+  <div class="homebar"></div>`;
+
+const SCHEDULE = `
+  ${STATUS}
+  <div class="safe">
+    <div class="head">
+      <div>
+        <div class="h-title">Today</div>
+        <div class="h-sub"><span class="chv">‹</span> Wednesday, Jul 1 <span class="chv">›</span> · <span class="cnt">5 left</span></div>
+      </div>
+      <div class="cap-btn">${MIC}</div>
+    </div>
+    <div class="pin">
+      <div class="pl"><span class="badge">2</span> Needs a time</div>
+      <div class="pr"><span class="arr">▸</span> Email Dr. Lee <span class="due">Today</span></div>
+      <div class="pr"><span class="arr">▸</span> Read ch. 4 <span class="due">Today</span></div>
+    </div>
+    <div class="list">
+      <div class="row now"><span class="time">9:30</span><span class="dot school"></span><span class="r-title">CS 351 Lecture</span><span class="tag">Now</span></div>
+      <div class="row"><span class="time">11:30</span><span class="dot personal"></span><span class="r-title">Gym</span><span class="tag">Personal</span></div>
+      <div class="row"><span class="time">2:00</span><span class="dot school"></span><span class="r-title">Office hours</span><span class="tag">School</span></div>
+      <div class="row"><span class="time">4:30</span><span class="dot side"></span><span class="r-title">Portfolio site</span><span class="tag">Side</span></div>
+    </div>
+    ${TABS('schedule')}
+  </div>`;
+
+const CAPTURE_EMPTY = `
+  ${STATUS}
+  <div class="safe">
+    <div class="head">
+      <div>
+        <div class="h-title">Capture</div>
+        <div class="h-sub">Dump it — Atlas sorts it</div>
+      </div>
+    </div>
+    <div class="dump">
+      <div class="ph">What’s on your mind?</div>
+      <div class="foot">
+        <span class="hint">Tap to type</span>
+        <div class="cap-btn">${MIC}</div>
+      </div>
+    </div>
+    <div class="manual"><span class="or">or</span>＋ Add a task manually</div>
+    <div class="spacer"></div>
+    ${TABS('capture')}
+  </div>`;
+
+const CAPTURE_RESULT = `
+  ${STATUS}
+  <div class="safe">
+    <div class="head">
+      <div>
+        <div class="h-title">Capture</div>
+        <div class="h-sub">Sorted — check my work</div>
+      </div>
+    </div>
+    <div class="result">
+      <div class="rt">Here’s what I made</div>
+      <div class="rs">3 items · tap a chip to fix · swipe to remove</div>
+      <div class="ritem">
+        <div class="it">Email Dr. Lee about extension</div>
+        <div class="im"><span class="sd" style="background:var(--school)"></span>School <span class="sep">·</span> Task <span class="sep">·</span> <span class="due">Tomorrow</span></div>
+      </div>
+      <div class="ritem">
+        <div class="it">Leg day at the gym</div>
+        <div class="im"><span class="sd" style="background:var(--personal)"></span>Personal <span class="sep">·</span> Event <span class="sep">·</span> <span class="due">Thu 6:00 PM</span></div>
+      </div>
+      <div class="ritem">
+        <div class="it">Fix portfolio hero section</div>
+        <div class="im"><span class="sd" style="background:var(--side)"></span>Side <span class="sep">·</span> Task <span class="sep">·</span> <span class="due">No date</span></div>
+      </div>
+      <div class="confirm">${CHECK} Looks good — add all 3</div>
+      <div class="undo">Undo this batch</div>
+    </div>
+    <div class="spacer"></div>
+    ${TABS('capture')}
+  </div>`;
+
+const SCREENS = [
+  ["Schedule · home", SCHEDULE],
+  ["Capture · empty", CAPTURE_EMPTY],
+  ["Capture · result card", CAPTURE_RESULT],
+];
+
+/* the Mac cockpit, restyled in this direction — follows theme + accent */
+const MACP = `
+  <div class="macline">
+    <div class="macp">
+      <div class="mside">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <div class="brand">ATLAS</div>
+        <div class="mitem on">Dashboard</div>
+        <div class="mitem">Calendar</div>
+        <div class="mitem"><span class="sd" style="background:var(--school)"></span>School</div>
+        <div class="mitem"><span class="sd" style="background:var(--personal)"></span>Personal</div>
+        <div class="mitem"><span class="sd" style="background:var(--side)"></span>Side</div>
+      </div>
+      <div class="mmain">
+        <div class="hi">Good morning, Drew</div>
+        <div class="mcard">
+          <div class="mrow now"><span class="t">9:30</span><span class="sd" style="background:var(--school)"></span>CS 351 Lecture<span class="tg">Now</span></div>
+          <div class="mrow"><span class="t">11:30</span><span class="sd" style="background:var(--personal)"></span>Gym<span class="tg">Personal</span></div>
+          <div class="mrow"><span class="t">2:00</span><span class="sd" style="background:var(--school)"></span>Office hours<span class="tg">School</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="phone-cap">Mac · restyled in this direction</div>
+  </div>`;
+
+const STYLES = [
+  ["s3", 3, "Soft Elevated", "Warm base, cards on one soft shadow — the friendly, high-contrast heir to the vetoed neumorphism. Dark mode ≈ today’s Mac with softer depth.", "+ warm, approachable, clear", "– closest to the consumer-default look"],
+  ["s4", 4, "Editorial Minimal", "Big type, thin ink rules, no card chrome. Quiet-luxury and content-first; the strongest personality per pixel.", "+ distinctive, calm, timeless", "– leans on type; controls read less tappable"],
+  ["s5", 5, "Warm Paper", "Cream (or espresso, in dark) with a whisper of grain and ink-thin borders. Cozy, analog, unmistakably yours.", "+ human, memorable", "– texture can date if overdone"],
+  ["s6", 6, "Spatial / visionOS", "Luminous translucent panels with soft depth. 2025-forward; in dark it reads like frosted glass over embers.", "+ futuristic, refined", "– trend-coded; busy at tiny sizes"],
+];
+
+document.getElementById("gallery").innerHTML = STYLES.map(([cls,num,name,vibe,pro,con])=>`
+  <section class="style-block ${cls}">
+    <div class="cap">
+      <div class="name"><span class="num">${num}</span> ${name}</div>
+      <div class="vibe">${vibe}</div>
+      <div class="tr"><span class="pro">${pro}</span> &nbsp;·&nbsp; <span class="con">${con}</span></div>
+    </div>
+    <div class="phones">
+      ${SCREENS.map(([label,html])=>`
+        <div>
+          <div class="frame"><div class="screen">${html}</div></div>
+          <div class="phone-cap">${label}</div>
+        </div>`).join("")}
+    </div>
+    ${MACP}
+  </section>`).join("");
+
+/* toggles */
+function wire(segId, attr){
+  const seg = document.getElementById(segId);
+  seg.addEventListener("click", e=>{
+    const b = e.target.closest("button"); if(!b) return;
+    document.body.dataset[attr] = b.dataset.v;
+    seg.querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
+  });
+}
+wire("themeSeg","theme");
+wire("accentSw","accent");
+</script>
+</body>
+</html>

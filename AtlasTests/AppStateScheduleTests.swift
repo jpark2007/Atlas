@@ -51,27 +51,40 @@ final class AppStateScheduleTests: XCTestCase {
         XCTAssertEqual(slot, at(CalendarLayout.workdayStartHour + 1))
     }
 
-    // MARK: revert-after-slot via unscheduledTasks
+    // MARK: revert-after-slot via unscheduledTasks (the "needs replan" rule)
 
-    func testUnscheduledTasksResurfaceAfterSlotPasses() {
+    func testOverduePastSlotResurfacesInTray() {
         let state = AppState()
-        let t = state.addTask(title: "Past block", durationMin: 30)
         let base = at(9)
+        // 30-min slot ending 9:30, due 9:30. Once both pass it's overdue → back to the tray.
+        let t = state.addTask(title: "Past block", dueDate: at(9, 30), durationMin: 30)
         state.schedule(taskId: t.id, at: base)
 
-        // Before the slot ends → not in the tray.
+        // Before the slot ends and before it's due → not in the tray.
         state.now = base
         XCTAssertFalse(state.unscheduledTasks.contains { $0.id == t.id })
 
-        // After the slot fully elapses → resurfaces in the tray.
+        // After the slot elapses AND the due date has passed → resurfaces (overdue).
         state.now = base.addingTimeInterval(60 * 60)
         XCTAssertTrue(state.unscheduledTasks.contains { $0.id == t.id })
     }
 
+    func testNonOverduePastSlotStaysOnGrid() {
+        let state = AppState()
+        let base = at(9)
+        // Slot elapses but the due date is hours away → stays on the grid (dimmed), not the tray.
+        let t = state.addTask(title: "Past block, due later", dueDate: at(20), durationMin: 30)
+        state.schedule(taskId: t.id, at: base)
+
+        state.now = base.addingTimeInterval(60 * 60)
+        XCTAssertFalse(state.unscheduledTasks.contains { $0.id == t.id })
+    }
+
     func testCompletedTaskNeverResurfaces() {
         let state = AppState()
-        let t = state.addTask(title: "Done block", durationMin: 30)
         let base = at(9)
+        // Past slot + past due would normally resurface — being done must keep it out.
+        let t = state.addTask(title: "Done block", dueDate: at(9, 30), durationMin: 30)
         state.schedule(taskId: t.id, at: base)
         state.toggleTask(t.id)                 // mark done
         state.now = base.addingTimeInterval(60 * 60)

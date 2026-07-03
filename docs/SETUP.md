@@ -58,11 +58,17 @@ email capture. Done once for the whole app — every account just clicks "Connec
 
 ---
 
-## 4. Canvas token  ← later (school assignments + classes)
+## 4. Canvas Calendar Feed  ← school assignments + due dates
 
-1. In your school's Canvas: **Account → Settings → Approved Integrations → + New Access Token**.
-2. Name it `Atlas`, generate, copy it immediately (shown once).
-3. Paste to me (stored server-side). Each user does this for their own Canvas.
+> Our schools (Rutgers, Princeton) **disable student API tokens**, so Atlas uses the
+> read-only **Calendar Feed** instead — no token, no admin needed. See
+> [specs/2026-07-01-canvas-ics-sync-design.md](./specs/2026-07-01-canvas-ics-sync-design.md).
+
+1. In your school's Canvas: **Calendar** (left nav) → scroll the right sidebar to
+   **"Calendar Feed"** → copy the URL (`https://<school>/feeds/calendars/user_….ics`).
+2. Paste it into Atlas → **Settings → Integrations → Canvas Calendar Feed URL**.
+3. Each person does this for their own Canvas. The URL is a read-secret — treat it like a
+   password (anyone with it can read your calendar).
 
 ---
 
@@ -96,6 +102,6 @@ xcodebuild -project Atlas.xcodeproj -scheme Atlas -destination 'platform=macOS' 
 ## Secrets (where keys actually go)
 
 - **Client (Swift):** only the Supabase **URL** + **anon key** (these are safe to ship). Stored in a git-ignored `Atlas/Config/Secrets.xcconfig`.
-- **Server (Supabase Edge Functions):** OpenRouter key, Google client secret, Canvas tokens — set as Supabase secrets, never in the app.
+- **Server (Supabase Edge Functions):** OpenRouter key, Google client secret — set as Supabase secrets, never in the app. (Canvas uses a client-side read-only feed URL — no server secret.)
 
 When you have the keys from steps 1–2, paste them here in chat and I'll place them correctly.

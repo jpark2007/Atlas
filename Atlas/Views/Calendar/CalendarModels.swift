@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// Day / Week / Month / List segmented mode for the calendar.
 enum CalendarMode: String, CaseIterable, Identifiable {
@@ -26,9 +27,16 @@ enum CalendarLayout {
     static let workdayEndHour: Int = 22    // 10 PM
     static let hourHeight: CGFloat = 56
     static let gutterWidth: CGFloat = 54
+    /// Width of the in-column deadline rail — the narrow left strip (just inside the hour
+    /// gutter) that holds timed-deadline flag markers, so a deadline never overlaps a tile.
+    /// Days with no timed deadlines reserve zero width, so tiles keep the full column.
+    static let deadlineRailWidth: CGFloat = 18
     static let minEventHeight: CGFloat = 26
     /// Height of the all-day strip when it contains at least one event (Task 5 populates it).
     static let allDayRowHeight: CGFloat = 28
+    /// Vertical space a timed-deadline label occupies on the grid. Deadlines whose lines fall
+    /// within this many points collapse into one "N due" cluster chip so labels don't overprint.
+    static let deadlineLabelHeight: CGFloat = 14
 
     static var totalHeight: CGFloat { CGFloat(endHour - startHour) * hourHeight }
 
@@ -94,6 +102,37 @@ func packEventsIntoLanes(_ events: [CalendarEvent]) -> [PositionedEvent] {
     }
     flush()
     return result
+}
+
+/// A run of timed deadlines close enough in time that their grid labels would overprint.
+/// A single-item cluster renders exactly as one deadline did before; ≥2 collapse to a count.
+struct DeadlineCluster: Identifiable {
+    let events: [CalendarEvent]   // sorted by start, always ≥1
+    var id: UUID { events[0].id }
+    var representative: CalendarEvent { events[0] }   // earliest — drives the line's y position
+    var count: Int { events.count }
+}
+
+/// Groups timed deadlines whose labels would overlap on the grid. Sorted by time; a new
+/// cluster starts whenever the next deadline's line sits more than `gapPoints` below the
+/// previous one. Pure (no view state) so it stays out of the type-check-heavy grid body.
+func clusterTimedDeadlines(_ deadlines: [CalendarEvent], gapPoints: CGFloat) -> [DeadlineCluster] {
+    let sorted = deadlines.sorted { $0.start < $1.start }
+    var clusters: [DeadlineCluster] = []
+    var current: [CalendarEvent] = []
+    var lastY: CGFloat = 0
+    for dl in sorted {
+        let y = CalendarLayout.offsetHours(for: dl.start) * CalendarLayout.hourHeight
+        if current.isEmpty || y - lastY <= gapPoints {
+            current.append(dl)
+        } else {
+            clusters.append(DeadlineCluster(events: current))
+            current = [dl]
+        }
+        lastY = y
+    }
+    if !current.isEmpty { clusters.append(DeadlineCluster(events: current)) }
+    return clusters
 }
 
 /// Cached formatters for the grid chrome (gutter, headers).

@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 // MARK: - Event Context Menu Modifier
 

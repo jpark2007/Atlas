@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 // MARK: - Capture apply seam
 //

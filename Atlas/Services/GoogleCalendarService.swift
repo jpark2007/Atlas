@@ -1,4 +1,5 @@
 import Foundation
+import AtlasCore
 import SwiftUI
 
 // MARK: - Pure mapping (testable, no network)

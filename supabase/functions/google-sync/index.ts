@@ -1,0 +1,977 @@
+/**
+ * Atlas — google-sync Edge Function (Deno)  ·  the two-way sync runner
+ *
+ * Invoked by pg_cron (Task 4) every 5 minutes with the service-role key. It leases
+ * a batch of due google_connections rows (claim_google_sync_users, 0009 — oldest
+ * last_synced_at first, single-flight via `for update skip locked`) and for each:
+ *   DELETE Atlas → Google: process the user's tombstones FIRST (deleted_google_events,
+ *         0011) — an app-side delete of a mirrored row is replayed as a Google
+ *         DELETE /events/{id} (404/410 = already gone = success), then the tombstone
+ *         is cleared. "Deleted anywhere = deleted everywhere."
+ *   PULL  Google → Supabase: incremental events.list with the stored sync_token
+ *         (410 GONE → full −30d…+365d resync), upserting Google-origin rows and
+ *         DELETING any row whose Google event is cancelled (regardless of origin).
+ *   PUSH  Supabase → Google: rows changed since last_synced_at — POST a not-yet-
+ *         mirrored Atlas row (deterministic id), or PATCH a mirrored one.
+ *
+ * Single-owner / no-duplicates invariant is backstopped by the DB:
+ *   • unique (user_id, google_event_id)         non-partial, so ON CONFLICT infers it (0009/C1)
+ *   • events.google_origin bit                  never-re-create-on-Google authority (0007)
+ *   • events.google_updated_at                  two-timestamp reconcile (0009/C2)
+ *
+ * events.google_origin semantics (0007): true ⇒ this row is Google-owned. It is
+ * still EDIT-synced back to Google (I2 — a local edit PATCHes it) but is NEVER
+ * re-CREATED on Google (no POST path for an origin row). It is set true on a
+ * Google-origin insert. Only google_origin=false + null-gid rows are POSTed as new
+ * Google events; the null-gid + origin=true PUSH guard now covers only LEGACY
+ * detached rows — un-mirroring was removed with the two-way-delete change, so a
+ * Google-side cancellation now DELETES the local row regardless of origin.
+ *
+ * ── Two-way delete (0011). deleted_google_events tombstones an app-side delete of
+ * a mirrored row (AFTER DELETE trigger on events, fired for Mac + phone alike). Each
+ * cycle the runner (a) replays the tombstones as Google deletes and clears them,
+ * (b) SKIPS any incoming pull event whose id still has a pending tombstone so a
+ * failed delete isn't resurrected, and (c) clears the tombstones its OWN pull-side
+ * deletes just wrote (Google already cancelled those) to avoid a redundant next-run
+ * DELETE. Work-block mirror gids live on `tasks`, not `events`, so the trigger never
+ * fires for them.
+ *
+ * Deterministic Google ids (C3): a new push derives the Google event id from the
+ * row UUID (base32hex-lowercase of its 16 bytes → [0-9a-v]{26}, inside Google's
+ * [a-v0-9]{5,1024}). POSTing that id is idempotent: if a prior POST succeeded but
+ * the id write-back didn't, the next cycle re-POSTs the SAME id → Google 409
+ * "already exists" → treated as success → converges with no duplicate.
+ *
+ * ── Storm termination (C2). The reviewer's perpetual push↔pull cycle was:
+ *   1. PULL applies a Google event to a mirrored row → trigger bumps updated_at.
+ *   2. PUSH sees updated_at > last_synced_at → PATCHes it back → Google bumps its `updated`.
+ *   3. PULL sees Google's newer `updated` → re-applies → bumps updated_at again.
+ *   4. PUSH re-PATCHes → … forever.
+ * The fix breaks every edge:
+ *   • Step 1→2: a PULL write stamps updated_at = runStart (explicit; the 0009
+ *     trigger honors it) and google_updated_at = google.updated. runStart equals
+ *     the NEXT run's last_synced_at, so the row fails `updated_at > last_synced_at`
+ *     and PUSH never re-selects a purely sync-applied row.
+ *   • Step 3: a PULL recency gate skips the write when google.updated <=
+ *     google_updated_at (same clock), plus a content no-op guard — so Google
+ *     echoing our own push (whose `updated` we stored at push time) re-applies
+ *     nothing and bumps nothing.
+ *   • A genuine user edit auto-stamps updated_at=now() (> last_synced_at) and its
+ *     content differs from Google's last, so it PUSHes exactly once; the push
+ *     write-back stamps updated_at=runStart and google_updated_at=response.updated,
+ *     so the next run neither re-selects (push) nor re-applies (pull). Converges in
+ *     one cycle. ∎
+ *
+ * Auth: service-role only. The bearer token MUST equal SUPABASE_SERVICE_ROLE_KEY
+ * (rejects anon / user JWTs). There is no inbound user to carry a JWT — the cron
+ * is the caller.
+ *
+ * Modes:  POST /functions/v1/google-sync            → run (reads + writes; leases users)
+ *         POST /functions/v1/google-sync?dryRun=1   → read + log intended writes,
+ *                                                      write NOTHING (DB, Google, or
+ *                                                      connection rows — and does NOT
+ *                                                      lease, so it never mutates).
+ *
+ * Env (SUPABASE_* auto-injected; GOOGLE_* set via `supabase secrets set`):
+ *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+ *
+ * Deploy: supabase functions deploy google-sync --project-ref jxrmozhgsebwtbdleyxp
+ */
+
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
+const GCAL_BASE = "https://www.googleapis.com/calendar/v3";
+const DRIVE_BASE = "https://www.googleapis.com/drive/v3";
+const BATCH_LIMIT = 20; // connections processed per invocation (oldest first)
+const REF_BATCH = 100;  // Drive references pulled per user per tick (least-recently-synced first)
+const FULL_WINDOW_BACK_DAYS = 30;
+const FULL_WINDOW_FWD_DAYS = 365;
+const DAY_MS = 86_400_000;
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+  });
+}
+
+/**
+ * The `role` claim of a Supabase JWT, or null if it doesn't decode. Signature is
+ * NOT re-checked here — the platform gateway already verifies it before the
+ * request reaches this function (an unsigned/forged token gets a gateway 401),
+ * so trusting the claim after that gate is safe and is Supabase's own pattern.
+ */
+function jwtRole(token: string): string | null {
+  try {
+    const seg = token.split(".")[1];
+    if (!seg) return null;
+    let b64 = seg.replace(/-/g, "+").replace(/_/g, "/");
+    b64 += "=".repeat((4 - (b64.length % 4)) % 4);
+    const payload = JSON.parse(atob(b64));
+    return typeof payload?.role === "string" ? payload.role : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Deterministic Google event id from a row UUID: base32hex-lowercase of the 16
+ * UUID bytes → 26 chars in [0-9a-v], inside Google's [a-v0-9]{5,1024}. Same UUID
+ * ⇒ same id every cycle, which is what makes a re-POST after a failed write-back
+ * idempotent (Google returns 409 "already exists" instead of creating a duplicate).
+ */
+function uuidToGoogleId(uuid: string): string {
+  const hex = uuid.replace(/-/g, "");
+  const alphabet = "0123456789abcdefghijklmnopqrstuv"; // RFC 4648 base32hex
+  let value = 0;
+  let bits = 0;
+  let out = "";
+  for (let i = 0; i < 16; i++) {
+    value = (value << 8) | parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    bits += 8;
+    while (bits >= 5) {
+      out += alphabet[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) out += alphabet[(value << (5 - bits)) & 31];
+  return out;
+}
+
+// ── Google types (only the fields we use) ───────────────────────
+interface GTime {
+  dateTime?: string;
+  date?: string;
+}
+interface GEvent {
+  id?: string;
+  status?: string; // "confirmed" | "tentative" | "cancelled"
+  summary?: string;
+  description?: string;
+  start?: GTime;
+  end?: GTime;
+  updated?: string; // RFC3339 last-modified
+}
+
+// A local events row, minimal projection.
+interface EventRow {
+  id: string;
+  google_event_id: string | null;
+  google_origin: boolean;
+  updated_at: string;
+  google_updated_at: string | null;
+  space_name: string;
+  title?: string;
+  subtitle?: string;
+  start_at?: string;
+  end_at?: string;
+  is_all_day?: boolean;
+  notes?: string | null;
+}
+
+interface Connection {
+  user_id: string;
+  vault_secret_id: string | null;
+  calendar_id: string;
+  sync_token: string | null;
+  last_synced_at: string | null;
+}
+
+// Per-user tally returned in the response (never contains tokens).
+interface UserResult {
+  userId: string;
+  status: string;
+  inserted: number;
+  updated: number;
+  deleted: number;
+  tombstoned: number;
+  pushedNew: number;
+  pushedUpdated: number;
+  referencesChecked: number;
+  referencesSynced: number;
+  fullResync: boolean;
+  error?: string;
+}
+
+// ── date helpers (mirror the Mac's GoogleCalendarMapper) ────────
+function dateOnlyUTC(iso: string): string {
+  return new Date(iso).toISOString().slice(0, 10); // yyyy-MM-dd (UTC)
+}
+
+/** Resolve (start, end, isAllDay) from a Google start/end pair; null if unmappable. */
+function interval(start?: GTime, end?: GTime): { start: string; end: string; allDay: boolean } | null {
+  if (!start || !end) return null;
+  if (start.dateTime && end.dateTime) {
+    return { start: new Date(start.dateTime).toISOString(), end: new Date(end.dateTime).toISOString(), allDay: false };
+  }
+  if (start.date && end.date) {
+    // yyyy-MM-dd → UTC midnight, matching the Swift allDayFormatter (UTC).
+    return { start: new Date(`${start.date}T00:00:00Z`).toISOString(), end: new Date(`${end.date}T00:00:00Z`).toISOString(), allDay: true };
+  }
+  return null;
+}
+
+// Text-field normalization. Google and the DB disagree on "empty": Google serializes
+// a blank description as "" while a never-set DB column is null. Treating those as
+// different made a just-pulled, untouched Google row (description:"" vs notes:null)
+// look locally edited, so PUSH re-PATCHed it back — the incident that aborted a run
+// on an immutable birthday. Canonicalize null / undefined / "" to a single value.
+function normText(v: string | null | undefined): string {
+  return v == null ? "" : v;
+}
+/** Google text → canonical DB form: empty/undefined description stored as NULL. */
+function normNotes(v: string | null | undefined): string | null {
+  return v == null || v === "" ? null : v;
+}
+
+/** Google write-body for insert/patch (mirrors GoogleCalendarMapper.eventBody). */
+function googleEventBody(row: EventRow): Record<string, unknown> {
+  const body: Record<string, unknown> = { summary: row.title ?? "" };
+  if (row.notes) body.description = row.notes;
+  if (row.is_all_day) {
+    body.start = { date: dateOnlyUTC(row.start_at!) };
+    body.end = { date: dateOnlyUTC(row.end_at!) };
+  } else {
+    body.start = { dateTime: new Date(row.start_at!).toISOString() };
+    body.end = { dateTime: new Date(row.end_at!).toISOString() };
+  }
+  return body;
+}
+
+// Content the PULL would write vs. what the row already holds. Compares instants by
+// epoch (DB and Google serialize timestamps differently) so an identical event is a
+// true no-op — skipping the write avoids an updated_at trigger bump (C2 storm guard).
+interface MappedGoogle {
+  fields: { start: string; end: string; allDay: boolean };
+  title: string;
+  notes: string | null;
+}
+function contentMatches(row: EventRow, u: MappedGoogle): boolean {
+  const sameStart = row.start_at != null && new Date(row.start_at).getTime() === new Date(u.fields.start).getTime();
+  const sameEnd = row.end_at != null && new Date(row.end_at).getTime() === new Date(u.fields.end).getTime();
+  return normText(row.title) === normText(u.title) &&
+    sameStart && sameEnd &&
+    (!!row.is_all_day) === u.fields.allDay &&
+    normText(row.notes) === normText(u.notes);
+}
+
+// ── Google token refresh ────────────────────────────────────────
+class InvalidGrantError extends Error {}
+
+async function refreshAccessToken(refreshToken: string, clientId: string, clientSecret: string): Promise<string> {
+  const body = new URLSearchParams({
+    refresh_token: refreshToken,
+    client_id: clientId,
+    client_secret: clientSecret,
+    grant_type: "refresh_token",
+  });
+  const res = await fetch(GOOGLE_TOKEN_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    // Google returns 400 { "error": "invalid_grant" } for a revoked/expired token.
+    if (text.includes("invalid_grant")) throw new InvalidGrantError("invalid_grant");
+    throw new Error(`token refresh ${res.status}: ${text.slice(0, 200)}`);
+  }
+  const parsed = JSON.parse(text);
+  if (!parsed.access_token) throw new Error("token refresh: no access_token");
+  return parsed.access_token as string;
+}
+
+// ── Google events.list (paged; incremental or full window) ──────
+interface ListResult {
+  items: GEvent[];
+  nextSyncToken: string | null;
+  gone: boolean; // 410 → sync token stale, caller must full-resync
+}
+
+async function listEvents(accessToken: string, calendarId: string, syncToken: string | null, full: boolean): Promise<ListResult> {
+  const items: GEvent[] = [];
+  let pageToken: string | undefined;
+  let nextSyncToken: string | null = null;
+
+  while (true) {
+    const params = new URLSearchParams();
+    params.set("singleEvents", "true"); // must stay consistent across incremental calls
+    params.set("maxResults", "250");
+    if (syncToken && !full) {
+      // Incremental: no time bounds / orderBy allowed alongside a syncToken.
+      params.set("syncToken", syncToken);
+    } else {
+      // Full window resync. No orderBy so Google returns a nextSyncToken.
+      const now = Date.now();
+      params.set("timeMin", new Date(now - FULL_WINDOW_BACK_DAYS * DAY_MS).toISOString());
+      params.set("timeMax", new Date(now + FULL_WINDOW_FWD_DAYS * DAY_MS).toISOString());
+    }
+    if (pageToken) params.set("pageToken", pageToken);
+
+    const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(calendarId)}/events?${params}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (res.status === 410) return { items: [], nextSyncToken: null, gone: true };
+    if (!res.ok) throw new Error(`events.list ${res.status}: ${(await res.text()).slice(0, 200)}`);
+
+    const data = await res.json();
+    for (const it of (data.items ?? []) as GEvent[]) items.push(it);
+    if (data.nextPageToken) {
+      pageToken = data.nextPageToken;
+      continue;
+    }
+    nextSyncToken = data.nextSyncToken ?? null;
+    break;
+  }
+  return { items, nextSyncToken, gone: false };
+}
+
+// ── Drive references (Docs → Notes import) ──────────────────────
+// A minimal projection of a project_references row (migration 0013).
+interface RefRow {
+  id: string;
+  kind: string;            // 'doc_note' | 'file' | 'link'
+  drive_file_id: string | null;
+  mime_type: string | null;
+  modified_time: string | null;
+  note_id: string | null;
+}
+interface DriveMeta {
+  name?: string;
+  mimeType?: string;
+  modifiedTime?: string;   // RFC3339
+  trashed?: boolean;
+}
+
+/** Drive files.get for the staleness baseline + type. ok:false carries the status so
+ *  the caller can mark the one reference 'error' without failing the whole run. */
+async function driveFileMeta(
+  accessToken: string,
+  fileId: string,
+): Promise<{ ok: true; meta: DriveMeta } | { ok: false; status: number; message: string }> {
+  const res = await fetch(
+    `${DRIVE_BASE}/files/${encodeURIComponent(fileId)}?fields=name,mimeType,modifiedTime,trashed&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) return { ok: false, status: res.status, message: (await res.text()).slice(0, 200) };
+  return { ok: true, meta: (await res.json()) as DriveMeta };
+}
+
+/** Export a Google Doc as Markdown (the wire form stored in notes.body; the Mac
+ *  renders it via RichDoc ⇄ Markdown — the server only moves the bytes). */
+async function driveExportMarkdown(accessToken: string, fileId: string): Promise<string> {
+  const res = await fetch(
+    `${DRIVE_BASE}/files/${encodeURIComponent(fileId)}/export?mimeType=${encodeURIComponent("text/markdown")}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) throw new Error(`files.export ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return await res.text();
+}
+
+/**
+ * Pull this user's Drive-backed references (design doc §Server-flow 3). Shares the
+ * calendar sync's access token, so the refresh token MUST carry `drive.file` (403s
+ * here just mark the reference 'error' — never fatal to the calendar sync).
+ *
+ *   doc_note: files.get modifiedTime; changed vs the stored baseline → files.export
+ *             text/markdown → overwrite notes.body + re-baseline modified_time. The
+ *             baseline gate (drive.modifiedTime > stored) is the notes analogue of the
+ *             calendar C2 storm guard: after a write-back re-baselines to Drive's new
+ *             time, the next pull sees equal and re-pulls nothing.
+ *   file:     metadata refresh only (view-only; bytes stay in Drive).
+ *
+ * TITLE is intentionally never overwritten on pull — it's set at import and left
+ * alone so a local rename isn't clobbered every tick. Per-reference isolation: one
+ * file's failure is recorded and marked 'error'; the loop and the run continue.
+ */
+async function syncUserReferences(
+  admin: SupabaseClient,
+  userId: string,
+  accessToken: string,
+  runStartISO: string,
+  dryRun: boolean,
+): Promise<{ checked: number; synced: number; errors: { id: string; message: string }[] }> {
+  const errors: { id: string; message: string }[] = [];
+  let checked = 0;
+  let synced = 0;
+
+  // Drive-backed only ('link' has nothing to pull). Least-recently-synced first, capped
+  // per tick so a big pool can't monopolize the batch (calendar's chunking idiom).
+  const { data: rows, error } = await admin
+    .from("project_references")
+    .select("id, kind, drive_file_id, mime_type, modified_time, note_id")
+    .eq("user_id", userId)
+    .in("kind", ["doc_note", "file"])
+    .order("last_synced_at", { ascending: true, nullsFirst: true })
+    .limit(REF_BATCH);
+  if (error) throw new Error(`references select failed: ${error.message}`);
+
+  for (const row of (rows ?? []) as RefRow[]) {
+    if (!row.drive_file_id) continue;
+    checked++;
+    try {
+      const metaRes = await driveFileMeta(accessToken, row.drive_file_id);
+      if (!metaRes.ok) {
+        // Gone / access lost (404/403) or any non-2xx — mark this one 'error' and move
+        // on. Never auto-delete: removing a reference is a user action.
+        if (!dryRun) {
+          await admin.from("project_references")
+            .update({ sync_state: "error", last_synced_at: runStartISO })
+            .eq("id", row.id).eq("user_id", userId);
+        }
+        errors.push({ id: row.id, message: `drive ${metaRes.status}: ${metaRes.message}` });
+        continue;
+      }
+      const meta = metaRes.meta;
+      if (meta.trashed) {
+        if (!dryRun) {
+          await admin.from("project_references")
+            .update({ sync_state: "error", last_synced_at: runStartISO })
+            .eq("id", row.id).eq("user_id", userId);
+        }
+        errors.push({ id: row.id, message: "drive file trashed" });
+        continue;
+      }
+
+      if (row.kind === "doc_note") {
+        const driveMs = meta.modifiedTime ? new Date(meta.modifiedTime).getTime() : NaN;
+        const storedMs = row.modified_time ? new Date(row.modified_time).getTime() : -Infinity;
+        // Never-baselined (import) OR Drive strictly newer ⇒ pull content.
+        const changed = !Number.isFinite(storedMs) || (Number.isFinite(driveMs) && driveMs > storedMs);
+        if (changed) {
+          const markdown = await driveExportMarkdown(accessToken, row.drive_file_id);
+          if (!dryRun) {
+            if (row.note_id) {
+              const { error: nErr } = await admin.from("notes")
+                .update({ body: markdown, updated_at: runStartISO })
+                .eq("id", row.note_id).eq("user_id", userId);
+              if (nErr) throw new Error(`note update failed: ${nErr.message}`);
+            }
+            const { error: rErr } = await admin.from("project_references")
+              .update({
+                modified_time: meta.modifiedTime ?? null,
+                mime_type: meta.mimeType ?? row.mime_type,
+                last_synced_at: runStartISO,
+                sync_state: "synced",
+              })
+              .eq("id", row.id).eq("user_id", userId);
+            if (rErr) throw new Error(`reference update failed: ${rErr.message}`);
+          }
+          synced++;
+        } else if (!dryRun) {
+          // Unchanged since last pull — record a successful check.
+          await admin.from("project_references")
+            .update({ last_synced_at: runStartISO, sync_state: "synced" })
+            .eq("id", row.id).eq("user_id", userId);
+        }
+      } else {
+        // 'file' — metadata refresh only (view-only reference; bytes stay in Drive).
+        if (!dryRun) {
+          await admin.from("project_references")
+            .update({
+              modified_time: meta.modifiedTime ?? null,
+              mime_type: meta.mimeType ?? row.mime_type,
+              last_synced_at: runStartISO,
+              sync_state: "synced",
+            })
+            .eq("id", row.id).eq("user_id", userId);
+        }
+        synced++;
+      }
+    } catch (e) {
+      const message = String((e as Error)?.message ?? e).slice(0, 200);
+      errors.push({ id: row.id, message });
+      if (!dryRun) {
+        await admin.from("project_references")
+          .update({ sync_state: "error", last_synced_at: runStartISO })
+          .eq("id", row.id).eq("user_id", userId);
+      }
+    }
+  }
+  return { checked, synced, errors };
+}
+
+// ── One user's sync ─────────────────────────────────────────────
+async function syncUser(admin: SupabaseClient, conn: Connection, clientId: string, clientSecret: string, dryRun: boolean): Promise<UserResult> {
+  const userId = conn.user_id;
+  const runStart = new Date();
+  const runStartISO = runStart.toISOString();
+  const result: UserResult = {
+    userId,
+    status: "active",
+    inserted: 0,
+    updated: 0,
+    deleted: 0,
+    tombstoned: 0,
+    pushedNew: 0,
+    pushedUpdated: 0,
+    referencesChecked: 0,
+    referencesSynced: 0,
+    fullResync: false,
+  };
+
+  if (!conn.vault_secret_id) throw new Error("connection has no vault_secret_id");
+
+  // 1. Decrypt the refresh token (service-role Vault read) and mint an access token.
+  const { data: refreshToken, error: secretErr } = await admin.rpc("read_google_secret", { secret_id: conn.vault_secret_id });
+  if (secretErr || !refreshToken) throw new Error("vault read failed");
+  const accessToken = await refreshAccessToken(refreshToken as string, clientId, clientSecret);
+
+  // I1: gids of this user's Mac-owned work-block mirrors. Work-block mirroring is
+  //     Mac-owned and OFF in server mode (v1), but a legacy mirror may still exist
+  //     on Google — never ingest one as a duplicate `events` row.
+  const workBlockGids = new Set<string>();
+  {
+    const { data: wbRows } = await admin
+      .from("tasks")
+      .select("work_block_google_event_id")
+      .eq("user_id", userId)
+      .not("work_block_google_event_id", "is", null);
+    for (const r of (wbRows ?? []) as { work_block_google_event_id: string | null }[]) {
+      if (r.work_block_google_event_id) workBlockGids.add(r.work_block_google_event_id);
+    }
+  }
+
+  // I4 (two-way delete). Replay this user's app-side deletions to Google FIRST. A
+  //     tombstone (deleted_google_events, 0011) is written by an AFTER DELETE trigger
+  //     whenever an events row carrying a google_event_id is deleted (Mac or phone).
+  //     Read the set up front: it both drives the Google deletes below AND gates the
+  //     PULL so a not-yet-deleted event is never resurrected.
+  const tombstonedGids = new Set<string>();
+  {
+    const { data: tombRows, error: tombErr } = await admin
+      .from("deleted_google_events")
+      .select("google_event_id")
+      .eq("user_id", userId);
+    if (tombErr) throw new Error(`tombstone select failed: ${tombErr.message}`);
+    for (const r of (tombRows ?? []) as { google_event_id: string }[]) {
+      if (r.google_event_id) tombstonedGids.add(r.google_event_id);
+    }
+  }
+  result.tombstoned = tombstonedGids.size;
+
+  // Per-event isolation mirrors the PUSH loop: one failed delete records and the
+  // loop continues; only successfully-deleted (or already-gone) tombstones clear,
+  // so a failure retries next cycle. dryRun issues no Google/DB writes.
+  const tombstoneErrors: { gid: string; message: string }[] = [];
+  if (!dryRun && tombstonedGids.size > 0) {
+    const cleared: string[] = [];
+    for (const gid of tombstonedGids) {
+      try {
+        const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendar_id)}/events/${encodeURIComponent(gid)}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        // 2xx deleted; 404/410 already gone — both success. Anything else is real.
+        if (res.ok || res.status === 404 || res.status === 410) {
+          cleared.push(gid);
+        } else {
+          throw new Error(`google delete ${res.status}: ${(await res.text()).slice(0, 200)}`);
+        }
+      } catch (e) {
+        tombstoneErrors.push({ gid, message: String((e as Error)?.message ?? e).slice(0, 200) });
+      }
+    }
+    if (cleared.length > 0) {
+      const { error } = await admin
+        .from("deleted_google_events")
+        .delete()
+        .eq("user_id", userId)
+        .in("google_event_id", cleared);
+      if (error) throw new Error(`tombstone clear failed: ${error.message}`);
+    }
+  }
+
+  // 2. PULL. Incremental when we hold a sync_token; on 410 (or no token) fall
+  //    back to a full-window resync.
+  let listing: ListResult = { items: [], nextSyncToken: null, gone: false };
+  if (conn.sync_token) {
+    listing = await listEvents(accessToken, conn.calendar_id, conn.sync_token, false);
+  }
+  if (!conn.sync_token || listing.gone) {
+    listing = await listEvents(accessToken, conn.calendar_id, null, true);
+    result.fullResync = true;
+  }
+  const newSyncToken = listing.nextSyncToken ?? conn.sync_token;
+
+  // Split incoming events into deletions and upserts, keyed by gid.
+  interface UpsertVal extends MappedGoogle {
+    googleUpdated: number;
+    googleUpdatedISO: string;
+  }
+  const cancelledGids: string[] = [];
+  const upserts = new Map<string, UpsertVal>();
+  for (const ev of listing.items) {
+    const gid = ev.id;
+    if (!gid) continue;
+    if (workBlockGids.has(gid)) continue; // I1: never ingest a Mac-owned work-block mirror
+    if (tombstonedGids.has(gid)) continue; // I4: app-deleted (Google DELETE issued above) — never resurrect
+    if (ev.status === "cancelled") {
+      cancelledGids.push(gid);
+      continue;
+    }
+    const iv = interval(ev.start, ev.end);
+    if (!iv) continue; // unmappable (e.g. no times) — skip
+    const gUpdatedISO = ev.updated ? new Date(ev.updated).toISOString() : runStartISO;
+    upserts.set(gid, {
+      fields: iv,
+      title: ev.summary ?? "Untitled",
+      notes: normNotes(ev.description),
+      googleUpdated: new Date(gUpdatedISO).getTime(),
+      googleUpdatedISO: gUpdatedISO,
+    });
+  }
+
+  // Existing local rows for every gid we saw (both upserts and cancellations).
+  // Content columns are needed for the no-op guard (C2).
+  const seenGids = [...new Set([...upserts.keys(), ...cancelledGids])];
+  const existingByGid = new Map<string, EventRow>();
+  if (seenGids.length > 0) {
+    const { data: rows, error } = await admin
+      .from("events")
+      .select("id, google_event_id, google_origin, updated_at, google_updated_at, space_name, title, start_at, end_at, is_all_day, notes")
+      .eq("user_id", userId)
+      .in("google_event_id", seenGids);
+    if (error) throw new Error(`events select failed: ${error.message}`);
+    for (const r of (rows ?? []) as EventRow[]) {
+      if (r.google_event_id) existingByGid.set(r.google_event_id, r);
+    }
+  }
+
+  // Default space (the app orders spaces by `sort`; there is no created_at column).
+  let defaultSpace: string | null = null;
+  const { data: spaceRows } = await admin
+    .from("spaces")
+    .select("name, sort")
+    .eq("user_id", userId)
+    .order("sort", { ascending: true })
+    .order("name", { ascending: true })
+    .limit(1);
+  defaultSpace = (spaceRows?.[0]?.name as string | undefined) ?? null;
+
+  // The set of row ids the sync itself wrote this run — excluded from PUSH so a
+  // pulled/un-mirrored row is never echoed back to Google in the same pass.
+  const syncTouched = new Set<string>();
+
+  // 2a. Deletions (cancelled events). "Deleted anywhere = deleted everywhere": a
+  //     Google-side cancellation DELETES the local row regardless of google_origin
+  //     (the former Atlas-mirror un-mirror branch is gone). deletedFromPullGids lets
+  //     step 3 clear the self-tombstones this delete will trigger.
+  const toDelete: string[] = [];
+  const deletedFromPullGids: string[] = [];
+  for (const gid of cancelledGids) {
+    const row = existingByGid.get(gid);
+    if (!row) continue;
+    syncTouched.add(row.id);
+    toDelete.push(row.id);
+    deletedFromPullGids.push(gid);
+  }
+
+  // 2b. Upserts (Google-origin inserts + newest-wins updates, same-clock recency).
+  const inserts: Record<string, unknown>[] = [];
+  const updates: { id: string; expectUpdatedAt: string; patch: Record<string, unknown> }[] = [];
+  for (const [gid, u] of upserts) {
+    const row = existingByGid.get(gid);
+    if (row) {
+      syncTouched.add(row.id);
+      // C2 recency (same clock): skip unless Google changed since we last applied/observed it.
+      const storedGU = row.google_updated_at ? new Date(row.google_updated_at).getTime() : -Infinity;
+      if (u.googleUpdated <= storedGU) continue;
+      // C2 no-op guard: identical mapped content ⇒ skip the write (no trigger bump).
+      if (contentMatches(row, u)) continue;
+      // Write Google's content; stamp updated_at=runStart so PUSH never re-selects
+      // it, and google_updated_at=google.updated so the next PULL sees it applied.
+      updates.push({
+        id: row.id,
+        expectUpdatedAt: row.updated_at,
+        patch: {
+          title: u.title,
+          start_at: u.fields.start,
+          end_at: u.fields.end,
+          is_all_day: u.fields.allDay,
+          notes: u.notes,
+          updated_at: runStartISO,
+          google_updated_at: u.googleUpdatedISO,
+        },
+      });
+    } else {
+      if (!defaultSpace) continue; // no space to file it under — skip insert (space_name is NOT NULL)
+      const newId = crypto.randomUUID();
+      syncTouched.add(newId); // just-pulled Google-origin row — never echo it back to Google this run
+      inserts.push({
+        id: newId,
+        user_id: userId,
+        space_name: defaultSpace,
+        title: u.title,
+        subtitle: "Google Calendar",
+        start_at: u.fields.start,
+        end_at: u.fields.end,
+        is_all_day: u.fields.allDay,
+        notes: u.notes,
+        google_event_id: gid,
+        google_origin: true,
+        updated_at: runStartISO,         // ≤ next last_synced_at ⇒ never echoed by PUSH
+        google_updated_at: u.googleUpdatedISO,
+      });
+    }
+  }
+  result.inserted = inserts.length;
+  result.updated = updates.length;
+  result.deleted = toDelete.length;
+
+  // 3. Apply pull writes (skipped entirely in dryRun).
+  if (!dryRun) {
+    if (inserts.length > 0) {
+      // Idempotent: non-partial unique (user_id, google_event_id) makes a re-run a no-op.
+      const { error } = await admin.from("events").upsert(inserts, { onConflict: "user_id,google_event_id" });
+      if (error) throw new Error(`insert failed: ${error.message}`);
+    }
+    for (const u of updates) {
+      // Optimistic: only apply if the row is unchanged since we read it, so a
+      // concurrent Mac edit is never clobbered (it PUSHes next run instead).
+      const { error } = await admin.from("events").update(u.patch).eq("id", u.id).eq("updated_at", u.expectUpdatedAt);
+      if (error) throw new Error(`update failed: ${error.message}`);
+    }
+    if (toDelete.length > 0) {
+      const { error } = await admin.from("events").delete().in("id", toDelete);
+      if (error) throw new Error(`delete failed: ${error.message}`);
+      // The AFTER DELETE trigger (0011) just tombstoned each of these gids, but
+      // Google already cancelled them — clear those self-tombstones so the next run
+      // doesn't issue a redundant (404) Google DELETE.
+      const { error: tErr } = await admin
+        .from("deleted_google_events")
+        .delete()
+        .eq("user_id", userId)
+        .in("google_event_id", deletedFromPullGids);
+      if (tErr) throw new Error(`pull-delete tombstone clear failed: ${tErr.message}`);
+    }
+  }
+
+  // 4. PUSH. Rows changed since last_synced_at. First run (last_synced_at null)
+  //    backfills all — parity with the Mac's backfillEventsToGoogle on toggle-on.
+  //    google_origin=true rows are edit-synced too (I2): a mirrored gid ⇒ PATCH.
+  //    Only google_origin=false + null-gid rows are POSTed as new Google events.
+  let pushQ = admin
+    .from("events")
+    .select("id, google_event_id, google_origin, updated_at, google_updated_at, space_name, title, start_at, end_at, is_all_day, notes")
+    .eq("user_id", userId);
+  if (conn.last_synced_at) pushQ = pushQ.gt("updated_at", conn.last_synced_at);
+  const { data: pushRows, error: pushErr } = await pushQ;
+  if (pushErr) throw new Error(`push select failed: ${pushErr.message}`);
+
+  // Per-event push isolation: a single PATCH/POST failure records here and the loop
+  // CONTINUES. A per-event failure is NOT a run failure — the run still advances the
+  // sync token, stamps last_synced_at and clears the claim (step 5), recording a
+  // summary in last_error. This is why one immutable birthday no longer aborts the
+  // whole run and strands the connection in status='error'.
+  const pushErrors: { id: string; message: string }[] = [];
+
+  for (const row of (pushRows ?? []) as EventRow[]) {
+    if (syncTouched.has(row.id)) continue; // just written by the pull this run (incl. fresh inserts)
+    if (row.google_event_id) {
+      // Already mirrored → PATCH (origin or not; the local edit is the newer side).
+      result.pushedUpdated++;
+      if (!dryRun) {
+        try {
+          const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendar_id)}/events/${encodeURIComponent(row.google_event_id)}`, {
+            method: "PATCH",
+            headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify(googleEventBody(row)),
+          });
+          if (res.ok) {
+            const patched = await res.json();
+            // Record Google's new `updated` and freeze updated_at=runStart so the
+            // echo is gated on the next pull and this row isn't re-selected next run.
+            await admin
+              .from("events")
+              .update({ google_updated_at: patched.updated ?? null, updated_at: runStartISO })
+              .eq("id", row.id)
+              .eq("updated_at", row.updated_at);
+          } else if (res.status === 404 || res.status === 410) {
+            // gone on Google; leave the row for a future pull cancellation.
+          } else {
+            const text = (await res.text()).slice(0, 200);
+            // Immutable event types (birthdays, etc.) reject PATCH with 400
+            // eventTypeRestriction. They are API-immutable, so freeze the row so it
+            // never re-qualifies — google_updated_at ≥ Google's own `updated` gates
+            // the pull, updated_at=runStart (≤ next last_synced_at) gates the push —
+            // and NEVER retry it.
+            if (res.status === 400 && text.includes("eventTypeRestriction")) {
+              const pulledUpdated = upserts.get(row.google_event_id)?.googleUpdatedISO ?? new Date().toISOString();
+              await admin
+                .from("events")
+                .update({ google_updated_at: pulledUpdated, updated_at: runStartISO })
+                .eq("id", row.id)
+                .eq("updated_at", row.updated_at);
+            }
+            throw new Error(`google patch ${res.status}: ${text}`);
+          }
+        } catch (e) {
+          pushErrors.push({ id: row.id, message: String((e as Error)?.message ?? e).slice(0, 200) });
+        }
+      }
+    } else if (row.google_origin) {
+      // Legacy detached origin row (null gid + origin=true) → NEVER re-create on
+      // Google. The runner no longer produces this state (un-mirroring was removed
+      // with the two-way delete); this guard only covers rows detached by the prior
+      // logic, so they are never resurrected.
+      continue;
+    } else {
+      // Not yet mirrored Atlas row → create with a deterministic id (idempotent).
+      result.pushedNew++;
+      if (!dryRun) {
+        try {
+          const gid = uuidToGoogleId(row.id);
+          const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendar_id)}/events`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ ...googleEventBody(row), id: gid }),
+          });
+          let googleUpdated: string | null = null;
+          if (res.ok) {
+            const created = await res.json();
+            googleUpdated = created.updated ?? null;
+          } else if (res.status !== 409) {
+            // 409 = identifier already exists ⇒ a prior POST landed but write-back
+            // didn't; treat as success (the next pull sets google_updated_at). Any
+            // other non-2xx is a real error.
+            throw new Error(`google insert ${res.status}: ${(await res.text()).slice(0, 200)}`);
+          }
+          // Write the (deterministic) id back and freeze updated_at so we don't re-push.
+          // Optimistic on updated_at: if a concurrent edit bumped it, this no-ops and
+          // the next run re-POSTs the SAME id → 409 → converges (no duplicate).
+          const patch: Record<string, unknown> = { google_event_id: gid, updated_at: runStartISO };
+          if (googleUpdated) patch.google_updated_at = googleUpdated;
+          await admin.from("events").update(patch).eq("id", row.id).eq("updated_at", row.updated_at);
+        } catch (e) {
+          pushErrors.push({ id: row.id, message: String((e as Error)?.message ?? e).slice(0, 200) });
+        }
+      }
+    }
+  }
+
+  // 4b. Reference pull (Docs → Notes import). Independent of the calendar sync,
+  //     sharing the same access token (needs drive.file on the refresh token). Per-
+  //     reference isolation mirrors PUSH — one file's failure is recorded and the loop
+  //     continues; the run still completes and advances the connection.
+  let refErrors: { id: string; message: string }[] = [];
+  try {
+    const refOut = await syncUserReferences(admin, userId, accessToken, runStartISO, dryRun);
+    result.referencesChecked = refOut.checked;
+    result.referencesSynced = refOut.synced;
+    refErrors = refOut.errors;
+  } catch (e) {
+    // A pool-level failure (e.g. the references select) is non-fatal to the calendar
+    // sync — record it and let step 5 still advance the connection.
+    refErrors = [{ id: "*", message: String((e as Error)?.message ?? e).slice(0, 200) }];
+  }
+
+  // 5. Advance the cursor and release the lease. Per-event push failures DON'T fail
+  //    the run — they complete it and record a truncated summary in last_error, and
+  //    status stays 'active' so the connection keeps syncing.
+  const errorParts: string[] = [];
+  if (tombstoneErrors.length > 0) {
+    errorParts.push(`delete: ${tombstoneErrors.length} event error(s): ${tombstoneErrors.map((e) => `${e.gid} ${e.message}`).join(" | ")}`);
+  }
+  if (pushErrors.length > 0) {
+    errorParts.push(`push: ${pushErrors.length} event error(s): ${pushErrors.map((e) => `${e.id} ${e.message}`).join(" | ")}`);
+  }
+  if (refErrors.length > 0) {
+    errorParts.push(`refs: ${refErrors.length} error(s): ${refErrors.map((e) => `${e.id} ${e.message}`).join(" | ")}`);
+  }
+  const errorSummary = errorParts.length > 0 ? errorParts.join(" || ").slice(0, 500) : null;
+  if (errorSummary) result.error = errorSummary;
+  if (!dryRun) {
+    const { error } = await admin
+      .from("google_connections")
+      .update({ sync_token: newSyncToken, last_synced_at: runStartISO, status: "active", last_error: errorSummary, claimed_until: null })
+      .eq("user_id", userId);
+    if (error) throw new Error(`connection update failed: ${error.message}`);
+  }
+
+  return result;
+}
+
+// ── HTTP entry ──────────────────────────────────────────────────
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+  const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+  if (!supabaseUrl || !serviceKey || !clientId || !clientSecret) {
+    return json({ error: "Server not configured" }, 500);
+  }
+
+  // Service-role only. Accept the exact injected key, or any service_role JWT
+  // (the cron sends the service key). Rejects anon (role=anon) and user
+  // (role=authenticated) tokens.
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (!token || (token !== serviceKey && jwtRole(token) !== "service_role")) {
+    return json({ error: "Forbidden" }, 401);
+  }
+
+  const dryRun = new URL(req.url).searchParams.get("dryRun") === "1";
+
+  const admin = createClient(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  // Batch of due connections. dryRun reads read-only (no lease → no mutation); a
+  // real run LEASES them atomically (I3: claim_google_sync_users, for update skip
+  // locked) so two overlapping ticks never process the same user.
+  let conns: Connection[] | null = null;
+  let connErr: { message: string } | null = null;
+  if (dryRun) {
+    const r = await admin
+      .from("google_connections")
+      .select("user_id, vault_secret_id, calendar_id, sync_token, last_synced_at")
+      .in("status", ["active", "error"]) // mirror claim_google_sync_users (0010): error connections self-heal
+      .order("last_synced_at", { ascending: true, nullsFirst: true })
+      .limit(BATCH_LIMIT);
+    conns = r.data as Connection[] | null;
+    connErr = r.error;
+  } else {
+    const r = await admin.rpc("claim_google_sync_users", { batch: BATCH_LIMIT });
+    conns = r.data as Connection[] | null;
+    connErr = r.error;
+  }
+  if (connErr) return json({ error: "Failed to load connections" }, 500);
+
+  const results: UserResult[] = [];
+  for (const conn of (conns ?? []) as Connection[]) {
+    try {
+      results.push(await syncUser(admin, conn, clientId, clientSecret, dryRun));
+    } catch (e) {
+      // Per-user isolation: one failure never blocks the batch. Release the lease
+      // so a transient error retries next tick instead of waiting out claimed_until.
+      const revoked = e instanceof InvalidGrantError;
+      const msg = revoked ? "invalid_grant" : String((e as Error)?.message ?? e).slice(0, 500);
+      if (!dryRun) {
+        await admin
+          .from("google_connections")
+          .update({ status: revoked ? "revoked" : "error", last_error: msg, claimed_until: null })
+          .eq("user_id", conn.user_id);
+      }
+      results.push({
+        userId: conn.user_id,
+        status: revoked ? "revoked" : "error",
+        inserted: 0, updated: 0, deleted: 0, tombstoned: 0, pushedNew: 0, pushedUpdated: 0,
+        referencesChecked: 0, referencesSynced: 0,
+        fullResync: false, error: msg,
+      });
+    }
+  }
+
+  return json({ ok: true, dryRun, count: results.length, users: results });
+});
