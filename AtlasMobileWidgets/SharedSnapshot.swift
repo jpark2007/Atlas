@@ -63,9 +63,9 @@ struct SharedSnapshot: Codable {
 
     // MARK: - App-group I/O
 
-    static let appGroup = "group.com.atlas.mobile"
+    static let appGroup = "group.com.atlaslm.mobile"
     static let fileName = "today.json"
-    private static let log = Logger(subsystem: "com.atlas.AtlasMobile", category: "appgroup")
+    private static let log = Logger(subsystem: "com.atlaslm.AtlasMobile", category: "appgroup")
 
     static var fileURL: URL? {
         FileManager.default
