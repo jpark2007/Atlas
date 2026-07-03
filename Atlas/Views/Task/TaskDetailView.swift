@@ -15,6 +15,8 @@ struct TaskDetailView: View {
     @State private var isEditingDueDate = false
     @State private var dueDateDraft: Date? = nil
     @State private var dueHover = false
+    @State private var showRefPicker = false
+    @State private var referenceSelection: Set<UUID> = []
 
     var body: some View {
         ScrollView {
@@ -24,12 +26,16 @@ struct TaskDetailView: View {
                 spacePicker
                 projectPicker
                 notesSection
+                referencesSection
             }
             .padding(28)
         }
         .background(AtlasTheme.Colors.bgBase)
         .onAppear { notesDraft = live.notes }
         .sheet(isPresented: $isEditingDueDate) { dueDateEditor }
+        .sheet(isPresented: $showRefPicker, onDismiss: syncTaskAttachments) {
+            AttachReferencePicker(projectID: taskProjectID, selection: $referenceSelection)
+        }
     }
 
     // MARK: Header
@@ -330,5 +336,56 @@ struct TaskDetailView: View {
         let f = DateFormatter()
         f.dateFormat = "MMM d, h:mm a"
         return f.string(from: date)
+    }
+
+    // MARK: References
+
+    /// The task's project UUID — resolved from its space + project names, since
+    /// `TaskItem` links to a project by name. References are project-scoped.
+    private var taskProjectID: UUID? {
+        state.spaces.first { $0.name == live.spaceName }?
+            .projects.first { $0.name == live.projectName }?.id
+    }
+
+    private var referencesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("REFERENCES").atlasCapsLabel()
+                Spacer()
+                Button {
+                    referenceSelection = Set(state.references(forTask: live.id).map(\.id))
+                    showRefPicker = true
+                } label: {
+                    Label("Add", systemImage: "plus")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            let refs = state.references(forTask: live.id)
+            if refs.isEmpty {
+                Text("No references attached.")
+                    .font(.system(size: 13, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+            } else {
+                ForEach(refs) { ref in
+                    ReferenceListRow(reference: ref) {
+                        state.detachReference(ref.id, fromTask: live.id)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Applies the picker's selection to the task's attachments (diff → attach/detach).
+    private func syncTaskAttachments() {
+        let current = Set(state.references(forTask: live.id).map(\.id))
+        for added in referenceSelection.subtracting(current) {
+            state.attachReference(added, toTask: live.id)
+        }
+        for removed in current.subtracting(referenceSelection) {
+            state.detachReference(removed, fromTask: live.id)
+        }
     }
 }

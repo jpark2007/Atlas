@@ -18,6 +18,10 @@ struct AtlasApp: App {
                 .environmentObject(canvas)
                 .environmentObject(shortcuts)
                 .environmentObject(googleAuth)
+                // Two-way Google-Doc write-back for linked Doc-notes: the concrete
+                // edge-function client, reading the live Supabase JWT on each save.
+                .environment(\.docNoteWriteBack,
+                             GoogleDocWriteBackClient(accessToken: { auth.session?.accessToken }))
                 .frame(minWidth: 960, minHeight: 600)
                 .preferredColorScheme(.light)
                 .background(GlobalHotkeyInstaller(state: state, auth: auth))

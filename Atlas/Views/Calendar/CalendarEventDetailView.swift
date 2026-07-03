@@ -15,6 +15,8 @@ struct CalendarEventDetailView: View {
     @State private var descriptionText: String
     @State private var noteID: UUID?
     @State private var editingNote: Note?
+    @State private var showRefPicker = false
+    @State private var referenceSelection: Set<UUID> = []
 
     init(item: CalendarEvent) {
         self.item = item
@@ -32,6 +34,10 @@ struct CalendarEventDetailView: View {
     /// Note-linking has a durable home only for Atlas events + work-blocks (external events
     /// are rebuilt every sync and never persisted).
     private var canLinkNote: Bool { !isReadOnly && (isWorkBlock || item.source == .atlas) }
+    /// References attach to `events(id)`, so only a persisted Atlas event qualifies —
+    /// external items are rebuilt each sync (unstable ids) and a work-block's id lives
+    /// in `tasks`, not `events` (manage those on the task's detail page).
+    private var canAttachReferences: Bool { !isReadOnly && !isWorkBlock && item.source == .atlas }
 
     var body: some View {
         ScrollView {
@@ -40,6 +46,7 @@ struct CalendarEventDetailView: View {
                 if isReadOnly { lockBanner }
                 fields
                 if canLinkNote { linkedNoteSection }
+                if canAttachReferences { referencesSection }
                 footer
             }
             .frame(maxWidth: 620, alignment: .leading)
@@ -51,6 +58,9 @@ struct CalendarEventDetailView: View {
             NoteEditorView(note: note)
                 .frame(width: 560, height: 540)
                 .background(AtlasTheme.Colors.bgDeep)
+        }
+        .sheet(isPresented: $showRefPicker, onDismiss: syncEventAttachments) {
+            AttachReferencePicker(projectID: item.projectID, selection: $referenceSelection)
         }
     }
 
@@ -210,6 +220,48 @@ struct CalendarEventDetailView: View {
     private var linkedNoteTitle: String {
         if let id = noteID, let n = state.notes.first(where: { $0.id == id }) { return n.title }
         return "Tag a note…"
+    }
+
+    // MARK: - References
+
+    private var referencesSection: some View {
+        fieldGroup("REFERENCES") {
+            VStack(alignment: .leading, spacing: 0) {
+                let refs = state.references(forEvent: item.id)
+                if refs.isEmpty {
+                    Text("No references attached.")
+                        .font(.system(size: 13, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                } else {
+                    ForEach(refs) { ref in
+                        ReferenceListRow(reference: ref) {
+                            state.detachReference(ref.id, fromEvent: item.id)
+                        }
+                    }
+                }
+                Button {
+                    referenceSelection = Set(state.references(forEvent: item.id).map(\.id))
+                    showRefPicker = true
+                } label: {
+                    Label("Add reference", systemImage: "plus")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, refs.isEmpty ? 0 : 10)
+            }
+        }
+    }
+
+    /// Applies the picker's selection to the event's attachments (diff → attach/detach).
+    private func syncEventAttachments() {
+        let current = Set(state.references(forEvent: item.id).map(\.id))
+        for added in referenceSelection.subtracting(current) {
+            state.attachReference(added, toEvent: item.id)
+        }
+        for removed in current.subtracting(referenceSelection) {
+            state.detachReference(removed, fromEvent: item.id)
+        }
     }
 
     // MARK: - Footer actions

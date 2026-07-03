@@ -23,11 +23,11 @@ public enum MockData {
         .init(title: "Grocery run",               dueLabel: "",    spaceColor: AtlasTheme.Colors.personal, spaceName: "Personal"),
     ]
 
-    public static let notes: [Note] = [
-        .init(title: "Midterm study plan", body: "Cover trees, heaps, and graph traversal. Re-derive Dijkstra from scratch. Pair complexity analysis with [[Calculus II]] limit review before the midterm.", spaceName: "School"),
-        .init(title: "Graph algorithms", body: "Graph traversal — BFS vs DFS. Remember to track visited set. Priority-queue impl reused from [[Trailhead App]].", spaceName: "School"),
-        .init(title: "Trailhead launch checklist", body: "Onboarding screens, app icon, TestFlight build, landing page copy.", spaceName: "Side Project"),
-    ]
+    /// Placeholder purge (docs/specs/2026-07-03-notes-import-design.md): the fake
+    /// seed notes are gone. New accounts start with an empty notes pool — real notes
+    /// come from the user (native notes + Docs → Notes import). What scaffolds an
+    /// empty account instead is the onboarding-templates question, designed separately.
+    public static let notes: [Note] = []
 
     public static let goals: [Goal] = [
         .init(title: "Get fit",          progress: 0.66, label: "2 / 3 this week"),
@@ -55,22 +55,11 @@ public enum MockData {
                 .init(title: "Reading: Ch. 7 Traversal", dueLabel: "Mon, Jun 30", status: .upcoming),
                 .init(title: "Project: Hash-map impl",   dueLabel: "Jul 10",      status: .upcoming),
                 .init(title: "Problem Set 3 — Heaps",    dueLabel: "Jun 19",      status: .submitted, done: true),
-            ],
-            notes: [
-                .init(title: "Midterm study plan",   subtitle: "Cover trees, heaps, and graph traversal. Re-derive Dijkstra…"),
-                .init(title: "Lecture notes (shared)", subtitle: "Google Doc · linked", isExternal: true),
-            ],
-            pinned: [
-                .init(title: "cs201-psets",        source: "github.com/jordan", systemImage: "chevron.left.forwardslash.chevron.right"),
-                .init(title: "Lecture 12 — Dijkstra", source: "youtube.com",     systemImage: "play.rectangle.fill"),
-                .init(title: "Deep Focus",         source: "Spotify playlist",  systemImage: "music.note"),
-            ],
-            backlinks: [
-                .init(title: "Finish DS problem set", meta: "Task · School · due Thu",        color: blue),
-                .init(title: "CS 201 Lecture",        meta: "Event · Today 9:00 AM",          color: AtlasTheme.Colors.accent),
-                .init(title: "Midterm study plan",    meta: "Note · references this class",   color: AtlasTheme.Colors.textSecondary),
-                .init(title: "Calculus II",           meta: "Class · shared complexity notes", color: blue),
             ]
+            // Placeholder purge (notes-import spec): the fake note refs, pinned
+            // resources, and auto-backlinks are gone — those pools populate from real
+            // user data (references, notes, mentions), not seed fixtures. The
+            // ProjectDetailView sections stay hidden until real data lands.
         )
 
         return [

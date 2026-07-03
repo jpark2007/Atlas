@@ -20,6 +20,10 @@ struct EventEditorSheet: View {
     @State private var startDate: Date
     @State private var endDate: Date
     @State private var notes: String
+    @State private var showRefPicker = false
+    /// References chosen while composing — attached to the event once it's saved
+    /// (the attachment FK needs the `events` row to exist first).
+    @State private var referenceSelection: Set<UUID> = []
 
     init(seed: CalendarEvent) {
         self.seed = seed
@@ -41,6 +45,9 @@ struct EventEditorSheet: View {
         }
         .frame(width: 420, alignment: .topLeading)
         .background(AtlasTheme.Colors.bgBase)
+        .sheet(isPresented: $showRefPicker) {
+            AttachReferencePicker(projectID: seed.projectID, selection: $referenceSelection)
+        }
         .onChange(of: startDate) { _, newStart in
             // Keep end >= start + 15 minutes when start shifts past end
             if endDate <= newStart {
@@ -176,9 +183,34 @@ struct EventEditorSheet: View {
                             .frame(minHeight: 80)
                     }
                 }
+
+                // ── References (new events with a project) ─────────────────
+                if !isEditingExisting, seed.projectID != nil {
+                    field("References") { referencesField }
+                }
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 6)
+        }
+    }
+
+    /// Selected references + an "Add reference" affordance. Selection is held locally
+    /// and attached to the event on save.
+    private var referencesField: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            let selected = referenceSelection.compactMap { rid in
+                state.references.first { $0.id == rid }
+            }
+            ForEach(selected) { ref in
+                ReferenceListRow(reference: ref) { referenceSelection.remove(ref.id) }
+            }
+            Button { showRefPicker = true } label: {
+                Label("Add reference", systemImage: "plus")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, selected.isEmpty ? 0 : 10)
         }
     }
 
@@ -248,7 +280,9 @@ struct EventEditorSheet: View {
         if isEditingExisting {
             state.updateEvent(event)
         } else {
-            state.addEvent(event)
+            // Attach chosen references — addEvent sequences the writes so the event
+            // row lands before the attachment FKs reference it.
+            state.addEvent(event, attachingReferences: referenceSelection)
         }
 
         state.presentEventEditor = false

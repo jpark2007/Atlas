@@ -14,6 +14,13 @@ final class AppState: ObservableObject {
     @Published var notes: [Note] = MockData.notes
     @Published var goals: [Goal] = MockData.goals
 
+    /// Docs → Notes import: the project-scoped reference pool. Empty until the
+    /// notes-import migration (0013) is live and references are imported; the
+    /// write-through CRUD lives in `AppState+References.swift`.
+    @Published var references: [Reference] = []
+    /// Reference ⇄ task/event attachments (many-to-many join rows).
+    @Published var referenceAttachments: [ReferenceAttachment] = []
+
     /// Last Google calendar sync error (nil when the most recent pull succeeded). Set on
     /// the main actor by the calendar load path; surfaced as a small status indicator so
     /// sync failures are visible instead of silently swallowed.
@@ -186,6 +193,8 @@ final class AppState: ObservableObject {
             self.events = snapshot.events
             self.notes  = snapshot.notes
             self.goals  = snapshot.goals
+            self.references = snapshot.references
+            self.referenceAttachments = snapshot.referenceAttachments
 
             // Re-derive colors from spaceName.
             // Spaces already carry real colors from `color_token` — don't touch those.
@@ -542,9 +551,25 @@ final class AppState: ObservableObject {
 
     // MARK: - Event CRUD (in-memory + DB write-through + Google write-back)
 
-    func addEvent(_ event: CalendarEvent) {
+    func addEvent(_ event: CalendarEvent, attachingReferences refIDs: Set<UUID> = []) {
         events.append(event)
-        Task { try? await self.db?.upsertEvent(event) }
+        // Optimistic in-memory attachments (dedup against any already present).
+        var newAttachments: [ReferenceAttachment] = []
+        for rid in refIDs
+        where !referenceAttachments.contains(where: { $0.referenceID == rid && $0.eventID == event.id }) {
+            let attachment = ReferenceAttachment(referenceID: rid, eventID: event.id)
+            referenceAttachments.append(attachment)
+            newAttachments.append(attachment)
+        }
+        // Sequence the writes: the `events` row must land before its attachments, or
+        // the reference_attachments.event_id FK rejects them (they'd survive only in
+        // memory until a reload dropped them).
+        Task {
+            try? await self.db?.upsertEvent(event)
+            for attachment in newAttachments {
+                try? await self.db?.upsertReferenceAttachment(attachment)
+            }
+        }
         pushNewEventToGoogle(event)
     }
 

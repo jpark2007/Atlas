@@ -1,12 +1,24 @@
 import SwiftUI
+import AppKit
 import AtlasCore
 
 struct ProjectDetailView: View {
     @EnvironmentObject var state: AppState
+    @EnvironmentObject var auth: AuthService
+    @EnvironmentObject var googleAuth: GoogleAuthService
+    @Environment(\.openURL) private var openURL
     let project: Project
 
     @State private var isEditingOverview = false
     @State private var draftOverview = ""
+
+    /// Add-link sheet toggle, and the last import/Quick-Look problem to surface calmly.
+    @State private var presentAddLink = false
+    @State private var referenceError: String?
+    /// Set when the Drive picker is launched in the browser; the next time Atlas
+    /// becomes active we re-pull the pool so the freshly-imported references appear
+    /// without a relaunch.
+    @State private var awaitingImport = false
 
     /// Editable starter sample-tasks for an empty project. Seeded once from
     /// `ProjectTemplate`; purely local (never persisted) — the user can edit or
@@ -55,6 +67,7 @@ struct ProjectDetailView: View {
                     if !liveEvents.isEmpty { liveEventsSection }
                     if isEmptyProject { starterTemplate }
                     notesSection
+                    referencesSection
                     if !project.pinned.isEmpty { pinned }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -72,6 +85,16 @@ struct ProjectDetailView: View {
             NoteEditorView(note: note)
                 .frame(width: 560, height: 540)
                 .background(AtlasTheme.Colors.bgDeep)
+        }
+        .sheet(isPresented: $presentAddLink) {
+            AddLinkSheet(projectID: project.id)
+        }
+        // Returning from the browser picker: re-pull the pool once so imported
+        // references show up without relaunching.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard awaitingImport else { return }
+            awaitingImport = false
+            Task { await state.reloadReferences() }
         }
     }
 
@@ -152,6 +175,145 @@ struct ProjectDetailView: View {
         // it (updateNote inserts on no-match), so dismissing without Done leaves
         // nothing behind.
         editingNote = Note(title: "", body: "", spaceName: project.spaceName, projectID: project.id)
+    }
+
+    // MARK: - References (Docs → Notes import)
+
+    /// The project's reference pool — Docs imported as editable notes, view-only
+    /// Drive files, and external links (see docs/specs/2026-07-03-notes-import-design.md).
+    /// "Import" launches the server-hosted Drive picker in the browser (like the
+    /// connect flows); imported references surface on the next load.
+    private var referencesSection: some View {
+        let refs = state.references(in: project.id)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                sectionLabel("REFERENCES")
+                if !refs.isEmpty {
+                    Text("\(refs.count)")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                Spacer()
+                referenceHeaderButton(icon: "arrow.down.doc", title: "Import") { importFromDrive() }
+                    .help("Import Google Docs and files from Drive")
+                referenceHeaderButton(icon: "link", title: "Add link") { presentAddLink = true }
+                    .help("Attach an external link")
+            }
+
+            if let referenceError {
+                Text(referenceError)
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.danger)
+            }
+
+            if refs.isEmpty {
+                Text("No references yet. Import Google Docs, PDFs, and files from Drive, or add a link — they live in this project and can attach to its tasks and events.")
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(refs.enumerated()), id: \.element.id) { i, ref in
+                        ReferenceRowView(
+                            reference: ref,
+                            externalActionTitle: externalActionTitle(ref),
+                            onTap: { openReference(ref) },
+                            onOpenExternal: { openExternal(ref) },
+                            onQuickLook: ref.kind == .file ? { quickLook(ref) } : nil,
+                            onRemove: { state.removeReference(ref.id) }
+                        )
+                        if i < refs.count - 1 {
+                            Divider().overlay(AtlasTheme.Colors.hairline)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func referenceHeaderButton(icon: String, title: String,
+                                       action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 10, weight: .semibold))
+                Text(title).font(.system(size: 11, weight: .semibold, design: .rounded))
+            }
+            .foregroundStyle(AtlasTheme.Colors.accentText)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Primary tap: link → open URL; file → Quick Look; doc-note → open its backing
+    /// note if one exists locally, else open the Doc in Google.
+    private func openReference(_ ref: Reference) {
+        switch ref.kind {
+        case .link:
+            openExternal(ref)
+        case .file:
+            quickLook(ref)
+        case .docNote:
+            if let nid = ref.noteID, let note = state.notes.first(where: { $0.id == nid }) {
+                editingNote = note
+            } else {
+                openExternal(ref)
+            }
+        }
+    }
+
+    /// The out-of-Atlas (browser) destination for a reference.
+    private func externalURL(_ ref: Reference) -> URL? {
+        switch ref.kind {
+        case .link:
+            return ref.url.flatMap { URL(string: $0) }
+        case .docNote:
+            return ref.driveFileId.flatMap { URL(string: "https://docs.google.com/document/d/\($0)/edit") }
+        case .file:
+            return ref.driveFileId.flatMap { URL(string: "https://drive.google.com/file/d/\($0)/view") }
+        }
+    }
+
+    private func externalActionTitle(_ ref: Reference) -> String {
+        switch ref.kind {
+        case .link:    return "Open link"
+        case .docNote: return "Open in Google Docs"
+        case .file:    return "Open in Drive"
+        }
+    }
+
+    private func openExternal(_ ref: Reference) {
+        guard let url = externalURL(ref) else { return }
+        openURL(url)
+    }
+
+    /// Quick Look a file reference — preview a cached copy if present, else best-effort
+    /// download via the connected Google token; on failure fall back to opening in Drive.
+    private func quickLook(_ ref: Reference) {
+        referenceError = nil
+        if let cached = ReferencePreviewLoader.cachedURL(for: ref) {
+            ReferencePreviewController.shared.present(cached)
+            return
+        }
+        Task { @MainActor in
+            do {
+                let url = try await ReferencePreviewLoader.download(ref, auth: googleAuth)
+                ReferencePreviewController.shared.present(url)
+            } catch {
+                openExternal(ref)
+            }
+        }
+    }
+
+    private func importFromDrive() {
+        guard let jwt = auth.session?.accessToken else {
+            referenceError = "Sign in to Atlas to import from Drive."
+            return
+        }
+        referenceError = nil
+        if DrivePickerLauncher.launch(projectID: project.id, supabaseAccessToken: jwt) {
+            awaitingImport = true
+        } else {
+            referenceError = "Couldn't open the Drive picker."
+        }
     }
 
     /// Seed the editable starter sample-tasks once, for an empty project only.

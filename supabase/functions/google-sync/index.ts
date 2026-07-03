@@ -82,7 +82,9 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 
 const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const GCAL_BASE = "https://www.googleapis.com/calendar/v3";
+const DRIVE_BASE = "https://www.googleapis.com/drive/v3";
 const BATCH_LIMIT = 20; // connections processed per invocation (oldest first)
+const REF_BATCH = 100;  // Drive references pulled per user per tick (least-recently-synced first)
 const FULL_WINDOW_BACK_DAYS = 30;
 const FULL_WINDOW_FWD_DAYS = 365;
 const DAY_MS = 86_400_000;
@@ -192,6 +194,8 @@ interface UserResult {
   tombstoned: number;
   pushedNew: number;
   pushedUpdated: number;
+  referencesChecked: number;
+  referencesSynced: number;
   fullResync: boolean;
   error?: string;
 }
@@ -329,6 +333,171 @@ async function listEvents(accessToken: string, calendarId: string, syncToken: st
   return { items, nextSyncToken, gone: false };
 }
 
+// ── Drive references (Docs → Notes import) ──────────────────────
+// A minimal projection of a project_references row (migration 0013).
+interface RefRow {
+  id: string;
+  kind: string;            // 'doc_note' | 'file' | 'link'
+  drive_file_id: string | null;
+  mime_type: string | null;
+  modified_time: string | null;
+  note_id: string | null;
+}
+interface DriveMeta {
+  name?: string;
+  mimeType?: string;
+  modifiedTime?: string;   // RFC3339
+  trashed?: boolean;
+}
+
+/** Drive files.get for the staleness baseline + type. ok:false carries the status so
+ *  the caller can mark the one reference 'error' without failing the whole run. */
+async function driveFileMeta(
+  accessToken: string,
+  fileId: string,
+): Promise<{ ok: true; meta: DriveMeta } | { ok: false; status: number; message: string }> {
+  const res = await fetch(
+    `${DRIVE_BASE}/files/${encodeURIComponent(fileId)}?fields=name,mimeType,modifiedTime,trashed&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) return { ok: false, status: res.status, message: (await res.text()).slice(0, 200) };
+  return { ok: true, meta: (await res.json()) as DriveMeta };
+}
+
+/** Export a Google Doc as Markdown (the wire form stored in notes.body; the Mac
+ *  renders it via RichDoc ⇄ Markdown — the server only moves the bytes). */
+async function driveExportMarkdown(accessToken: string, fileId: string): Promise<string> {
+  const res = await fetch(
+    `${DRIVE_BASE}/files/${encodeURIComponent(fileId)}/export?mimeType=${encodeURIComponent("text/markdown")}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) throw new Error(`files.export ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return await res.text();
+}
+
+/**
+ * Pull this user's Drive-backed references (design doc §Server-flow 3). Shares the
+ * calendar sync's access token, so the refresh token MUST carry `drive.file` (403s
+ * here just mark the reference 'error' — never fatal to the calendar sync).
+ *
+ *   doc_note: files.get modifiedTime; changed vs the stored baseline → files.export
+ *             text/markdown → overwrite notes.body + re-baseline modified_time. The
+ *             baseline gate (drive.modifiedTime > stored) is the notes analogue of the
+ *             calendar C2 storm guard: after a write-back re-baselines to Drive's new
+ *             time, the next pull sees equal and re-pulls nothing.
+ *   file:     metadata refresh only (view-only; bytes stay in Drive).
+ *
+ * TITLE is intentionally never overwritten on pull — it's set at import and left
+ * alone so a local rename isn't clobbered every tick. Per-reference isolation: one
+ * file's failure is recorded and marked 'error'; the loop and the run continue.
+ */
+async function syncUserReferences(
+  admin: SupabaseClient,
+  userId: string,
+  accessToken: string,
+  runStartISO: string,
+  dryRun: boolean,
+): Promise<{ checked: number; synced: number; errors: { id: string; message: string }[] }> {
+  const errors: { id: string; message: string }[] = [];
+  let checked = 0;
+  let synced = 0;
+
+  // Drive-backed only ('link' has nothing to pull). Least-recently-synced first, capped
+  // per tick so a big pool can't monopolize the batch (calendar's chunking idiom).
+  const { data: rows, error } = await admin
+    .from("project_references")
+    .select("id, kind, drive_file_id, mime_type, modified_time, note_id")
+    .eq("user_id", userId)
+    .in("kind", ["doc_note", "file"])
+    .order("last_synced_at", { ascending: true, nullsFirst: true })
+    .limit(REF_BATCH);
+  if (error) throw new Error(`references select failed: ${error.message}`);
+
+  for (const row of (rows ?? []) as RefRow[]) {
+    if (!row.drive_file_id) continue;
+    checked++;
+    try {
+      const metaRes = await driveFileMeta(accessToken, row.drive_file_id);
+      if (!metaRes.ok) {
+        // Gone / access lost (404/403) or any non-2xx — mark this one 'error' and move
+        // on. Never auto-delete: removing a reference is a user action.
+        if (!dryRun) {
+          await admin.from("project_references")
+            .update({ sync_state: "error", last_synced_at: runStartISO })
+            .eq("id", row.id).eq("user_id", userId);
+        }
+        errors.push({ id: row.id, message: `drive ${metaRes.status}: ${metaRes.message}` });
+        continue;
+      }
+      const meta = metaRes.meta;
+      if (meta.trashed) {
+        if (!dryRun) {
+          await admin.from("project_references")
+            .update({ sync_state: "error", last_synced_at: runStartISO })
+            .eq("id", row.id).eq("user_id", userId);
+        }
+        errors.push({ id: row.id, message: "drive file trashed" });
+        continue;
+      }
+
+      if (row.kind === "doc_note") {
+        const driveMs = meta.modifiedTime ? new Date(meta.modifiedTime).getTime() : NaN;
+        const storedMs = row.modified_time ? new Date(row.modified_time).getTime() : -Infinity;
+        // Never-baselined (import) OR Drive strictly newer ⇒ pull content.
+        const changed = !Number.isFinite(storedMs) || (Number.isFinite(driveMs) && driveMs > storedMs);
+        if (changed) {
+          const markdown = await driveExportMarkdown(accessToken, row.drive_file_id);
+          if (!dryRun) {
+            if (row.note_id) {
+              const { error: nErr } = await admin.from("notes")
+                .update({ body: markdown, updated_at: runStartISO })
+                .eq("id", row.note_id).eq("user_id", userId);
+              if (nErr) throw new Error(`note update failed: ${nErr.message}`);
+            }
+            const { error: rErr } = await admin.from("project_references")
+              .update({
+                modified_time: meta.modifiedTime ?? null,
+                mime_type: meta.mimeType ?? row.mime_type,
+                last_synced_at: runStartISO,
+                sync_state: "synced",
+              })
+              .eq("id", row.id).eq("user_id", userId);
+            if (rErr) throw new Error(`reference update failed: ${rErr.message}`);
+          }
+          synced++;
+        } else if (!dryRun) {
+          // Unchanged since last pull — record a successful check.
+          await admin.from("project_references")
+            .update({ last_synced_at: runStartISO, sync_state: "synced" })
+            .eq("id", row.id).eq("user_id", userId);
+        }
+      } else {
+        // 'file' — metadata refresh only (view-only reference; bytes stay in Drive).
+        if (!dryRun) {
+          await admin.from("project_references")
+            .update({
+              modified_time: meta.modifiedTime ?? null,
+              mime_type: meta.mimeType ?? row.mime_type,
+              last_synced_at: runStartISO,
+              sync_state: "synced",
+            })
+            .eq("id", row.id).eq("user_id", userId);
+        }
+        synced++;
+      }
+    } catch (e) {
+      const message = String((e as Error)?.message ?? e).slice(0, 200);
+      errors.push({ id: row.id, message });
+      if (!dryRun) {
+        await admin.from("project_references")
+          .update({ sync_state: "error", last_synced_at: runStartISO })
+          .eq("id", row.id).eq("user_id", userId);
+      }
+    }
+  }
+  return { checked, synced, errors };
+}
+
 // ── One user's sync ─────────────────────────────────────────────
 async function syncUser(admin: SupabaseClient, conn: Connection, clientId: string, clientSecret: string, dryRun: boolean): Promise<UserResult> {
   const userId = conn.user_id;
@@ -343,6 +512,8 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     tombstoned: 0,
     pushedNew: 0,
     pushedUpdated: 0,
+    referencesChecked: 0,
+    referencesSynced: 0,
     fullResync: false,
   };
 
@@ -686,6 +857,22 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     }
   }
 
+  // 4b. Reference pull (Docs → Notes import). Independent of the calendar sync,
+  //     sharing the same access token (needs drive.file on the refresh token). Per-
+  //     reference isolation mirrors PUSH — one file's failure is recorded and the loop
+  //     continues; the run still completes and advances the connection.
+  let refErrors: { id: string; message: string }[] = [];
+  try {
+    const refOut = await syncUserReferences(admin, userId, accessToken, runStartISO, dryRun);
+    result.referencesChecked = refOut.checked;
+    result.referencesSynced = refOut.synced;
+    refErrors = refOut.errors;
+  } catch (e) {
+    // A pool-level failure (e.g. the references select) is non-fatal to the calendar
+    // sync — record it and let step 5 still advance the connection.
+    refErrors = [{ id: "*", message: String((e as Error)?.message ?? e).slice(0, 200) }];
+  }
+
   // 5. Advance the cursor and release the lease. Per-event push failures DON'T fail
   //    the run — they complete it and record a truncated summary in last_error, and
   //    status stays 'active' so the connection keeps syncing.
@@ -695,6 +882,9 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
   }
   if (pushErrors.length > 0) {
     errorParts.push(`push: ${pushErrors.length} event error(s): ${pushErrors.map((e) => `${e.id} ${e.message}`).join(" | ")}`);
+  }
+  if (refErrors.length > 0) {
+    errorParts.push(`refs: ${refErrors.length} error(s): ${refErrors.map((e) => `${e.id} ${e.message}`).join(" | ")}`);
   }
   const errorSummary = errorParts.length > 0 ? errorParts.join(" || ").slice(0, 500) : null;
   if (errorSummary) result.error = errorSummary;
@@ -777,6 +967,7 @@ Deno.serve(async (req: Request) => {
         userId: conn.user_id,
         status: revoked ? "revoked" : "error",
         inserted: 0, updated: 0, deleted: 0, tombstoned: 0, pushedNew: 0, pushedUpdated: 0,
+        referencesChecked: 0, referencesSynced: 0,
         fullResync: false, error: msg,
       });
     }

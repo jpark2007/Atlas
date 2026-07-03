@@ -79,14 +79,21 @@ public struct AtlasSnapshot {
     public var events: [CalendarEvent]
     public var notes: [Note]
     public var goals: [Goal]
+    /// Docs → Notes import: the per-project reference pool + its task/event joins.
+    /// Defaulted so existing callers (seed, tests, mobile) are unchanged; only
+    /// `loadAll()` populates them, and best-effort so a not-yet-migrated DB → [].
+    public var references: [Reference]
+    public var referenceAttachments: [ReferenceAttachment]
 
-    public init(spaces: [Space], projects: [Project], tasks: [TaskItem], events: [CalendarEvent], notes: [Note], goals: [Goal]) {
+    public init(spaces: [Space], projects: [Project], tasks: [TaskItem], events: [CalendarEvent], notes: [Note], goals: [Goal], references: [Reference] = [], referenceAttachments: [ReferenceAttachment] = []) {
         self.spaces = spaces
         self.projects = projects
         self.tasks = tasks
         self.events = events
         self.notes = notes
         self.goals = goals
+        self.references = references
+        self.referenceAttachments = referenceAttachments
     }
 }
 
@@ -380,6 +387,127 @@ public struct NoteRow: Codable {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ReferenceRow — the per-project reference pool (Docs → Notes import)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A row from `project_references` (migration `0013`). Table is `project_references`,
+/// not `references`, because REFERENCES is a reserved SQL keyword.
+///
+/// `modifiedTime` / `lastSyncedAt` are decoded as `String` (not `Date`) because the
+/// sync cron writes them from Drive / `now()` with fractional-second precision the
+/// shared `.iso8601` decoder can't parse — same reason `GoogleConnectionRow` keeps
+/// `lastSyncedAt` as a String. `toDomain()` parses them leniently.
+public struct ReferenceRow: Codable {
+    public var id: UUID
+    public var userId: UUID?
+    public var projectId: UUID
+    public var kind: String
+    public var title: String
+    public var url: String?
+    public var driveFileId: String?
+    public var mimeType: String?
+    public var modifiedTime: String?
+    public var lastSyncedAt: String?
+    public var syncState: String
+    public var noteId: UUID?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId       = "user_id"
+        case projectId    = "project_id"
+        case kind
+        case title
+        case url
+        case driveFileId  = "drive_file_id"
+        case mimeType     = "mime_type"
+        case modifiedTime = "modified_time"
+        case lastSyncedAt = "last_synced_at"
+        case syncState    = "sync_state"
+        case noteId       = "note_id"
+    }
+
+    public init(domain r: Reference) {
+        self.id           = r.id
+        self.projectId    = r.projectID
+        self.kind         = r.kind.rawValue
+        self.title        = r.title
+        self.url          = r.url
+        self.driveFileId  = r.driveFileId
+        self.mimeType     = r.mimeType
+        self.modifiedTime = ReferenceRow.isoString(from: r.modifiedTime)
+        self.lastSyncedAt = ReferenceRow.isoString(from: r.lastSyncedAt)
+        self.syncState    = r.syncState.rawValue
+        self.noteId       = r.noteID
+    }
+
+    public func toDomain() -> Reference {
+        Reference(id: id,
+                  projectID: projectId,
+                  kind: ReferenceKind(rawValue: kind) ?? .file,
+                  title: title,
+                  url: url,
+                  driveFileId: driveFileId,
+                  mimeType: mimeType,
+                  modifiedTime: ReferenceRow.date(from: modifiedTime),
+                  lastSyncedAt: ReferenceRow.date(from: lastSyncedAt),
+                  syncState: ReferenceSyncState(rawValue: syncState) ?? .pending,
+                  noteID: noteId)
+    }
+
+    /// Parses an ISO-8601 timestamp with or without fractional seconds — mirrors
+    /// `GoogleConnectionRow.lastSyncedDate` so server-written (microsecond) times decode.
+    static func date(from s: String?) -> Date? {
+        guard let s else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: s) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: s)
+    }
+
+    /// Formats a `Date` as an ISO-8601 string (fractional seconds) for write-back.
+    static func isoString(from d: Date?) -> String? {
+        guard let d else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.string(from: d)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ReferenceAttachmentRow — reference ⇄ task / event join
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A row from `reference_attachments` (migration `0013`). Exactly one of
+/// `taskId` / `eventId` is set (enforced by a DB check).
+public struct ReferenceAttachmentRow: Codable {
+    public var id: UUID
+    public var userId: UUID?
+    public var referenceId: UUID
+    public var taskId: UUID?
+    public var eventId: UUID?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId      = "user_id"
+        case referenceId = "reference_id"
+        case taskId      = "task_id"
+        case eventId     = "event_id"
+    }
+
+    public init(domain a: ReferenceAttachment) {
+        self.id          = a.id
+        self.referenceId = a.referenceID
+        self.taskId      = a.taskID
+        self.eventId     = a.eventID
+    }
+
+    public func toDomain() -> ReferenceAttachment {
+        ReferenceAttachment(id: id, referenceID: referenceId, taskID: taskId, eventID: eventId)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GoalRow
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -617,13 +745,23 @@ public final class AtlasDB {
 
         let (sr, pr, tr, er, nr, gr) = try await (spaceRows, projectRows, taskRows, eventRows, noteRows, goalRows)
 
+        // References + attachments are best-effort: if the notes-import migration
+        // (0013) isn't deployed yet, these tables 404 — degrade to [] rather than
+        // failing the whole load (which would blank everything back to MockData).
+        let refRows: [ReferenceRow] =
+            (try? await getAll("project_references", order: "created_at.desc")) ?? []
+        let attachRows: [ReferenceAttachmentRow] =
+            (try? await getAll("reference_attachments", order: "created_at.desc")) ?? []
+
         return AtlasSnapshot(
             spaces:   sr.map { $0.toDomain() },
             projects: pr.map { $0.toDomain() },
             tasks:    tr.map { $0.toDomain() },
             events:   er.map { $0.toDomain() },
             notes:    nr.map { $0.toDomain() },
-            goals:    gr.map { $0.toDomain() }
+            goals:    gr.map { $0.toDomain() },
+            references:           refRows.map    { $0.toDomain() },
+            referenceAttachments: attachRows.map { $0.toDomain() }
         )
     }
 
@@ -752,5 +890,59 @@ public final class AtlasDB {
         let body = try isoEncoder.encode(row)
         try await send(method: "POST", table: "goals",
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
+    }
+
+    // MARK: References (Docs → Notes import)
+
+    public func upsertReference(_ r: Reference) async throws {
+        let sess = try requireSession()
+        guard let userId = UUID(uuidString: sess.user.id) else {
+            throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
+        }
+        var row = ReferenceRow(domain: r)
+        row.userId = userId
+        let body = try isoEncoder.encode(row)
+        try await send(method: "POST", table: "project_references",
+                       query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
+    }
+
+    public func deleteReference(id: UUID) async throws {
+        let sess = try requireSession()
+        try await send(method: "DELETE", table: "project_references",
+                       query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                       extraHeaders: ["Prefer": "return=minimal"],
+                       sess: sess)
+    }
+
+    public func upsertReferenceAttachment(_ a: ReferenceAttachment) async throws {
+        let sess = try requireSession()
+        guard let userId = UUID(uuidString: sess.user.id) else {
+            throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
+        }
+        var row = ReferenceAttachmentRow(domain: a)
+        row.userId = userId
+        let body = try isoEncoder.encode(row)
+        try await send(method: "POST", table: "reference_attachments",
+                       query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
+    }
+
+    public func deleteReferenceAttachment(id: UUID) async throws {
+        let sess = try requireSession()
+        try await send(method: "DELETE", table: "reference_attachments",
+                       query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                       extraHeaders: ["Prefer": "return=minimal"],
+                       sess: sess)
+    }
+
+    /// Reloads just the reference pool + its attachments — lets the client refresh
+    /// after a browser-side Drive import without a full `loadAll()` / relaunch.
+    /// Best-effort: if the notes-import migration (0013) isn't deployed the tables
+    /// 404 and this returns empty rather than throwing.
+    public func loadReferences() async throws -> (references: [Reference], attachments: [ReferenceAttachment]) {
+        let refRows: [ReferenceRow] =
+            (try? await getAll("project_references", order: "created_at.desc")) ?? []
+        let attachRows: [ReferenceAttachmentRow] =
+            (try? await getAll("reference_attachments", order: "created_at.desc")) ?? []
+        return (refRows.map { $0.toDomain() }, attachRows.map { $0.toDomain() })
     }
 }
