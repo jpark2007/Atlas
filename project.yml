@@ -63,6 +63,8 @@ targets:
         NSSpeechRecognitionUsageDescription: "Atlas transcribes your speech on-device so you can dictate tasks and notes into the capture bar."
         GoogleOAuthClientID: "$(GOOGLE_OAUTH_CLIENT_ID)"
         GoogleOAuthClientSecret: "$(GOOGLE_OAUTH_CLIENT_SECRET)"
+        DrivePickerAPIKey: "$(DRIVE_PICKER_API_KEY)"
+        DrivePickerAppID: "$(DRIVE_PICKER_APP_ID)"
   AtlasTests:
     type: bundle.unit-test
     platform: macOS

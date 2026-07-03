@@ -15,10 +15,9 @@ struct ProjectDetailView: View {
     /// Add-link sheet toggle, and the last import/Quick-Look problem to surface calmly.
     @State private var presentAddLink = false
     @State private var referenceError: String?
-    /// Set when the Drive picker is launched in the browser; the next time Atlas
-    /// becomes active we re-pull the pool so the freshly-imported references appear
-    /// without a relaunch.
-    @State private var awaitingImport = false
+    /// Non-nil while the in-app Drive picker sheet is up (carries the tokens the
+    /// bundled page needs); dismissing it re-pulls the reference pool.
+    @State private var drivePicker: DrivePickerSession?
 
     /// Editable starter sample-tasks for an empty project. Seeded once from
     /// `ProjectTemplate`; purely local (never persisted) — the user can edit or
@@ -89,12 +88,10 @@ struct ProjectDetailView: View {
         .sheet(isPresented: $presentAddLink) {
             AddLinkSheet(projectID: project.id)
         }
-        // Returning from the browser picker: re-pull the pool once so imported
-        // references show up without relaunching.
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            guard awaitingImport else { return }
-            awaitingImport = false
-            Task { await state.reloadReferences() }
+        // In-app Drive picker: on dismiss (import done or cancelled) re-pull the
+        // pool so imported references show up immediately.
+        .sheet(item: $drivePicker, onDismiss: { Task { await state.reloadReferences() } }) { session in
+            DrivePickerSheet(projectID: project.id, session: session)
         }
     }
 
@@ -181,8 +178,8 @@ struct ProjectDetailView: View {
 
     /// The project's reference pool — Docs imported as editable notes, view-only
     /// Drive files, and external links (see docs/specs/2026-07-03-notes-import-design.md).
-    /// "Import" launches the server-hosted Drive picker in the browser (like the
-    /// connect flows); imported references surface on the next load.
+    /// "Import" opens the in-app Drive picker sheet (`DrivePickerSheet`); imported
+    /// references surface when the sheet dismisses.
     private var referencesSection: some View {
         let refs = state.references(in: project.id)
         return VStack(alignment: .leading, spacing: 10) {
@@ -308,11 +305,20 @@ struct ProjectDetailView: View {
             referenceError = "Sign in to Atlas to import from Drive."
             return
         }
+        guard DrivePickerConfig.isConfigured else {
+            referenceError = "Drive picker keys missing — add DRIVE_PICKER_API_KEY / _APP_ID to Config/Secrets.xcconfig."
+            return
+        }
         referenceError = nil
-        if DrivePickerLauncher.launch(projectID: project.id, supabaseAccessToken: jwt) {
-            awaitingImport = true
-        } else {
-            referenceError = "Couldn't open the Drive picker."
+        Task { @MainActor in
+            do {
+                // The app's own drive.file token (native PKCE flow) — the picker
+                // page runs with it directly; no Google sign-in in the webview.
+                let token = try await googleAuth.validAccessToken()
+                drivePicker = DrivePickerSession(googleAccessToken: token, supabaseJWT: jwt)
+            } catch {
+                referenceError = "Connect Google in Settings → Calendars to import from Drive."
+            }
         }
     }
 

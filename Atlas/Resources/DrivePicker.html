@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Atlas — Import from Drive</title>
+  <script src="https://apis.google.com/js/api.js"></script>
+  <style>
+    body { font-family: -apple-system, system-ui; max-width: 560px; margin: 36px auto; padding: 0 20px; color: #2b2622; background: #f4efe6; }
+    h2 { font-weight: 600; }
+    button { font-size: 15px; padding: 9px 16px; border: 1.5px solid #2b2622; background: transparent; border-radius: 8px; cursor: pointer; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    .muted { color: #6b6258; font-size: 13px; margin: 10px 0; }
+    pre { white-space: pre-wrap; color: #6b6258; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h2>Import from Google Drive</h2>
+  <p class="muted">Pick the Docs and files to import into this Atlas project. Google Docs
+     become editable, re-syncing notes; everything else becomes a view-only reference.</p>
+  <button id="pick" disabled>Choose files…</button>
+  <pre id="out"></pre>
+
+<script>
+// Bundled in-app picker page (Atlas WKWebView sheet — DrivePickerSheet.swift).
+// No GIS: the app already holds a `drive.file` access token from its native PKCE
+// flow and injects it — with the Supabase JWT, projectId, POST URL, and public
+// Picker credentials — as window.ATLAS_CONFIG via a WKUserScript that runs before
+// this script. Picked files POST to the drive-import edge function (its contract
+// is unchanged); done/cancel are reported to Swift via the "atlas" message handler.
+const cfg = window.ATLAS_CONFIG || {};
+
+const out = document.getElementById("out");
+const pickButton = document.getElementById("pick");
+const log = (x) => { out.textContent += x + "\n"; };
+const notify = (msg) => {
+  try { window.webkit.messageHandlers.atlas.postMessage(msg); } catch (_) {}
+};
+let pickerReady = false;
+
+if (!cfg.accessToken || !cfg.supabaseJwt || !cfg.projectId) {
+  log("Missing session — close this window and retry from Atlas.");
+} else {
+  gapi.load("client:picker", async () => {
+    await gapi.client.init({
+      apiKey: cfg.apiKey,
+      discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"],
+    });
+    gapi.client.setToken({ access_token: cfg.accessToken });
+    pickerReady = true;
+    pickButton.disabled = false;
+    openPicker(); // token already in hand — open straight away
+  });
+  // Fallback re-open (e.g. the picker failed to appear or was dismissed oddly).
+  pickButton.onclick = () => {
+    if (!pickerReady) { log("Still loading — try again in a moment."); return; }
+    openPicker();
+  };
+}
+
+function openPicker() {
+  const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+    .setIncludeFolders(true)
+    .setSelectFolderEnabled(false);
+  const picker = new google.picker.PickerBuilder()
+    .setAppId(cfg.appId)
+    .setOAuthToken(cfg.accessToken)
+    .setDeveloperKey(cfg.apiKey)
+    .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+    .addView(view)
+    .setCallback(onPicked)
+    .build();
+  picker.setVisible(true);
+}
+
+async function onPicked(data) {
+  if (data.action === google.picker.Action.CANCEL) { notify({ event: "cancel" }); return; }
+  if (data.action !== google.picker.Action.PICKED) return;
+  log("Importing " + data.docs.length + " file(s)…");
+  // Enrich each pick with authoritative Drive metadata (name, mimeType, modifiedTime).
+  const files = [];
+  for (const d of data.docs) {
+    try {
+      const resp = await gapi.client.drive.files.get({
+        fileId: d.id,
+        fields: "id,name,mimeType,modifiedTime",
+        supportsAllDrives: true,
+      });
+      files.push(resp.result);
+    } catch (e) {
+      // Fall back to the picker's own fields if the metadata read fails.
+      files.push({ id: d.id, name: d.name, mimeType: d.mimeType, modifiedTime: null });
+    }
+  }
+  try {
+    const resp = await fetch(cfg.postUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.supabaseJwt },
+      body: JSON.stringify({ projectId: cfg.projectId, files }),
+    });
+    const body = await resp.json();
+    if (!resp.ok || !body.ok) { log("Import failed: " + (body.error || resp.status)); return; }
+    log("Imported " + body.imported + ", skipped " + body.skipped + " (already in project).");
+    notify({ event: "done", imported: body.imported, skipped: body.skipped });
+  } catch (e) {
+    log("Import request failed: " + e);
+  }
+}
+</script>
+</body>
+</html>
