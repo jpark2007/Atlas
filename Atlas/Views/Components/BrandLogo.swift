@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 /// The Atlas brand mark — the titan shouldering the celestial sphere (the app's
 /// logo, vector-traced into `Assets.xcassets/AtlasMark`, which mirrors the macOS
@@ -12,6 +13,7 @@ struct BrandLogo: View {
         Image("AtlasMark")
             .resizable()
             .scaledToFit()
+            .foregroundStyle(AtlasTheme.Colors.accentText)
             .frame(width: size, height: size)
             .accessibilityLabel("Atlas")
     }

@@ -55,16 +55,15 @@ struct MetricsCompletionDonut: View {
                 .chartLegend(.hidden)
                 .frame(width: size, height: size)
 
-                VStack(spacing: 1) {
-                    Text("\(Int((clamped * 100).rounded()))%")
-                        .font(.system(size: size * 0.24, weight: .semibold, design: .rounded))
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text(label)
-                        .font(AtlasTheme.Font.sectionLabel())
-                        .tracking(1.0)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                }
+                Text("\(Int((clamped * 100).rounded()))%")
+                    .font(.system(size: size * 0.24, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
             }
+
+            Text(label)
+                .font(AtlasTheme.Font.sectionLabel())
+                .tracking(1.0)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
         .frame(maxWidth: .infinity)
     }
