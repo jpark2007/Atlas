@@ -26,11 +26,11 @@ struct NewProjectSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerBar
-            Divider().overlay(AtlasTheme.Colors.border)
+            Divider().overlay(AtlasTheme.Colors.hairline)
             formBody
         }
         .frame(width: 420, alignment: .topLeading)
-        .background(AtlasTheme.Colors.bgCard)
+        .background(AtlasTheme.Colors.bgBase)
     }
 
     // MARK: - Header
@@ -39,28 +39,28 @@ struct NewProjectSheet: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("New Project")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 HStack(spacing: 6) {
                     Circle()
                         .fill(state.calendarSpaceColor(named: spaceName))
                         .frame(width: 7, height: 7)
                     Text(spaceName)
-                        .font(.system(size: 12))
+                        .font(.system(size: 12, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 }
             }
             Spacer()
             Button("Cancel") { dismiss() }
                 .buttonStyle(.plain)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .keyboardShortcut(.cancelAction)
 
             Button("Create") { save() }
                 .buttonStyle(.plain)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(trimmedName.isEmpty ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.accent)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(trimmedName.isEmpty ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.accentText)
                 .disabled(trimmedName.isEmpty)
                 .keyboardShortcut(.return, modifiers: .command)
         }
@@ -79,7 +79,7 @@ struct NewProjectSheet: View {
                     boxedField {
                         TextField("Project or class name", text: $name)
                             .textFieldStyle(.plain)
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(size: 14, weight: .medium, design: .rounded))
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 10)
@@ -90,7 +90,7 @@ struct NewProjectSheet: View {
                     boxedField {
                         TextField("e.g. CS 201", text: $code)
                             .textFieldStyle(.plain)
-                            .font(.system(size: 14))
+                            .font(.system(size: 14, design: .rounded))
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 10)
@@ -100,36 +100,34 @@ struct NewProjectSheet: View {
                 Toggle(isOn: $isClass) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("This is a class")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         Text("Classes show a dotted marker and class badge.")
-                            .font(.system(size: 11))
+                            .font(.system(size: 11, design: .rounded))
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                 }
                 .toggleStyle(.switch)
-                .tint(AtlasTheme.Colors.accent)
+                .tint(AtlasTheme.Colors.textPrimary)
 
                 fieldGroup(label: "OVERVIEW (OPTIONAL)") {
                     ZStack(alignment: .topLeading) {
                         if overview.isEmpty {
                             Text("What is this project about?")
-                                .font(.system(size: 13))
+                                .font(.system(size: 13, design: .rounded))
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 10)
                                 .allowsHitTesting(false)
                         }
                         TextEditor(text: $overview)
-                            .font(.system(size: 13))
+                            .font(.system(size: 13, design: .rounded))
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             .scrollContentBackground(.hidden)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .frame(minHeight: 80)
                     }
-                    .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-                    .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
                             .stroke(AtlasTheme.Colors.border, lineWidth: 1)
@@ -146,9 +144,7 @@ struct NewProjectSheet: View {
     private func fieldGroup<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(label)
-                .font(AtlasTheme.Font.kicker())
-                .tracking(1.2)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                .atlasCapsLabel()
             content()
         }
     }
@@ -156,8 +152,6 @@ struct NewProjectSheet: View {
     @ViewBuilder
     private func boxedField<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
-            .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-            .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
                     .stroke(AtlasTheme.Colors.border, lineWidth: 1)

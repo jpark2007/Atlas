@@ -104,12 +104,12 @@ struct PlaceholderView: View {
         VStack(spacing: 12) {
             Image(systemName: systemImage)
                 .font(.system(size: 36, weight: .light))
-                .foregroundStyle(AtlasTheme.Colors.accent)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
             Text(title)
-                .font(.system(size: 22, weight: .semibold))
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Text("Coming next.")
-                .font(.system(size: 13))
+                .font(.system(size: 13, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

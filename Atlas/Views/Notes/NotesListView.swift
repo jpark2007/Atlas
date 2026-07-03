@@ -11,18 +11,18 @@ struct NotesListView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Notes")
-                        .font(AtlasTheme.Font.greeting())
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text("Notes").atlasScreenTitle()
                     Spacer()
                     Button(action: newNote) {
                         Label("New", systemImage: "plus")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(AtlasTheme.Colors.accent)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(AtlasTheme.Colors.accent.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                                    .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
+                            )
                     }
                     .buttonStyle(.plain)
                 }
@@ -72,7 +72,7 @@ struct NotesListView: View {
                 if note.isExternal {
                     Text("Open ↗")
                         .font(AtlasTheme.Font.small())
-                        .foregroundStyle(AtlasTheme.Colors.accent)
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
             }
         }

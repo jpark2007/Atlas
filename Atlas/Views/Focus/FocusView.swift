@@ -36,9 +36,9 @@ struct FocusView: View {
 
     private var phaseLabel: some View {
         Text("— \(vm.phaseLabel.uppercased()) —")
-            .font(.system(size: 12, weight: .semibold))
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
             .kerning(3)
-            .foregroundStyle(isBreak ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
+            .foregroundStyle(isBreak ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textMuted)
     }
 
     // MARK: - Big time display
@@ -61,7 +61,7 @@ struct FocusView: View {
                 .animation(.linear(duration: 0.3), value: vm.progress)
 
             Text(vm.timeFormatted)
-                .font(.system(size: 96, weight: .ultraLight, design: .serif))
+                .font(.system(size: 96, weight: .ultraLight, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(vm.isRunning
                     ? AtlasTheme.Colors.textPrimary
@@ -75,24 +75,19 @@ struct FocusView: View {
 
     private var controls: some View {
         HStack(spacing: 16) {
-            // PILL — primary start/pause button.
+            // PILL — primary start/pause: transparent with a 1.5 pt ink outline.
             Button(action: vm.toggle) {
                 HStack(spacing: 8) {
                     Image(systemName: vm.primaryButtonIcon)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
                     Text(vm.primaryButtonTitle)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
                 }
-                .foregroundStyle(AtlasTheme.Colors.bgDeep)
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .padding(.horizontal, 32)
                 .padding(.vertical, 12)
-                .background(
-                    LinearGradient(
-                        colors: [AtlasTheme.Colors.accent, AtlasTheme.Colors.accentDeep],
-                        startPoint: .topLeading, endPoint: .bottomTrailing
-                    )
-                )
-                .clipShape(Capsule())
+                .overlay(Capsule().strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule))
+                .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .help(vm.isRunning ? "Pause the timer" : "Start the timer")
@@ -100,12 +95,11 @@ struct FocusView: View {
             // Reset — secondary, outlined circular control.
             Button(action: vm.reset) {
                 Image(systemName: "arrow.counterclockwise")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     .frame(width: 44, height: 44)
-                    .background(AtlasTheme.Colors.bgElevated)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(AtlasTheme.Colors.border, lineWidth: 1))
+                    .overlay(Circle().strokeBorder(AtlasTheme.Colors.borderStrong, lineWidth: AtlasTheme.rule))
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .help("Reset the cycle")
@@ -113,12 +107,11 @@ struct FocusView: View {
             // Skip — advance to the next phase.
             Button(action: vm.skipPhase) {
                 Image(systemName: "forward.end.fill")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     .frame(width: 44, height: 44)
-                    .background(AtlasTheme.Colors.bgElevated)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(AtlasTheme.Colors.border, lineWidth: 1))
+                    .overlay(Circle().strokeBorder(AtlasTheme.Colors.borderStrong, lineWidth: AtlasTheme.rule))
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .help(isBreak ? "Skip to focus" : "Skip to break")
@@ -131,16 +124,15 @@ struct FocusView: View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 11))
-                .foregroundStyle(AtlasTheme.Colors.accent.opacity(0.8))
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
             Text(intervalsText)
-                .font(.system(size: 11))
+                .font(.system(size: 11, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
-        .background(AtlasTheme.Colors.bgCard)
-        .clipShape(Capsule())
-        .overlay(Capsule().stroke(AtlasTheme.Colors.border, lineWidth: 1))
+        .overlay(Capsule().strokeBorder(AtlasTheme.Colors.border, lineWidth: 1))
+        .contentShape(Capsule())
     }
 
     private var intervalsText: String {

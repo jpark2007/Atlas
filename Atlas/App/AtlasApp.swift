@@ -19,11 +19,11 @@ struct AtlasApp: App {
                 .environmentObject(shortcuts)
                 .environmentObject(googleAuth)
                 .frame(minWidth: 960, minHeight: 600)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(.light)
                 .background(GlobalHotkeyInstaller(state: state, auth: auth))
         }
         // .hiddenTitleBar gives the transparent, full-size-content title bar (edge-to-edge
-        // dark content, no gray strip, no title) while KEEPING the standard traffic-light
+        // light content, no gray strip, no title) while KEEPING the standard traffic-light
         // controls — it does not suppress them. The buttons were actually being removed by
         // `.toolbar(.hidden, for: .windowToolbar)` in RootView, which strips the whole
         // window toolbar (controls included); that line has been removed.

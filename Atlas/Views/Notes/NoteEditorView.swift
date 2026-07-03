@@ -30,7 +30,7 @@ struct NoteEditorView: View {
         VStack(alignment: .leading, spacing: 0) {
             TextField("Title", text: $draft.title)
                 .textFieldStyle(.plain)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .padding(.horizontal, 18)
                 .padding(.top, 18)
@@ -91,38 +91,50 @@ struct NoteEditorView: View {
     }
 
     private func levelButton(_ title: String, kind: RichDoc.BlockKind) -> some View {
-        Button { doc.setKind(kind, at: activeIndex) } label: {
+        let active = isActiveKind(kind)
+        return Button { doc.setKind(kind, at: activeIndex) } label: {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(isActiveKind(kind) ? AtlasTheme.Colors.bgDeep : AtlasTheme.Colors.textSecondary)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(active ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(isActiveKind(kind) ? AtlasTheme.Colors.accent : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(active ? AtlasTheme.Colors.textPrimary : Color.clear,
+                                      lineWidth: AtlasTheme.rule)
+                )
         }
         .buttonStyle(.plain)
     }
 
     private func markButton(_ systemImage: String, mark: RichDoc.InlineMarks) -> some View {
-        Button { doc.toggleMark(mark, at: activeIndex) } label: {
+        let active = isActiveMark(mark)
+        return Button { doc.toggleMark(mark, at: activeIndex) } label: {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isActiveMark(mark) ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textSecondary)
+                .foregroundStyle(active ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                 .frame(width: 24, height: 22)
-                .background(isActiveMark(mark) ? AtlasTheme.Colors.accent.opacity(0.14) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(active ? AtlasTheme.Colors.textPrimary : Color.clear,
+                                      lineWidth: AtlasTheme.rule)
+                )
         }
         .buttonStyle(.plain)
     }
 
     private func listButton(_ systemImage: String, kind: RichDoc.BlockKind) -> some View {
-        Button { doc.toggleListKind(kind, at: activeIndex) } label: {
+        let active = isActiveKind(kind)
+        return Button { doc.toggleListKind(kind, at: activeIndex) } label: {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isActiveKind(kind) ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textSecondary)
+                .foregroundStyle(active ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                 .frame(width: 24, height: 22)
-                .background(isActiveKind(kind) ? AtlasTheme.Colors.accent.opacity(0.14) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(active ? AtlasTheme.Colors.textPrimary : Color.clear,
+                                      lineWidth: AtlasTheme.rule)
+                )
         }
         .buttonStyle(.plain)
     }
@@ -177,18 +189,20 @@ struct NoteEditorView: View {
             Spacer()
             Button { addBlockAfter(doc.blocks.count - 1) } label: {
                 Label("Block", systemImage: "plus")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
             }
             .buttonStyle(.plain)
             Button(action: commit) {
                 Text("Done")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AtlasTheme.Colors.bgDeep)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 7)
-                    .background(AtlasTheme.Colors.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                            .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
+                    )
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.return, modifiers: .command)
@@ -231,8 +245,8 @@ struct NoteEditorView: View {
 
     private func font(for kind: RichDoc.BlockKind) -> Font {
         switch kind {
-        case .heading:    return .system(size: 22, weight: .bold)
-        case .subheading: return .system(size: 17, weight: .semibold)
+        case .heading:    return .system(size: 22, weight: .bold, design: .rounded)
+        case .subheading: return .system(size: 17, weight: .semibold, design: .rounded)
         case .normal, .bulleted, .numbered: return AtlasTheme.Font.body()
         }
     }

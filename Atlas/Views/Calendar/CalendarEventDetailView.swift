@@ -62,7 +62,7 @@ struct CalendarEventDetailView: View {
                 Button(action: close) {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
-                        Text("Back").font(.system(size: 12, weight: .medium))
+                        Text("Back").font(.system(size: 12, weight: .medium, design: .rounded))
                     }
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 }
@@ -72,13 +72,16 @@ struct CalendarEventDetailView: View {
             }
             if isReadOnly {
                 Text(title)
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .tracking(-0.4)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
             } else {
                 TextField("Title", text: $title)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .tracking(-0.4)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .tint(AtlasTheme.Colors.accent)
             }
         }
     }
@@ -89,17 +92,16 @@ struct CalendarEventDetailView: View {
         if isReadOnly && item.isRecurring {
             label = "Recurring · \(item.source.displayName)"; color = AtlasTheme.Colors.textMuted
         } else if isWorkBlock {
-            label = "Planned work"; color = AtlasTheme.Colors.accent
+            label = "Planned work"; color = AtlasTheme.Colors.accentText
         } else {
             label = item.source.displayName
-            color = item.source == .atlas ? AtlasTheme.Colors.accent : AtlasTheme.Colors.school
+            color = item.source == .atlas ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.school
         }
         return Text(label)
-            .font(.system(size: 10, weight: .semibold))
+            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .tracking(0.8)
+            .textCase(.uppercase)
             .foregroundStyle(color)
-            .padding(.horizontal, 9).padding(.vertical, 4)
-            .background(Capsule().fill(color.opacity(0.12)))
-            .overlay(Capsule().stroke(color.opacity(0.4), lineWidth: 1))
     }
 
     private var lockBanner: some View {
@@ -108,56 +110,61 @@ struct CalendarEventDetailView: View {
             : "Read-only — from \(item.source.displayName)."
         return HStack(spacing: 8) {
             Image(systemName: "lock.fill").font(.system(size: 11))
-            Text(msg).font(.system(size: 12))
+            Text(msg).font(.system(size: 12, design: .rounded))
         }
         .foregroundStyle(AtlasTheme.Colors.textMuted)
-        .padding(.horizontal, 12).padding(.vertical, 8)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(AtlasTheme.Colors.bgElevated.opacity(0.6)))
+        .atlasHairlineBelow()
     }
 
     // MARK: - Fields
 
     private var fields: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 0) {
             fieldGroup("STARTS") {
                 DatePicker("", selection: $start,
                            displayedComponents: item.isAllDay ? [.date] : [.date, .hourAndMinute])
                     .labelsHidden().datePickerStyle(.field).disabled(isReadOnly)
+                    .tint(AtlasTheme.Colors.accentText)
             }
             if !item.isAllDay {
                 fieldGroup("ENDS") {
                     DatePicker("", selection: $end, displayedComponents: [.date, .hourAndMinute])
                         .labelsHidden().datePickerStyle(.field).disabled(isReadOnly)
+                        .tint(AtlasTheme.Colors.accentText)
                 }
             }
             fieldGroup("DESCRIPTION") {
                 if isReadOnly {
                     Text(descriptionText.isEmpty ? "—" : descriptionText)
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     TextEditor(text: $descriptionText)
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, design: .rounded))
                         .scrollContentBackground(.hidden)
                         .frame(minHeight: 90)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .tint(AtlasTheme.Colors.accent)
                 }
             }
             if !isReadOnly {
                 Button(action: save) {
                     Text("Save")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(AtlasTheme.Colors.bgDeep)
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(AtlasTheme.Colors.accent))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .padding(.horizontal, 22).padding(.vertical, 10)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                                .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
+                        )
                 }
                 .buttonStyle(.plain)
                 .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
                 .keyboardShortcut(.defaultAction)
+                .padding(.top, 16)
             }
         }
     }
@@ -182,7 +189,7 @@ struct CalendarEventDetailView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "doc.text").font(.system(size: 11))
-                        Text(linkedNoteTitle).font(.system(size: 12, weight: .medium))
+                        Text(linkedNoteTitle).font(.system(size: 12, weight: .medium, design: .rounded))
                         Image(systemName: "chevron.down").font(.system(size: 9))
                     }
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
@@ -213,24 +220,24 @@ struct CalendarEventDetailView: View {
                 Button(action: deleteOrUnschedule) {
                     Label(isWorkBlock ? "Unschedule" : "Delete",
                           systemImage: isWorkBlock ? "tray.and.arrow.down" : "trash")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(AtlasTheme.Colors.danger)
             }
             if let pid = item.projectID, state.project(pid) != nil {
                 Button { state.calendarDetailItem = nil; state.route = .project(pid) } label: {
-                    Label("Open Project", systemImage: "folder").font(.system(size: 12, weight: .medium))
+                    Label("Open Project", systemImage: "folder").font(.system(size: 12, weight: .medium, design: .rounded))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(AtlasTheme.Colors.accent)
+                .foregroundStyle(AtlasTheme.Colors.accentText)
             }
             if let nid = noteID, let n = state.notes.first(where: { $0.id == nid }) {
                 Button { openNote(n) } label: {
-                    Label("Open Note", systemImage: "arrow.up.right.square").font(.system(size: 12, weight: .medium))
+                    Label("Open Note", systemImage: "arrow.up.right.square").font(.system(size: 12, weight: .medium, design: .rounded))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(AtlasTheme.Colors.accent)
+                .foregroundStyle(AtlasTheme.Colors.accentText)
             }
             Spacer()
         }
@@ -242,18 +249,14 @@ struct CalendarEventDetailView: View {
     @ViewBuilder
     private func fieldGroup<Content: View>(_ label: String,
                                            @ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label).atlasCapsLabel()
             content()
-                .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.7)))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(AtlasTheme.Colors.border, lineWidth: 1))
         }
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .atlasHairlineBelow()
     }
 
     private func close() {

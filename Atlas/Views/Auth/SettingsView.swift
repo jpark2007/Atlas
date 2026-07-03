@@ -42,7 +42,7 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Settings").font(.system(size: 24, weight: .semibold))
+                Text("Settings").font(.system(size: 24, weight: .semibold, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Spacer()
                 Button { state.presentGraph = true } label: {
@@ -118,15 +118,15 @@ struct SettingsView: View {
                     .frame(width: 40, height: 40)
                     .overlay(Image(systemName: "person.fill").foregroundStyle(AtlasTheme.Colors.accent))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(identityTitle).font(.system(size: 14, weight: .semibold))
+                    Text(identityTitle).font(.system(size: 14, weight: .semibold, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text(identitySubtitle).font(.system(size: 12))
+                    Text(identitySubtitle).font(.system(size: 12, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer()
                 if case .offline = auth.state {
                     Button("Sign in") { auth.signOut() } // returns to gate
-                        .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.accent)
+                        .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.accentText)
                 } else {
                     Button("Sign out") { auth.signOut() }
                         .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.danger)
@@ -145,7 +145,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             label("CANVAS")
             Text("Import Canvas assignments and events on a server schedule — no need to keep Atlas open.")
-                .font(.system(size: 10))
+                .font(.system(size: 10, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
 
             if let conn = state.canvasConnection, conn.isServerOwned {
@@ -165,10 +165,10 @@ struct SettingsView: View {
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Canvas feed connected")
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text(canvasStatusSubtitle(conn))
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(canvasStatusColor(conn))
                 }
                 Spacer()
@@ -177,12 +177,12 @@ struct SettingsView: View {
                 } else {
                     Button("Disconnect") { disconnectCanvas() }
                         .buttonStyle(.plain)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.danger)
                 }
             }
             if let err = canvasError {
-                Text(err).font(.system(size: 11)).foregroundStyle(AtlasTheme.Colors.danger)
+                Text(err).font(.system(size: 11, design: .rounded)).foregroundStyle(AtlasTheme.Colors.danger)
             }
         }
         .padding(.horizontal, 12)
@@ -198,7 +198,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             if repaste {
                 Text("Your Canvas feed link expired — paste a fresh one to resume.")
-                    .font(.system(size: 11))
+                    .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.warning)
             }
 
@@ -207,7 +207,7 @@ struct SettingsView: View {
             if !state.spaces.isEmpty {
                 HStack {
                     Text("Items land in")
-                        .font(.system(size: 12))
+                        .font(.system(size: 12, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     Spacer()
                     Picker("Canvas space", selection: $canvasSpaceName) {
@@ -231,23 +231,25 @@ struct SettingsView: View {
             }
 
             if let err = canvasError {
-                Text(err).font(.system(size: 11)).foregroundStyle(AtlasTheme.Colors.danger)
+                Text(err).font(.system(size: 11, design: .rounded)).foregroundStyle(AtlasTheme.Colors.danger)
             }
 
             Button { connectCanvas() } label: {
                 Text(canvasWorking ? "Connecting…" : "Connect Canvas")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(AtlasTheme.Colors.bgDeep)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 9)
-                    .background(AtlasTheme.Colors.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .padding(.vertical, 10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                            .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
+                    )
             }
             .buttonStyle(.plain)
             .disabled(canvasWorking)
 
             Text("Canvas → Calendar → Calendar Feed (copy the .ics link)")
-                .font(.system(size: 10))
+                .font(.system(size: 10, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
@@ -335,7 +337,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             label("CALENDARS")
             Text("Aggregate read-only. Pick one source to write new events.")
-                .font(.system(size: 10))
+                .font(.system(size: 10, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
 
             // ── Apple Calendar ───────────────────────────────────────────
@@ -345,10 +347,10 @@ struct SettingsView: View {
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Apple Calendar")
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text(appleCalendarSubtitle)
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(appleCalendarSubtitleColor)
                 }
                 Spacer()
@@ -384,7 +386,7 @@ struct SettingsView: View {
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Canvas LMS")
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Group {
                         if let conn = state.canvasConnection, conn.isServerOwned {
@@ -399,11 +401,11 @@ struct SettingsView: View {
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                         }
                     }
-                    .font(.system(size: 11))
+                    .font(.system(size: 11, design: .rounded))
                 }
                 Spacer()
                 Image(systemName: "eye.fill")
-                    .font(.system(size: 11))
+                    .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .help("Read-only import")
             }
@@ -421,16 +423,16 @@ struct SettingsView: View {
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Atlas (native)")
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text("Always on")
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer()
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(AtlasTheme.Colors.green)
-                    .font(.system(size: 14))
+                    .font(.system(size: 14, design: .rounded))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -443,17 +445,17 @@ struct SettingsView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Sync calendar with Google")
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text(syncSubtitle)
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer()
                 Toggle("", isOn: $googleCalendarEnabled)
                     .labelsHidden()
                     .toggleStyle(.switch)
-                    .tint(AtlasTheme.Colors.accent)
+                    .tint(AtlasTheme.Colors.textPrimary)
                     .disabled(!googleAuth.isConnected)
                     .onChange(of: googleCalendarEnabled) { _, on in
                         if on { state.backfillEventsToGoogle() }
@@ -478,10 +480,10 @@ struct SettingsView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Default space for Apple events")
-                            .font(.system(size: 13))
+                            .font(.system(size: 13, design: .rounded))
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         Text("Imported events land in this space")
-                            .font(.system(size: 11))
+                            .font(.system(size: 11, design: .rounded))
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     Spacer()
@@ -520,10 +522,10 @@ struct SettingsView: View {
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Google Calendar")
-                    .font(.system(size: 13))
+                    .font(.system(size: 13, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Text(googleSubtitle)
-                    .font(.system(size: 11))
+                    .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(googleSubtitleColor)
             }
             Spacer()
@@ -533,7 +535,7 @@ struct SettingsView: View {
                     googleCalendarEnabled = false
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.danger)
             } else {
                 Button {
@@ -543,13 +545,13 @@ struct SettingsView: View {
                     }
                 } label: {
                     Text(googleAuth.isWorking ? "Connecting…" : "Connect")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(AtlasTheme.Colors.bgDeep)
-                        .padding(.horizontal, 10)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .padding(.horizontal, 12)
                         .padding(.vertical, 5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(AtlasTheme.Colors.accent)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous)
+                                .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
                         )
                 }
                 .buttonStyle(.plain)
@@ -599,10 +601,10 @@ struct SettingsView: View {
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Sync in the cloud")
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text(cloudSyncSubtitle)
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(cloudSyncSubtitleColor)
                 }
                 Spacer()
@@ -612,7 +614,7 @@ struct SettingsView: View {
                     Toggle("", isOn: cloudSyncBinding)
                         .labelsHidden()
                         .toggleStyle(.switch)
-                        .tint(AtlasTheme.Colors.accent)
+                        .tint(AtlasTheme.Colors.textPrimary)
                 }
             }
             // A degraded server connection (error/revoked) keeps the row so the user
@@ -620,8 +622,8 @@ struct SettingsView: View {
             if let conn = state.googleConnection, conn.status != "active" {
                 Button(cloudSyncWorking ? "Reconnecting…" : "Reconnect") { reconnectCloudSync() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(AtlasTheme.Colors.accent)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
                     .disabled(cloudSyncWorking)
             }
         }
@@ -766,16 +768,16 @@ struct SettingsView: View {
             label("TASKS")
             if state.spaces.isEmpty {
                 Text("Create a space first to set a default.")
-                    .font(.system(size: 11))
+                    .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             } else {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Default space for new tasks")
-                            .font(.system(size: 13))
+                            .font(.system(size: 13, design: .rounded))
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         Text("Quick-captured tasks without an inferred space land here")
-                            .font(.system(size: 11))
+                            .font(.system(size: 11, design: .rounded))
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     Spacer()
@@ -813,7 +815,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             label("SHORTCUTS")
             Text("In-app only. Global system-wide hotkey is deferred (v2).")
-                .font(.system(size: 10))
+                .font(.system(size: 10, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
 
             ForEach(ShortcutAction.allCases) { action in
@@ -823,10 +825,10 @@ struct SettingsView: View {
             if let warning = conflictWarning {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.warning)
                     Text(warning)
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.warning)
                 }
                 .transition(.opacity)
@@ -844,12 +846,12 @@ struct SettingsView: View {
             // Action title
             VStack(alignment: .leading, spacing: 2) {
                 Text(action.title)
-                    .font(.system(size: 13))
+                    .font(.system(size: 13, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 if isRecording {
                     Text("Press a key combo…")
-                        .font(.system(size: 11))
-                        .foregroundStyle(AtlasTheme.Colors.accent)
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
             }
 
@@ -858,7 +860,7 @@ struct SettingsView: View {
             // Current combo badge
             Text(isRecording ? "…" : binding.displayString)
                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(isRecording ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textSecondary)
+                .foregroundStyle(isRecording ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textSecondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
@@ -882,8 +884,8 @@ struct SettingsView: View {
                 }
             }
             .buttonStyle(.plain)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(isRecording ? AtlasTheme.Colors.danger : AtlasTheme.Colors.accent)
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .foregroundStyle(isRecording ? AtlasTheme.Colors.danger : AtlasTheme.Colors.accentText)
 
             // Reset button
             Button {
@@ -891,7 +893,7 @@ struct SettingsView: View {
                 if recordingAction == action { stopRecording() }
             } label: {
                 Image(systemName: "arrow.counterclockwise")
-                    .font(.system(size: 11))
+                    .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             .buttonStyle(.plain)
@@ -1001,8 +1003,8 @@ struct SettingsView: View {
         HStack(spacing: 12) {
             Image(systemName: icon).foregroundStyle(tint).frame(width: 22)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13)).foregroundStyle(AtlasTheme.Colors.textPrimary)
-                Text(subtitle).font(.system(size: 11)).foregroundStyle(AtlasTheme.Colors.textMuted)
+                Text(title).font(.system(size: 13, design: .rounded)).foregroundStyle(AtlasTheme.Colors.textPrimary)
+                Text(subtitle).font(.system(size: 11, design: .rounded)).foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             Spacer()
         }
@@ -1013,7 +1015,7 @@ struct SettingsView: View {
             if secure { SecureField(placeholder, text: text) }
             else { TextField(placeholder, text: text) }
         }
-        .textFieldStyle(.plain).font(.system(size: 13))
+        .textFieldStyle(.plain).font(.system(size: 13, design: .rounded))
         .foregroundStyle(AtlasTheme.Colors.textPrimary).tint(AtlasTheme.Colors.accent)
         .padding(.horizontal, 12).padding(.vertical, 9)
         .background(AtlasTheme.Colors.bgElevated.opacity(0.7))

@@ -90,9 +90,9 @@ struct ProjectDetailView: View {
                 Button(action: newNote) {
                     HStack(spacing: 4) {
                         Image(systemName: "plus").font(.system(size: 10, weight: .semibold))
-                        Text("New").font(.system(size: 11, weight: .semibold))
+                        Text("New").font(.system(size: 11, weight: .semibold, design: .rounded))
                     }
-                    .foregroundStyle(AtlasTheme.Colors.accent)
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
                 .buttonStyle(.plain)
                 .help("New note in this project")
@@ -100,7 +100,7 @@ struct ProjectDetailView: View {
 
             if projectNotes.isEmpty {
                 Text("No notes yet. Notes you add here live in this project — and, once Google is connected, sync to a Drive folder for \(project.name) as Google Docs.")
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -109,7 +109,7 @@ struct ProjectDetailView: View {
                         Button { editingNote = note } label: { noteRow(note) }
                             .buttonStyle(.plain)
                         if i < projectNotes.count - 1 {
-                            Divider().overlay(AtlasTheme.Colors.border)
+                            Divider().overlay(AtlasTheme.Colors.hairline)
                         }
                     }
                 }
@@ -122,22 +122,22 @@ struct ProjectDetailView: View {
         return HStack(spacing: 12) {
             Image(systemName: linked ? "doc.text.fill" : "note.text")
                 .font(.system(size: 14))
-                .foregroundStyle(linked ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
+                .foregroundStyle(linked ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textMuted)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
                 Text(note.title.isEmpty ? "Untitled note" : note.title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 if !note.body.isEmpty {
                     Text(note.body)
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .lineLimit(1)
                 }
             }
             Spacer()
             if linked {
-                Text("Doc ↗").font(.system(size: 10)).foregroundStyle(AtlasTheme.Colors.accent)
+                Text("Doc ↗").font(.system(size: 10, design: .rounded)).foregroundStyle(AtlasTheme.Colors.accentText)
             }
             Image(systemName: "chevron.right")
                 .font(.system(size: 9))
@@ -171,14 +171,14 @@ struct ProjectDetailView: View {
             HStack(spacing: 8) {
                 sectionLabel("STARTER TASKS")
                 Text("editable suggestions — rewrite or remove")
-                    .font(.system(size: 10))
+                    .font(.system(size: 10, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()
             }
 
             if starterTasks.isEmpty {
                 Text("Cleared. Add an overview above to describe this project.")
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             } else {
                 VStack(spacing: 0) {
@@ -189,7 +189,7 @@ struct ProjectDetailView: View {
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                             TextField("Task", text: $starterTasks[i])
                                 .textFieldStyle(.plain)
-                                .font(.system(size: 13))
+                                .font(.system(size: 13, design: .rounded))
                                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             Spacer()
                             Button {
@@ -204,7 +204,7 @@ struct ProjectDetailView: View {
                         }
                         .padding(.vertical, 9)
                         if i < starterTasks.count - 1 {
-                            Divider().overlay(AtlasTheme.Colors.border)
+                            Divider().overlay(AtlasTheme.Colors.hairline)
                         }
                     }
                 }
@@ -217,7 +217,7 @@ struct ProjectDetailView: View {
             tag(text: project.spaceName, color: project.spaceColor, filled: true)
             if project.isClass { tag(text: "Class", color: AtlasTheme.Colors.textSecondary, filled: false) }
             if project.canvasSynced {
-                tag(text: "CANVAS SYNCED", color: AtlasTheme.Colors.accent, filled: false)
+                tag(text: "CANVAS SYNCED", color: AtlasTheme.Colors.accentText, filled: false)
             }
         }
     }
@@ -226,13 +226,12 @@ struct ProjectDetailView: View {
         HStack(spacing: 5) {
             if filled { Circle().fill(color).frame(width: 6, height: 6) }
             Text(text)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .tracking(text == text.uppercased() ? 0.8 : 0)
         }
-        .foregroundStyle(filled ? color : color.opacity(0.9))
+        .foregroundStyle(color)
         .padding(.horizontal, 9).padding(.vertical, 4)
-        .background((filled ? color : color).opacity(0.12))
-        .clipShape(Capsule())
+        .overlay(Capsule().strokeBorder(color.opacity(0.35), lineWidth: 1))
     }
 
     private var titleBlock: some View {
@@ -240,11 +239,12 @@ struct ProjectDetailView: View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 if let code = project.code {
                     Text(code)
-                        .font(.system(size: 26, weight: .regular))
-                        .foregroundStyle(AtlasTheme.Colors.accent)
+                        .font(.system(size: 26, weight: .regular, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
                 Text(project.name)
-                    .font(.system(size: 26, weight: .bold))
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .tracking(-0.4)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
             }
             HStack(spacing: 16) {
@@ -258,9 +258,9 @@ struct ProjectDetailView: View {
     private func metaItem(_ icon: String, _ text: String, accent: Bool = false) -> some View {
         HStack(spacing: 5) {
             Image(systemName: icon).font(.system(size: 10))
-            Text(text).font(.system(size: 12))
+            Text(text).font(.system(size: 12, design: .rounded))
         }
-        .foregroundStyle(accent ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textSecondary)
+        .foregroundStyle(accent ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textSecondary)
     }
 
     private var overview: some View {
@@ -295,14 +295,14 @@ struct ProjectDetailView: View {
                         Image(systemName: "plus")
                             .font(.system(size: 11))
                         Text("Add an overview…")
-                            .font(.system(size: 13))
+                            .font(.system(size: 13, design: .rounded))
                     }
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
             } else {
                 Text(project.overview)
-                    .font(.system(size: 13))
+                    .font(.system(size: 13, design: .rounded))
                     .lineSpacing(4)
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
             }
@@ -314,32 +314,26 @@ struct ProjectDetailView: View {
             ZStack(alignment: .topLeading) {
                 if draftOverview.isEmpty {
                     Text("What is this project about?")
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                        .padding(.leading, 5).padding(.top, 1)
                         .allowsHitTesting(false)
                 }
                 TextEditor(text: $draftOverview)
-                    .font(.system(size: 13))
+                    .font(.system(size: 13, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+                    .tint(AtlasTheme.Colors.accent)
                     .frame(minHeight: 90)
             }
-            .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-            .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
-                    .stroke(AtlasTheme.Colors.border, lineWidth: 1)
-            )
+            .padding(.vertical, 4)
+            .atlasHairlineBelow()
 
             HStack(spacing: 12) {
                 Spacer()
                 Button("Cancel") { isEditingOverview = false }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     .keyboardShortcut(.cancelAction)
                 Button("Save") {
@@ -349,8 +343,8 @@ struct ProjectDetailView: View {
                     isEditingOverview = false
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(AtlasTheme.Colors.accent)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .keyboardShortcut(.return, modifiers: .command)
             }
         }
@@ -363,7 +357,7 @@ struct ProjectDetailView: View {
             HStack {
                 sectionLabel("TASKS")
                 Text("\(liveTasks.count)")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()
             }
@@ -371,7 +365,7 @@ struct ProjectDetailView: View {
                 ForEach(Array(liveTasks.enumerated()), id: \.element.id) { i, task in
                     liveTaskRow(task)
                     if i < liveTasks.count - 1 {
-                        Divider().overlay(AtlasTheme.Colors.border)
+                        Divider().overlay(AtlasTheme.Colors.hairline)
                     }
                 }
             }
@@ -391,13 +385,13 @@ struct ProjectDetailView: View {
                 .buttonStyle(.plain)
 
                 Text(task.title)
-                    .font(.system(size: 13))
+                    .font(.system(size: 13, design: .rounded))
                     .strikethrough(task.done)
                     .foregroundStyle(task.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                 Spacer()
                 if !task.dueLabel.isEmpty {
                     Text(task.dueLabel)
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Image(systemName: "chevron.right")
@@ -417,7 +411,7 @@ struct ProjectDetailView: View {
             HStack {
                 sectionLabel("EVENTS")
                 Text("\(liveEvents.count)")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()
             }
@@ -429,17 +423,17 @@ struct ProjectDetailView: View {
                             .frame(width: 3, height: 30)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(event.title)
-                                .font(.system(size: 13, weight: .medium))
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
                                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             Text("\(event.timeLabel) · \(event.durationLabel)")
-                                .font(.system(size: 11))
+                                .font(.system(size: 11, design: .rounded))
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                         }
                         Spacer()
                     }
                     .padding(.vertical, 9)
                     if i < liveEvents.count - 1 {
-                        Divider().overlay(AtlasTheme.Colors.border)
+                        Divider().overlay(AtlasTheme.Colors.hairline)
                     }
                 }
             }
@@ -457,17 +451,18 @@ struct ProjectDetailView: View {
                             .foregroundStyle(AtlasTheme.Colors.textSecondary)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(res.title)
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
                                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             Text(res.source)
-                                .font(.system(size: 10))
+                                .font(.system(size: 10, design: .rounded))
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                         }
                     }
                     .padding(.horizontal, 12).padding(.vertical, 9)
-                    .background(AtlasTheme.Colors.bgCard)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(AtlasTheme.Colors.border, lineWidth: 1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AtlasTheme.Radius.md, style: .continuous)
+                            .strokeBorder(AtlasTheme.Colors.borderStrong, lineWidth: 1)
+                    )
                 }
             }
         }
@@ -477,45 +472,45 @@ struct ProjectDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: "link").font(.system(size: 11))
-                Text("LINKED REFERENCES").font(AtlasTheme.Font.sectionLabel()).tracking(0.8)
+                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                Text("LINKED REFERENCES").atlasCapsLabel()
                 Text("\(project.backlinks.count)")
-                    .font(.system(size: 11)).foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
-            .foregroundStyle(AtlasTheme.Colors.textSecondary)
 
-            ForEach(project.backlinks) { link in
-                HStack(spacing: 10) {
-                    Circle().fill(link.color).frame(width: 7, height: 7)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(link.title)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                        Text(link.meta)
-                            .font(.system(size: 10))
+            VStack(spacing: 0) {
+                ForEach(Array(project.backlinks.enumerated()), id: \.element.id) { i, link in
+                    HStack(spacing: 10) {
+                        Circle().fill(link.color).frame(width: 7, height: 7)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(link.title)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                            Text(link.meta)
+                                .font(.system(size: 10, design: .rounded))
+                                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9))
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9))
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .padding(.vertical, 10)
+                    if i < project.backlinks.count - 1 {
+                        Divider().overlay(AtlasTheme.Colors.hairline)
+                    }
                 }
-                .padding(.horizontal, 12).padding(.vertical, 10)
-                .background(AtlasTheme.Colors.bgCard)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(AtlasTheme.Colors.border, lineWidth: 1))
             }
 
             Text("Every task, event, and note that mentions this Class appears here automatically.")
-                .font(.system(size: 10))
+                .font(.system(size: 10, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                 .padding(.top, 4)
         }
     }
 
     private func sectionLabel(_ text: String) -> some View {
-        Text(text)
-            .font(AtlasTheme.Font.sectionLabel())
-            .tracking(0.8)
-            .foregroundStyle(AtlasTheme.Colors.textMuted)
+        Text(text).atlasCapsLabel()
     }
 }

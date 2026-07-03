@@ -132,11 +132,13 @@ struct CalendarView: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("CALENDAR")
-                        .font(AtlasTheme.Font.kicker())
-                        .tracking(1.4)
-                        .foregroundStyle(AtlasTheme.Colors.accent)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .tracking(0.88)
+                        .textCase(.uppercase)
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
                     Text(titleLabel)
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .tracking(-0.4)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 }
                 Spacer()
@@ -145,14 +147,7 @@ struct CalendarView: View {
             }
 
             HStack(spacing: 12) {
-                Picker("", selection: $mode) {
-                    ForEach(CalendarMode.allCases) { m in
-                        Text(m.rawValue).tag(m)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 280)
-                .labelsHidden()
+                modeSwitcher
 
                 Spacer()
                 searchField
@@ -160,6 +155,36 @@ struct CalendarView: View {
 
             categoryFilterRow
         }
+    }
+
+    /// Day / Week / Month / List switcher — editorial outlined segments (no filled
+    /// selection): an ink-hairline container, the active segment carries a faint ink
+    /// tint + semibold ink text. Same `mode` binding as before; appearance only.
+    private var modeSwitcher: some View {
+        HStack(spacing: 0) {
+            ForEach(CalendarMode.allCases) { m in
+                let selected = mode == m
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { mode = m }
+                } label: {
+                    Text(m.rawValue)
+                        .font(.system(size: 12, weight: selected ? .semibold : .medium, design: .rounded))
+                        .foregroundStyle(selected ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .background(selected ? AtlasTheme.Colors.textPrimary.opacity(0.07) : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .frame(width: 280)
+        .overlay(
+            RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1)
+        )
     }
 
     /// In-calendar title search. Filters events/tasks across every view.
@@ -170,7 +195,7 @@ struct CalendarView: View {
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             TextField("Search", text: $searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(.system(size: 12, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .frame(width: 150)
             if !searchText.isEmpty {
@@ -184,11 +209,9 @@ struct CalendarView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(AtlasTheme.Colors.border, lineWidth: 1)
+            RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                .strokeBorder(AtlasTheme.Colors.borderStrong, lineWidth: 1)
         )
         .fixedSize()
     }
@@ -220,18 +243,18 @@ struct CalendarView: View {
                     .fill(isHidden ? AtlasTheme.Colors.textMuted.opacity(0.4) : space.color)
                     .frame(width: 8, height: 8)
                 Text(space.name)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundStyle(isHidden ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                     .strikethrough(isHidden, color: AtlasTheme.Colors.textMuted)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(
-                (isHidden ? Color.clear : space.color.opacity(0.12))
+                (isHidden ? Color.clear : space.color.opacity(0.14))
             )
             .clipShape(Capsule())
             .overlay(
-                Capsule().stroke(
+                Capsule().strokeBorder(
                     isHidden ? AtlasTheme.Colors.border : space.color.opacity(0.4),
                     lineWidth: 1
                 )
@@ -249,13 +272,15 @@ struct CalendarView: View {
                 Image(systemName: "plus")
                     .font(.system(size: 11, weight: .bold))
                 Text("Add event")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
             }
+            .foregroundStyle(AtlasTheme.Colors.textPrimary)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(AtlasTheme.Colors.accent)
-            .foregroundStyle(AtlasTheme.Colors.bgDeep)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                    .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
+            )
         }
         .buttonStyle(.plain)
     }
@@ -270,12 +295,15 @@ struct CalendarView: View {
 
             Button { selectedDate = Calendar.current.startOfDay(for: Date()) } label: {
                 Text("Today")
-                    .font(.system(size: 12, weight: .semibold))
-                    .padding(.horizontal, 12)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .tracking(0.88)
+                    .textCase(.uppercase)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .padding(.horizontal, 14)
                     .padding(.vertical, 6)
-                    .background(AtlasTheme.Colors.accent.opacity(0.14))
-                    .foregroundStyle(AtlasTheme.Colors.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        Capsule().strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
+                    )
             }
             .buttonStyle(.plain)
 
@@ -285,7 +313,7 @@ struct CalendarView: View {
             .buttonStyle(.plain)
             .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
-        .font(.system(size: 13, weight: .semibold))
+        .font(.system(size: 13, weight: .semibold, design: .rounded))
     }
 
     // MARK: - Grid

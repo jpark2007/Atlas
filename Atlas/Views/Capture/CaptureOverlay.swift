@@ -94,7 +94,7 @@ struct CaptureCommandBar: View {
             } else {
                 ZStack(alignment: .top) {
                     // Click-outside catcher + subtle scrim for focus.
-                    Color.black.opacity(0.16)
+                    Color.black.opacity(0.12)
                         .ignoresSafeArea()
                         .contentShape(Rectangle())
                         .onTapGesture { dismiss() }
@@ -143,7 +143,7 @@ struct CaptureCommandBar: View {
 
             TextField("Capture anything — a task, a thought…", text: $text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 17, weight: .regular))
+                .font(.system(size: 17, weight: .regular, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .tint(AtlasTheme.Colors.accent)
                 .focused($fieldFocused)
@@ -161,21 +161,17 @@ struct CaptureCommandBar: View {
         .background(glassBackground)
         .overlay(
             RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-        .shadow(color: .black.opacity(0.4), radius: 14, x: 0, y: 6)
-        .shadow(color: .black.opacity(0.22), radius: 6, x: 0, y: 2)
+        .shadow(color: .black.opacity(0.12), radius: 22, x: 0, y: 10)
+        .shadow(color: .black.opacity(0.06), radius: 6, x: 0, y: 2)
         .animation(.easeInOut(duration: 0.2), value: confirmation)
     }
 
     private var glassBackground: some View {
         RoundedRectangle(cornerRadius: corner, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .overlay(
-                RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.45))
-            )
+            .fill(AtlasTheme.Colors.bgBase)
     }
 
     // MARK: - Trailing status + mic
@@ -184,8 +180,8 @@ struct CaptureCommandBar: View {
     private var trailingStatus: some View {
         if let msg = confirmation {
             Text(msg)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(AtlasTheme.Colors.accent)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.accentText)
                 .fixedSize()
                 .transition(.opacity)
         } else if speech.isListening {
@@ -202,13 +198,13 @@ struct CaptureCommandBar: View {
     private var listeningLabel: some View {
         HStack(spacing: 7) {
             Circle()
-                .fill(AtlasTheme.Colors.danger)
+                .fill(AtlasTheme.Colors.accent)          // live dot = brand accent (graphics)
                 .frame(width: 8, height: 8)
                 .opacity(dotPulse ? 1 : 0.3)
                 .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: dotPulse)
             Text("Listening…")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(AtlasTheme.Colors.danger)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.accentText)
         }
         .fixedSize()
         .onAppear { dotPulse = true }
@@ -217,7 +213,7 @@ struct CaptureCommandBar: View {
 
     private func statusLabel(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .medium))
+            .font(.system(size: 11, weight: .medium, design: .rounded))
             .foregroundStyle(color)
             .fixedSize()
             .transition(.opacity)
@@ -226,23 +222,19 @@ struct CaptureCommandBar: View {
     private var micButton: some View {
         Button(action: toggleVoice) {
             ZStack {
-                Circle()
-                    .fill(speech.isListening
-                          ? AtlasTheme.Colors.danger.opacity(0.18)
-                          : Color.white.opacity(0.10))
                 Image(systemName: speech.isListening ? "stop.fill" : "mic.fill")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(speech.isListening
-                                     ? AtlasTheme.Colors.danger
+                                     ? AtlasTheme.Colors.accent
                                      : AtlasTheme.Colors.textPrimary)
             }
             .frame(width: 32, height: 32)
             .overlay(
                 Circle().strokeBorder(
                     speech.isListening
-                        ? AtlasTheme.Colors.danger.opacity(0.5)
-                        : Color.white.opacity(0.08),
-                    lineWidth: 1)
+                        ? AtlasTheme.Colors.accent
+                        : AtlasTheme.Colors.textPrimary,
+                    lineWidth: AtlasTheme.rule)
             )
         }
         .buttonStyle(.plain)
@@ -259,20 +251,20 @@ struct CaptureCommandBar: View {
     private var hint: some View {
         HStack(spacing: 8) {
             Text("Atlas files it for you")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
 
             Text("\u{21A9}") // ↩ return glyph
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .frame(width: 22, height: 22)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.white.opacity(0.10))
+                        .fill(AtlasTheme.Colors.bgDeep)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                        .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1)
                 )
         }
         .fixedSize()

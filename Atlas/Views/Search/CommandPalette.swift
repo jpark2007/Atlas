@@ -85,8 +85,8 @@ struct CommandPaletteOverlay: View {
     var body: some View {
         ZStack {
             if state.presentSearch {
-                // Dimmed click-outside scrim.
-                Color.black.opacity(0.35)
+                // Soft click-outside scrim (light editorial — a whisper, not a blackout).
+                Color.black.opacity(0.14)
                     .ignoresSafeArea()
                     .onTapGesture { dismiss() }
                     .transition(.opacity)
@@ -122,14 +122,13 @@ struct CommandPaletteOverlay: View {
         }
         .frame(width: 560)
         .frame(maxHeight: 460)
-        .background(.ultraThinMaterial)
-        .background(AtlasTheme.Colors.bgCard.opacity(0.6))
+        .background(AtlasTheme.Colors.bgBase)
         .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.lg, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: AtlasTheme.Radius.lg, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.5), radius: 40, y: 20)
+        .shadow(color: .black.opacity(0.10), radius: 30, y: 12)
         .padding(.bottom, 120)
         // Keyboard navigation.
         .onKeyPress(.upArrow) { move(-1); return .handled }
@@ -144,8 +143,9 @@ struct CommandPaletteOverlay: View {
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             TextField("Find anything, or create a task…", text: $query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 15))
+                .font(.system(size: 15, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                .tint(AtlasTheme.Colors.accent)
                 .focused($fieldFocused)
                 .onSubmit { activate() }
                 .onChange(of: query) { selection = 0 }
@@ -154,10 +154,10 @@ struct CommandPaletteOverlay: View {
                 // the field animates in often fails to land, so typing did nothing.
                 .onAppear { DispatchQueue.main.async { fieldFocused = true } }
             Text("esc")
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                 .padding(.horizontal, 6).padding(.vertical, 3)
-                .background(AtlasTheme.Colors.bgElevated)
+                .background(AtlasTheme.Colors.bgDeep)
                 .clipShape(RoundedRectangle(cornerRadius: 5))
         }
         .padding(.horizontal, 18)
@@ -201,13 +201,13 @@ struct CommandPaletteOverlay: View {
     private func shortcutHint(_ glyph: String, _ label: String) -> some View {
         HStack(spacing: 5) {
             Text(glyph)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(AtlasTheme.Colors.bgElevated)
+                .background(AtlasTheme.Colors.bgDeep)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
             Text(label)
-                .font(.system(size: 11))
+                .font(.system(size: 11, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
@@ -247,7 +247,7 @@ struct CommandPaletteOverlay: View {
             Image(systemName: icon(result))
                 .font(.system(size: 13))
                 .frame(width: 18)
-                .foregroundStyle(selected ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
+                .foregroundStyle(selected ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textMuted)
             VStack(alignment: .leading, spacing: 1) {
                 Text(primary(result))
                     .font(AtlasTheme.Font.bodyMedium())
@@ -262,7 +262,7 @@ struct CommandPaletteOverlay: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(selected ? AtlasTheme.Colors.accent.opacity(0.14) : .clear)
+        .background(selected ? AtlasTheme.Colors.textPrimary.opacity(0.06) : .clear)
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 

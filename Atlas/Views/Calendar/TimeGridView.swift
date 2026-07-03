@@ -29,16 +29,17 @@ struct TaskDragPreview: View {
         HStack(spacing: 6) {
             RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 3, height: 20)
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .lineLimit(1)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(AtlasTheme.Colors.bgElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(AtlasTheme.Colors.accent.opacity(0.5), lineWidth: 1))
-        .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
+        .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous)
+            .strokeBorder(color.opacity(0.5), lineWidth: AtlasTheme.rule))
+        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
         .frame(width: 170, alignment: .leading)
     }
 }
@@ -50,7 +51,7 @@ struct HourGutter: View {
         VStack(spacing: 0) {
             ForEach(CalendarLayout.startHour..<CalendarLayout.endHour, id: \.self) { hour in
                 Text(label(for: hour))
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .offset(y: -6)
@@ -171,7 +172,7 @@ struct DayColumnView: View {
                 ZStack(alignment: .leading) {
                     Rectangle()
                         .fill(AtlasTheme.Colors.accent)
-                        .frame(height: 1.5)
+                        .frame(height: 2)
                     Circle()
                         .fill(AtlasTheme.Colors.accent)
                         .frame(width: 7, height: 7)
@@ -247,13 +248,15 @@ struct EventTile: View {
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(event.title)
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                         .foregroundStyle(titleColor)
                         .lineLimit(1)
                     if !compact {
                         Text("\(event.timeLabel) · \(event.durationLabel)")
-                            .font(.system(size: 9.5))
-                            .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .tracking(0.5)
+                            .textCase(.uppercase)
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
                             .lineLimit(1)
                     }
                 }
@@ -272,12 +275,16 @@ struct EventTile: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(tileAccentColor.opacity(backgroundOpacity))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(tileAccentColor.opacity(borderOpacity),
-                        style: StrokeStyle(lineWidth: 1, dash: event.isWorkBlock ? [4, 3] : []))
-        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        // Fixed events sit borderless on their tinted fill (mobile block idiom); a
+        // work-block keeps a dashed outline to read as provisional, tickable work.
+        .overlay {
+            if event.isWorkBlock {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(tileAccentColor.opacity(0.55),
+                                  style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            }
+        }
         // A timed tile whose slot has fully elapsed reads as "passed" — dimmed only, no
         // strike-through or recolor. Covers work-blocks (scheduled-but-unfinished; done ones
         // never reach the grid) and events incl. read-only external ones (simply ended < now).
@@ -291,12 +298,7 @@ struct EventTile: View {
     /// Work-blocks read as provisional (fainter fill, dashed border); fixed events are solid.
     private var backgroundOpacity: Double {
         if event.isWorkBlock { return 0.10 }
-        return event.isReadOnly ? 0.08 : 0.16
-    }
-
-    private var borderOpacity: Double {
-        if event.isWorkBlock { return 0.55 }
-        return event.isReadOnly ? 0.20 : 0.35
+        return event.isReadOnly ? 0.08 : 0.14
     }
 
     private var titleColor: Color {
@@ -326,7 +328,7 @@ struct DeadlineRailMarker: View {
                 .overlay(alignment: .topTrailing) {
                     if cluster.count > 1 {
                         Text("\(cluster.count)")
-                            .font(.system(size: 7, weight: .heavy))
+                            .font(.system(size: 7, weight: .heavy, design: .rounded))
                             .foregroundStyle(.white)
                             .frame(width: 10, height: 10)
                             .background(Circle().fill(AtlasTheme.Colors.danger))
@@ -354,13 +356,13 @@ struct DeadlineListPopover: View {
                         .font(.system(size: 8))
                         .foregroundStyle(dl.color)
                     Text(dl.title)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         .lineLimit(1)
                     if dl.hasSpecificTime {
                         Spacer(minLength: 12)
                         Text(dl.timeLabel)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
                             .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     }
                 }
@@ -389,7 +391,8 @@ struct DeadlineStrip: View {
         let overflow = Array(deadlines.dropFirst(maxVisible))
         HStack(spacing: 6) {
             Text("DUE")
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 9, weight: .bold, design: .rounded))
+                .tracking(0.6)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             ForEach(visible) { dl in
                 pill(dl)
@@ -397,7 +400,7 @@ struct DeadlineStrip: View {
             if !overflow.isEmpty {
                 Button { showOverflow.toggle() } label: {
                     Text("+\(overflow.count)")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 4)
@@ -420,11 +423,11 @@ struct DeadlineStrip: View {
         HStack(spacing: 5) {
             Image(systemName: "flag.fill").font(.system(size: 8))
             Text(dl.title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .lineLimit(1)
             if dl.hasSpecificTime {
                 Text(dl.timeLabel)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
                     .lineLimit(1)
             }
         }

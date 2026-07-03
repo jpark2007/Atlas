@@ -15,20 +15,19 @@ struct MetricsCard: View {
                 // Header
                 HStack(spacing: 6) {
                     Image(systemName: "chart.bar.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(AtlasTheme.Colors.accent)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
                     Text("At a glance")
-                        .font(AtlasTheme.Font.cardTitle())
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .atlasCapsLabel()
                     Spacer()
                     Button { state.settingsSection = .metrics; state.route = .settings } label: {
                         HStack(spacing: 4) {
                             Text("Details")
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(.system(size: 9, weight: .semibold, design: .rounded))
                         }
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(AtlasTheme.Colors.accent)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
                     }
                     .buttonStyle(.plain)
                 }
@@ -52,10 +51,10 @@ struct MetricsCard: View {
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                     Spacer()
                     Text("\(Int(m.goalAvgProgress * 100))%")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundStyle(
                             m.goalAvgProgress >= 0.7
-                                ? AtlasTheme.Colors.accent
+                                ? AtlasTheme.Colors.accentText
                                 : AtlasTheme.Colors.textSecondary
                         )
                 }

@@ -47,17 +47,17 @@ struct UnscheduledTray: View {
                 HStack(spacing: 6) {
                     Image(systemName: "tray.full")
                         .font(.system(size: 12))
-                        .foregroundStyle(AtlasTheme.Colors.accent)
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     Text("Unscheduled")
                         .font(AtlasTheme.Font.cardTitle())
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text("\(displayedTasks.count)")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
 
                 Text("Drag onto the grid, or use Suggest a time")
-                    .font(.system(size: 10.5))
+                    .font(.system(size: 10.5, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
 
                 if displayedTasks.isEmpty {
@@ -65,7 +65,7 @@ struct UnscheduledTray: View {
                         Image(systemName: "checkmark.circle")
                             .foregroundStyle(AtlasTheme.Colors.green)
                         Text("All scheduled")
-                            .font(.system(size: 12))
+                            .font(.system(size: 12, design: .rounded))
                             .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     }
                     .padding(.vertical, 8)
@@ -114,7 +114,7 @@ struct UnscheduledTray: View {
                 .tracking(1.1)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Text("\(count)")
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Spacer()
         }
@@ -144,12 +144,12 @@ struct UnscheduledTray: View {
                 .frame(width: 3, height: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(task.title)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
                     .foregroundStyle(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textPrimary)
                     .lineLimit(1)
                 if !task.dueLabel.isEmpty {
                     Text("Due \(task.dueLabel)")
-                        .font(.system(size: 10))
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
                         .foregroundStyle(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textMuted)
                 }
             }
@@ -160,11 +160,13 @@ struct UnscheduledTray: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background((overdue ? AtlasTheme.Colors.danger.opacity(0.14) : AtlasTheme.Colors.bgElevated.opacity(0.7)))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        // A grabbable chip: transparent on the cream bg, a hairline outline for the
+        // drag affordance (overdue keeps the danger tint + red outline).
+        .background(overdue ? AtlasTheme.Colors.danger.opacity(0.14) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.border, lineWidth: 1)
+            RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous)
+                .strokeBorder(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.border, lineWidth: 1)
         )
         .contentShape(Rectangle())
         // Custom pointer drag (NOT native `.draggable`): moving the chip ≥6pt schedules it
@@ -241,7 +243,7 @@ private struct DueDatePopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .lineLimit(2)
 
@@ -257,10 +259,10 @@ private struct DueDatePopover: View {
                 onSuggest()
             } label: {
                 Label("Suggest a time today", systemImage: "wand.and.stars")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(AtlasTheme.Colors.accent)
+            .foregroundStyle(AtlasTheme.Colors.accentText)
 
             Divider().overlay(AtlasTheme.Colors.border)
 
@@ -268,11 +270,11 @@ private struct DueDatePopover: View {
                 Button("Clear") { onSave(nil) }
                     .buttonStyle(.plain)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, design: .rounded))
                 Spacer()
                 Button("Set due date") { onSave(date) }
                     .keyboardShortcut(.defaultAction)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
             }
         }
         .padding(14)

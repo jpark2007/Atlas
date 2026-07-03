@@ -15,8 +15,8 @@ extension Note {
         for match in matches {
             guard let swiftRange = Range(match.range, in: text),
                   let attrRange = Range(swiftRange, in: result) else { continue }
-            result[attrRange].foregroundColor = AtlasTheme.Colors.accent
-            result[attrRange].font = .system(size: 13, weight: .medium)
+            result[attrRange].foregroundColor = AtlasTheme.Colors.accentText
+            result[attrRange].font = .system(size: 13, weight: .medium, design: .rounded)
         }
         return result
     }

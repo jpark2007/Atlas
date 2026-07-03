@@ -67,14 +67,14 @@ struct AllDayRowView: View {
             }
             ForEach(others) { event in
                 Text(event.title)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .lineLimit(1)
                     .padding(.horizontal, 4)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: 18)
-                    .background(event.color.opacity(0.22))
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .background(event.color.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                     .opacity(isPastDay ? 0.65 : 1)
             }
         }
@@ -85,11 +85,11 @@ struct AllDayRowView: View {
         HStack(spacing: 4) {
             Image(systemName: "flag.fill").font(.system(size: 7))
             Text(event.title)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .lineLimit(1)
             if event.hasSpecificTime {
                 Text(event.timeLabel)
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
                     .lineLimit(1)
             }
         }
@@ -115,7 +115,7 @@ private struct CollapsedDeadlinePill: View {
             HStack(spacing: 4) {
                 Image(systemName: "flag.fill").font(.system(size: 7))
                 Text("\(deadlines.count) due")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .lineLimit(1)
                 Image(systemName: "chevron.right").font(.system(size: 6, weight: .bold))
             }

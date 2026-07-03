@@ -2,8 +2,8 @@ import SwiftUI
 import AtlasCore
 
 /// Sticky 7-day column header for the week grid.
-/// Each cell shows a weekday short name above a day-number badge;
-/// today's badge is filled with `AtlasTheme.Colors.accent`.
+/// Each cell shows a weekday short name above a day number; today reads in clay
+/// text (accent = graphics/brand only — never a filled badge).
 struct WeekColumnHeader: View {
     let days: [Date]
     let columnWidth: CGFloat
@@ -31,16 +31,13 @@ struct WeekColumnHeader: View {
         let dayNum  = Calendar.current.component(.day, from: day)
         return VStack(spacing: 3) {
             Text(CalendarFormat.weekdayShort.string(from: day).uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(0.6)
-                .foregroundStyle(isToday ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(0.8)
+                .foregroundStyle(isToday ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textMuted)
             Text("\(dayNum)")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(isToday ? AtlasTheme.Colors.bgDeep : AtlasTheme.Colors.textPrimary)
+                .font(.system(size: 15, weight: isToday ? .heavy : .semibold, design: .rounded))
+                .foregroundStyle(isToday ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textPrimary)
                 .frame(width: 26, height: 26)
-                .background(
-                    Circle().fill(isToday ? AtlasTheme.Colors.accent : .clear)
-                )
         }
     }
 }

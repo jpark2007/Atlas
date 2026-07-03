@@ -378,7 +378,7 @@ struct GraphView: View {
         for edge in engineEdges() {
             var path = Path()
             path.move(to: edge.0); path.addLine(to: edge.1)
-            ctx.stroke(path, with: .color(AtlasTheme.Colors.border.opacity(0.55)),
+            ctx.stroke(path, with: .color(AtlasTheme.Colors.border),
                        lineWidth: 0.8 / scale)
         }
 
@@ -400,7 +400,8 @@ struct GraphView: View {
             if node.kind.alwaysLabeled || isSel || scale > 1.5 {
                 let text = Text(node.label)
                     .font(.system(size: node.kind == .space ? 11 : 9,
-                                  weight: node.kind == .space ? .semibold : .regular))
+                                  weight: node.kind == .space ? .semibold : .regular,
+                                  design: .rounded))
                     .foregroundColor(isSel ? AtlasTheme.Colors.textPrimary
                                            : AtlasTheme.Colors.textSecondary)
                 ctx.draw(text, at: CGPoint(x: p.x, y: p.y + r + 8), anchor: .top)
@@ -422,30 +423,30 @@ struct GraphView: View {
             HStack(spacing: 8) {
                 BrandLogo(size: 20)
                 Text("Graph")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Text("\(engine.nodes.count) nodes")
-                    .font(.system(size: 11))
+                    .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             Spacer()
             Button { engine.reheat() } label: {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .frame(width: 24, height: 24)
-                    .background(AtlasTheme.Colors.bgElevated)
-                    .clipShape(Circle())
+                    .background(AtlasTheme.Colors.bgBase, in: Circle())
+                    .overlay(Circle().strokeBorder(AtlasTheme.Colors.border, lineWidth: 1))
             }
             .buttonStyle(.plain)
             .help("Re-run layout")
             Button { state.presentGraph = false } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .frame(width: 24, height: 24)
-                    .background(AtlasTheme.Colors.bgElevated)
-                    .clipShape(Circle())
+                    .background(AtlasTheme.Colors.bgBase, in: Circle())
+                    .overlay(Circle().strokeBorder(AtlasTheme.Colors.border, lineWidth: 1))
             }
             .buttonStyle(.plain)
         }
@@ -465,14 +466,16 @@ struct GraphView: View {
             ForEach(items, id: \.0) { item in
                 HStack(spacing: 7) {
                     Circle().fill(item.1).frame(width: 8, height: 8)
-                    Text(item.0).font(.system(size: 10))
+                    Text(item.0).font(.system(size: 10, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
             }
         }
         .padding(10)
-        .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(AtlasTheme.Colors.bgBase.opacity(0.92),
+                    in: RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
+            .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1))
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
     }

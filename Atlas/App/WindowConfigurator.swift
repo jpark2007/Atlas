@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Strips the default macOS title-bar / toolbar chrome so Atlas's dark content
+/// Strips the default macOS title-bar / toolbar chrome so Atlas's cream content
 /// runs edge-to-edge to the very top — no gray strip, no stray toolbar button —
 /// while explicitly keeping the standard traffic-light controls (close / minimize
 /// / zoom) visible over the transparent bar.
@@ -31,7 +31,7 @@ struct WindowConfigurator: NSViewRepresentable {
         // as calendar drag-to-schedule (you'd move the window instead of the event).
         // The transparent title-bar strip at the top still drags the window normally.
         window.isMovableByWindowBackground = false
-        window.backgroundColor = NSColor(srgbRed: 0x16/255, green: 0x13/255, blue: 0x0f/255, alpha: 1) // bgBase
+        window.backgroundColor = NSColor(srgbRed: 0xfb/255, green: 0xfa/255, blue: 0xf7/255, alpha: 1) // bgBase (cream)
         // Kill the toolbar NavigationSplitView attaches (the gray bar's source).
         window.toolbar = nil
         // Hide the 1px separator line under the (now transparent) titlebar.
