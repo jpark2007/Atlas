@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas — Returning…</title>
+  <style>
+    body { font-family: -apple-system, system-ui; max-width: 460px; margin: 96px auto;
+           padding: 0 20px; color: #2b2622; background: #f4efe6; text-align: center; }
+    .muted { color: #6b6258; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <p id="msg" class="muted">Returning to Atlas…</p>
+  <!--
+    Google's onepick redirect lands here (public HTTPS, as the flow requires) with
+    ?picked_file_ids=…&state=<port>.<nonce>&code=…  This page is 100% client-side:
+    it splits the loopback port + nonce out of `state` and forwards the picked ids
+    to http://127.0.0.1:<port>, where the Atlas app is listening. Nothing is sent to
+    any server here — the `code` in the query is PKCE-bound + single-use + never
+    exchanged, and no Supabase/Google token ever enters the browser.
+  -->
+  <script>
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var ids = q.get('picked_file_ids') || '';
+      var state = q.get('state') || '';
+      var err = q.get('error') || '';
+      var dot = state.indexOf('.');
+      var port = dot >= 0 ? state.slice(0, dot) : '';
+      var nonce = dot >= 0 ? state.slice(dot + 1) : state;
+      if (!/^[0-9]+$/.test(port)) {
+        document.getElementById('msg').textContent =
+          'Couldn’t return to Atlas automatically — you can close this tab and try again.';
+        return;
+      }
+      var target = 'http://127.0.0.1:' + port + '/?picked_file_ids=' +
+        encodeURIComponent(ids) + '&state=' + encodeURIComponent(nonce) +
+        (err ? '&error=' + encodeURIComponent(err) : '');
+      location.replace(target);
+    })();
+  </script>
+</body>
+</html>
