@@ -8,12 +8,17 @@ options:
 packages:
   AtlasCore:
     path: AtlasCore
+# Project-wide per-developer settings (DEVELOPMENT_TEAM) live in the gitignored
+# Config/Secrets.xcconfig — never hardcode a team id here; each dev builds with
+# their own team. See Config/Secrets.example.xcconfig.
+configFiles:
+  Debug: Config/Secrets.xcconfig
+  Release: Config/Secrets.xcconfig
 settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
-    DEVELOPMENT_TEAM: GT87W9668S
     GENERATE_INFOPLIST_FILE: YES
     INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
     ENABLE_HARDENED_RUNTIME: YES

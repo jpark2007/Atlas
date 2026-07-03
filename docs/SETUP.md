@@ -72,12 +72,19 @@ email capture. Done once for the whole app — every account just clicks "Connec
 
 ---
 
-## 5. Apple signing  ← only when running on a real iPhone / distributing
+## 5. Apple signing  ← per developer, via Secrets.xcconfig
 
-- For now the Mac app runs locally unsigned (we build with signing off).
-- When you want it on your iPhone or shared: open `Atlas.xcodeproj` in Xcode →
-  target **Atlas → Signing & Capabilities** → check **Automatically manage signing** →
-  pick your Apple ID team. (Free Apple ID works for personal devices.)
+- **Your team id is NOT in git.** `project.yml` reads `DEVELOPMENT_TEAM` from the
+  git-ignored `Config/Secrets.xcconfig` — each developer builds with their own team.
+  Setup (once): Xcode → **Settings → Accounts** → add your Apple ID (a **free**
+  account is fine for local builds) → copy your Personal Team's **Team ID** → add
+  `DEVELOPMENT_TEAM = <your team id>` to `Config/Secrets.xcconfig` → `xcodegen generate`.
+- Without it, Xcode shows "requires a development team" — pick a team manually in
+  Signing & Capabilities (that choice is wiped every `xcodegen generate`, hence the
+  xcconfig).
+- CLI builds don't need any of this: `xcodebuild … CODE_SIGNING_ALLOWED=NO`.
+- Distribution is a **notarized DMG** (Developer ID, owner's paid account) — NOT the
+  Mac App Store. End users never deal with teams/signing; this section is dev-only.
 - Note: the global pill hotkey needs **App Sandbox OFF**, which limits Mac App Store
   distribution — fine for personal/direct distribution.
 
