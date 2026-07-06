@@ -155,3 +155,31 @@ create policy "notes: owner access" on notes
     for all
     using  (auth.uid() = user_id or (project_id is not null and is_project_member(project_id)))
     with check (auth.uid() = user_id or (project_id is not null and is_project_member(project_id)));
+
+-- ── 6. accept_invite() — server-side accept path ────────────
+-- Accepting an invite grants membership even though the invitee isn't yet a
+-- member (and so couldn't satisfy project_members' owner-only insert policy).
+-- security definer lets this bypass that policy specifically for the
+-- accept-your-own-invite case, which invites' own RLS already gates.
+create or replace function public.accept_invite(invite_id uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+    inv invites%rowtype;
+begin
+    select * into inv from invites where id = invite_id and invitee_email = (auth.jwt() ->> 'email') and status = 'pending';
+    if not found then
+        raise exception 'invite not found or not pending';
+    end if;
+
+    update invites set status = 'accepted' where id = invite_id;
+
+    if inv.kind = 'project' then
+        insert into project_members (project_id, user_id, role)
+        values (inv.target_id, auth.uid(), 'member')
+        on conflict (project_id, user_id) do nothing;
+    end if;
+end;
+$$;
