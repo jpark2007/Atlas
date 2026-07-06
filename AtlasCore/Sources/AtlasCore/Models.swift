@@ -31,8 +31,11 @@ public struct Project: Identifiable {
     public var notes: [NoteRef] = []
     public var pinned: [PinnedResource] = []
     public var backlinks: [Backlink] = []
+    /// The parent space's id. Authoritative link once set; `spaceName` remains
+    /// for display. Nil only for rows created before migration 0015's backfill.
+    public var spaceID: UUID? = nil
 
-    public init(id: UUID = UUID(), name: String, code: String? = nil, isClass: Bool, spaceName: String, spaceColor: Color, meetingInfo: String? = nil, instructor: String? = nil, canvasSynced: Bool = false, overview: String = "", assignments: [TaskItem] = [], notes: [NoteRef] = [], pinned: [PinnedResource] = [], backlinks: [Backlink] = []) {
+    public init(id: UUID = UUID(), name: String, code: String? = nil, isClass: Bool, spaceName: String, spaceColor: Color, meetingInfo: String? = nil, instructor: String? = nil, canvasSynced: Bool = false, overview: String = "", assignments: [TaskItem] = [], notes: [NoteRef] = [], pinned: [PinnedResource] = [], backlinks: [Backlink] = [], spaceID: UUID? = nil) {
         self.id = id
         self.name = name
         self.code = code
@@ -47,6 +50,7 @@ public struct Project: Identifiable {
         self.notes = notes
         self.pinned = pinned
         self.backlinks = backlinks
+        self.spaceID = spaceID
     }
 }
 
