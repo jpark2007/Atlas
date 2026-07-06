@@ -466,24 +466,12 @@ struct ProjectDetailView: View {
 
     private var badges: some View {
         HStack(spacing: 8) {
-            tag(text: project.spaceName, color: project.spaceColor, filled: true)
-            if project.isClass { tag(text: "Class", color: AtlasTheme.Colors.textSecondary, filled: false) }
+            atlasTag(text: project.spaceName, color: project.spaceColor)
+            if project.isClass { atlasTag(text: "Class", color: AtlasTheme.Colors.textSecondary) }
             if project.canvasSynced {
-                tag(text: "CANVAS SYNCED", color: AtlasTheme.Colors.accentText, filled: false)
+                atlasTag(text: "CANVAS SYNCED", color: AtlasTheme.Colors.accentText)
             }
         }
-    }
-
-    private func tag(text: String, color: Color, filled: Bool) -> some View {
-        HStack(spacing: 5) {
-            if filled { Circle().fill(color).frame(width: 6, height: 6) }
-            Text(text)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .tracking(text == text.uppercased() ? 0.8 : 0)
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 9).padding(.vertical, 4)
-        .overlay(Capsule().strokeBorder(color.opacity(0.35), lineWidth: 1))
     }
 
     private var titleBlock: some View {
@@ -491,12 +479,11 @@ struct ProjectDetailView: View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 if let code = project.code {
                     Text(code)
-                        .font(.system(size: 26, weight: .regular, design: .rounded))
+                        .atlasTitleSerif(size: 26)
                         .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
                 Text(project.name)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .tracking(-0.4)
+                    .atlasTitleSerif(size: 26)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Spacer()
                 Button {
@@ -642,7 +629,7 @@ struct ProjectDetailView: View {
                 Button {
                     state.toggleTask(task.id)
                 } label: {
-                    Image(systemName: task.done ? "checkmark.circle.fill" : "circle")
+                    Image(systemName: task.done ? "checkmark.square.fill" : "square")
                         .font(.system(size: 15))
                         .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
                 }

@@ -2,8 +2,8 @@ import SwiftUI
 import AtlasCore
 
 /// Editorial segmented picker — transparent segments in a hairline-outlined
-/// container; the active segment gets a faint ink tint and semibold ink text
-/// (never an accent fill). Options must be `Hashable & Identifiable`; pass a
+/// container; the active segment gets a 2px accent underline and semibold ink
+/// text (never a fill). Options must be `Hashable & Identifiable`; pass a
 /// label closure to extract display text.
 struct AtlasSegmentedPicker<Option: Hashable & Identifiable>: View {
     let options: [Option]
@@ -24,8 +24,13 @@ struct AtlasSegmentedPicker<Option: Hashable & Identifiable>: View {
                         .foregroundStyle(selected ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 6)
-                        .background(selected ? AtlasTheme.Colors.textPrimary.opacity(0.07) : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous))
+                        .overlay(alignment: .bottom) {
+                            if selected {
+                                Rectangle()
+                                    .fill(AtlasTheme.Colors.accent)
+                                    .frame(height: 2)
+                            }
+                        }
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

@@ -85,7 +85,7 @@ struct NoteEditorView: View {
         VStack(alignment: .leading, spacing: 0) {
             TextField("Title", text: $draft.title)
                 .textFieldStyle(.plain)
-                .font(.system(size: 17, weight: .semibold, design: .rounded))
+                .atlasTitleSerif(size: 17)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .padding(.horizontal, 18)
                 .padding(.top, 18)
@@ -130,10 +130,7 @@ struct NoteEditorView: View {
             Image(systemName: "doc.richtext")
                 .font(.system(size: 11))
                 .foregroundStyle(AtlasTheme.Colors.accentText)
-            Text("Google Doc")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .tracking(0.6)
-                .foregroundStyle(AtlasTheme.Colors.accentText)
+            atlasTag(text: "Google Doc", color: AtlasTheme.Colors.accentText)
             if let sub = syncSubtitle(ref) {
                 Text("· \(sub)")
                     .font(AtlasTheme.Font.small())

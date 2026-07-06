@@ -123,12 +123,7 @@ struct ReferenceRowView: View {
     }
 
     private var syncChip: some View {
-        HStack(spacing: 4) {
-            Circle().fill(syncColor).frame(width: 5, height: 5)
-            Text(syncLabel)
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundStyle(syncColor)
-        }
+        atlasTag(text: syncLabel, color: syncColor)
     }
 
     private var syncLabel: String {

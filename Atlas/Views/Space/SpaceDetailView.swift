@@ -43,8 +43,7 @@ struct SpaceDetailView: View {
         HStack(spacing: 12) {
             Circle().fill(space.color).frame(width: 14, height: 14)
             Text(space.name)
-                .font(.system(size: 26, weight: .bold, design: .rounded))
-                .tracking(-0.4)
+                .atlasTitleSerif(size: 26)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Spacer()
             Text("\(spaceTasks.count) tasks · \(spaceEvents.count) events")
@@ -75,7 +74,7 @@ struct SpaceDetailView: View {
                 Button {
                     state.toggleTask(task.id)
                 } label: {
-                    Image(systemName: task.done ? "checkmark.circle.fill" : "circle")
+                    Image(systemName: task.done ? "checkmark.square.fill" : "square")
                         .font(.system(size: 15))
                         .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
                 }

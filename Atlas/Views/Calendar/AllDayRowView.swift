@@ -97,8 +97,7 @@ struct AllDayRowView: View {
         .padding(.horizontal, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 18)
-        .background(Capsule().fill(event.color.opacity(0.12)))
-        .overlay(Capsule().stroke(event.color.opacity(0.45), lineWidth: 1))
+        .background(AtlasTheme.wash(event.color), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
     }
 }
 
@@ -123,8 +122,7 @@ private struct CollapsedDeadlinePill: View {
             .padding(.horizontal, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 18)
-            .background(Capsule().fill(color.opacity(0.12)))
-            .overlay(Capsule().stroke(color.opacity(0.45), lineWidth: 1))
+            .background(AtlasTheme.wash(color), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
         }
         .buttonStyle(.plain)
         .popover(isPresented: $show, arrowEdge: .bottom) {

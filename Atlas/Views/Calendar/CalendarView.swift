@@ -224,14 +224,8 @@ struct CalendarView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(
-                (isHidden ? Color.clear : space.color.opacity(0.14))
-            )
-            .clipShape(Capsule())
-            .overlay(
-                Capsule().strokeBorder(
-                    isHidden ? AtlasTheme.Colors.border : space.color.opacity(0.4),
-                    lineWidth: 1
-                )
+                isHidden ? Color.clear : AtlasTheme.wash(space.color),
+                in: RoundedRectangle(cornerRadius: 4, style: .continuous)
             )
             .opacity(isHidden ? 0.6 : 1)
         }

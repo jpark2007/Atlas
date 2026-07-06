@@ -126,14 +126,6 @@ struct SidebarView: View {
             .frame(height: 1)
     }
 
-    /// Row background: selection is a subtle ink tint (never an accent fill or a
-    /// pill), hover is a fainter ink tint (the Mac stand-in for a haptic).
-    private func rowTint(selected: Bool, hovered: Bool) -> Color {
-        if selected { return AtlasTheme.Colors.textPrimary.opacity(0.06) }
-        if hovered  { return AtlasTheme.Colors.textPrimary.opacity(0.035) }
-        return .clear
-    }
-
     private func track(_ route: Route, _ inside: Bool) {
         if inside { hovered = route }
         else if hovered == route { hovered = nil }
@@ -156,8 +148,7 @@ struct SidebarView: View {
                     .font(.system(size: 12)).foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(rowTint(selected: state.route == .settings, hovered: hovered == .settings))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .rowChrome(selected: state.route == .settings, hovered: hovered == .settings)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -233,8 +224,7 @@ struct SidebarView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(rowTint(selected: selected, hovered: hovered == route))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .rowChrome(selected: selected, hovered: hovered == route)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -288,8 +278,7 @@ struct SidebarView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(rowTint(selected: state.route == spaceRoute, hovered: hovered == spaceRoute))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .rowChrome(selected: state.route == spaceRoute, hovered: hovered == spaceRoute)
             .onHover { track(spaceRoute, $0) }
             .contextMenu {
                 Button {
@@ -355,8 +344,7 @@ struct SidebarView: View {
             .padding(.leading, 27)
             .padding(.trailing, 10)
             .padding(.vertical, 5)
-            .background(rowTint(selected: selected, hovered: hovered == projectRoute))
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .rowChrome(selected: selected, hovered: hovered == projectRoute)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -379,5 +367,25 @@ struct SidebarView: View {
                     )
             }
         }
+    }
+}
+
+// MARK: - Row chrome (paper language)
+
+private extension View {
+    /// Paper-language selection/hover chrome for a sidebar row. The active row
+    /// gets a 2px accent (clay) tick on the left edge and no fill; a
+    /// hovered-but-inactive row gets a soft full-row ink wash with square
+    /// corners — the Mac stand-in for a haptic. No pills, no shadows.
+    func rowChrome(selected: Bool, hovered: Bool) -> some View {
+        self
+            .background(hovered && !selected ? AtlasTheme.Colors.textPrimary.opacity(0.05) : Color.clear)
+            .overlay(alignment: .leading) {
+                if selected {
+                    Rectangle()
+                        .fill(AtlasTheme.Colors.accent)
+                        .frame(width: 2)
+                }
+            }
     }
 }

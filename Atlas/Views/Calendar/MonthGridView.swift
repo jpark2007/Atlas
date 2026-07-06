@@ -55,9 +55,7 @@ struct MonthGridView: View {
         HStack(spacing: 0) {
             ForEach(Array(cells.prefix(7)), id: \.self) { day in
                 Text(CalendarFormat.weekdayShort.string(from: day).uppercased())
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .tracking(0.8)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .atlasCapsLabel()
                     .frame(maxWidth: .infinity)
             }
         }
@@ -100,7 +98,7 @@ struct MonthGridView: View {
     private func dayNumber(_ day: Date, inMonth: Bool, isToday: Bool) -> some View {
         let number = "\(calendar.component(.day, from: day))"
         return Text(number)
-            .font(.system(size: 11.5, weight: isToday ? .heavy : .medium, design: .rounded))
+            .atlasMono(size: 11.5, weight: isToday ? .heavy : .medium)
             .foregroundStyle(
                 isToday ? AtlasTheme.Colors.accentText
                         : (inMonth ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textMuted)
@@ -122,7 +120,9 @@ struct MonthGridView: View {
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 2)
-        .background((event.isReadOnly ? AtlasTheme.Colors.textSecondary : event.color).opacity(0.14))
-        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .background(
+            AtlasTheme.wash(event.isReadOnly ? AtlasTheme.Colors.textSecondary : event.color),
+            in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+        )
     }
 }

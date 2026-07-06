@@ -132,10 +132,10 @@ struct UnscheduledTray: View {
         return HStack(spacing: 9) {
             // Check it off — completes the task; it then drops out of the tray.
             Button { onToggleDone(task.id) } label: {
-                Image(systemName: "circle")
+                Image(systemName: "square")
                     .font(.system(size: 15))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    .contentShape(Circle())
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Mark done")
@@ -148,9 +148,7 @@ struct UnscheduledTray: View {
                     .foregroundStyle(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textPrimary)
                     .lineLimit(1)
                 if !task.dueLabel.isEmpty {
-                    Text("Due \(task.dueLabel)")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundStyle(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textMuted)
+                    atlasTag(text: "Due \(task.dueLabel)", color: overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textMuted)
                 }
             }
             Spacer(minLength: 0)

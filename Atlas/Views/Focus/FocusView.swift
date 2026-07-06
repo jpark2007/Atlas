@@ -36,8 +36,7 @@ struct FocusView: View {
 
     private var phaseLabel: some View {
         Text("— \(vm.phaseLabel.uppercased()) —")
-            .font(.system(size: 12, weight: .semibold, design: .rounded))
-            .kerning(3)
+            .atlasCapsLabel()
             .foregroundStyle(isBreak ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textMuted)
     }
 

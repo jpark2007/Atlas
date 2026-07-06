@@ -165,7 +165,7 @@ struct AttachReferencePicker: View {
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer(minLength: 0)
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                Image(systemName: selected ? "checkmark.square.fill" : "square")
                     .font(.system(size: 15))
                     .foregroundStyle(selected ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textMuted)
             }

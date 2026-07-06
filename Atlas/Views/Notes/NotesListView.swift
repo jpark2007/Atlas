@@ -67,7 +67,7 @@ struct NotesListView: View {
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(note.title)
-                        .font(AtlasTheme.Font.cardTitle())
+                        .atlasTitleSerif(size: 14)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text(Note.highlighted(note.body))
                         .font(AtlasTheme.Font.small())
@@ -76,11 +76,7 @@ struct NotesListView: View {
                 }
                 Spacer()
                 if linkedDoc {
-                    Text("Google Doc")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .tracking(0.5)
-                        .textCase(.uppercase)
-                        .foregroundStyle(AtlasTheme.Colors.accentText)
+                    atlasTag(text: "Google Doc", color: AtlasTheme.Colors.accentText)
                 } else if note.isExternal {
                     Text("Open ↗")
                         .font(AtlasTheme.Font.small())

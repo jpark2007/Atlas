@@ -45,7 +45,7 @@ struct TaskDetailView: View {
             Button {
                 state.toggleTask(live.id)
             } label: {
-                Image(systemName: live.done ? "checkmark.circle.fill" : "circle")
+                Image(systemName: live.done ? "checkmark.square.fill" : "square")
                     .font(.system(size: 22))
                     .foregroundStyle(live.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
             }
@@ -121,7 +121,7 @@ struct TaskDetailView: View {
                 metaChip(icon: "clock", label: "Scheduled \(shortDate(at))")
             }
             if live.done {
-                metaChip(icon: "checkmark.circle", label: "Completed")
+                atlasTag(text: "Completed", color: AtlasTheme.Colors.accent)
             }
             assigneeChip
             Spacer()
@@ -147,14 +147,7 @@ struct TaskDetailView: View {
             }
             .buttonStyle(.plain)
         } else if live.assigneeID != nil {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(AtlasTheme.Colors.accent)
-                    .frame(width: 12, height: 12)
-                Text("Assigned")
-            }
-            .font(.system(size: 12, design: .rounded))
-            .foregroundStyle(AtlasTheme.Colors.textMuted)
+            atlasTag(text: "Assigned", color: AtlasTheme.Colors.accent)
             // A future task can resolve assigneeID -> ProfileRow.displayName once a
             // member-profile cache exists; showing "Assigned" (not a raw UUID) is
             // the correct minimal behavior for now.

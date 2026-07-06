@@ -61,9 +61,7 @@ struct MetricsCompletionDonut: View {
             }
 
             Text(label)
-                .font(AtlasTheme.Font.sectionLabel())
-                .tracking(1.0)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                .atlasCapsLabel()
         }
         .frame(maxWidth: .infinity)
     }
@@ -131,9 +129,7 @@ struct MetricsView: View {
                 // Page kicker + relationship-graph entry
                 HStack {
                     Text("METRICS")
-                        .font(AtlasTheme.Font.sectionLabel())
-                        .tracking(1.4)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .atlasCapsLabel()
                     Spacer()
                     Button { state.presentGraph = true } label: {
                         HStack(spacing: 6) {

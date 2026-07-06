@@ -273,7 +273,7 @@ struct DashboardTasksSection: View {
             } label: {
                 Image(systemName: task.done ? "checkmark.square.fill" : "square")
                     .font(.system(size: 14))
-                    .foregroundStyle(task.done ? task.spaceColor : AtlasTheme.Colors.textMuted)
+                    .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
             }
             .buttonStyle(.plain)
 

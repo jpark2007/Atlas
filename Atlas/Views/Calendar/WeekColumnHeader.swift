@@ -30,12 +30,17 @@ struct WeekColumnHeader: View {
         let isToday = Calendar.current.isDateInToday(day)
         let dayNum  = Calendar.current.component(.day, from: day)
         return HStack(spacing: 4) {
+            // Mirrors atlasCapsLabel()'s mono + wide-tracked caps treatment, but with a
+            // conditional foreground so today's weekday keeps the clay accent — atlasCapsLabel()
+            // bakes in textSecondary, and SwiftUI's nearest-to-Text foregroundStyle wins, so an
+            // outer override on the helper wouldn't take effect.
             Text(CalendarFormat.weekdayShort.string(from: day).uppercased())
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .tracking(0.8)
-                .foregroundStyle(isToday ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textMuted)
+                .atlasMono(size: 11, weight: .bold)
+                .tracking(2)
+                .textCase(.uppercase)
+                .foregroundStyle(isToday ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textSecondary)
             Text("\(dayNum)")
-                .font(.system(size: 13, weight: isToday ? .heavy : .semibold, design: .rounded))
+                .atlasMono(size: 13, weight: isToday ? .heavy : .semibold)
                 .foregroundStyle(isToday ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textPrimary)
                 .frame(width: 22, height: 22)
         }

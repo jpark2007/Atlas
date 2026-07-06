@@ -46,9 +46,7 @@ struct MetricsCard: View {
                 // Goal avg
                 HStack {
                     Text("GOAL AVG")
-                        .font(AtlasTheme.Font.sectionLabel())
-                        .tracking(1.1)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .atlasCapsLabel()
                     Spacer()
                     Text("\(Int(m.goalAvgProgress * 100))%")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
