@@ -727,6 +727,42 @@ extension InviteRow {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// AvailabilityBlockRow / SharingPrefRow — collab phase 3 (availability)
+// ─────────────────────────────────────────────────────────────────────────────
+
+public struct AvailabilityBlockRow: Codable {
+    public var id: UUID
+    public var userId: UUID
+    public var startAt: Date
+    public var endAt: Date
+    public var source: String
+    public var updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId    = "user_id"
+        case startAt   = "start_at"
+        case endAt     = "end_at"
+        case source
+        case updatedAt = "updated_at"
+    }
+}
+
+public struct SharingPrefRow: Codable {
+    public var userId: UUID
+    public var kind: String
+    public var targetId: UUID
+    public var detailLevel: String
+
+    enum CodingKeys: String, CodingKey {
+        case userId      = "user_id"
+        case kind
+        case targetId    = "target_id"
+        case detailLevel = "detail_level"
+    }
+}
+
 // MARK: - AtlasDB PostgREST Client
 
 /// Thin async PostgREST client. All requests mirror the `SupabaseAuth.request(...)` pattern:
@@ -984,6 +1020,56 @@ public final class AtlasDB {
         try await send(method: "POST", table: "profiles",
                        query: [URLQueryItem(name: "on_conflict", value: "user_id")],
                        extraHeaders: upsertHeaders, body: body, sess: sess)
+    }
+
+    // MARK: Availability + sharing prefs (collab phase 3)
+
+    /// Best-effort: degrades to `[]` if the availability migration isn't deployed
+    /// yet, or if the caller passes no member ids to look up.
+    public func loadAvailability(forProjectMemberIds userIds: [UUID], from: Date, to: Date) async throws -> [AvailabilityBlockRow] {
+        guard !userIds.isEmpty else { return [] }
+        let all: [AvailabilityBlockRow] = (try? await getAll("availability_blocks", order: "start_at")) ?? []
+        let idSet = Set(userIds)
+        return all.filter { idSet.contains($0.userId) && $0.startAt < to && $0.endAt > from }
+    }
+
+    /// Delete-then-insert the caller's own published window — simple and
+    /// self-healing, matching the plan's stated strategy over per-event diffing.
+    public func publishAvailability(_ blocks: [AvailabilityBlockRow], windowStart: Date, windowEnd: Date) async throws {
+        let sess = try requireSession()
+        // Delete the caller's existing rows whose start_at falls in the window.
+        try await send(method: "DELETE", table: "availability_blocks",
+                       query: [
+                           URLQueryItem(name: "start_at", value: "gte.\(isoString(windowStart))"),
+                           URLQueryItem(name: "start_at", value: "lt.\(isoString(windowEnd))"),
+                       ],
+                       sess: sess)
+        guard !blocks.isEmpty else { return }
+        let body = try isoEncoder.encode(blocks)
+        try await send(method: "POST", table: "availability_blocks", body: body, sess: sess)
+    }
+
+    public func loadSharingPref(kind: String, targetId: UUID) async throws -> SharingPrefRow? {
+        let all: [SharingPrefRow] = (try? await getAll("sharing_prefs")) ?? []
+        return all.first { $0.kind == kind && $0.targetId == targetId }
+    }
+
+    public func setSharingPref(kind: String, targetId: UUID, detailLevel: String) async throws {
+        let sess = try requireSession()
+        let pref = SharingPrefRow(userId: try currentUserId(), kind: kind, targetId: targetId, detailLevel: detailLevel)
+        let body = try isoEncoder.encode(pref)
+        try await send(method: "POST", table: "sharing_prefs",
+                       query: [URLQueryItem(name: "on_conflict", value: "user_id,kind,target_id")],
+                       body: body, sess: sess)
+    }
+
+    /// Formats a `Date` as an ISO-8601 string for use as a PostgREST query-param
+    /// filter value (e.g. `start_at=gte.<iso-string>`). Mirrors `ReferenceRow`'s
+    /// `isoString(from:)` formatter convention.
+    private func isoString(_ date: Date) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.string(from: date)
     }
 
     /// Seed all tables from a snapshot (first-run). Upserts each row so it is safe
