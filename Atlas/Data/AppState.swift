@@ -90,6 +90,17 @@ final class AppState: ObservableObject {
     /// The signed-in user's public identity (collab). Nil until loaded.
     @Published var profile: ProfileRow? = nil
 
+    /// Invites addressed to me, awaiting accept/decline (collab phase 2).
+    @Published var pendingInvites: [InviteRow] = []
+    /// Membership rosters for shared projects, keyed by project id.
+    @Published var projectMembers: [UUID: [ProjectMemberRow]] = [:]
+
+    /// True once a project has more than just its owner as a member — drives
+    /// the sidebar's shared-project marker and the Team-view affordances.
+    func isShared(_ project: Project) -> Bool {
+        (projectMembers[project.id]?.count ?? 0) > 1
+    }
+
     /// Re-reads the Canvas connection for Settings. Never throws to the caller; on a
     /// read failure the current snapshot is left untouched. Mirrors `refreshGoogleConnection()`.
     func refreshCanvasConnection() async {
@@ -226,11 +237,66 @@ final class AppState: ObservableObject {
         // Collab phase 1: surface the user's profile (created by the signup
         // trigger). Nil = migration not deployed; degrade silently.
         self.profile = try? await self.db?.loadProfile()
+        await self.loadCollabState()
 
         // Re-derive server-owned Google sync mode from the cloud connection.
         await refreshGoogleConnection()
         // Load the Canvas connection so Settings shows its live status from launch.
         await refreshCanvasConnection()
+    }
+
+    /// Loads pending invites and every visible project's membership roster.
+    /// Fire-and-forget from bootstrap, same degrade-silently posture as
+    /// Phase 1's profile load — a pre-migration environment (table missing)
+    /// must not crash or spam errors here.
+    func loadCollabState() async {
+        guard let db else { return }
+        self.pendingInvites = (try? await db.loadPendingInvites()) ?? []
+
+        var membersByProject: [UUID: [ProjectMemberRow]] = [:]
+        for space in spaces {
+            for project in space.projects {
+                membersByProject[project.id] = (try? await db.loadProjectMembers(projectId: project.id)) ?? []
+            }
+        }
+        self.projectMembers = membersByProject
+    }
+
+    /// Send a project invite. Errors are swallowed to a debug log — the
+    /// invite sheet reads `pendingInvites`/a future sent-invites list to
+    /// reflect success, rather than this call throwing into the UI.
+    func invite(email: String, toProject projectId: UUID) async {
+        guard let db else { return }
+        do {
+            try await db.createProjectInvite(projectId: projectId, inviteeEmail: email)
+        } catch {
+            print("[Collab] failed to send invite: \(error)")
+        }
+    }
+
+    /// Accept or decline an invite addressed to me. On accept, the server's
+    /// accept_invite RPC (migration 0016) grants membership; we then reload
+    /// collab state so the newly-shared project appears immediately.
+    func respondToInvite(_ invite: InviteRow, accept: Bool) async {
+        guard let db else { return }
+        do {
+            try await db.respondToInvite(id: invite.id, accept: accept)
+            pendingInvites.removeAll { $0.id == invite.id }
+            if accept {
+                await loadCollabState()
+            }
+        } catch {
+            print("[Collab] failed to respond to invite: \(error)")
+        }
+    }
+
+    /// Claim an unassigned shared task as the signed-in user's own.
+    func claimTask(_ taskId: UUID) async {
+        guard let i = tasks.firstIndex(where: { $0.id == taskId }),
+              let userId = try? db?.currentUserId() else { return }
+        tasks[i].claim(by: userId)
+        let updated = tasks[i]
+        try? await db?.upsertTask(updated)
     }
 
     func project(_ id: UUID) -> Project? {
