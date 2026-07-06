@@ -48,7 +48,7 @@ extension AppState {
             return .task(hasDate: false)
         }
         let durationSeconds = Double(result.durationMin ?? 60) * 60
-        let event = CalendarEvent(
+        var event = CalendarEvent(
             title: result.title,
             subtitle: "",
             start: start,
@@ -56,6 +56,7 @@ extension AppState {
             color: calendarSpaceColor(named: result.spaceName),
             spaceName: result.spaceName
         )
+        event.spaceID = spaceID(named: result.spaceName)
         addEvent(event)
         return .event
     }

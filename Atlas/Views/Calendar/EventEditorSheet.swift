@@ -258,7 +258,7 @@ struct EventEditorSheet: View {
             finalEnd = endDate > startDate ? endDate : startDate.addingTimeInterval(3600)
         }
 
-        let event = CalendarEvent(
+        var event = CalendarEvent(
             id: seed.id,
             title: trimmedTitle,
             subtitle: "",
@@ -276,6 +276,7 @@ struct EventEditorSheet: View {
             googleEventId: seed.googleEventId,
             isRecurring: seed.isRecurring
         )
+        event.spaceID = state.spaceID(named: finalSpaceName)
 
         if isEditingExisting {
             state.updateEvent(event)

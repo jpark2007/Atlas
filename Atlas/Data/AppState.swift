@@ -179,18 +179,15 @@ final class AppState: ObservableObject {
                 snapshot = try await db.loadAll()
             }
 
-            // Re-nest flat projects back into their parent spaces by spaceName.
-            let projectsBySpace = Dictionary(grouping: snapshot.projects, by: \.spaceName)
-            var nestedSpaces = snapshot.spaces
-            for i in nestedSpaces.indices {
-                nestedSpaces[i].projects = projectsBySpace[nestedSpaces[i].name] ?? []
-            }
+            // Re-nest flat projects into their parent spaces — spaceID is
+            // authoritative, spaceName is the pre-0015 fallback (SpaceNesting).
+            let nestedSpaces = SpaceNesting.nest(projects: snapshot.projects, into: snapshot.spaces)
 
-            // Debug: log any projects whose spaceName has no matching loaded space.
-            let loadedSpaceNames = Set(nestedSpaces.map(\.name))
-            let orphanCount = snapshot.projects.filter { !loadedSpaceNames.contains($0.spaceName) }.count
+            // Debug: log any projects that landed in no space.
+            let nestedIDs = Set(nestedSpaces.flatMap { $0.projects.map(\.id) })
+            let orphanCount = snapshot.projects.filter { !nestedIDs.contains($0.id) }.count
             if orphanCount > 0 {
-                print("[AtlasDB] \(orphanCount) project(s) have spaceName that matches no loaded space — they will not appear in the sidebar.")
+                print("[AtlasDB] \(orphanCount) project(s) match no loaded space — they will not appear in the sidebar.")
             }
 
             // Assign to @Published properties (already on @MainActor).
@@ -277,7 +274,7 @@ final class AppState: ObservableObject {
                     overview: String = "") -> Project? {
         guard let si = spaces.firstIndex(where: { $0.name == spaceName }) else { return nil }
         let trimmedCode = code?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let project = Project(
+        var project = Project(
             name: name,
             code: (trimmedCode?.isEmpty == true) ? nil : trimmedCode,
             isClass: isClass,
@@ -285,6 +282,7 @@ final class AppState: ObservableObject {
             spaceColor: spaces[si].color,
             overview: overview
         )
+        project.spaceID = spaces[si].id
         spaces[si].projects.append(project)
         Task { try? await self.db?.upsertProject(project) }
         return project
@@ -426,6 +424,7 @@ final class AppState: ObservableObject {
                             dueDate: dueDate,
                             durationMin: durationMin)
         task.spaceName = resolvedSpace
+        task.spaceID = spaceID(named: resolvedSpace)
         task.spaceColor = calendarSpaceColor(named: resolvedSpace)
         task.projectName = projectName
         tasks.append(task)
@@ -447,6 +446,7 @@ final class AppState: ObservableObject {
     func setTaskSpace(taskId: UUID, spaceName: String) {
         guard let i = tasks.firstIndex(where: { $0.id == taskId }) else { return }
         tasks[i].spaceName = spaceName
+        tasks[i].spaceID = spaceID(named: spaceName)
         tasks[i].spaceColor = calendarSpaceColor(named: spaceName)
         let projects = spaces.first { $0.name == spaceName }?.projects ?? []
         if !projects.contains(where: { $0.name == tasks[i].projectName }) {

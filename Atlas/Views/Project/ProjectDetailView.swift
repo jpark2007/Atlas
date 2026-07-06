@@ -171,7 +171,9 @@ struct ProjectDetailView: View {
         // Unsaved draft pre-linked to this project; NoteEditorView.commit() persists
         // it (updateNote inserts on no-match), so dismissing without Done leaves
         // nothing behind.
-        editingNote = Note(title: "", body: "", spaceName: project.spaceName, projectID: project.id)
+        var draft = Note(title: "", body: "", spaceName: project.spaceName, projectID: project.id)
+        draft.spaceID = state.spaceID(named: project.spaceName)
+        editingNote = draft
     }
 
     // MARK: - References (Docs → Notes import)

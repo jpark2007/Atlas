@@ -12,6 +12,13 @@ extension AppState {
         spaces.first { $0.name == name }?.color ?? AtlasTheme.Colors.accent
     }
 
+    /// Resolve a space name to its id for dual-writing `spaceID` alongside
+    /// `spaceName` (collab phase 1). Nil when no space matches — the row then
+    /// relies on the name fallback exactly as before.
+    func spaceID(named name: String) -> UUID? {
+        spaces.first { $0.name == name }?.id
+    }
+
     // MARK: - Auto-find-a-slot
 
     /// Busy `[start, end)` intervals on `day`: the day's timed events plus any
