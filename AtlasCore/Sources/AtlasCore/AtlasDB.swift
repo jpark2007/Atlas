@@ -934,6 +934,18 @@ public final class AtlasDB {
         return all.filter { $0.projectId == projectId }
     }
 
+    /// Every project-member row the caller may see (RLS-scoped), grouped by
+    /// project id. One round-trip that replaces the per-project N+1 loop of
+    /// `loadProjectMembers(projectId:)` — the old path fetched the whole
+    /// `project_members` table once per project and filtered client-side.
+    /// Rows within each group keep `added_at` order (the fetch is ordered and
+    /// `Dictionary(grouping:)` preserves element order). Best-effort: a missing
+    /// table (pre-migration) yields an empty map rather than throwing.
+    public func loadAllProjectMembers() async throws -> [UUID: [ProjectMemberRow]] {
+        let all: [ProjectMemberRow] = (try? await getAll("project_members", order: "added_at")) ?? []
+        return Dictionary(grouping: all, by: { $0.projectId })
+    }
+
     /// Fetches specific projects by id — used for "Shared with me" rows,
     /// which belong to someone else's space and so aren't in `AppState.spaces`.
     public func loadProjectsByIds(_ ids: [UUID]) async throws -> [Project] {
@@ -998,14 +1010,53 @@ public final class AtlasDB {
     }
 
     /// Seed all tables from a snapshot (first-run). Upserts each row so it is safe
-    /// to call if some rows already exist.
+    /// to call if some rows already exist. Builds every row up front (stamping
+    /// ownership exactly as the per-row `upsert*` methods do) and POSTs one array
+    /// body per table (PostgREST batch upsert) instead of one request per row.
     public func seedInitial(_ snapshot: AtlasSnapshot) async throws {
-        for (index, space) in snapshot.spaces.enumerated() { try await upsertSpace(space, sort: index) }
-        for project in snapshot.projects { try await upsertProject(project) }
-        for task    in snapshot.tasks    { try await upsertTask(task) }
-        for event   in snapshot.events   { try await upsertEvent(event) }
-        for note    in snapshot.notes    { try await upsertNote(note) }
-        for goal    in snapshot.goals    { try await upsertGoal(goal) }
+        let sess = try await requireSession()
+        guard let userId = UUID(uuidString: sess.user.id) else {
+            throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
+        }
+
+        let spaceRows: [SpaceRow] = snapshot.spaces.enumerated().map { index, space in
+            var row = SpaceRow(domain: space, sort: index); row.userId = userId; return row
+        }
+        let projectRows: [ProjectRow] = snapshot.projects.map { project in
+            var row = ProjectRow(domain: project); row.userId = userId; return row
+        }
+        let taskRows: [TaskRow] = snapshot.tasks.map { task in
+            var row = TaskRow(domain: task); row.userId = userId
+            if row.createdBy == nil { row.createdBy = userId }   // mirrors upsertTask
+            return row
+        }
+        let eventRows: [EventRow] = snapshot.events.map { event in
+            var row = EventRow(domain: event); row.userId = userId; return row
+        }
+        let noteRows: [NoteRow] = snapshot.notes.map { note in
+            var row = NoteRow(domain: note); row.userId = userId; return row
+        }
+        let goalRows: [GoalRow] = snapshot.goals.map { goal in
+            var row = GoalRow(domain: goal); row.userId = userId; return row
+        }
+
+        try await seedRows(spaceRows,   into: "spaces",   sess: sess)
+        try await seedRows(projectRows, into: "projects", sess: sess)
+        try await seedRows(taskRows,    into: "tasks",    sess: sess)
+        try await seedRows(eventRows,   into: "events",   sess: sess)
+        try await seedRows(noteRows,    into: "notes",    sess: sess)
+        try await seedRows(goalRows,    into: "goals",    sess: sess)
+    }
+
+    /// POSTs `rows` as a single PostgREST batch upsert (`on_conflict=id`,
+    /// merge-duplicates). No-op for an empty array — matches the old per-row
+    /// loop, which issued no request for an empty table.
+    private func seedRows<Row: Encodable>(_ rows: [Row], into table: String,
+                                          sess: SupabaseSession) async throws {
+        guard !rows.isEmpty else { return }
+        let body = try isoEncoder.encode(rows)
+        try await send(method: "POST", table: table,
+                       query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
     }
 
     // MARK: Spaces / Projects

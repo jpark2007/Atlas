@@ -527,15 +527,18 @@ struct SettingsView: View {
             }
             Spacer()
             if googleAuth.isConnected {
-                // Pre-drive.file sessions can't import from Drive or sync Docs —
-                // reconnect re-runs consent and re-grants all scopes.
-                if !googleAuth.hasDriveScope {
-                    Button("Reconnect for Drive") { Task { await googleAuth.connect() } }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(AtlasTheme.Colors.accentText)
-                        .disabled(googleAuth.isWorking)
+                // Re-run consent (prompt=consent re-grants all scopes). Always available
+                // when connected so a user whose Drive/Docs grant was declined or revoked
+                // — the onepick "access_denied" import banner — can re-consent in one
+                // click; a pre-drive.file session gets the explicit "for Drive" label
+                // since it MUST reconnect to import at all.
+                Button(googleAuth.hasDriveScope ? "Reconnect" : "Reconnect for Drive") {
+                    Task { await googleAuth.connect() }
                 }
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.accentText)
+                .disabled(googleAuth.isWorking)
                 Button("Disconnect") {
                     googleAuth.disconnect()
                     googleCalendarEnabled = false

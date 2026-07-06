@@ -208,16 +208,22 @@ final class AppState: ObservableObject {
             bootstrappedUser = nil
         }
 
-        // Collab phase 1: surface the user's profile (created by the signup
-        // trigger). Nil = migration not deployed; degrade silently.
-        self.profile = try? await self.db?.loadProfile()
-        await self.loadCollabState()
-        await startRealtimeSync(supabaseURL: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey)
+        // Bootstrap tail: profile, collab, Google, and Canvas are independent
+        // loads — kick them off concurrently (was four serial awaits) so their
+        // network round-trips overlap. Realtime sync reads collab's
+        // `sharedWithMeProjects`, so it still runs only after collab completes.
+        //   • profile — collab phase 1: surface the user's profile (created by
+        //     the signup trigger). Nil = migration not deployed; degrade silently.
+        async let profileRow = self.db?.loadProfile()
+        async let collabDone: Void = self.loadCollabState()
+        async let googleDone: Void = self.refreshGoogleConnection()   // Google sync mode from the cloud connection
+        async let canvasDone: Void = self.refreshCanvasConnection()   // Canvas status for Settings from launch
 
-        // Re-derive server-owned Google sync mode from the cloud connection.
-        await refreshGoogleConnection()
-        // Load the Canvas connection so Settings shows its live status from launch.
-        await refreshCanvasConnection()
+        self.profile = try? await profileRow
+        await collabDone
+        await startRealtimeSync(supabaseURL: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey)
+        await googleDone
+        await canvasDone
     }
 
     /// Assigns a freshly loaded `AtlasSnapshot` onto the published model arrays —
@@ -302,10 +308,15 @@ final class AppState: ObservableObject {
         guard let db else { return }
         self.pendingInvites = (try? await db.loadPendingInvites()) ?? []
 
+        // One round-trip for every visible membership row, grouped by project,
+        // instead of one fetch-and-filter per project. Keep the dict shape
+        // identical to before — a key (defaulting to []) for each of my
+        // projects — so `isShared`/the sidebar see exactly today's values.
+        let membersByAllProjects = (try? await db.loadAllProjectMembers()) ?? [:]
         var membersByProject: [UUID: [ProjectMemberRow]] = [:]
         for space in spaces {
             for project in space.projects {
-                membersByProject[project.id] = (try? await db.loadProjectMembers(projectId: project.id)) ?? []
+                membersByProject[project.id] = membersByAllProjects[project.id] ?? []
             }
         }
         self.projectMembers = membersByProject
@@ -561,6 +572,16 @@ final class AppState: ObservableObject {
     func setTaskProject(taskId: UUID, projectName: String) {
         if let i = tasks.firstIndex(where: { $0.id == taskId }) {
             tasks[i].projectName = projectName
+            let updated = tasks[i]
+            Task { try? await self.db?.upsertTask(updated) }
+        }
+    }
+
+    /// Link (or clear) a task's tagged note (`noteID` — independent of the
+    /// project-scoped `ReferenceAttachment` system).
+    func setTaskNote(taskId: UUID, noteID: UUID?) {
+        if let i = tasks.firstIndex(where: { $0.id == taskId }) {
+            tasks[i].noteID = noteID
             let updated = tasks[i]
             Task { try? await self.db?.upsertTask(updated) }
         }

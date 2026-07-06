@@ -72,13 +72,26 @@ enum GoogleAuthError: LocalizedError, Equatable {
         case .notConnected:
             return "Not connected to Google. Connect in Settings → Calendars."
         case .authorizationFailed(let reason):
-            return "Google sign-in failed: \(reason)"
+            return Self.humanizedAuthorizationFailure(reason)
         case .stateMismatch:
             return "Google sign-in returned a mismatched state (possible CSRF) — try again."
         case .tokenExchangeFailed(let body):
             return "Google token exchange failed: \(body)"
         case .serverSyncFailed(let body):
             return "Cloud sync handoff failed: \(body)"
+        }
+    }
+
+    /// Renders a Google OAuth failure. The well-known `access_denied` code — Google
+    /// (or the user) declined the browser consent, e.g. an onepick Drive-import grant —
+    /// becomes an actionable sentence instead of a raw code. Any other reason (a
+    /// sentence we authored, or an unmapped code) passes through verbatim.
+    private static func humanizedAuthorizationFailure(_ reason: String) -> String {
+        switch reason {
+        case "access_denied":
+            return "Google declined the permission (access_denied) — reconnect Google in Settings → Calendars and approve the Atlas access."
+        default:
+            return "Google sign-in failed: \(reason)"
         }
     }
 }

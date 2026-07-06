@@ -21,6 +21,18 @@ struct ReferenceRowView: View {
         HStack(spacing: 8) {
             Button(action: onTap) { content }
                 .buttonStyle(.plain)
+            // A linked Doc's primary row click edits it in Atlas (`onTap`); this small
+            // trailing badge is the demoted secondary "open in Google Docs" action.
+            if reference.kind == .docNote {
+                Button(action: onOpenExternal) {
+                    Text("Doc ↗")
+                        .font(.system(size: 10, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(externalActionTitle)
+            }
             menu
         }
         .padding(.vertical, 9)
@@ -50,12 +62,6 @@ struct ReferenceRowView: View {
             }
 
             Spacer(minLength: 8)
-
-            if reference.kind == .docNote {
-                Text("Doc ↗")
-                    .font(.system(size: 10, design: .rounded))
-                    .foregroundStyle(AtlasTheme.Colors.accentText)
-            }
         }
         .contentShape(Rectangle())
     }
