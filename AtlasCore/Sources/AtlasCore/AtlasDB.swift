@@ -206,6 +206,8 @@ public struct TaskRow: Codable {
     public var durationMin: Int?
     public var workBlockGoogleEventId: String?
     public var spaceId: UUID?
+    public var assigneeId: UUID?
+    public var createdBy: UUID?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -222,6 +224,8 @@ public struct TaskRow: Codable {
         case durationMin = "duration_min"
         case workBlockGoogleEventId = "work_block_google_event_id"
         case spaceId     = "space_id"
+        case assigneeId  = "assignee_id"
+        case createdBy   = "created_by"
     }
 
     public init(domain t: TaskItem) {
@@ -238,6 +242,8 @@ public struct TaskRow: Codable {
         self.durationMin = t.durationMin
         self.workBlockGoogleEventId = t.workBlockGoogleEventId
         self.spaceId     = t.spaceID
+        self.assigneeId  = t.assigneeID
+        self.createdBy   = t.createdByID
     }
 
     public func toDomain() -> TaskItem {
@@ -254,6 +260,8 @@ public struct TaskRow: Codable {
                  spaceName: spaceName,
                  notes: notes ?? "")
         task.spaceID = spaceId
+        task.assigneeID = assigneeId
+        task.createdByID = createdBy
         return task
     }
 
@@ -662,6 +670,63 @@ public struct ProfileRow: Codable {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ProjectMemberRow / InviteRow — collab phase 2 (shared projects)
+// ─────────────────────────────────────────────────────────────────────────────
+
+public struct ProjectMemberRow: Codable {
+    public var projectId: UUID
+    public var userId: UUID
+    public var role: String
+    public var addedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case projectId = "project_id"
+        case userId    = "user_id"
+        case role
+        case addedAt   = "added_at"
+    }
+}
+
+public enum InviteKind: String, Codable {
+    case space, project
+}
+
+public enum InviteStatus: String, Codable {
+    case pending, accepted, declined
+}
+
+public struct InviteRow: Codable {
+    public var id: UUID
+    public var kind: InviteKind
+    public var targetId: UUID
+    public var inviterId: UUID
+    public var inviteeEmail: String
+    public var status: InviteStatus
+    public var createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case targetId     = "target_id"
+        case inviterId    = "inviter_id"
+        case inviteeEmail = "invitee_email"
+        case status
+        case createdAt    = "created_at"
+    }
+}
+
+extension InviteRow {
+    /// Pure rule: an accepted PROJECT invite yields a member-role row for the
+    /// accepting user; anything else (declined, still pending, or a space-kind
+    /// invite — space sharing is Phase 4) yields no membership.
+    public static func membershipIfAccepted(_ invite: InviteRow, acceptingUserId: UUID) -> ProjectMemberRow? {
+        guard invite.status == .accepted, invite.kind == .project else { return nil }
+        return ProjectMemberRow(projectId: invite.targetId, userId: acceptingUserId,
+                                role: "member", addedAt: "")
+    }
+}
+
 // MARK: - AtlasDB PostgREST Client
 
 /// Thin async PostgREST client. All requests mirror the `SupabaseAuth.request(...)` pattern:
@@ -831,6 +896,79 @@ public final class AtlasDB {
         return rows.first
     }
 
+    // MARK: Shared projects (collab phase 2) — members / invites
+
+    /// The signed-in user's id, parsed from the session's `user.id` string.
+    /// `AtlasDB` is the only place in this codebase that holds a session
+    /// reference (`sessionProvider`), so this is the one accessor `AppState`
+    /// and other callers should use rather than threading the session
+    /// through separately.
+    public func currentUserId() throws -> UUID {
+        let sess = try requireSession()
+        guard let id = UUID(uuidString: sess.user.id) else {
+            throw AtlasDBError.requestFailed(0, "session user.id is not a valid UUID")
+        }
+        return id
+    }
+
+    /// The signed-in user's raw JWT access token, needed by realtime
+    /// subscriptions (which authorize postgres_changes against this token's
+    /// claims, not just the anon apikey header used for REST calls).
+    public func currentAccessToken() throws -> String {
+        try requireSession().accessToken
+    }
+
+    public func loadProjectMembers(projectId: UUID) async throws -> [ProjectMemberRow] {
+        let all: [ProjectMemberRow] = (try? await getAll("project_members", order: "added_at")) ?? []
+        return all.filter { $0.projectId == projectId }
+    }
+
+    /// Fetches specific projects by id — used for "Shared with me" rows,
+    /// which belong to someone else's space and so aren't in `AppState.spaces`.
+    public func loadProjectsByIds(_ ids: [UUID]) async throws -> [Project] {
+        let all: [ProjectRow] = try await getAll("projects")
+        return all.filter { ids.contains($0.id) }.map { $0.toDomain() }
+    }
+
+    /// Invites addressed to the caller's own email with `status = pending`.
+    /// RLS already scopes rows to the caller's email; the `.pending` filter is
+    /// applied client-side too, in case a future caller wants all their invites.
+    public func loadPendingInvites() async throws -> [InviteRow] {
+        let all: [InviteRow] = (try? await getAll("invites", order: "created_at.desc")) ?? []
+        return all.filter { $0.status == .pending }
+    }
+
+    @discardableResult
+    public func createProjectInvite(projectId: UUID, inviteeEmail: String) async throws -> InviteRow {
+        let sess = try requireSession()
+        let invite = InviteRow(id: UUID(), kind: .project, targetId: projectId,
+                               inviterId: try currentUserId(), inviteeEmail: inviteeEmail,
+                               status: .pending, createdAt: "")
+        let body = try isoEncoder.encode(invite)
+        try await send(method: "POST", table: "invites", body: body, sess: sess)
+        return invite
+    }
+
+    /// Accepts or declines a pending invite. Accepting goes through the
+    /// `accept_invite` Postgres function (security definer) rather than the
+    /// client inserting `project_members` directly — the invitee isn't yet a
+    /// member, so a direct insert would fail `project_members`' owner-only
+    /// insert policy. PostgREST exposes RPC functions at `<restBase>/rpc/<fn>`,
+    /// and `send`'s `table` parameter is appended directly onto `restBase`, so
+    /// `table: "rpc/accept_invite"` reaches the right endpoint.
+    public func respondToInvite(id: UUID, accept: Bool) async throws {
+        let sess = try requireSession()
+        if accept {
+            let body = try JSONSerialization.data(withJSONObject: ["invite_id": id.uuidString])
+            try await send(method: "POST", table: "rpc/accept_invite", body: body, sess: sess)
+        } else {
+            let body = try JSONSerialization.data(withJSONObject: ["status": "declined"])
+            try await send(method: "PATCH", table: "invites",
+                           query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                           body: body, sess: sess)
+        }
+    }
+
     /// Updates the caller's `display_name`. This client has no partial-PATCH
     /// helper, only whole-row upserts (see `upsertGoal` etc.), so this fetches
     /// the current row, mutates it, and upserts the full row back — same
@@ -894,6 +1032,7 @@ public final class AtlasDB {
         }
         var row = TaskRow(domain: t)
         row.userId = userId
+        if row.createdBy == nil { row.createdBy = userId }
         let body = try isoEncoder.encode(row)
         try await send(method: "POST", table: "tasks",
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
@@ -905,6 +1044,19 @@ public final class AtlasDB {
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
                        extraHeaders: ["Prefer": "return=minimal"],
                        sess: sess)
+    }
+
+    /// Claims a shared task for the caller WITHOUT touching `user_id`/`project_id` —
+    /// unlike `upsertTask` (which stamps the caller as owner and has no project_id
+    /// support yet), claiming must only ever change who the task is assigned to.
+    /// Routing claims through `upsertTask` would silently reassign task ownership
+    /// and wipe its project linkage — this scoped PATCH avoids both.
+    public func claimTask(id: UUID, assigneeId: UUID) async throws {
+        let sess = try requireSession()
+        let body = try JSONSerialization.data(withJSONObject: ["assignee_id": assigneeId.uuidString])
+        try await send(method: "PATCH", table: "tasks",
+                       query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                       body: body, sess: sess)
     }
 
     // MARK: Events

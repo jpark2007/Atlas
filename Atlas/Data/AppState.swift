@@ -90,6 +90,20 @@ final class AppState: ObservableObject {
     /// The signed-in user's public identity (collab). Nil until loaded.
     @Published var profile: ProfileRow? = nil
 
+    /// Invites addressed to me, awaiting accept/decline (collab phase 2).
+    @Published var pendingInvites: [InviteRow] = []
+    /// Membership rosters for shared projects, keyed by project id.
+    @Published var projectMembers: [UUID: [ProjectMemberRow]] = [:]
+    /// Projects owned by someone else that I'm a member of — surfaced in the
+    /// sidebar's "Shared with me" section, never nested under my own spaces.
+    @Published var sharedWithMeProjects: [Project] = []
+
+    /// True once a project has more than just its owner as a member — drives
+    /// the sidebar's shared-project marker and the Team-view affordances.
+    func isShared(_ project: Project) -> Bool {
+        (projectMembers[project.id]?.count ?? 0) > 1
+    }
+
     /// Re-reads the Canvas connection for Settings. Never throws to the caller; on a
     /// read failure the current snapshot is left untouched. Mirrors `refreshGoogleConnection()`.
     func refreshCanvasConnection() async {
@@ -179,40 +193,7 @@ final class AppState: ObservableObject {
                 snapshot = try await db.loadAll()
             }
 
-            // Re-nest flat projects into their parent spaces — spaceID is
-            // authoritative, spaceName is the pre-0015 fallback (SpaceNesting).
-            let nestedSpaces = SpaceNesting.nest(projects: snapshot.projects, into: snapshot.spaces)
-
-            // Debug: log any projects that landed in no space.
-            let nestedIDs = Set(nestedSpaces.flatMap { $0.projects.map(\.id) })
-            let orphanCount = snapshot.projects.filter { !nestedIDs.contains($0.id) }.count
-            if orphanCount > 0 {
-                print("[AtlasDB] \(orphanCount) project(s) match no loaded space — they will not appear in the sidebar.")
-            }
-
-            // Assign to @Published properties (already on @MainActor).
-            self.spaces = nestedSpaces
-            self.tasks  = snapshot.tasks
-            self.events = snapshot.events
-            self.notes  = snapshot.notes
-            self.goals  = snapshot.goals
-            self.references = snapshot.references
-            self.referenceAttachments = snapshot.referenceAttachments
-
-            // Re-derive colors from spaceName.
-            // Spaces already carry real colors from `color_token` — don't touch those.
-            for i in self.events.indices {
-                self.events[i].color = calendarSpaceColor(named: self.events[i].spaceName)
-            }
-            for i in self.tasks.indices {
-                self.tasks[i].spaceColor = calendarSpaceColor(named: self.tasks[i].spaceName)
-            }
-            for i in self.spaces.indices {
-                for j in self.spaces[i].projects.indices {
-                    self.spaces[i].projects[j].spaceColor =
-                        calendarSpaceColor(named: self.spaces[i].projects[j].spaceName)
-                }
-            }
+            applySnapshot(snapshot)
 
             // Re-seed sidebar expansion to first 2 loaded space ids
             // (old MockData ids no longer match after DB load).
@@ -226,11 +207,151 @@ final class AppState: ObservableObject {
         // Collab phase 1: surface the user's profile (created by the signup
         // trigger). Nil = migration not deployed; degrade silently.
         self.profile = try? await self.db?.loadProfile()
+        await self.loadCollabState()
+        await startRealtimeSync(supabaseURL: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey)
 
         // Re-derive server-owned Google sync mode from the cloud connection.
         await refreshGoogleConnection()
         // Load the Canvas connection so Settings shows its live status from launch.
         await refreshCanvasConnection()
+    }
+
+    /// Assigns a freshly loaded `AtlasSnapshot` onto the published model arrays —
+    /// re-nesting projects into spaces and re-deriving colors from spaceName.
+    /// Shared by initial `bootstrap(db:)` and the realtime refetch path so both
+    /// apply a snapshot identically.
+    private func applySnapshot(_ snapshot: AtlasSnapshot) {
+        // Re-nest flat projects into their parent spaces — spaceID is
+        // authoritative, spaceName is the pre-0015 fallback (SpaceNesting).
+        let nestedSpaces = SpaceNesting.nest(projects: snapshot.projects, into: snapshot.spaces)
+
+        // Debug: log any projects that landed in no space.
+        let nestedIDs = Set(nestedSpaces.flatMap { $0.projects.map(\.id) })
+        let orphanCount = snapshot.projects.filter { !nestedIDs.contains($0.id) }.count
+        if orphanCount > 0 {
+            print("[AtlasDB] \(orphanCount) project(s) match no loaded space — they will not appear in the sidebar.")
+        }
+
+        // Assign to @Published properties (already on @MainActor).
+        self.spaces = nestedSpaces
+        self.tasks  = snapshot.tasks
+        self.events = snapshot.events
+        self.notes  = snapshot.notes
+        self.goals  = snapshot.goals
+        self.references = snapshot.references
+        self.referenceAttachments = snapshot.referenceAttachments
+
+        // Re-derive colors from spaceName.
+        // Spaces already carry real colors from `color_token` — don't touch those.
+        for i in self.events.indices {
+            self.events[i].color = calendarSpaceColor(named: self.events[i].spaceName)
+        }
+        for i in self.tasks.indices {
+            self.tasks[i].spaceColor = calendarSpaceColor(named: self.tasks[i].spaceName)
+        }
+        for i in self.spaces.indices {
+            for j in self.spaces[i].projects.indices {
+                self.spaces[i].projects[j].spaceColor =
+                    calendarSpaceColor(named: self.spaces[i].projects[j].spaceName)
+            }
+        }
+    }
+
+    /// Realtime subscriptions for shared-project tables (tasks/events/notes) — nil
+    /// until `startRealtimeSync` runs.
+    private var realtimeSync: RealtimeSyncService?
+
+    /// Starts realtime subscriptions for every shared project the user
+    /// currently belongs to. Called once after `loadCollabState()` populates
+    /// `spaces`/membership, and safe to re-call whenever that set changes (e.g.
+    /// after accepting a new invite) — always tears down prior subscriptions first.
+    func startRealtimeSync(supabaseURL: URL, anonKey: String) async {
+        await realtimeSync?.unsubscribeAll()
+        // Include projects shared TO me (not just ones I own and shared out) —
+        // those live only in `sharedWithMeProjects`, never in `spaces`, so
+        // `isShared` alone misses exactly the case that matters: seeing a
+        // teammate's live edits on a project they invited me to.
+        let sharedProjectIds = spaces.flatMap { $0.projects }.filter(isShared).map(\.id)
+            + sharedWithMeProjects.map(\.id)
+        guard !sharedProjectIds.isEmpty,
+              let accessToken = try? db?.currentAccessToken() else { return }
+        let sync = RealtimeSyncService(supabaseURL: supabaseURL, anonKey: anonKey, accessToken: accessToken)
+        await sync.subscribe(projectIds: sharedProjectIds) { [weak self] in
+            Task { @MainActor in
+                await self?.loadCollabState()
+                // Re-load the full snapshot too, since a teammate's change to
+                // a shared task/event/note needs to show up in the normal
+                // tasks/events/notes arrays, not just the membership state.
+                if let db = self?.db, let snapshot = try? await db.loadAll() {
+                    self?.applySnapshot(snapshot)
+                }
+            }
+        }
+        self.realtimeSync = sync
+    }
+
+    /// Loads pending invites and every visible project's membership roster.
+    /// Fire-and-forget from bootstrap, same degrade-silently posture as
+    /// Phase 1's profile load — a pre-migration environment (table missing)
+    /// must not crash or spam errors here.
+    func loadCollabState() async {
+        guard let db else { return }
+        self.pendingInvites = (try? await db.loadPendingInvites()) ?? []
+
+        var membersByProject: [UUID: [ProjectMemberRow]] = [:]
+        for space in spaces {
+            for project in space.projects {
+                membersByProject[project.id] = (try? await db.loadProjectMembers(projectId: project.id)) ?? []
+            }
+        }
+        self.projectMembers = membersByProject
+
+        // Projects I'm a member of but don't own land in "Shared with me",
+        // not nested under any of my own spaces (they belong to someone else's).
+        guard let myUserId = try? db.currentUserId() else { return }
+        let myProjectIds = Set(spaces.flatMap { $0.projects.map(\.id) })
+        let memberProjectIds = Set(membersByProject.filter { _, members in
+            members.contains { $0.userId == myUserId }
+        }.keys).subtracting(myProjectIds)
+        // Membership rosters only tell us IDs; fetch the actual project rows
+        // for anything not already in `spaces` via a dedicated small query.
+        self.sharedWithMeProjects = (try? await db.loadProjectsByIds(Array(memberProjectIds))) ?? []
+    }
+
+    /// Send a project invite. Errors are swallowed to a debug log — the
+    /// invite sheet reads `pendingInvites`/a future sent-invites list to
+    /// reflect success, rather than this call throwing into the UI.
+    func invite(email: String, toProject projectId: UUID) async {
+        guard let db else { return }
+        do {
+            try await db.createProjectInvite(projectId: projectId, inviteeEmail: email)
+        } catch {
+            print("[Collab] failed to send invite: \(error)")
+        }
+    }
+
+    /// Accept or decline an invite addressed to me. On accept, the server's
+    /// accept_invite RPC (migration 0016) grants membership; we then reload
+    /// collab state so the newly-shared project appears immediately.
+    func respondToInvite(_ invite: InviteRow, accept: Bool) async {
+        guard let db else { return }
+        do {
+            try await db.respondToInvite(id: invite.id, accept: accept)
+            pendingInvites.removeAll { $0.id == invite.id }
+            if accept {
+                await loadCollabState()
+            }
+        } catch {
+            print("[Collab] failed to respond to invite: \(error)")
+        }
+    }
+
+    /// Claim an unassigned shared task as the signed-in user's own.
+    func claimTask(_ taskId: UUID) async {
+        guard let i = tasks.firstIndex(where: { $0.id == taskId }),
+              let userId = try? db?.currentUserId() else { return }
+        tasks[i].claim(by: userId)
+        try? await db?.claimTask(id: taskId, assigneeId: userId)
     }
 
     func project(_ id: UUID) -> Project? {
