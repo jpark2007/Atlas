@@ -102,7 +102,7 @@ struct AgendaListView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     if item.kind == .task {
-                        Image(systemName: "checkmark.circle")
+                        Image(systemName: "checkmark.square")
                             .font(.system(size: 10))
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }

@@ -73,8 +73,7 @@ struct AllDayRowView: View {
                     .padding(.horizontal, 4)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: 18)
-                    .background(event.color.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .background(AtlasTheme.wash(event.color), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                     .opacity(isPastDay ? 0.65 : 1)
             }
         }

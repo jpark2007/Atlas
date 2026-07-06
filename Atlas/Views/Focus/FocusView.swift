@@ -35,8 +35,12 @@ struct FocusView: View {
     // MARK: - Phase label
 
     private var phaseLabel: some View {
+        // Caps treatment inlined: atlasCapsLabel() bakes its own foreground nearest the
+        // Text, which would kill the break-phase accent (same trap as WeekColumnHeader).
         Text("— \(vm.phaseLabel.uppercased()) —")
-            .atlasCapsLabel()
+            .atlasMono(size: 11, weight: .bold)
+            .tracking(2)
+            .textCase(.uppercase)
             .foregroundStyle(isBreak ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textMuted)
     }
 

@@ -160,7 +160,7 @@ struct UnscheduledTray: View {
         .padding(.vertical, 8)
         // A grabbable chip: transparent on the cream bg, a hairline outline for the
         // drag affordance (overdue keeps the danger tint + red outline).
-        .background(overdue ? AtlasTheme.Colors.danger.opacity(0.14) : Color.clear)
+        .background(overdue ? AtlasTheme.wash(AtlasTheme.Colors.danger) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous)
