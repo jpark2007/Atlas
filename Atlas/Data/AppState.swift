@@ -278,7 +278,7 @@ final class AppState: ObservableObject {
         let sharedProjectIds = spaces.flatMap { $0.projects }.filter(isShared).map(\.id)
             + sharedWithMeProjects.map(\.id)
         guard !sharedProjectIds.isEmpty,
-              let accessToken = try? db?.currentAccessToken() else { return }
+              let accessToken = try? await db?.currentAccessToken() else { return }
         let sync = RealtimeSyncService(supabaseURL: supabaseURL, anonKey: anonKey, accessToken: accessToken)
         await sync.subscribe(projectIds: sharedProjectIds) { [weak self] in
             Task { @MainActor in
@@ -312,7 +312,7 @@ final class AppState: ObservableObject {
 
         // Projects I'm a member of but don't own land in "Shared with me",
         // not nested under any of my own spaces (they belong to someone else's).
-        guard let myUserId = try? db.currentUserId() else { return }
+        guard let myUserId = try? await db.currentUserId() else { return }
         let myProjectIds = Set(spaces.flatMap { $0.projects.map(\.id) })
         let memberProjectIds = Set(membersByProject.filter { _, members in
             members.contains { $0.userId == myUserId }
@@ -353,7 +353,7 @@ final class AppState: ObservableObject {
     /// Claim an unassigned shared task as the signed-in user's own.
     func claimTask(_ taskId: UUID) async {
         guard let i = tasks.firstIndex(where: { $0.id == taskId }),
-              let userId = try? db?.currentUserId() else { return }
+              let userId = try? await db?.currentUserId() else { return }
         tasks[i].claim(by: userId)
         try? await db?.claimTask(id: taskId, assigneeId: userId)
     }

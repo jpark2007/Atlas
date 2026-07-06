@@ -914,8 +914,8 @@ public final class AtlasDB {
     /// reference (`sessionProvider`), so this is the one accessor `AppState`
     /// and other callers should use rather than threading the session
     /// through separately.
-    public func currentUserId() throws -> UUID {
-        let sess = try requireSession()
+    public func currentUserId() async throws -> UUID {
+        let sess = try await requireSession()
         guard let id = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "session user.id is not a valid UUID")
         }
@@ -925,8 +925,8 @@ public final class AtlasDB {
     /// The signed-in user's raw JWT access token, needed by realtime
     /// subscriptions (which authorize postgres_changes against this token's
     /// claims, not just the anon apikey header used for REST calls).
-    public func currentAccessToken() throws -> String {
-        try requireSession().accessToken
+    public func currentAccessToken() async throws -> String {
+        try await requireSession().accessToken
     }
 
     public func loadProjectMembers(projectId: UUID) async throws -> [ProjectMemberRow] {
@@ -951,9 +951,9 @@ public final class AtlasDB {
 
     @discardableResult
     public func createProjectInvite(projectId: UUID, inviteeEmail: String) async throws -> InviteRow {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         let invite = InviteRow(id: UUID(), kind: .project, targetId: projectId,
-                               inviterId: try currentUserId(), inviteeEmail: inviteeEmail,
+                               inviterId: try await currentUserId(), inviteeEmail: inviteeEmail,
                                status: .pending, createdAt: "")
         let body = try isoEncoder.encode(invite)
         try await send(method: "POST", table: "invites", body: body, sess: sess)
@@ -968,7 +968,7 @@ public final class AtlasDB {
     /// and `send`'s `table` parameter is appended directly onto `restBase`, so
     /// `table: "rpc/accept_invite"` reaches the right endpoint.
     public func respondToInvite(id: UUID, accept: Bool) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         if accept {
             let body = try JSONSerialization.data(withJSONObject: ["invite_id": id.uuidString])
             try await send(method: "POST", table: "rpc/accept_invite", body: body, sess: sess)
@@ -986,7 +986,7 @@ public final class AtlasDB {
     /// `send`/`isoEncoder`/`upsertHeaders` plumbing, but scoped by `user_id`
     /// (the `profiles` primary key) instead of `id`.
     public func updateDisplayName(_ name: String) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard var row = try await loadProfile() else {
             throw AtlasDBError.requestFailed(0, "No profile row for signed-in user")
         }
@@ -1063,7 +1063,7 @@ public final class AtlasDB {
     /// Routing claims through `upsertTask` would silently reassign task ownership
     /// and wipe its project linkage — this scoped PATCH avoids both.
     public func claimTask(id: UUID, assigneeId: UUID) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         let body = try JSONSerialization.data(withJSONObject: ["assignee_id": assigneeId.uuidString])
         try await send(method: "PATCH", table: "tasks",
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
