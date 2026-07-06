@@ -193,40 +193,7 @@ final class AppState: ObservableObject {
                 snapshot = try await db.loadAll()
             }
 
-            // Re-nest flat projects into their parent spaces — spaceID is
-            // authoritative, spaceName is the pre-0015 fallback (SpaceNesting).
-            let nestedSpaces = SpaceNesting.nest(projects: snapshot.projects, into: snapshot.spaces)
-
-            // Debug: log any projects that landed in no space.
-            let nestedIDs = Set(nestedSpaces.flatMap { $0.projects.map(\.id) })
-            let orphanCount = snapshot.projects.filter { !nestedIDs.contains($0.id) }.count
-            if orphanCount > 0 {
-                print("[AtlasDB] \(orphanCount) project(s) match no loaded space — they will not appear in the sidebar.")
-            }
-
-            // Assign to @Published properties (already on @MainActor).
-            self.spaces = nestedSpaces
-            self.tasks  = snapshot.tasks
-            self.events = snapshot.events
-            self.notes  = snapshot.notes
-            self.goals  = snapshot.goals
-            self.references = snapshot.references
-            self.referenceAttachments = snapshot.referenceAttachments
-
-            // Re-derive colors from spaceName.
-            // Spaces already carry real colors from `color_token` — don't touch those.
-            for i in self.events.indices {
-                self.events[i].color = calendarSpaceColor(named: self.events[i].spaceName)
-            }
-            for i in self.tasks.indices {
-                self.tasks[i].spaceColor = calendarSpaceColor(named: self.tasks[i].spaceName)
-            }
-            for i in self.spaces.indices {
-                for j in self.spaces[i].projects.indices {
-                    self.spaces[i].projects[j].spaceColor =
-                        calendarSpaceColor(named: self.spaces[i].projects[j].spaceName)
-                }
-            }
+            applySnapshot(snapshot)
 
             // Re-seed sidebar expansion to first 2 loaded space ids
             // (old MockData ids no longer match after DB load).
@@ -241,11 +208,80 @@ final class AppState: ObservableObject {
         // trigger). Nil = migration not deployed; degrade silently.
         self.profile = try? await self.db?.loadProfile()
         await self.loadCollabState()
+        await startRealtimeSync(supabaseURL: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey)
 
         // Re-derive server-owned Google sync mode from the cloud connection.
         await refreshGoogleConnection()
         // Load the Canvas connection so Settings shows its live status from launch.
         await refreshCanvasConnection()
+    }
+
+    /// Assigns a freshly loaded `AtlasSnapshot` onto the published model arrays —
+    /// re-nesting projects into spaces and re-deriving colors from spaceName.
+    /// Shared by initial `bootstrap(db:)` and the realtime refetch path so both
+    /// apply a snapshot identically.
+    private func applySnapshot(_ snapshot: AtlasSnapshot) {
+        // Re-nest flat projects into their parent spaces — spaceID is
+        // authoritative, spaceName is the pre-0015 fallback (SpaceNesting).
+        let nestedSpaces = SpaceNesting.nest(projects: snapshot.projects, into: snapshot.spaces)
+
+        // Debug: log any projects that landed in no space.
+        let nestedIDs = Set(nestedSpaces.flatMap { $0.projects.map(\.id) })
+        let orphanCount = snapshot.projects.filter { !nestedIDs.contains($0.id) }.count
+        if orphanCount > 0 {
+            print("[AtlasDB] \(orphanCount) project(s) match no loaded space — they will not appear in the sidebar.")
+        }
+
+        // Assign to @Published properties (already on @MainActor).
+        self.spaces = nestedSpaces
+        self.tasks  = snapshot.tasks
+        self.events = snapshot.events
+        self.notes  = snapshot.notes
+        self.goals  = snapshot.goals
+        self.references = snapshot.references
+        self.referenceAttachments = snapshot.referenceAttachments
+
+        // Re-derive colors from spaceName.
+        // Spaces already carry real colors from `color_token` — don't touch those.
+        for i in self.events.indices {
+            self.events[i].color = calendarSpaceColor(named: self.events[i].spaceName)
+        }
+        for i in self.tasks.indices {
+            self.tasks[i].spaceColor = calendarSpaceColor(named: self.tasks[i].spaceName)
+        }
+        for i in self.spaces.indices {
+            for j in self.spaces[i].projects.indices {
+                self.spaces[i].projects[j].spaceColor =
+                    calendarSpaceColor(named: self.spaces[i].projects[j].spaceName)
+            }
+        }
+    }
+
+    /// Realtime subscriptions for shared-project tables (tasks/events/notes) — nil
+    /// until `startRealtimeSync` runs.
+    private var realtimeSync: RealtimeSyncService?
+
+    /// Starts realtime subscriptions for every shared project the user
+    /// currently belongs to. Called once after `loadCollabState()` populates
+    /// `spaces`/membership, and safe to re-call whenever that set changes (e.g.
+    /// after accepting a new invite) — always tears down prior subscriptions first.
+    func startRealtimeSync(supabaseURL: URL, anonKey: String) async {
+        await realtimeSync?.unsubscribeAll()
+        let sharedProjectIds = spaces.flatMap { $0.projects }.filter(isShared).map(\.id)
+        guard !sharedProjectIds.isEmpty else { return }
+        let sync = RealtimeSyncService(supabaseURL: supabaseURL, anonKey: anonKey)
+        await sync.subscribe(projectIds: sharedProjectIds) { [weak self] in
+            Task { @MainActor in
+                await self?.loadCollabState()
+                // Re-load the full snapshot too, since a teammate's change to
+                // a shared task/event/note needs to show up in the normal
+                // tasks/events/notes arrays, not just the membership state.
+                if let db = self?.db, let snapshot = try? await db.loadAll() {
+                    self?.applySnapshot(snapshot)
+                }
+            }
+        }
+        self.realtimeSync = sync
     }
 
     /// Loads pending invites and every visible project's membership roster.
