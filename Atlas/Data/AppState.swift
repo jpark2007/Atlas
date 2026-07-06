@@ -94,6 +94,9 @@ final class AppState: ObservableObject {
     @Published var pendingInvites: [InviteRow] = []
     /// Membership rosters for shared projects, keyed by project id.
     @Published var projectMembers: [UUID: [ProjectMemberRow]] = [:]
+    /// Projects owned by someone else that I'm a member of — surfaced in the
+    /// sidebar's "Shared with me" section, never nested under my own spaces.
+    @Published var sharedWithMeProjects: [Project] = []
 
     /// True once a project has more than just its owner as a member — drives
     /// the sidebar's shared-project marker and the Team-view affordances.
@@ -260,6 +263,17 @@ final class AppState: ObservableObject {
             }
         }
         self.projectMembers = membersByProject
+
+        // Projects I'm a member of but don't own land in "Shared with me",
+        // not nested under any of my own spaces (they belong to someone else's).
+        guard let myUserId = try? db.currentUserId() else { return }
+        let myProjectIds = Set(spaces.flatMap { $0.projects.map(\.id) })
+        let memberProjectIds = Set(membersByProject.filter { _, members in
+            members.contains { $0.userId == myUserId }
+        }.keys).subtracting(myProjectIds)
+        // Membership rosters only tell us IDs; fetch the actual project rows
+        // for anything not already in `spaces` via a dedicated small query.
+        self.sharedWithMeProjects = (try? await db.loadProjectsByIds(Array(memberProjectIds))) ?? []
     }
 
     /// Send a project invite. Errors are swallowed to a debug log — the

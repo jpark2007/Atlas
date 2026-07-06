@@ -916,6 +916,13 @@ public final class AtlasDB {
         return all.filter { $0.projectId == projectId }
     }
 
+    /// Fetches specific projects by id — used for "Shared with me" rows,
+    /// which belong to someone else's space and so aren't in `AppState.spaces`.
+    public func loadProjectsByIds(_ ids: [UUID]) async throws -> [Project] {
+        let all: [ProjectRow] = try await getAll("projects")
+        return all.filter { ids.contains($0.id) }.map { $0.toDomain() }
+    }
+
     /// Invites addressed to the caller's own email with `status = pending`.
     /// RLS already scopes rows to the caller's email; the `.pending` filter is
     /// applied client-side too, in case a future caller wants all their invites.

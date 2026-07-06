@@ -10,6 +10,9 @@ struct SidebarView: View {
     /// Drives the create-Space sheet (top-level bucket).
     @State private var presentNewSpace = false
 
+    /// Drives the pending-invites inbox sheet.
+    @State private var presentInvites = false
+
     /// The row the cursor is over — drives the subtle ink hover tint that
     /// replaces the mobile app's haptics. Keyed on Route so every kind of row
     /// (nav / space / project / profile→settings) shares one piece of state.
@@ -60,6 +63,20 @@ struct SidebarView: View {
                     spaceSection(space)
                 }
 
+                if !state.sharedWithMeProjects.isEmpty {
+                    HStack(spacing: 4) {
+                        Text("SHARED WITH ME").atlasCapsLabel()
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.top, 14)
+                    .padding(.bottom, 6)
+
+                    ForEach(state.sharedWithMeProjects) { project in
+                        projectRow(project)
+                    }
+                }
+
                 Spacer(minLength: 20)
 
                 hairline
@@ -67,6 +84,22 @@ struct SidebarView: View {
 
                 profileRow
                     .padding(.top, 8)
+
+                if !state.pendingInvites.isEmpty {
+                    Button {
+                        presentInvites = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "envelope.fill").font(.system(size: 10))
+                            Text(state.pendingInvites.count == 1 ? "1 invitation" : "\(state.pendingInvites.count) invitations")
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                        }
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 6)
+                }
             }
             .padding(.horizontal, 12)
         }
@@ -78,6 +111,9 @@ struct SidebarView: View {
         }
         .sheet(isPresented: $presentNewSpace) {
             NewSpaceSheet()
+        }
+        .sheet(isPresented: $presentInvites) {
+            InviteInboxSheet()
         }
     }
 
@@ -311,6 +347,9 @@ struct SidebarView: View {
                 Text(project.name)
                     .font(.system(size: 12.5, weight: selected ? .semibold : .regular, design: .rounded))
                     .foregroundStyle(selected ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
+                if state.isShared(project) {
+                    sharedMemberCluster(for: project)
+                }
                 Spacer()
             }
             .padding(.leading, 27)
@@ -322,5 +361,23 @@ struct SidebarView: View {
         }
         .buttonStyle(.plain)
         .onHover { track(projectRoute, $0) }
+    }
+
+    /// Two overlapping small-caps initial circles — the sidebar's only visual
+    /// tell that a project is shared. Deliberately quiet: no badge, no color,
+    /// no "SHARED" label, per the editorial-minimal design direction.
+    @ViewBuilder
+    private func sharedMemberCluster(for project: Project) -> some View {
+        let members = state.projectMembers[project.id] ?? []
+        HStack(spacing: -6) {
+            ForEach(members.prefix(2), id: \.userId) { member in
+                Circle()
+                    .fill(AtlasTheme.Colors.bgSidebar)
+                    .frame(width: 14, height: 14)
+                    .overlay(
+                        Circle().strokeBorder(AtlasTheme.Colors.textMuted.opacity(0.4), lineWidth: 0.75)
+                    )
+            }
+        }
     }
 }
