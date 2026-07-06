@@ -145,6 +145,7 @@ public struct ProjectRow: Codable {
     public var instructor: String?
     public var canvasSynced: Bool
     public var overview: String
+    public var spaceId: UUID?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -157,6 +158,7 @@ public struct ProjectRow: Codable {
         case instructor
         case canvasSynced = "canvas_synced"
         case overview
+        case spaceId      = "space_id"
     }
 
     public init(domain p: Project) {
@@ -169,16 +171,19 @@ public struct ProjectRow: Codable {
         self.instructor   = p.instructor
         self.canvasSynced = p.canvasSynced
         self.overview     = p.overview
+        self.spaceId      = p.spaceID
     }
 
     public func toDomain() -> Project {
         // Nested display arrays (assignments, notes, pinned, backlinks) are NOT persisted;
         // toDomain() returns them as []. Task 2 re-nests projects into spaces via spaceName.
-        Project(id: id, name: name, code: code, isClass: isClass,
+        var project = Project(id: id, name: name, code: code, isClass: isClass,
                 spaceName: spaceName,
                 spaceColor: AtlasTheme.Colors.accent, // Task 2 re-derives from spaceName
                 meetingInfo: meetingInfo, instructor: instructor,
                 canvasSynced: canvasSynced, overview: overview)
+        project.spaceID = spaceId
+        return project
     }
 }
 
@@ -200,6 +205,7 @@ public struct TaskRow: Codable {
     public var noteId: UUID?
     public var durationMin: Int?
     public var workBlockGoogleEventId: String?
+    public var spaceId: UUID?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -215,6 +221,7 @@ public struct TaskRow: Codable {
         case noteId      = "note_id"
         case durationMin = "duration_min"
         case workBlockGoogleEventId = "work_block_google_event_id"
+        case spaceId     = "space_id"
     }
 
     public init(domain t: TaskItem) {
@@ -230,10 +237,11 @@ public struct TaskRow: Codable {
         self.noteId      = t.noteID
         self.durationMin = t.durationMin
         self.workBlockGoogleEventId = t.workBlockGoogleEventId
+        self.spaceId     = t.spaceID
     }
 
     public func toDomain() -> TaskItem {
-        TaskItem(id: id,
+        var task = TaskItem(id: id,
                  title: title,
                  dueLabel: TaskItem.dueLabel(for: dueDate),
                  status: TaskRow.decode(status: status),
@@ -245,6 +253,8 @@ public struct TaskRow: Codable {
                  workBlockGoogleEventId: workBlockGoogleEventId,
                  spaceName: spaceName,
                  notes: notes ?? "")
+        task.spaceID = spaceId
+        return task
     }
 
     // MARK: TaskStatus ↔ status text (explicit switch — enum has NO raw values)
@@ -287,6 +297,7 @@ public struct EventRow: Codable {
     public var projectId: UUID?
     public var googleEventId: String?
     public var noteId: UUID?
+    public var spaceId: UUID?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -301,6 +312,7 @@ public struct EventRow: Codable {
         case projectId = "project_id"
         case googleEventId = "google_event_id"
         case noteId    = "note_id"
+        case spaceId   = "space_id"
     }
 
     public init(domain e: CalendarEvent) {
@@ -315,12 +327,13 @@ public struct EventRow: Codable {
         self.projectId = e.projectID
         self.googleEventId = e.googleEventId
         self.noteId    = e.noteID
+        self.spaceId   = e.spaceID
     }
 
     public func toDomain() -> CalendarEvent {
         // CalendarEvent has `var id: UUID = UUID()` — memberwise init exposes `id`
         // as an overridable parameter, so the DB UUID IS preserved here.
-        CalendarEvent(id: id,
+        var event = CalendarEvent(id: id,
                       title: title,
                       subtitle: subtitle,
                       start: startAt,
@@ -337,6 +350,8 @@ public struct EventRow: Codable {
                       // affects Mac reap eligibility for that edge, the fail-safe direction).
                       source: googleEventId != nil ? .google : .atlas,
                       googleEventId: googleEventId)
+        event.spaceID = spaceId
+        return event
     }
 }
 
@@ -354,6 +369,7 @@ public struct NoteRow: Codable {
     public var updatedAt: Date
     public var isExternal: Bool
     public var googleDocId: String?
+    public var spaceId: UUID?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -365,6 +381,7 @@ public struct NoteRow: Codable {
         case updatedAt   = "updated_at"
         case isExternal  = "is_external"
         case googleDocId = "google_doc_id"
+        case spaceId     = "space_id"
     }
 
     public init(domain n: Note) {
@@ -376,13 +393,16 @@ public struct NoteRow: Codable {
         self.updatedAt   = n.updatedAt
         self.isExternal  = n.isExternal
         self.googleDocId = n.googleDocId
+        self.spaceId     = n.spaceID
     }
 
     public func toDomain() -> Note {
-        Note(id: id, title: title, body: body,
+        var note = Note(id: id, title: title, body: body,
              spaceName: spaceName, projectID: projectId,
              updatedAt: updatedAt, isExternal: isExternal,
              googleDocId: googleDocId)
+        note.spaceID = spaceId
+        return note
     }
 }
 
