@@ -183,3 +183,29 @@ begin
     end if;
 end;
 $$;
+
+-- ── 7. Realtime: publish shared-project tables ──────────────
+-- postgres_changes only fires for tables in this publication. Idempotent:
+-- only adds a table if it isn't already a member (add_table has no native
+-- IF NOT EXISTS, so guard it explicitly).
+do $$
+begin
+    if not exists (
+        select 1 from pg_publication_tables
+        where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'tasks'
+    ) then
+        alter publication supabase_realtime add table tasks;
+    end if;
+    if not exists (
+        select 1 from pg_publication_tables
+        where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'events'
+    ) then
+        alter publication supabase_realtime add table events;
+    end if;
+    if not exists (
+        select 1 from pg_publication_tables
+        where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'notes'
+    ) then
+        alter publication supabase_realtime add table notes;
+    end if;
+end $$;

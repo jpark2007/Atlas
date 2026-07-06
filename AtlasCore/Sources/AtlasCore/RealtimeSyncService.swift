@@ -12,10 +12,21 @@ public final class RealtimeSyncService {
     private let client: RealtimeClientV2
     private var channels: [RealtimeChannelV2] = []
 
-    public init(supabaseURL: URL, anonKey: String) {
+    /// - Parameter accessToken: the signed-in user's JWT. Supabase Realtime
+    ///   authorizes `postgres_changes` against the SOCKET's JWT, not the anon
+    ///   `apikey` header used for REST calls — without this, RLS-scoped
+    ///   changes on `tasks`/`events`/`notes` never reach this connection.
+    ///   Passed as the `Authorization` header, which `RealtimeClientV2` reads
+    ///   at init to seed its connection-level access token (see
+    ///   `RealtimeClientV2.init` in supabase-swift, which extracts it from
+    ///   `options.headers[.authorization]`).
+    public init(supabaseURL: URL, anonKey: String, accessToken: String) {
         self.client = RealtimeClientV2(
             url: supabaseURL.appendingPathComponent("realtime/v1"),
-            options: RealtimeClientOptions(headers: ["apikey": anonKey])
+            options: RealtimeClientOptions(headers: [
+                "apikey": anonKey,
+                "Authorization": "Bearer \(accessToken)"
+            ])
         )
     }
 

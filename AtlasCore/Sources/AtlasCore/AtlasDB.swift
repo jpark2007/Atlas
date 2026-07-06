@@ -911,6 +911,13 @@ public final class AtlasDB {
         return id
     }
 
+    /// The signed-in user's raw JWT access token, needed by realtime
+    /// subscriptions (which authorize postgres_changes against this token's
+    /// claims, not just the anon apikey header used for REST calls).
+    public func currentAccessToken() throws -> String {
+        try requireSession().accessToken
+    }
+
     public func loadProjectMembers(projectId: UUID) async throws -> [ProjectMemberRow] {
         let all: [ProjectMemberRow] = (try? await getAll("project_members", order: "added_at")) ?? []
         return all.filter { $0.projectId == projectId }
@@ -1025,6 +1032,7 @@ public final class AtlasDB {
         }
         var row = TaskRow(domain: t)
         row.userId = userId
+        if row.createdBy == nil { row.createdBy = userId }
         let body = try isoEncoder.encode(row)
         try await send(method: "POST", table: "tasks",
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
@@ -1036,6 +1044,19 @@ public final class AtlasDB {
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
                        extraHeaders: ["Prefer": "return=minimal"],
                        sess: sess)
+    }
+
+    /// Claims a shared task for the caller WITHOUT touching `user_id`/`project_id` —
+    /// unlike `upsertTask` (which stamps the caller as owner and has no project_id
+    /// support yet), claiming must only ever change who the task is assigned to.
+    /// Routing claims through `upsertTask` would silently reassign task ownership
+    /// and wipe its project linkage — this scoped PATCH avoids both.
+    public func claimTask(id: UUID, assigneeId: UUID) async throws {
+        let sess = try requireSession()
+        let body = try JSONSerialization.data(withJSONObject: ["assignee_id": assigneeId.uuidString])
+        try await send(method: "PATCH", table: "tasks",
+                       query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                       body: body, sess: sess)
     }
 
     // MARK: Events

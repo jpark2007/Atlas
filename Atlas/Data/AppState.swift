@@ -267,9 +267,15 @@ final class AppState: ObservableObject {
     /// after accepting a new invite) — always tears down prior subscriptions first.
     func startRealtimeSync(supabaseURL: URL, anonKey: String) async {
         await realtimeSync?.unsubscribeAll()
+        // Include projects shared TO me (not just ones I own and shared out) —
+        // those live only in `sharedWithMeProjects`, never in `spaces`, so
+        // `isShared` alone misses exactly the case that matters: seeing a
+        // teammate's live edits on a project they invited me to.
         let sharedProjectIds = spaces.flatMap { $0.projects }.filter(isShared).map(\.id)
-        guard !sharedProjectIds.isEmpty else { return }
-        let sync = RealtimeSyncService(supabaseURL: supabaseURL, anonKey: anonKey)
+            + sharedWithMeProjects.map(\.id)
+        guard !sharedProjectIds.isEmpty,
+              let accessToken = try? db?.currentAccessToken() else { return }
+        let sync = RealtimeSyncService(supabaseURL: supabaseURL, anonKey: anonKey, accessToken: accessToken)
         await sync.subscribe(projectIds: sharedProjectIds) { [weak self] in
             Task { @MainActor in
                 await self?.loadCollabState()
@@ -345,8 +351,7 @@ final class AppState: ObservableObject {
         guard let i = tasks.firstIndex(where: { $0.id == taskId }),
               let userId = try? db?.currentUserId() else { return }
         tasks[i].claim(by: userId)
-        let updated = tasks[i]
-        try? await db?.upsertTask(updated)
+        try? await db?.claimTask(id: taskId, assigneeId: userId)
     }
 
     func project(_ id: UUID) -> Project? {
