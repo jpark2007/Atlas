@@ -82,11 +82,26 @@ struct ProjectDetailView: View {
         }
         .background(AtlasTheme.Colors.bgBase)
         .onAppear { seedStarterIfNeeded() }
-        .sheet(item: $editingNote) { note in
-            NoteEditorView(note: note)
-                .frame(width: 560, height: 540)
-                .background(AtlasTheme.Colors.bgDeep)
+        // Surface server-side reference/note changes (the cron flips pending→synced
+        // and fills doc-note bodies) without a relaunch: refresh on entry, then poll
+        // while anything is still pending. Cancelled automatically on exit.
+        .task(id: project.id) {
+            await state.reloadReferences()
+            while !Task.isCancelled,
+                  state.references(in: project.id).contains(where: { $0.syncState == .pending }) {
+                try? await Task.sleep(for: .seconds(20))
+                await state.reloadReferences()
+            }
         }
+        // Corner-card editor (not a modal sheet): the project stays visible behind
+        // it; drag-resize and expand live in `NoteCardOverlay`.
+        .overlay(alignment: .bottomTrailing) {
+            if let note = editingNote {
+                NoteCardOverlay(note: note) { editingNote = nil }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: editingNote?.id)
         .sheet(isPresented: $presentAddLink) {
             AddLinkSheet(projectID: project.id)
         }
@@ -246,6 +261,7 @@ struct ProjectDetailView: View {
                             onTap: { openReference(ref) },
                             onOpenExternal: { openExternal(ref) },
                             onQuickLook: ref.kind == .file ? { quickLook(ref) } : nil,
+                            onEditNote: ref.kind == .docNote ? { openReference(ref) } : nil,
                             onRemove: { state.removeReference(ref.id) }
                         )
                         if i < refs.count - 1 {
@@ -335,7 +351,7 @@ struct ProjectDetailView: View {
     /// redirect), enrich them with Drive metadata, and POST the unchanged
     /// `{projectId, files[]}` contract to `drive-import`.
     private func importFromDrive() {
-        guard let jwt = auth.session?.accessToken else {
+        guard auth.session != nil else {
             referenceError = "Sign in to Atlas to import from Drive."
             return
         }
@@ -372,6 +388,12 @@ struct ProjectDetailView: View {
 
                 let token = try await googleAuth.validAccessToken()
                 let files = await enrichPickedFiles(ids: ids, token: token)
+                // Mint the JWT only now: the interactive picker round-trip can outlive
+                // the 1-hour token TTL, so a click-time capture arrives expired.
+                guard let jwt = await auth.validAccessToken() else {
+                    referenceError = "Your Atlas session expired — sign in again to finish the import."
+                    return
+                }
                 try await registerDriveImports(projectID: project.id, files: files, jwt: jwt)
                 await state.reloadReferences()
             } catch is DriveOnePickError {

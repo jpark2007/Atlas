@@ -14,6 +14,7 @@ struct ReferenceRowView: View {
     var onTap: () -> Void
     var onOpenExternal: () -> Void
     var onQuickLook: (() -> Void)?      // `.file` only
+    var onEditNote: (() -> Void)?       // `.docNote` only — opens the linked note in Atlas
     var onRemove: () -> Void
 
     var body: some View {
@@ -61,6 +62,9 @@ struct ReferenceRowView: View {
 
     private var menu: some View {
         Menu {
+            if let onEditNote {
+                Button { onEditNote() } label: { Label("Edit in Atlas", systemImage: "square.and.pencil") }
+            }
             if let onQuickLook {
                 Button { onQuickLook() } label: { Label("Quick Look", systemImage: "eye") }
             }

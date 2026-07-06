@@ -27,14 +27,61 @@ struct NoteEditorView: View {
     @State private var showStaleConflict = false
 
     private let onDone: ((Note) -> Void)?
+    /// Overlay hosts (the corner note card) can't rely on `dismiss` — it only works
+    /// in real presentations (sheets). They pass a close callback instead.
+    private let onDismiss: (() -> Void)?
+    /// True when the host owns the frame + card chrome (background/border/size);
+    /// the editor then fills the space it's given instead of its fixed 560-wide card.
+    private let chromeless: Bool
 
-    init(note: Note, onDone: ((Note) -> Void)? = nil) {
+    init(note: Note, chromeless: Bool = false,
+         onDone: ((Note) -> Void)? = nil, onDismiss: (() -> Void)? = nil) {
         _draft = State(initialValue: note)
         _doc = State(initialValue: RichDoc.fromPlainText(note.body))
+        self.chromeless = chromeless
         self.onDone = onDone
+        self.onDismiss = onDismiss
     }
 
     var body: some View {
+        Group {
+            if chromeless {
+                core
+            } else {
+                core
+                    .frame(width: 560)
+                    .frame(minHeight: 420)
+                    .background(AtlasTheme.Colors.bgElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.lg, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AtlasTheme.Radius.lg, style: .continuous)
+                            .stroke(AtlasTheme.Colors.border, lineWidth: 1)
+                    )
+            }
+        }
+        // A linked Doc-note stores its body as Markdown (the two-way transport form),
+        // so parse it structurally rather than as plain text. Native notes keep the
+        // plain-text path from `init`.
+        .onAppear { if docReference != nil { doc = RichDoc.fromMarkdown(draft.body) } }
+        .confirmationDialog("This Doc changed in Google Docs",
+                            isPresented: $showStaleConflict, titleVisibility: .visible) {
+            Button("Overwrite Google Doc", role: .destructive) {
+                if let ref = docReference, let service = writeBackService {
+                    isPushing = true
+                    Task { await push(ref: ref, service: service, overwrite: true) }
+                }
+            }
+            Button("Keep Google's version") {
+                // Discard local edits; the cron re-pulls the newer Doc into the note.
+                closeHost()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Your edits and the Google Doc have diverged. Overwrite replaces the Doc with your version; keeping Google's discards your local edits.")
+        }
+    }
+
+    private var core: some View {
         VStack(alignment: .leading, spacing: 0) {
             TextField("Title", text: $draft.title)
                 .textFieldStyle(.plain)
@@ -64,34 +111,6 @@ struct NoteEditorView: View {
             Divider().overlay(AtlasTheme.Colors.border)
 
             footer
-        }
-        .frame(width: 560)
-        .frame(minHeight: 420)
-        .background(AtlasTheme.Colors.bgElevated)
-        .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.lg, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: AtlasTheme.Radius.lg, style: .continuous)
-                .stroke(AtlasTheme.Colors.border, lineWidth: 1)
-        )
-        // A linked Doc-note stores its body as Markdown (the two-way transport form),
-        // so parse it structurally rather than as plain text. Native notes keep the
-        // plain-text path from `init`.
-        .onAppear { if docReference != nil { doc = RichDoc.fromMarkdown(draft.body) } }
-        .confirmationDialog("This Doc changed in Google Docs",
-                            isPresented: $showStaleConflict, titleVisibility: .visible) {
-            Button("Overwrite Google Doc", role: .destructive) {
-                if let ref = docReference, let service = writeBackService {
-                    isPushing = true
-                    Task { await push(ref: ref, service: service, overwrite: true) }
-                }
-            }
-            Button("Keep Google's version") {
-                // Discard local edits; the cron re-pulls the newer Doc into the note.
-                dismiss()
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("Your edits and the Google Doc have diverged. Overwrite replaces the Doc with your version; keeping Google's discards your local edits.")
         }
     }
 
@@ -340,6 +359,13 @@ struct NoteEditorView: View {
         }
     }
 
+    /// Close whichever host is presenting us — the corner card (`onDismiss`) or a
+    /// sheet (`dismiss`). Exclusive on purpose: calling `dismiss` with no active
+    /// presentation walks SwiftUI's fallback chain and closes the whole WINDOW.
+    private func closeHost() {
+        if let onDismiss { onDismiss() } else { dismiss() }
+    }
+
     private func commit() {
         doc.normalize()
         if let ref = docReference {
@@ -349,7 +375,7 @@ struct NoteEditorView: View {
             updated.body = doc.plainText
             state.updateNote(updated)
             onDone?(updated)
-            dismiss()
+            closeHost()
         }
     }
 
@@ -359,7 +385,7 @@ struct NoteEditorView: View {
     private func commitDocNote(_ ref: Reference) {
         guard let service = writeBackService else {
             persistDocNoteBody()
-            dismiss()
+            closeHost()
             return
         }
         isPushing = true
@@ -376,7 +402,7 @@ struct NoteEditorView: View {
                 // second save this session doesn't compare against a now-stale time.
                 if let modifiedTime { state.markReferenceSynced(ref.id, modifiedTime: modifiedTime) }
                 persistDocNoteBody()
-                dismiss()
+                closeHost()
             case .changedInGoogle:
                 showStaleConflict = true   // surface refresh/overwrite; stay open
             }
@@ -384,7 +410,7 @@ struct NoteEditorView: View {
             // Never lose the user's work: keep the local Markdown copy and close;
             // the cron will push it on the next tick.
             persistDocNoteBody()
-            dismiss()
+            closeHost()
         }
     }
 
