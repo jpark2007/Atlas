@@ -82,14 +82,20 @@ struct ProjectDetailView: View {
         }
         .background(AtlasTheme.Colors.bgBase)
         .onAppear { seedStarterIfNeeded() }
-        // Surface server-side reference/note changes (the cron flips pending→synced
-        // and fills doc-note bodies) without a relaunch: refresh on entry, then poll
-        // while anything is still pending. Cancelled automatically on exit.
+        // Surface server-side reference/note changes (the cron flips pending→synced,
+        // fills doc-note bodies, and re-pulls later Google edits) without a relaunch:
+        // refresh on entry, then keep refreshing while an import is settling (fast) OR
+        // any Doc-note is present (steady) — a Doc can change on Google's side any time,
+        // so its rows' "Last synced" and content stay fresh while the project is open.
+        // Stops when nothing can change server-side. Cancelled automatically on exit.
         .task(id: project.id) {
             await state.reloadReferences()
-            while !Task.isCancelled,
-                  state.references(in: project.id).contains(where: { $0.syncState == .pending }) {
-                try? await Task.sleep(for: .seconds(20))
+            while !Task.isCancelled {
+                let refs = state.references(in: project.id)
+                let hasPending  = refs.contains { $0.syncState == .pending }
+                let hasDocNotes = refs.contains { $0.kind == .docNote }
+                guard hasPending || hasDocNotes else { break }
+                try? await Task.sleep(for: .seconds(hasPending ? 20 : 45))
                 await state.reloadReferences()
             }
         }
@@ -262,6 +268,7 @@ struct ProjectDetailView: View {
                             onOpenExternal: { openExternal(ref) },
                             onQuickLook: ref.kind == .file ? { quickLook(ref) } : nil,
                             onEditNote: ref.kind == .docNote ? { openReference(ref) } : nil,
+                            onSyncNow: ref.kind == .docNote ? { await state.reloadReferences() } : nil,
                             onRemove: { state.removeReference(ref.id) }
                         )
                         if i < refs.count - 1 {

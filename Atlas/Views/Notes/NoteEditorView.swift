@@ -25,6 +25,17 @@ struct NoteEditorView: View {
     @State private var isPushing = false
     /// Set when the write-back guard reports the Doc changed in Google since our pull.
     @State private var showStaleConflict = false
+    /// `updatedAt` of the note version currently loaded in the editor — the baseline a
+    /// cron pull is compared against, so we react only to versions newer than ours.
+    @State private var baselineUpdatedAt: Date?
+    /// True once the user edited title/body/formatting since load — gates whether a
+    /// freshly-synced Google version silently replaces the buffer (clean) or only
+    /// surfaces a banner (dirty), so unsaved work is never clobbered.
+    @State private var isDirty = false
+    /// Set when a newer synced version arrived while the buffer was dirty.
+    @State private var newerVersionAvailable = false
+    /// True while a manual "Sync now" reload is in flight.
+    @State private var isSyncingNow = false
 
     private let onDone: ((Note) -> Void)?
     /// Overlay hosts (the corner note card) can't rely on `dismiss` — it only works
@@ -62,7 +73,26 @@ struct NoteEditorView: View {
         // A linked Doc-note stores its body as Markdown (the two-way transport form),
         // so parse it structurally rather than as plain text. Native notes keep the
         // plain-text path from `init`.
-        .onAppear { if docReference != nil { doc = RichDoc.fromMarkdown(draft.body) } }
+        .onAppear {
+            // Adopt the freshest persisted version (the passed snapshot can predate a
+            // cron pull), parse a linked Doc-note's Markdown body, and set the baseline.
+            if let live = liveNote { draft = live }
+            if docReference != nil { doc = RichDoc.fromMarkdown(draft.body) }
+            baselineUpdatedAt = liveNote?.updatedAt ?? draft.updatedAt
+        }
+        // Keep an OPEN Doc-note fresh without navigating away: pull the latest from the
+        // Atlas cloud on a gentle cadence (the cron writes Google→DB every ~5 min; this
+        // surfaces it into `state.notes`). Native notes have nothing to pull — Doc-only.
+        .task(id: draft.id) {
+            guard docReference != nil else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                if Task.isCancelled { break }
+                await state.reloadReferences()
+            }
+        }
+        // A cron pull bumps the backing note's updatedAt; reconcile it into the editor.
+        .onChange(of: liveNote?.updatedAt) { _, _ in reconcileSyncedVersion() }
         .confirmationDialog("This Doc changed in Google Docs",
                             isPresented: $showStaleConflict, titleVisibility: .visible) {
             Button("Overwrite Google Doc", role: .destructive) {
@@ -83,7 +113,7 @@ struct NoteEditorView: View {
 
     private var core: some View {
         VStack(alignment: .leading, spacing: 0) {
-            TextField("Title", text: $draft.title)
+            TextField("Title", text: titleBinding)
                 .textFieldStyle(.plain)
                 .atlasTitleSerif(size: 17)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
@@ -92,6 +122,7 @@ struct NoteEditorView: View {
                 .padding(.bottom, 10)
 
             if let ref = docReference { docBadgeRow(ref) }
+            if newerVersionAvailable { newerVersionBanner }
 
             styleBar
 
@@ -124,21 +155,21 @@ struct NoteEditorView: View {
 
     private var docURL: URL? { docReference?.externalURL }
 
-    /// A subtle linked badge + sync state, with the "Open in Google Docs" escape hatch.
+    /// The persisted note this editor backs, looked up live so a cron pull is observable
+    /// (the passed `note` is a value snapshot that never updates on its own).
+    private var liveNote: Note? { state.notes.first { $0.id == draft.id } }
+
+    /// A subtle linked badge + LIVE sync state, a "Sync now" refresh, and the "Open in
+    /// Google Docs" escape hatch.
     private func docBadgeRow(_ ref: Reference) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "doc.richtext")
                 .font(.system(size: 11))
                 .foregroundStyle(AtlasTheme.Colors.accentText)
             atlasTag(text: "Google Doc", color: AtlasTheme.Colors.accentText)
-            if let sub = syncSubtitle(ref) {
-                Text("· \(sub)")
-                    .font(AtlasTheme.Font.small())
-                    .foregroundStyle(ref.syncState == .stale
-                                     ? AtlasTheme.Colors.accentText
-                                     : AtlasTheme.Colors.textMuted)
-            }
+            syncSubtitleView(ref)
             Spacer()
+            syncNowButton
             if let url = docURL {
                 Button { openURL(url) } label: {
                     HStack(spacing: 3) {
@@ -155,18 +186,104 @@ struct NoteEditorView: View {
         .padding(.vertical, 6)
     }
 
-    private func syncSubtitle(_ ref: Reference) -> String? {
+    /// Live "Last synced Xm ago" — `Text(_:style:.relative)` self-updates, so it never
+    /// freezes at render. Non-synced states keep their static one-liner.
+    @ViewBuilder
+    private func syncSubtitleView(_ ref: Reference) -> some View {
         switch ref.syncState {
-        case .stale:   return "Changed in Google — save to overwrite"
-        case .error:   return "Sync error"
-        case .pending: return "Not yet synced"
         case .synced:
             if let d = ref.lastSyncedAt {
-                let f = RelativeDateTimeFormatter(); f.unitsStyle = .abbreviated
-                return "Last synced \(f.localizedString(for: d, relativeTo: Date()))"
+                (Text("· Last synced ") + Text(d, style: .relative) + Text(" ago"))
+                    .font(AtlasTheme.Font.small())
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+            } else {
+                Text("· Synced")
+                    .font(AtlasTheme.Font.small())
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
-            return "Synced"
+        case .stale:
+            Text("· Changed in Google — save to overwrite")
+                .font(AtlasTheme.Font.small())
+                .foregroundStyle(AtlasTheme.Colors.accentText)
+        case .error:
+            Text("· Sync error")
+                .font(AtlasTheme.Font.small())
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+        case .pending:
+            Text("· Not yet synced")
+                .font(AtlasTheme.Font.small())
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
+    }
+
+    /// On-demand freshness: re-reads the Atlas cloud (which the cron keeps in step with
+    /// Drive). It can't force a Google pull — `google-sync` is service-role-only + a
+    /// global tick — so this surfaces the last cron result immediately instead.
+    private var syncNowButton: some View {
+        Button {
+            guard !isSyncingNow else { return }
+            isSyncingNow = true
+            Task { await state.reloadReferences(); isSyncingNow = false }
+        } label: {
+            Group {
+                if isSyncingNow {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                }
+            }
+            .frame(width: 20, height: 20)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isSyncingNow)
+        .help("Sync now — check for the latest synced version")
+    }
+
+    /// Shown when a newer Google version synced while the buffer was dirty: we keep the
+    /// user's edits (never clobber) and offer an explicit Reload. Pressing Done instead
+    /// still trips the write-back staleness guard, so either path is safe.
+    private var newerVersionBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 11))
+                .foregroundStyle(AtlasTheme.Colors.accentText)
+            Text("A newer version synced from Google — your edits are kept.")
+                .font(AtlasTheme.Font.small())
+                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+            Spacer()
+            Button { if let live = liveNote { loadFresh(live) } } label: {
+                Text("Reload")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
+            }
+            .buttonStyle(.plain)
+            .help("Discard local edits and load Google's version")
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 6)
+        .background(AtlasTheme.Colors.warning.opacity(0.08))
+    }
+
+    /// React to a cron pull that advanced the backing note past our loaded baseline.
+    /// Clean buffer → adopt Google's version live. Dirty buffer → keep the user's work
+    /// and only raise the banner.
+    private func reconcileSyncedVersion() {
+        guard docReference != nil, let live = liveNote,
+              let baseline = baselineUpdatedAt, live.updatedAt > baseline else { return }
+        if isDirty { newerVersionAvailable = true } else { loadFresh(live) }
+    }
+
+    /// Replace the buffer with a freshly-synced note version (clean auto-refresh, or the
+    /// explicit Reload). Always a Doc-note here, so parse the Markdown body.
+    private func loadFresh(_ live: Note) {
+        draft = live
+        doc = RichDoc.fromMarkdown(live.body)
+        baselineUpdatedAt = live.updatedAt
+        isDirty = false
+        newerVersionAvailable = false
     }
 
     // MARK: - Style bar (the only styling Atlas allows)
@@ -196,7 +313,7 @@ struct NoteEditorView: View {
 
     private func levelButton(_ title: String, kind: RichDoc.BlockKind) -> some View {
         let active = isActiveKind(kind)
-        return Button { doc.setKind(kind, at: activeIndex) } label: {
+        return Button { doc.setKind(kind, at: activeIndex); isDirty = true } label: {
             Text(title)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(active ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
@@ -213,7 +330,7 @@ struct NoteEditorView: View {
 
     private func markButton(_ systemImage: String, mark: RichDoc.InlineMarks) -> some View {
         let active = isActiveMark(mark)
-        return Button { doc.toggleMark(mark, at: activeIndex) } label: {
+        return Button { doc.toggleMark(mark, at: activeIndex); isDirty = true } label: {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(active ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
@@ -229,7 +346,7 @@ struct NoteEditorView: View {
 
     private func listButton(_ systemImage: String, kind: RichDoc.BlockKind) -> some View {
         let active = isActiveKind(kind)
-        return Button { doc.toggleListKind(kind, at: activeIndex) } label: {
+        return Button { doc.toggleListKind(kind, at: activeIndex); isDirty = true } label: {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(active ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
@@ -334,17 +451,28 @@ struct NoteEditorView: View {
         doc.blocks.indices.contains(activeIndex) && doc.blocks[activeIndex].uniformMarks.contains(mark)
     }
 
+    /// Title edits flow through this so a user change flips `isDirty` — a plain
+    /// `$draft.title` binding couldn't, and `.onChange(of:)` can't tell a user edit
+    /// from a programmatic `loadFresh`.
+    private var titleBinding: Binding<String> {
+        Binding(
+            get: { draft.title },
+            set: { draft.title = $0; isDirty = true })
+    }
+
     private func textBinding(for index: Int) -> Binding<String> {
         Binding(
             get: { doc.blocks.indices.contains(index) ? doc.blocks[index].text : "" },
             set: { newValue in
                 guard doc.blocks.indices.contains(index) else { return }
                 doc.blocks[index].setText(newValue)
+                isDirty = true
             })
     }
 
     private func addBlockAfter(_ index: Int) {
         let newID = doc.insertBlock(after: index)
+        isDirty = true
         DispatchQueue.main.async { focusedBlock = newID }
     }
 
