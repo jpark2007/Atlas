@@ -225,7 +225,7 @@ final class AppState: ObservableObject {
 
         // Collab phase 1: surface the user's profile (created by the signup
         // trigger). Nil = migration not deployed; degrade silently.
-        self.profile = try? await self.db?.loadProfile() ?? nil
+        self.profile = try? await self.db?.loadProfile()
 
         // Re-derive server-owned Google sync mode from the cloud connection.
         await refreshGoogleConnection()

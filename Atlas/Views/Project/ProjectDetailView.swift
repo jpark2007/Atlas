@@ -172,7 +172,7 @@ struct ProjectDetailView: View {
         // it (updateNote inserts on no-match), so dismissing without Done leaves
         // nothing behind.
         var draft = Note(title: "", body: "", spaceName: project.spaceName, projectID: project.id)
-        draft.spaceID = state.spaceID(named: project.spaceName)
+        draft.spaceID = project.spaceID
         editingNote = draft
     }
 
