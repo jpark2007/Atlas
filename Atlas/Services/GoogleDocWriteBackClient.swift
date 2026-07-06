@@ -11,13 +11,14 @@ import AtlasCore
 /// the Drive side. On a stale conflict the edge function returns `409 {error:"stale"}`,
 /// surfaced here as `.changedInGoogle` so `NoteEditorView` can offer refresh/overwrite.
 struct GoogleDocWriteBackClient: DocNoteWriteBack {
-    /// Supplies the current Supabase access token (JWT). `nil` when signed out/offline
-    /// — a write-back then throws (`NoteEditorView` keeps the local Markdown copy).
-    let accessToken: () -> String?
+    /// Supplies a currently-valid Supabase access token (JWT), refreshing if needed.
+    /// `nil` when signed out/offline — a write-back then throws (`NoteEditorView`
+    /// keeps the local Markdown copy).
+    let accessToken: () async -> String?
 
     func writeBack(reference: Reference, markdown: String, overwrite: Bool) async throws -> DocWriteBackOutcome {
         guard let noteID = reference.noteID else { throw WriteBackError.notLinked }
-        guard let jwt = accessToken() else { throw WriteBackError.notSignedIn }
+        guard let jwt = await accessToken() else { throw WriteBackError.notSignedIn }
 
         let url = SupabaseConfig.functionsBase.appendingPathComponent("drive-writeback")
         var request = URLRequest(url: url)

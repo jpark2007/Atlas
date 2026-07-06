@@ -735,18 +735,21 @@ extension InviteRow {
 ///
 /// If `session()` returns nil, every method throws `AtlasDBError.notAuthenticated`.
 /// Callers guard offline mode externally; this client fails cleanly rather than crashing.
+///
+/// The provider is async so callers can validate/refresh the token per request
+/// (the JWT TTL is 1 hour) — pass a refresh-if-needed provider, not a raw read.
 public final class AtlasDB {
 
-    private let sessionProvider: () -> SupabaseSession?
+    private let sessionProvider: () async -> SupabaseSession?
 
-    public init(session: @escaping () -> SupabaseSession?) {
+    public init(session: @escaping () async -> SupabaseSession?) {
         self.sessionProvider = session
     }
 
     // MARK: - Internal helpers
 
-    private func requireSession() throws -> SupabaseSession {
-        guard let s = sessionProvider() else {
+    private func requireSession() async throws -> SupabaseSession {
+        guard let s = await sessionProvider() else {
             throw AtlasDBError.notAuthenticated
         }
         return s
@@ -755,7 +758,7 @@ public final class AtlasDB {
     /// GET `<restBase>/<table>?select=*&order=<column>` and decode the JSON array.
     /// Pass `order` to ensure stable, deterministic row ordering across launches.
     private func getAll<T: Decodable>(_ table: String, order: String? = nil) async throws -> [T] {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         var comps = URLComponents(
             url: SupabaseConfig.restBase.appendingPathComponent(table),
             resolvingAgainstBaseURL: false)!
@@ -780,7 +783,7 @@ public final class AtlasDB {
     /// where a `select=*` would be rejected because RLS column-grants hide some
     /// columns (e.g. `google_connections.vault_secret_id`).
     private func getColumns<T: Decodable>(_ table: String, columns: String) async throws -> [T] {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         var comps = URLComponents(
             url: SupabaseConfig.restBase.appendingPathComponent(table),
             resolvingAgainstBaseURL: false)!
@@ -867,6 +870,14 @@ public final class AtlasDB {
             references:           refRows.map    { $0.toDomain() },
             referenceAttachments: attachRows.map { $0.toDomain() }
         )
+    }
+
+    /// Re-pulls just the notes table. The references reload path uses this so an
+    /// imported Doc's linked note (created server-side by `drive-import` and filled
+    /// by the sync cron) surfaces without an app relaunch.
+    public func loadNotes() async throws -> [Note] {
+        let rows: [NoteRow] = try await getAll("notes", order: "id")
+        return rows.map { $0.toDomain() }
     }
 
     /// Reads the caller's `google_connections` row (server-owned Google sync state),
@@ -1000,7 +1011,7 @@ public final class AtlasDB {
     // MARK: Spaces / Projects
 
     public func upsertSpace(_ s: Space, sort: Int = 0) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1012,7 +1023,7 @@ public final class AtlasDB {
     }
 
     public func upsertProject(_ p: Project) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1026,7 +1037,7 @@ public final class AtlasDB {
     // MARK: Tasks
 
     public func upsertTask(_ t: TaskItem) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1039,7 +1050,7 @@ public final class AtlasDB {
     }
 
     public func deleteTask(id: UUID) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         try await send(method: "DELETE", table: "tasks",
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
                        extraHeaders: ["Prefer": "return=minimal"],
@@ -1062,7 +1073,7 @@ public final class AtlasDB {
     // MARK: Events
 
     public func upsertEvent(_ e: CalendarEvent) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1074,7 +1085,7 @@ public final class AtlasDB {
     }
 
     public func deleteEvent(id: UUID) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         try await send(method: "DELETE", table: "events",
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
                        extraHeaders: ["Prefer": "return=minimal"],
@@ -1084,7 +1095,7 @@ public final class AtlasDB {
     // MARK: Notes / Goals
 
     public func upsertNote(_ n: Note) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1096,7 +1107,7 @@ public final class AtlasDB {
     }
 
     public func upsertGoal(_ g: Goal) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1110,7 +1121,7 @@ public final class AtlasDB {
     // MARK: References (Docs → Notes import)
 
     public func upsertReference(_ r: Reference) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1122,7 +1133,7 @@ public final class AtlasDB {
     }
 
     public func deleteReference(id: UUID) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         try await send(method: "DELETE", table: "project_references",
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
                        extraHeaders: ["Prefer": "return=minimal"],
@@ -1130,7 +1141,7 @@ public final class AtlasDB {
     }
 
     public func upsertReferenceAttachment(_ a: ReferenceAttachment) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1142,7 +1153,7 @@ public final class AtlasDB {
     }
 
     public func deleteReferenceAttachment(id: UUID) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         try await send(method: "DELETE", table: "reference_attachments",
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
                        extraHeaders: ["Prefer": "return=minimal"],

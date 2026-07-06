@@ -23,9 +23,9 @@ struct AtlasApp: App {
                 .environmentObject(shortcuts)
                 .environmentObject(googleAuth)
                 // Two-way Google-Doc write-back for linked Doc-notes: the concrete
-                // edge-function client, reading the live Supabase JWT on each save.
+                // edge-function client, minting a valid Supabase JWT on each save.
                 .environment(\.docNoteWriteBack,
-                             GoogleDocWriteBackClient(accessToken: { auth.session?.accessToken }))
+                             GoogleDocWriteBackClient(accessToken: { await auth.validAccessToken() }))
                 .frame(minWidth: 960, minHeight: 600)
                 .preferredColorScheme(.light)
                 .background(GlobalHotkeyInstaller(state: state, auth: auth))
@@ -126,8 +126,8 @@ struct AppGate: View {
                 RootView()
                     .onAppear { state.userName = auth.displayName }
                     .task {
-                        let db = AtlasDB(session: { auth.session })
-                        await state.bootstrap(db: db)
+                        let db = AtlasDB(session: { await auth.validSession() })
+                        await state.bootstrap(db: db, userID: auth.session?.user.id)
                         // Sync Canvas once bootstrap has populated projects so matching works.
                         if canvas.isConnected {
                             await state.syncCanvas(using: canvas)

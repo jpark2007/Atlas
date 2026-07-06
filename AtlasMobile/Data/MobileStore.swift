@@ -40,7 +40,7 @@ final class MobileStore: ObservableObject {
     private let auth = SupabaseAuth()
 
     /// Read the live session so a token refresh is picked up on the next request.
-    lazy var db  = AtlasDB(session: { [weak self] in self?.session })
+    lazy var db  = AtlasDB(session: { @MainActor [weak self] in self?.session })
     lazy var ai  = AtlasAI(session: { [weak self] in self?.session })
 
     private static let emptySnapshot = AtlasSnapshot(

@@ -116,7 +116,7 @@ final class AppState: ObservableObject {
     }
 
     /// Guards against double-bootstrap if `bootstrap(db:)` is called more than once.
-    private var didBootstrap = false
+    private var bootstrappedUser: String?
 
     /// Quick-capture pill presentation (toggled by the ⌘ hotkey / Tasks card).
     @Published var presentCapture: Bool = false
@@ -167,9 +167,11 @@ final class AppState: ObservableObject {
     /// Load all persisted data for the signed-in user. Seeds from MockData on
     /// first run (empty DB). On any failure keeps the existing in-memory MockData
     /// so the UI is never left blank. Stores the `db` reference for write-through.
-    func bootstrap(db: AtlasDB) async {
-        guard !didBootstrap else { return }
-        didBootstrap = true
+    /// Keyed on `userID` so signing into a different account re-loads instead of
+    /// keeping (and writing into) the previous user's data.
+    func bootstrap(db: AtlasDB, userID: String?) async {
+        guard bootstrappedUser != userID else { return }
+        bootstrappedUser = userID
         self.db = db
         do {
             var snapshot = try await db.loadAll()
@@ -201,7 +203,9 @@ final class AppState: ObservableObject {
 
         } catch {
             // Keep existing in-memory MockData — never blank the UI on a DB error.
+            // Reset the guard so the next appearance/sign-in retries the load.
             print("[AtlasDB] bootstrap failed — keeping MockData. Error: \(error.localizedDescription)")
+            bootstrappedUser = nil
         }
 
         // Collab phase 1: surface the user's profile (created by the signup
