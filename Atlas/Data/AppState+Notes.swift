@@ -16,7 +16,7 @@ extension AppState {
         projectID: UUID? = nil,
         isExternal: Bool = false
     ) -> Note {
-        let note = Note(
+        var note = Note(
             title: title,
             body: body,
             spaceName: spaceName,
@@ -24,6 +24,7 @@ extension AppState {
             updatedAt: Date(),
             isExternal: isExternal
         )
+        note.spaceID = spaceName.flatMap { self.spaceID(named: $0) }
         notes.insert(note, at: 0)
         Task { try? await self.db?.upsertNote(note) }
         return note

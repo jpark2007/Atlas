@@ -31,8 +31,10 @@ public struct Project: Identifiable {
     public var notes: [NoteRef] = []
     public var pinned: [PinnedResource] = []
     public var backlinks: [Backlink] = []
+    /// The parent space's id — authoritative once set; the name remains for display.
+    public var spaceID: UUID? = nil
 
-    public init(id: UUID = UUID(), name: String, code: String? = nil, isClass: Bool, spaceName: String, spaceColor: Color, meetingInfo: String? = nil, instructor: String? = nil, canvasSynced: Bool = false, overview: String = "", assignments: [TaskItem] = [], notes: [NoteRef] = [], pinned: [PinnedResource] = [], backlinks: [Backlink] = []) {
+    public init(id: UUID = UUID(), name: String, code: String? = nil, isClass: Bool, spaceName: String, spaceColor: Color, meetingInfo: String? = nil, instructor: String? = nil, canvasSynced: Bool = false, overview: String = "", assignments: [TaskItem] = [], notes: [NoteRef] = [], pinned: [PinnedResource] = [], backlinks: [Backlink] = [], spaceID: UUID? = nil) {
         self.id = id
         self.name = name
         self.code = code
@@ -47,6 +49,7 @@ public struct Project: Identifiable {
         self.notes = notes
         self.pinned = pinned
         self.backlinks = backlinks
+        self.spaceID = spaceID
     }
 }
 
@@ -111,6 +114,9 @@ public struct CalendarEvent: Identifiable {
     /// deadlines are never pushed to Google.
     public var isDeadline: Bool = false
 
+    /// The parent space's id — authoritative once set; the name remains for display.
+    public var spaceID: UUID? = nil
+
     /// "9 AM" / "6:30 PM" — start time formatted for compact rows.
     public var timeLabel: String {
         let f = DateFormatter()
@@ -134,7 +140,7 @@ public struct CalendarEvent: Identifiable {
         return "\(m)m"
     }
 
-    public init(id: UUID = UUID(), title: String, subtitle: String, start: Date, end: Date, color: Color, spaceName: String, notes: String? = nil, isAllDay: Bool = false, projectID: UUID? = nil, noteID: UUID? = nil, isReadOnly: Bool = false, source: EventSource = .atlas, googleEventId: String? = nil, isRecurring: Bool = false, isWorkBlock: Bool = false, isDeadline: Bool = false) {
+    public init(id: UUID = UUID(), title: String, subtitle: String, start: Date, end: Date, color: Color, spaceName: String, notes: String? = nil, isAllDay: Bool = false, projectID: UUID? = nil, noteID: UUID? = nil, isReadOnly: Bool = false, source: EventSource = .atlas, googleEventId: String? = nil, isRecurring: Bool = false, isWorkBlock: Bool = false, isDeadline: Bool = false, spaceID: UUID? = nil) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
@@ -152,6 +158,7 @@ public struct CalendarEvent: Identifiable {
         self.isRecurring = isRecurring
         self.isWorkBlock = isWorkBlock
         self.isDeadline = isDeadline
+        self.spaceID = spaceID
     }
 }
 
@@ -175,8 +182,10 @@ public struct TaskItem: Identifiable {
     public var spaceName: String = ""
     public var projectName: String = ""
     public var notes: String = ""
+    /// The parent space's id — authoritative once set; the name remains for display.
+    public var spaceID: UUID? = nil
 
-    public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectName: String = "", notes: String = "") {
+    public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectName: String = "", notes: String = "", spaceID: UUID? = nil) {
         self.id = id
         self.title = title
         self.dueLabel = dueLabel
@@ -191,6 +200,7 @@ public struct TaskItem: Identifiable {
         self.spaceName = spaceName
         self.projectName = projectName
         self.notes = notes
+        self.spaceID = spaceID
     }
 }
 
@@ -287,8 +297,10 @@ public struct Note: Identifiable {
     /// When the note last reconciled with its Google Doc — drives last-write
     /// reconciliation (`NoteSync.reconcile`) so neither side is silently lost.
     public var docSyncedAt: Date? = nil
+    /// The parent space's id — authoritative once set; the name remains for display.
+    public var spaceID: UUID? = nil
 
-    public init(id: UUID = UUID(), title: String, body: String, spaceName: String? = nil, projectID: UUID? = nil, updatedAt: Date = Date(), isExternal: Bool = false, googleDocId: String? = nil, docSyncedAt: Date? = nil) {
+    public init(id: UUID = UUID(), title: String, body: String, spaceName: String? = nil, projectID: UUID? = nil, updatedAt: Date = Date(), isExternal: Bool = false, googleDocId: String? = nil, docSyncedAt: Date? = nil, spaceID: UUID? = nil) {
         self.id = id
         self.title = title
         self.body = body
@@ -298,6 +310,7 @@ public struct Note: Identifiable {
         self.isExternal = isExternal
         self.googleDocId = googleDocId
         self.docSyncedAt = docSyncedAt
+        self.spaceID = spaceID
     }
 }
 
