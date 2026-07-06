@@ -162,6 +162,12 @@ struct CommandPaletteOverlay: View {
                 .padding(.horizontal, 6).padding(.vertical, 3)
                 .background(AtlasTheme.Colors.bgDeep)
                 .clipShape(RoundedRectangle(cornerRadius: 5))
+                // Hairline keycap — bgDeep now equals paper, so the outline is what
+                // reads the chip (same idiom as the capture bar's return key).
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1)
+                )
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
@@ -209,6 +215,11 @@ struct CommandPaletteOverlay: View {
                 .padding(.horizontal, 5).padding(.vertical, 2)
                 .background(AtlasTheme.Colors.bgDeep)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
+                // Hairline keycap — bgDeep equals paper now, so the outline reads it.
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1)
+                )
             Text(label)
                 .font(.system(size: 11, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)

@@ -165,6 +165,7 @@ struct ProjectDetailView: View {
                 .buttonStyle(.plain)
                 .help("New note in this project")
             }
+            .projectSectionHeader()
 
             if projectNotes.isEmpty {
                 Text("No notes yet. Notes you add here live in this project — and, once Google is connected, sync to a Drive folder for \(project.name) as Google Docs.")
@@ -246,6 +247,7 @@ struct ProjectDetailView: View {
                 referenceHeaderButton(icon: "link", title: "Add link") { presentAddLink = true }
                     .help("Attach an external link")
             }
+            .projectSectionHeader()
 
             if let referenceError {
                 Text(referenceError)
@@ -434,6 +436,7 @@ struct ProjectDetailView: View {
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()
             }
+            .projectSectionHeader()
 
             if starterTasks.isEmpty {
                 Text("Cleared. Add an overview above to describe this project.")
@@ -539,6 +542,7 @@ struct ProjectDetailView: View {
                     .help("Edit overview")
                 }
             }
+            .projectSectionHeader()
 
             if isEditingOverview {
                 overviewEditor
@@ -619,6 +623,7 @@ struct ProjectDetailView: View {
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()
             }
+            .projectSectionHeader()
             VStack(spacing: 0) {
                 ForEach(Array(liveTasks.enumerated()), id: \.element.id) { i, task in
                     liveTaskRow(task)
@@ -673,6 +678,7 @@ struct ProjectDetailView: View {
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()
             }
+            .projectSectionHeader()
             VStack(spacing: 0) {
                 ForEach(Array(liveEvents.enumerated()), id: \.element.id) { i, event in
                     HStack(spacing: 12) {
@@ -701,6 +707,7 @@ struct ProjectDetailView: View {
     private var pinned: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionLabel("PINNED RESOURCES")
+                .projectSectionHeader()
             HStack(spacing: 10) {
                 ForEach(project.pinned) { res in
                     HStack(spacing: 8) {
@@ -736,6 +743,7 @@ struct ProjectDetailView: View {
                     .atlasMono(size: 11)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
+            .projectSectionHeader()
 
             VStack(spacing: 0) {
                 ForEach(Array(project.backlinks.enumerated()), id: \.element.id) { i, link in
@@ -770,5 +778,17 @@ struct ProjectDetailView: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text).atlasCapsLabel()
+    }
+}
+
+private extension View {
+    /// The shared section-header treatment (spec 3.2): the mono caps label already
+    /// sits in the row; this makes it a full-width header with a hairline rule below,
+    /// so every section reads with the same editorial mono+hairline heading.
+    func projectSectionHeader() -> some View {
+        self
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 6)
+            .atlasHairlineBelow()
     }
 }

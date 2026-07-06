@@ -222,6 +222,14 @@ struct FocusView: View {
                 .contentTransition(.numericText())
         }
         .frame(width: 320, height: 320)
+        // Instrument-container language (consistent with the calendar month grid and
+        // the corner timer): the ring sits inside a hairline-outlined panel on flat
+        // paper — no fill, no shadow.
+        .padding(28)
+        .overlay(
+            RoundedRectangle(cornerRadius: AtlasTheme.Radius.card, style: .continuous)
+                .strokeBorder(AtlasTheme.Colors.borderStrong, lineWidth: 1)
+        )
     }
 
     private var cycleMeta: some View {

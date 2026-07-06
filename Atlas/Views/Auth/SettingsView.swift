@@ -184,10 +184,7 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-        )
+        .atlasHairlineBelow()
     }
 
     @ViewBuilder
@@ -368,10 +365,7 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-            )
+            .atlasHairlineBelow()
 
             // ── Google Calendar ──────────────────────────────────────────
             googleCalendarRow
@@ -408,10 +402,7 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-            )
+            .atlasHairlineBelow()
 
             // ── Atlas Native ────────────────────────────────────────────
             HStack(spacing: 12) {
@@ -433,10 +424,7 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-            )
+            .atlasHairlineBelow()
 
             // ── Two-way sync toggle ─────────────────────────────────────
             HStack {
@@ -460,10 +448,7 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-            )
+            .atlasHairlineBelow()
 
             // ── Sync in the cloud (server-owned) ────────────────────────
             // Only when Google is connected locally: hands the refresh token to
@@ -502,10 +487,7 @@ struct SettingsView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-                )
+                .atlasHairlineBelow()
             }
         }
     }
@@ -569,10 +551,7 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-        )
+        .atlasHairlineBelow()
     }
 
     private var syncSubtitle: String {
@@ -638,10 +617,7 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-        )
+        .atlasHairlineBelow()
     }
 
     private var cloudSyncSubtitle: String {
@@ -810,10 +786,7 @@ struct SettingsView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-                )
+                .atlasHairlineBelow()
             }
         }
     }
@@ -876,7 +849,7 @@ struct SettingsView: View {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(isRecording
                               ? AtlasTheme.Colors.accent.opacity(0.12)
-                              : AtlasTheme.Colors.bgElevated)
+                              : Color.clear)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -910,17 +883,18 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        // Recording keeps the accent-highlighted instrument box; idle rows drop the
+        // dead fill and separate with a hairline (paper idiom).
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isRecording
-                      ? AtlasTheme.Colors.accent.opacity(0.05)
-                      : AtlasTheme.Colors.bgElevated.opacity(0.5))
+                .fill(isRecording ? AtlasTheme.Colors.accent.opacity(0.05) : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(isRecording ? AtlasTheme.Colors.accent.opacity(0.25) : Color.clear,
                         lineWidth: 1)
         )
+        .atlasHairlineBelow()
         .animation(.easeInOut(duration: 0.15), value: isRecording)
     }
 
@@ -1027,7 +1001,6 @@ struct SettingsView: View {
         .textFieldStyle(.plain).font(.system(size: 13, design: .rounded))
         .foregroundStyle(AtlasTheme.Colors.textPrimary).tint(AtlasTheme.Colors.accent)
         .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
             .stroke(AtlasTheme.Colors.border, lineWidth: 1))

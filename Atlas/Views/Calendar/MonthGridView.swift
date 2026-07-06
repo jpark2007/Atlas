@@ -47,6 +47,14 @@ struct MonthGridView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // Instrument-container language (matches the dashboard mini-month, P3-1):
+        // the whole month reads as one outlined box — a hairline-stroked rounded
+        // container, its grid lines clipped to the rounded corners.
+        .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AtlasTheme.Radius.card, style: .continuous)
+                .strokeBorder(AtlasTheme.Colors.borderStrong, lineWidth: 1)
+        )
     }
 
     // MARK: - Weekday header
