@@ -643,6 +643,25 @@ public struct CanvasConnectionRow: Codable {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ProfileRow — public identity (collab phase 1). Row is created server-side by
+// the signup trigger; the client reads it and may update display_name.
+// ─────────────────────────────────────────────────────────────────────────────
+
+public struct ProfileRow: Codable {
+    public var userId: UUID
+    public var displayName: String
+    public var email: String
+    public var avatarColor: String
+
+    enum CodingKeys: String, CodingKey {
+        case userId      = "user_id"
+        case displayName = "display_name"
+        case email
+        case avatarColor = "avatar_color"
+    }
+}
+
 // MARK: - AtlasDB PostgREST Client
 
 /// Thin async PostgREST client. All requests mirror the `SupabaseAuth.request(...)` pattern:
@@ -803,6 +822,30 @@ public final class AtlasDB {
             "canvas_connections",
             columns: "status,last_synced_at,last_error,space_name")
         return rows.first
+    }
+
+    /// The caller's profile row, or nil if migration 0015 isn't deployed yet
+    /// (callers treat nil as "profiles unavailable" and degrade silently).
+    public func loadProfile() async throws -> ProfileRow? {
+        let rows: [ProfileRow] = (try? await getAll("profiles", order: "user_id")) ?? []
+        return rows.first
+    }
+
+    /// Updates the caller's `display_name`. This client has no partial-PATCH
+    /// helper, only whole-row upserts (see `upsertGoal` etc.), so this fetches
+    /// the current row, mutates it, and upserts the full row back — same
+    /// `send`/`isoEncoder`/`upsertHeaders` plumbing, but scoped by `user_id`
+    /// (the `profiles` primary key) instead of `id`.
+    public func updateDisplayName(_ name: String) async throws {
+        let sess = try requireSession()
+        guard var row = try await loadProfile() else {
+            throw AtlasDBError.requestFailed(0, "No profile row for signed-in user")
+        }
+        row.displayName = name
+        let body = try isoEncoder.encode(row)
+        try await send(method: "POST", table: "profiles",
+                       query: [URLQueryItem(name: "on_conflict", value: "user_id")],
+                       extraHeaders: upsertHeaders, body: body, sess: sess)
     }
 
     /// Seed all tables from a snapshot (first-run). Upserts each row so it is safe

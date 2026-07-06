@@ -87,6 +87,9 @@ final class AppState: ObservableObject {
     /// `serverSyncEnabled`, which gates the Mac's live Google writers).
     @Published var canvasConnection: CanvasConnectionRow?
 
+    /// The signed-in user's public identity (collab). Nil until loaded.
+    @Published var profile: ProfileRow? = nil
+
     /// Re-reads the Canvas connection for Settings. Never throws to the caller; on a
     /// read failure the current snapshot is left untouched. Mirrors `refreshGoogleConnection()`.
     func refreshCanvasConnection() async {
@@ -222,6 +225,10 @@ final class AppState: ObservableObject {
             // Keep existing in-memory MockData — never blank the UI on a DB error.
             print("[AtlasDB] bootstrap failed — keeping MockData. Error: \(error.localizedDescription)")
         }
+
+        // Collab phase 1: surface the user's profile (created by the signup
+        // trigger). Nil = migration not deployed; degrade silently.
+        self.profile = try? await self.db?.loadProfile() ?? nil
 
         // Re-derive server-owned Google sync mode from the cloud connection.
         await refreshGoogleConnection()
