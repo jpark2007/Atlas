@@ -300,6 +300,11 @@ final class GoogleAuthService: ObservableObject {
     /// not connected or when Google issued no refresh token.
     var currentRefreshToken: String? { tokens?.refreshToken }
 
+    /// True when the granted scopes include `drive.file` — required for Drive import
+    /// and Docs sync. Pre-`drive.file` sessions (calendar-only) return false; the
+    /// user must reconnect (which forces `prompt=consent` → re-grants all scopes).
+    var hasDriveScope: Bool { (tokens?.scope ?? "").contains("drive.file") }
+
     /// Hands the Keychain refresh token to the `google-connect` edge function so the
     /// Supabase cron can own Google↔DB sync while every Atlas client is closed. `jwt`
     /// is the caller's Supabase user access token (verified server-side by `auth.getUser`).

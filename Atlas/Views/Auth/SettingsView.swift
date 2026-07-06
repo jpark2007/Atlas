@@ -527,6 +527,15 @@ struct SettingsView: View {
             }
             Spacer()
             if googleAuth.isConnected {
+                // Pre-drive.file sessions can't import from Drive or sync Docs —
+                // reconnect re-runs consent and re-grants all scopes.
+                if !googleAuth.hasDriveScope {
+                    Button("Reconnect for Drive") { Task { await googleAuth.connect() } }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
+                        .disabled(googleAuth.isWorking)
+                }
                 Button("Disconnect") {
                     googleAuth.disconnect()
                     googleCalendarEnabled = false
