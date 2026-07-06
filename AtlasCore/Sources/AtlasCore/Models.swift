@@ -184,8 +184,13 @@ public struct TaskItem: Identifiable {
     public var notes: String = ""
     /// The parent space's id — authoritative once set; the name remains for display.
     public var spaceID: UUID? = nil
+    /// Who this shared task is assigned to, if anyone. Nil = unclaimed, up for
+    /// grabs. Meaningless for non-shared (personal) tasks.
+    public var assigneeID: UUID? = nil
+    /// Who created this task — set once at creation, never changed.
+    public var createdByID: UUID? = nil
 
-    public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectName: String = "", notes: String = "", spaceID: UUID? = nil) {
+    public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectName: String = "", notes: String = "", spaceID: UUID? = nil, assigneeID: UUID? = nil, createdByID: UUID? = nil) {
         self.id = id
         self.title = title
         self.dueLabel = dueLabel
@@ -201,6 +206,21 @@ public struct TaskItem: Identifiable {
         self.projectName = projectName
         self.notes = notes
         self.spaceID = spaceID
+        self.assigneeID = assigneeID
+        self.createdByID = createdByID
+    }
+}
+
+extension TaskItem {
+    /// True when this task has no assignee yet — the "up for grabs" state
+    /// the Ledger UI renders as a hollow circle.
+    public var isClaimable: Bool { assigneeID == nil }
+
+    /// Claim an unassigned task. No-op if someone already claimed it first —
+    /// callers must not silently steal another member's claimed task.
+    public mutating func claim(by userId: UUID) {
+        guard isClaimable else { return }
+        assigneeID = userId
     }
 }
 
