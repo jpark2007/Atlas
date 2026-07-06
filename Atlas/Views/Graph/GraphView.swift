@@ -426,7 +426,7 @@ struct GraphView: View {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Text("\(engine.nodes.count) nodes")
-                    .font(.system(size: 11, design: .rounded))
+                    .atlasMono(size: 11)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             Spacer()

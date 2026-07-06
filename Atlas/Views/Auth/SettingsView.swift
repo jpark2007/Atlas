@@ -865,7 +865,7 @@ struct SettingsView: View {
 
             // Current combo badge
             Text(isRecording ? "…" : binding.displayString)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .atlasMono(size: 12, weight: .semibold)
                 .foregroundStyle(isRecording ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textSecondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
@@ -1001,7 +1001,7 @@ struct SettingsView: View {
     }
 
     private func label(_ t: String) -> some View {
-        Text(t).font(AtlasTheme.Font.sectionLabel()).tracking(1.2)
+        Text(t).atlasMono(size: 11, weight: .semibold).tracking(1.2)
             .foregroundStyle(AtlasTheme.Colors.textMuted)
     }
 

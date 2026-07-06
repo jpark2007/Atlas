@@ -255,7 +255,7 @@ struct CaptureCommandBar: View {
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
 
             Text("\u{21A9}") // ↩ return glyph
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .atlasMono(size: 12, weight: .semibold)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .frame(width: 22, height: 22)
                 .background(

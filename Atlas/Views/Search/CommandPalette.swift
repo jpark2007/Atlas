@@ -154,7 +154,7 @@ struct CommandPaletteOverlay: View {
                 // the field animates in often fails to land, so typing did nothing.
                 .onAppear { DispatchQueue.main.async { fieldFocused = true } }
             Text("esc")
-                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .atlasMono(size: 10, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                 .padding(.horizontal, 6).padding(.vertical, 3)
                 .background(AtlasTheme.Colors.bgDeep)
@@ -201,7 +201,7 @@ struct CommandPaletteOverlay: View {
     private func shortcutHint(_ glyph: String, _ label: String) -> some View {
         HStack(spacing: 5) {
             Text(glyph)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .atlasMono(size: 10, weight: .semibold)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .padding(.horizontal, 5).padding(.vertical, 2)
                 .background(AtlasTheme.Colors.bgDeep)
@@ -225,7 +225,7 @@ struct CommandPaletteOverlay: View {
     private func group(_ title: String, base: Int, items: [CommandResult]) -> some View {
         if !items.isEmpty {
             Text(title.uppercased())
-                .font(AtlasTheme.Font.sectionLabel())
+                .atlasMono(size: 11, weight: .semibold)
                 .tracking(1.1)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                 .padding(.horizontal, 12)

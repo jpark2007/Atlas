@@ -66,16 +66,16 @@ struct AgendaListView: View {
             HStack(spacing: 8) {
                 if let tag = relativeTag(for: section.day) {
                     Text(tag.uppercased())
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .atlasMono(size: 10, weight: .bold)
                         .tracking(0.8)
                         .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
                 Text(Self.dayHeaderFormat.string(from: section.day))
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .atlasMono(size: 13, weight: .semibold)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Spacer()
                 Text("\(section.items.count)")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .atlasMono(size: 11, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             Divider().overlay(AtlasTheme.Colors.border)
@@ -91,7 +91,7 @@ struct AgendaListView: View {
     private func row(_ item: AgendaItem) -> some View {
         HStack(spacing: 12) {
             Text(timeLabel(item))
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .atlasMono(size: 11, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .frame(width: 70, alignment: .trailing)
 
@@ -120,7 +120,7 @@ struct AgendaListView: View {
             Spacer(minLength: 0)
             if let end = item.endDate, !item.allDay {
                 Text(durationLabel(from: item.date, to: end))
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .atlasMono(size: 10, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
         }

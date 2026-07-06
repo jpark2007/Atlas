@@ -50,7 +50,7 @@ struct NoteCardOverlay: View {
         HStack(spacing: 10) {
             if !isExpanded { resizeGrip }
             Text("NOTE")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .atlasMono(size: 10, weight: .bold)
                 .tracking(1.2)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Spacer()

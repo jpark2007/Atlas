@@ -49,7 +49,7 @@ struct MetricsCard: View {
                         .atlasCapsLabel()
                     Spacer()
                     Text("\(Int(m.goalAvgProgress * 100))%")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .atlasMono(size: 11, weight: .semibold)
                         .foregroundStyle(
                             m.goalAvgProgress >= 0.7
                                 ? AtlasTheme.Colors.accentText

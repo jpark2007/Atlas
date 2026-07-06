@@ -89,7 +89,7 @@ struct AllDayRowView: View {
                 .lineLimit(1)
             if event.hasSpecificTime {
                 Text(event.timeLabel)
-                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .atlasMono(size: 9, weight: .medium)
                     .lineLimit(1)
             }
         }
@@ -114,7 +114,7 @@ private struct CollapsedDeadlinePill: View {
             HStack(spacing: 4) {
                 Image(systemName: "flag.fill").font(.system(size: 7))
                 Text("\(deadlines.count) due")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .atlasMono(size: 10, weight: .semibold)
                     .lineLimit(1)
                 Image(systemName: "chevron.right").font(.system(size: 6, weight: .bold))
             }

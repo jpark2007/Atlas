@@ -132,7 +132,7 @@ struct CalendarView: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("CALENDAR")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .atlasMono(size: 11, weight: .bold)
                         .tracking(0.88)
                         .textCase(.uppercase)
                         .foregroundStyle(AtlasTheme.Colors.accentText)
@@ -263,7 +263,7 @@ struct CalendarView: View {
 
             Button { selectedDate = Calendar.current.startOfDay(for: Date()) } label: {
                 Text("Today")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .atlasMono(size: 11, weight: .bold)
                     .tracking(0.88)
                     .textCase(.uppercase)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)

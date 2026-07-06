@@ -60,7 +60,7 @@ struct FocusView: View {
                 .animation(.linear(duration: 0.3), value: vm.progress)
 
             Text(vm.timeFormatted)
-                .font(.system(size: 96, weight: .ultraLight, design: .rounded))
+                .atlasMono(size: 96, weight: .ultraLight)
                 .monospacedDigit()
                 .foregroundStyle(vm.isRunning
                     ? AtlasTheme.Colors.textPrimary
@@ -125,7 +125,7 @@ struct FocusView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Text(intervalsText)
-                .font(.system(size: 11, design: .rounded))
+                .atlasMono(size: 11)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
         .padding(.horizontal, 14)

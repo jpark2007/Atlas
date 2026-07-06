@@ -47,7 +47,7 @@ struct SpaceDetailView: View {
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Spacer()
             Text("\(spaceTasks.count) tasks · \(spaceEvents.count) events")
-                .font(.system(size: 12, design: .rounded))
+                .atlasMono(size: 12)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
@@ -87,7 +87,7 @@ struct SpaceDetailView: View {
                         .foregroundStyle(task.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                     if !task.dueLabel.isEmpty {
                         Text("Due \(task.dueLabel)")
-                            .font(.system(size: 11, design: .rounded))
+                            .atlasMono(size: 11)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                 }
@@ -130,7 +130,7 @@ struct SpaceDetailView: View {
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Text("\(event.timeLabel) · \(event.durationLabel)")
-                    .font(.system(size: 11, design: .rounded))
+                    .atlasMono(size: 11)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             Spacer()

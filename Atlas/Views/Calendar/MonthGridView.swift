@@ -77,7 +77,7 @@ struct MonthGridView: View {
             }
             if events.count > maxChips {
                 Text("+\(events.count - maxChips) more")
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .atlasMono(size: 9, weight: .semibold)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .padding(.leading, 2)
             }

@@ -92,7 +92,7 @@ struct SidebarView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "envelope.fill").font(.system(size: 10))
                             Text(state.pendingInvites.count == 1 ? "1 invitation" : "\(state.pendingInvites.count) invitations")
-                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .atlasMono(size: 11, weight: .medium)
                         }
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
@@ -181,7 +181,7 @@ struct SidebarView: View {
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()
                 Text("⌘K")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .atlasMono(size: 10, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .padding(.horizontal, 5).padding(.vertical, 2)
                     .overlay(
@@ -218,7 +218,7 @@ struct SidebarView: View {
                 Spacer()
                 if let trailing {
                     Text(trailing)
-                        .font(.system(size: 11, design: .rounded))
+                        .atlasMono(size: 11, weight: .regular)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
             }

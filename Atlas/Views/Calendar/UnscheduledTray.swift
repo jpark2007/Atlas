@@ -52,7 +52,7 @@ struct UnscheduledTray: View {
                         .font(AtlasTheme.Font.cardTitle())
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text("\(displayedTasks.count)")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .atlasMono(size: 11, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
 
@@ -110,11 +110,11 @@ struct UnscheduledTray: View {
                 .fill(spaceColor(for: name))
                 .frame(width: 7, height: 7)
             Text(name.uppercased())
-                .font(AtlasTheme.Font.sectionLabel())
+                .atlasMono(size: 11, weight: .semibold)
                 .tracking(1.1)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Text("\(count)")
-                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .atlasMono(size: 10, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Spacer()
         }

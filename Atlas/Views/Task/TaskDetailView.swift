@@ -106,7 +106,7 @@ struct TaskDetailView: View {
                 HStack(spacing: 5) {
                     Image(systemName: "calendar").font(.system(size: 11))
                     Text(live.dueLabel.isEmpty ? "Set due date" : "Due \(dueChipLabel)")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .atlasMono(size: 12, weight: .medium)
                 }
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .padding(.horizontal, 8).padding(.vertical, 4)
@@ -199,7 +199,7 @@ struct TaskDetailView: View {
             Image(systemName: icon)
                 .font(.system(size: 11))
             Text(label)
-                .font(.system(size: 12, design: .rounded))
+                .atlasMono(size: 12)
         }
         .foregroundStyle(AtlasTheme.Colors.textSecondary)
     }

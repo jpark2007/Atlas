@@ -253,7 +253,7 @@ struct EventTile: View {
                         .lineLimit(1)
                     if !compact {
                         Text("\(event.timeLabel) · \(event.durationLabel)")
-                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .atlasMono(size: 9, weight: .bold)
                             .tracking(0.5)
                             .textCase(.uppercase)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
@@ -328,7 +328,7 @@ struct DeadlineRailMarker: View {
                 .overlay(alignment: .topTrailing) {
                     if cluster.count > 1 {
                         Text("\(cluster.count)")
-                            .font(.system(size: 7, weight: .heavy, design: .rounded))
+                            .atlasMono(size: 7, weight: .heavy)
                             .foregroundStyle(.white)
                             .frame(width: 10, height: 10)
                             .background(Circle().fill(AtlasTheme.Colors.danger))
@@ -362,7 +362,7 @@ struct DeadlineListPopover: View {
                     if dl.hasSpecificTime {
                         Spacer(minLength: 12)
                         Text(dl.timeLabel)
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .atlasMono(size: 11, weight: .medium)
                             .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     }
                 }
@@ -391,7 +391,7 @@ struct DeadlineStrip: View {
         let overflow = Array(deadlines.dropFirst(maxVisible))
         HStack(spacing: 6) {
             Text("DUE")
-                .font(.system(size: 9, weight: .bold, design: .rounded))
+                .atlasMono(size: 9, weight: .bold)
                 .tracking(0.6)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             ForEach(visible) { dl in
@@ -421,7 +421,7 @@ struct DeadlineStrip: View {
                 .lineLimit(1)
             if dl.hasSpecificTime {
                 Text(dl.timeLabel)
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .atlasMono(size: 10, weight: .medium)
                     .lineLimit(1)
             }
         }

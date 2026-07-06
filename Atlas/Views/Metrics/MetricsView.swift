@@ -13,7 +13,7 @@ struct MetricsStatCell: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
-                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                .atlasMono(size: 22, weight: .semibold)
                 .foregroundStyle(accent ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textPrimary)
             Text(label)
                 .font(AtlasTheme.Font.small())
@@ -56,7 +56,7 @@ struct MetricsCompletionDonut: View {
                 .frame(width: size, height: size)
 
                 Text("\(Int((clamped * 100).rounded()))%")
-                    .font(.system(size: size * 0.24, weight: .semibold, design: .rounded))
+                    .atlasMono(size: size * 0.24, weight: .semibold)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
             }
 
@@ -100,7 +100,7 @@ struct MetricsSpaceDonut: View {
                                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             Spacer(minLength: 10)
                             Text("\(load.openCount) open / \(load.totalCount) total")
-                                .font(AtlasTheme.Font.small())
+                                .atlasMono(size: 11)
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                         }
                     }

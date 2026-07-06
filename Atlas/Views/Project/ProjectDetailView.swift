@@ -231,7 +231,7 @@ struct ProjectDetailView: View {
                 sectionLabel("REFERENCES")
                 if !refs.isEmpty {
                     Text("\(refs.count)")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .atlasMono(size: 10, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer()
@@ -608,7 +608,7 @@ struct ProjectDetailView: View {
             HStack {
                 sectionLabel("TASKS")
                 Text("\(liveTasks.count)")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .atlasMono(size: 10, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()
             }
@@ -642,7 +642,7 @@ struct ProjectDetailView: View {
                 Spacer()
                 if !task.dueLabel.isEmpty {
                     Text(task.dueLabel)
-                        .font(.system(size: 11, design: .rounded))
+                        .atlasMono(size: 11)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Image(systemName: "chevron.right")
@@ -662,7 +662,7 @@ struct ProjectDetailView: View {
             HStack {
                 sectionLabel("EVENTS")
                 Text("\(liveEvents.count)")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .atlasMono(size: 10, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()
             }
@@ -677,7 +677,7 @@ struct ProjectDetailView: View {
                                 .font(.system(size: 13, weight: .medium, design: .rounded))
                                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             Text("\(event.timeLabel) · \(event.durationLabel)")
-                                .font(.system(size: 11, design: .rounded))
+                                .atlasMono(size: 11)
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                         }
                         Spacer()
@@ -726,7 +726,7 @@ struct ProjectDetailView: View {
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 Text("LINKED REFERENCES").atlasCapsLabel()
                 Text("\(project.backlinks.count)")
-                    .font(.system(size: 11, design: .rounded))
+                    .atlasMono(size: 11)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
 
