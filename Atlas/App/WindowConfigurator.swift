@@ -57,12 +57,26 @@ struct WindowConfigurator: NSViewRepresentable {
 /// the menu bar (and after the window itself has already left fullscreen) without
 /// double-toggling.
 enum FocusWindow {
+    /// Toggles the main window to `on`, returning `true` only when it actually toggled
+    /// (i.e. the window wasn't already in the requested state). Callers use the return
+    /// to record whether Focus *itself* drove the window into fullscreen, so ending a
+    /// session never yanks a user out of a fullscreen they chose themselves.
     @MainActor
-    static func setFullScreen(_ on: Bool) {
-        guard let window = mainWindow() else { return }
+    @discardableResult
+    static func setFullScreen(_ on: Bool) -> Bool {
+        guard let window = mainWindow() else { return false }
         let isFull = window.styleMask.contains(.fullScreen)
-        guard on != isFull else { return }
+        guard on != isFull else { return false }
         window.toggleFullScreen(nil)
+        return true
+    }
+
+    /// True when `object` is the app's main content window — lets `didExitFullScreen`
+    /// observers ignore unrelated windows (capture panel, menu-bar item).
+    @MainActor
+    static func isMain(_ object: Any?) -> Bool {
+        guard let window = object as? NSWindow else { return false }
+        return window == mainWindow()
     }
 
     /// The main content window (not the capture panel / menu-bar item). Mirrors the

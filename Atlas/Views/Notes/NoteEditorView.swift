@@ -17,6 +17,8 @@ struct NoteEditorView: View {
     /// The two-way Google-Doc write-back surface. Nil until `integrate` injects one
     /// (the concrete impl is a Supabase edge function — see `DocNoteWriteBack`).
     @Environment(\.docNoteWriteBack) private var writeBackService
+    /// Pauses the doc-note freshness poll while the app is backgrounded (see `pollKey`).
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var draft: Note
     @State private var doc: RichDoc
@@ -83,8 +85,9 @@ struct NoteEditorView: View {
         // Keep an OPEN Doc-note fresh without navigating away: pull the latest from the
         // Atlas cloud on a gentle cadence (the cron writes Google→DB every ~5 min; this
         // surfaces it into `state.notes`). Native notes have nothing to pull — Doc-only.
-        .task(id: draft.id) {
-            guard docReference != nil else { return }
+        // Keyed on `pollKey` so it only runs in the foreground (pauses while backgrounded).
+        .task(id: pollKey) {
+            guard docReference != nil, scenePhase == .active else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(30))
                 if Task.isCancelled { break }
@@ -159,6 +162,11 @@ struct NoteEditorView: View {
     /// (the passed `note` is a value snapshot that never updates on its own).
     private var liveNote: Note? { state.notes.first { $0.id == draft.id } }
 
+    /// Re-keys the freshness poll on the note AND the app's scene phase, so backgrounding
+    /// cancels the loop (the `scenePhase == .active` guard returns early) and returning to
+    /// the foreground restarts it — the poll never runs off-screen.
+    private var pollKey: String { "\(draft.id.uuidString)-\(scenePhase)" }
+
     /// A subtle linked badge + LIVE sync state, a "Sync now" refresh, and the "Open in
     /// Google Docs" escape hatch.
     private func docBadgeRow(_ ref: Reference) -> some View {
@@ -193,7 +201,7 @@ struct NoteEditorView: View {
         switch ref.syncState {
         case .synced:
             if let d = ref.lastSyncedAt {
-                (Text("· Last synced ") + Text(d, style: .relative) + Text(" ago"))
+                lastSyncedText(d)
                     .font(AtlasTheme.Font.small())
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             } else {
@@ -214,6 +222,14 @@ struct NoteEditorView: View {
                 .font(AtlasTheme.Font.small())
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
+    }
+
+    /// "Last synced …" guarded so a near-now or clock-skewed-future timestamp reads
+    /// "just now" rather than the signed-relative "in 3 sec ago".
+    private func lastSyncedText(_ d: Date) -> Text {
+        d.timeIntervalSinceNow < -1
+            ? Text("· Last synced ") + Text(d, style: .relative) + Text(" ago")
+            : Text("· Last synced just now")
     }
 
     /// On-demand freshness: re-reads the Atlas cloud (which the cron keeps in step with
@@ -294,11 +310,16 @@ struct NoteEditorView: View {
             levelButton("Sub-heading", kind: .subheading)
             levelButton("Normal", kind: .normal)
 
-            Divider().frame(height: 16).overlay(AtlasTheme.Colors.border)
+            // Inline marks (B/I/U) only survive the round-trip through a linked Doc's
+            // Markdown. A native note saves as plain text (`doc.plainText`), which discards
+            // them, so hide the controls rather than offer marks that Done silently eats.
+            if docReference != nil {
+                Divider().frame(height: 16).overlay(AtlasTheme.Colors.border)
 
-            markButton("bold", mark: .bold)
-            markButton("italic", mark: .italic)
-            markButton("underline", mark: .underline)
+                markButton("bold", mark: .bold)
+                markButton("italic", mark: .italic)
+                markButton("underline", mark: .underline)
+            }
 
             Divider().frame(height: 16).overlay(AtlasTheme.Colors.border)
 
@@ -545,6 +566,10 @@ struct NoteEditorView: View {
         var updated = draft
         updated.body = doc.markdown
         state.updateNote(updated)
+        // Advance the baseline past our OWN write so `reconcileSyncedVersion` doesn't read
+        // this editor's save as a "newer version synced from Google" and false-banner. Safe
+        // today because every save closes the card, but this guards a future keep-open save.
+        baselineUpdatedAt = liveNote?.updatedAt ?? updated.updatedAt
         onDone?(updated)
     }
 }

@@ -17,6 +17,11 @@ struct FocusView: View {
     /// The note currently open in the corner card (picked via ⌘K or the notes list).
     @State private var editingNote: Note?
 
+    /// True only when Focus *itself* drove the window into fullscreen (it was windowed
+    /// when the session started). Gates the auto-exit on End so we never yank a user out
+    /// of a fullscreen they chose themselves (window already fullscreen at session start).
+    @State private var didEnterFullScreen = false
+
     var body: some View {
         ZStack {
             AtlasTheme.Colors.bgBase.ignoresSafeArea()
@@ -28,12 +33,22 @@ struct FocusView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: focus.sessionActive)
-        // Drive the window in/out of true fullscreen from session state. Idempotent
-        // (`FocusWindow.setFullScreen` no-ops when already in the target state), so
-        // onAppear (FocusCard entry — session already true) and onChange (the "Start
-        // focus" button) can both call it without double-toggling.
-        .onAppear { FocusWindow.setFullScreen(focus.sessionActive) }
-        .onChange(of: focus.sessionActive) { FocusWindow.setFullScreen(focus.sessionActive) }
+        // Only ever ENTER fullscreen for a session — never force-exit from the landing,
+        // so opening the Focus tab while the user is in their own fullscreen doesn't yank
+        // them out. Idempotent (`setFullScreen` no-ops when already in the target state).
+        .onAppear {
+            if focus.sessionActive, FocusWindow.setFullScreen(true) { didEnterFullScreen = true }
+        }
+        .onChange(of: focus.sessionActive) { _, active in
+            if active {
+                if FocusWindow.setFullScreen(true) { didEnterFullScreen = true }
+            } else {
+                // Only drop fullscreen if Focus put us there; if the window was already
+                // fullscreen at session start, leave the user's fullscreen untouched.
+                if didEnterFullScreen { FocusWindow.setFullScreen(false) }
+                didEnterFullScreen = false
+            }
+        }
         // A ⌘K note pick (notes scope) hands the note off here → open the corner card.
         // Keyed off the id because `Note` isn't Equatable.
         .onChange(of: focus.noteToOpen?.id) { _, _ in
@@ -46,7 +61,8 @@ struct FocusView: View {
         // toggle), end the session so we never sit in the corner-timer layout while
         // windowed. Fires on *did*Exit — `.fullScreen` is already cleared — so the
         // onChange → setFullScreen(false) that follows is a guaranteed no-op (no loop).
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
+            guard FocusWindow.isMain(note.object) else { return }
             if focus.sessionActive { focus.endSession() }
         }
     }

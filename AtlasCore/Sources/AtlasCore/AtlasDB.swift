@@ -110,7 +110,7 @@ public struct SpaceRow: Codable {
     public var colorToken: String
     public var sort: Int
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id
         case userId     = "user_id"
         case name
@@ -147,7 +147,7 @@ public struct ProjectRow: Codable {
     public var overview: String
     public var spaceId: UUID?
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id
         case userId       = "user_id"
         case spaceName    = "space_name"
@@ -209,7 +209,7 @@ public struct TaskRow: Codable {
     public var assigneeId: UUID?
     public var createdBy: UUID?
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id
         case userId      = "user_id"
         case projectId   = "project_id"
@@ -307,7 +307,7 @@ public struct EventRow: Codable {
     public var noteId: UUID?
     public var spaceId: UUID?
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id
         case userId    = "user_id"
         case spaceName = "space_name"
@@ -379,7 +379,7 @@ public struct NoteRow: Codable {
     public var googleDocId: String?
     public var spaceId: UUID?
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id
         case userId      = "user_id"
         case spaceName   = "space_name"
@@ -546,7 +546,7 @@ public struct GoalRow: Codable {
     public var progress: Double
     public var label: String
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id
         case userId   = "user_id"
         case title
@@ -1040,23 +1040,34 @@ public final class AtlasDB {
             var row = GoalRow(domain: goal); row.userId = userId; return row
         }
 
-        try await seedRows(spaceRows,   into: "spaces",   sess: sess)
-        try await seedRows(projectRows, into: "projects", sess: sess)
-        try await seedRows(taskRows,    into: "tasks",    sess: sess)
-        try await seedRows(eventRows,   into: "events",   sess: sess)
-        try await seedRows(noteRows,    into: "notes",    sess: sess)
-        try await seedRows(goalRows,    into: "goals",    sess: sess)
+        try await seedRows(spaceRows,   into: "spaces",   columns: columnList(SpaceRow.CodingKeys.self),   sess: sess)
+        try await seedRows(projectRows, into: "projects", columns: columnList(ProjectRow.CodingKeys.self), sess: sess)
+        try await seedRows(taskRows,    into: "tasks",    columns: columnList(TaskRow.CodingKeys.self),    sess: sess)
+        try await seedRows(eventRows,   into: "events",   columns: columnList(EventRow.CodingKeys.self),   sess: sess)
+        try await seedRows(noteRows,    into: "notes",    columns: columnList(NoteRow.CodingKeys.self),    sess: sess)
+        try await seedRows(goalRows,    into: "goals",    columns: columnList(GoalRow.CodingKeys.self),    sess: sess)
+    }
+
+    /// The comma-joined wire column names for a seeded row type, taken from its
+    /// `CodingKeys`. Passed as PostgREST's `?columns=` so a batch upsert declares an
+    /// explicit, uniform column set — otherwise PostgREST infers the INSERT columns
+    /// from the FIRST array element (whose synthesized `encodeIfPresent` omits nil
+    /// optionals), which would silently drop or 400 on a column only later rows set.
+    private func columnList<K: CodingKey & CaseIterable>(_ keys: K.Type) -> String {
+        keys.allCases.map(\.stringValue).joined(separator: ",")
     }
 
     /// POSTs `rows` as a single PostgREST batch upsert (`on_conflict=id`,
-    /// merge-duplicates). No-op for an empty array — matches the old per-row
-    /// loop, which issued no request for an empty table.
-    private func seedRows<Row: Encodable>(_ rows: [Row], into table: String,
+    /// merge-duplicates) with an explicit `columns` set (see `columnList`). No-op for
+    /// an empty array — matches the old per-row loop, which issued no request for an
+    /// empty table.
+    private func seedRows<Row: Encodable>(_ rows: [Row], into table: String, columns: String,
                                           sess: SupabaseSession) async throws {
         guard !rows.isEmpty else { return }
         let body = try isoEncoder.encode(rows)
         try await send(method: "POST", table: table,
-                       query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
+                       query: upsertQuery + [URLQueryItem(name: "columns", value: columns)],
+                       extraHeaders: upsertHeaders, body: body, sess: sess)
     }
 
     // MARK: Spaces / Projects

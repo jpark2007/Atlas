@@ -38,6 +38,7 @@ struct ReferenceRowView: View {
                 }
                 .buttonStyle(.plain)
                 .help(externalActionTitle)
+                .accessibilityLabel(externalActionTitle)
             }
             if let onSyncNow { syncNowButton(onSyncNow) }
             menu
@@ -165,12 +166,20 @@ struct ReferenceRowView: View {
     @ViewBuilder
     private var syncDisplay: some View {
         if reference.syncState == .synced, let d = reference.lastSyncedAt {
-            (Text("Synced ") + Text(d, style: .relative) + Text(" ago"))
+            syncedText(d)
                 .font(.system(size: 11, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         } else {
             syncChip
         }
+    }
+
+    /// "Synced …" guarded so a near-now or clock-skewed-future timestamp reads "just now"
+    /// rather than the signed-relative "in 3 sec ago".
+    private func syncedText(_ d: Date) -> Text {
+        d.timeIntervalSinceNow < -1
+            ? Text("Synced ") + Text(d, style: .relative) + Text(" ago")
+            : Text("Synced just now")
     }
 
     private var syncChip: some View {
