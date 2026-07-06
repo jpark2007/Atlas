@@ -15,9 +15,10 @@ struct ProjectDetailView: View {
     /// Add-link sheet toggle, and the last import/Quick-Look problem to surface calmly.
     @State private var presentAddLink = false
     @State private var referenceError: String?
-    /// Non-nil while the in-app Drive picker sheet is up (carries the tokens the
-    /// bundled page needs); dismissing it re-pulls the reference pool.
-    @State private var drivePicker: DrivePickerSession?
+    /// True while the onepick Drive import is running (browser open, waiting sheet up).
+    @State private var isImporting = false
+    /// The live loopback listener for the in-flight import, so Cancel can stop it.
+    @State private var pickerListener: PickerRedirectListener?
 
     /// Editable starter sample-tasks for an empty project. Seeded once from
     /// `ProjectTemplate`; purely local (never persisted) — the user can edit or
@@ -88,11 +89,36 @@ struct ProjectDetailView: View {
         .sheet(isPresented: $presentAddLink) {
             AddLinkSheet(projectID: project.id)
         }
-        // In-app Drive picker: on dismiss (import done or cancelled) re-pull the
-        // pool so imported references show up immediately.
-        .sheet(item: $drivePicker, onDismiss: { Task { await state.reloadReferences() } }) { session in
-            DrivePickerSheet(projectID: project.id, session: session)
+        // Onepick Drive import: a calm "waiting" sheet while the user chooses files
+        // in the browser. The flow re-pulls the reference pool itself when it lands;
+        // the sheet auto-dismisses when `isImporting` flips back to false.
+        .sheet(isPresented: $isImporting) { importWaitingSheet }
+    }
+
+    /// Shown while the onepick browser round-trip is in flight.
+    private var importWaitingSheet: some View {
+        VStack(spacing: 18) {
+            Text("Import from Drive")
+                .font(.system(size: 17, weight: .semibold, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+            ProgressView().controlSize(.large)
+            Text("Continue in your browser to choose files…")
+                .font(.system(size: 13, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                .multilineTextAlignment(.center)
+            Button("Cancel") {
+                pickerListener?.stop()
+                pickerListener = nil
+                isImporting = false
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 13, weight: .medium, design: .rounded))
+            .foregroundStyle(AtlasTheme.Colors.textSecondary)
+            .keyboardShortcut(.cancelAction)
         }
+        .padding(32)
+        .frame(width: 360)
+        .background(AtlasTheme.Colors.bgBase)
     }
 
     // MARK: - Notes (WS-10 native foundation)
@@ -180,8 +206,8 @@ struct ProjectDetailView: View {
 
     /// The project's reference pool — Docs imported as editable notes, view-only
     /// Drive files, and external links (see docs/specs/2026-07-03-notes-import-design.md).
-    /// "Import" opens the in-app Drive picker sheet (`DrivePickerSheet`); imported
-    /// references surface when the sheet dismisses.
+    /// "Import" runs the onepick Drive flow (`importFromDrive()`) in the system
+    /// browser; imported references surface when it lands.
     private var referencesSection: some View {
         let refs = state.references(in: project.id)
         return VStack(alignment: .leading, spacing: 10) {
@@ -302,24 +328,57 @@ struct ProjectDetailView: View {
         }
     }
 
+    /// Runs Google's desktop-picker (onepick) flow: open the top-level Google file
+    /// chooser in the system browser (Safari-safe — no third-party cookies), capture
+    /// the picked ids via a loopback listener (bounced through the public-HTTPS
+    /// redirect), enrich them with Drive metadata, and POST the unchanged
+    /// `{projectId, files[]}` contract to `drive-import`.
     private func importFromDrive() {
         guard let jwt = auth.session?.accessToken else {
             referenceError = "Sign in to Atlas to import from Drive."
             return
         }
-        guard DrivePickerConfig.isConfigured else {
-            referenceError = "Drive picker keys missing — add DRIVE_PICKER_API_KEY / _APP_ID to Config/Secrets.xcconfig."
+        guard googleAuth.isConnected else {
+            referenceError = "Connect Google in Settings → Calendars to import from Drive."
+            return
+        }
+        guard googleAuth.hasDriveScope else {
+            referenceError = "Reconnect Google in Settings to enable Drive import."
+            return
+        }
+        guard DriveOnePickConfig.isConfigured else {
+            referenceError = "Drive import isn't configured — set DRIVE_ONEPICK_REDIRECT_URI in Config/Secrets.xcconfig."
             return
         }
         referenceError = nil
+        isImporting = true
         Task { @MainActor in
+            defer { isImporting = false }
             do {
-                // The app's own drive.file token (native PKCE flow) — the picker
-                // page runs with it directly; no Google sign-in in the webview.
+                let listener = PickerRedirectListener()
+                pickerListener = listener
+                let port = try await listener.start()
+                let nonce = UUID().uuidString
+                let authURL = DriveOnePick.authorizationURL(
+                    clientID: DriveOnePickConfig.webClientID,
+                    redirectURI: DriveOnePickConfig.redirectURI,
+                    state: "\(port).\(nonce)")
+                NSWorkspace.shared.open(authURL)
+
+                let ids = try await listener.waitForPickedFileIDs(expectedState: nonce)
+                pickerListener = nil
+                guard !ids.isEmpty else { return }
+
                 let token = try await googleAuth.validAccessToken()
-                drivePicker = DrivePickerSession(googleAccessToken: token, supabaseJWT: jwt)
+                let files = await enrichPickedFiles(ids: ids, token: token)
+                try await registerDriveImports(projectID: project.id, files: files, jwt: jwt)
+                await state.reloadReferences()
+            } catch is DriveOnePickError {
+                // User cancelled or the wait timed out — nothing to surface.
+                pickerListener = nil
             } catch {
-                referenceError = "Connect Google in Settings → Calendars to import from Drive."
+                pickerListener = nil
+                referenceError = "Drive import didn't finish — \(error.localizedDescription)"
             }
         }
     }
