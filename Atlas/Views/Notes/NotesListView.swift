@@ -1,11 +1,16 @@
 import SwiftUI
 import AtlasCore
 
-/// A simple list of all notes that opens the editor in a sheet. Nice-to-have
-/// surface; not wired into RootView but compiles and runs standalone.
+/// The full-page list of all notes. Standalone it opens the editor in a sheet;
+/// inside Focus mode it is the work surface and hands opens to `onOpen` (which
+/// presents the chromeless `NoteCardOverlay` corner card instead).
 struct NotesListView: View {
     @EnvironmentObject private var state: AppState
     @State private var editingNote: Note?
+
+    /// When set (Focus mode), row taps and "New" route the note here instead of the
+    /// standalone sheet. `nil` keeps the standalone sheet behaviour.
+    var onOpen: ((Note) -> Void)? = nil
 
     var body: some View {
         ScrollView {
@@ -29,7 +34,7 @@ struct NotesListView: View {
                 .padding(.bottom, 6)
 
                 ForEach(state.notes) { note in
-                    Button { editingNote = note } label: {
+                    Button { open(note) } label: {
                         row(note)
                     }
                     .buttonStyle(.plain)
@@ -46,10 +51,15 @@ struct NotesListView: View {
     }
 
     private func newNote() {
-        // Open an UNSAVED draft. NoteEditorView.commit() persists via
-        // updateNote (which inserts on no-match), so dismissing without Done
-        // leaves no stray "Untitled note" behind.
-        editingNote = Note(title: "", body: "")
+        // Open an UNSAVED draft — an instant local note with no project and no Doc
+        // pairing. NoteEditorView.commit() persists via updateNote (which inserts on
+        // no-match), so dismissing without Done leaves no stray "Untitled note" behind.
+        open(Note(title: "", body: ""))
+    }
+
+    /// Routes an open to the Focus corner card (`onOpen`) or the standalone sheet.
+    private func open(_ note: Note) {
+        if let onOpen { onOpen(note) } else { editingNote = note }
     }
 
     /// A note is a linked Doc-note when a `.docNote` reference points back at it.

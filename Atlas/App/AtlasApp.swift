@@ -12,6 +12,9 @@ struct AtlasApp: App {
     @StateObject private var canvasFeed = AtlasCore.CanvasService()
     @StateObject private var shortcuts = ShortcutStore()
     @StateObject private var googleAuth = GoogleAuthService()
+    /// Focus-session + Pomodoro state. Owned here (not inside FocusView) so the
+    /// MenuBarExtra — a separate Scene — can bind to the same live countdown.
+    @StateObject private var focus = FocusViewModel()
 
     var body: some Scene {
         WindowGroup {
@@ -22,6 +25,7 @@ struct AtlasApp: App {
                 .environmentObject(canvasFeed)
                 .environmentObject(shortcuts)
                 .environmentObject(googleAuth)
+                .environmentObject(focus)
                 // Two-way Google-Doc write-back for linked Doc-notes: the concrete
                 // edge-function client, minting a valid Supabase JWT on each save.
                 .environment(\.docNoteWriteBack,
@@ -38,20 +42,53 @@ struct AtlasApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
 
-        // Atlas mark in the macOS menu bar — always-on quick access.
-        MenuBarExtra("Atlas", image: "AtlasMenuBar") {
-            AtlasMenuBarContent()
+        // Menu-bar item: the Atlas mark normally; the live MM:SS countdown while a
+        // focus session runs — visible even when Atlas isn't frontmost. Clicking it
+        // surfaces session controls (see AtlasMenuBarContent).
+        MenuBarExtra {
+            AtlasMenuBarContent(focus: focus)
                 .environmentObject(state)
+        } label: {
+            FocusMenuLabel(focus: focus)
         }
         .menuBarExtraStyle(.menu)
+    }
+}
+
+/// Menu-bar label: the live `MM:SS` countdown while a focus session is active,
+/// otherwise the Atlas mark. `@ObservedObject` so it re-renders each tick.
+struct FocusMenuLabel: View {
+    @ObservedObject var focus: FocusViewModel
+
+    var body: some View {
+        if focus.sessionActive {
+            Text(focus.timeFormatted)
+        } else {
+            Image("AtlasMenuBar")
+        }
     }
 }
 
 /// Dropdown shown from the menu-bar Atlas icon.
 struct AtlasMenuBarContent: View {
     @EnvironmentObject private var state: AppState
+    @ObservedObject var focus: FocusViewModel
 
     var body: some View {
+        // Session controls surface first while a focus session is running.
+        if focus.sessionActive {
+            Text("Focus · \(focus.phaseLabel) · \(focus.timeFormatted)")
+            Button(focus.isRunning ? "Pause" : "Resume") { focus.toggle() }
+            Button("End Session") {
+                focus.endSession()
+                // Belt-and-suspenders: drop fullscreen directly too, since this can
+                // fire while Atlas isn't frontmost. Idempotent with FocusView's own
+                // sessionActive→setFullScreen sync.
+                FocusWindow.setFullScreen(false)
+            }
+            Divider()
+        }
+
         Button("Open Atlas") { Self.activateMainWindow() }
 
         // No ⌘⇧K here on purpose: a MenuBarExtra key-equivalent shadows BOTH the

@@ -10,6 +10,10 @@ struct PaletteSection: Identifiable {
     var id: String { title }
 }
 
+/// What the palette searches over. `.notes` is the Focus-mode scope: only notes,
+/// and the "Create" row makes a note instead of a task.
+enum PaletteScope { case all, notes }
+
 /// Pure decision logic for the ⌘K command palette: given a query and the
 /// current data, decide which sections to show and in what order. Deliberately
 /// free of SwiftUI / `AppState` so it can be unit-tested in isolation.
@@ -17,6 +21,9 @@ enum CommandPaletteModel {
     /// Stable id for the persistent "Create …" row, so the view (and tests) can
     /// find it regardless of the query text it carries.
     static let createActionID = "create-task"
+
+    /// Stable id for the notes-scope "Create note …" row.
+    static let createNoteActionID = "create-note"
 
     /// Trimmed + lowercased query; empty when nothing meaningful was typed.
     static func normalized(_ query: String) -> String {
@@ -61,7 +68,25 @@ enum CommandPaletteModel {
                         notes: [Note],
                         events: [CalendarEvent] = [],
                         quickActions: [PaletteAction],
-                        createAction: PaletteAction) -> [PaletteSection] {
+                        createAction: PaletteAction,
+                        scope: PaletteScope = .all) -> [PaletteSection] {
+        // Focus-mode notes scope: notes only. Empty query lists recent notes; a
+        // non-empty query leads with the "Create note" row, then matches.
+        if scope == .notes {
+            guard !normalized(query).isEmpty else {
+                return notes.isEmpty ? []
+                    : [PaletteSection(title: "Notes", items: notes.map(CommandResult.note))]
+            }
+            var sections: [PaletteSection] = [
+                PaletteSection(title: "Create", items: [.action(createAction)])
+            ]
+            let n = matchingNotes(query: query, notes: notes)
+            if !n.isEmpty {
+                sections.append(PaletteSection(title: "Notes", items: n.map(CommandResult.note)))
+            }
+            return sections
+        }
+
         guard !normalized(query).isEmpty else {
             return [PaletteSection(title: "Quick actions",
                                    items: quickActions.map(CommandResult.action))]

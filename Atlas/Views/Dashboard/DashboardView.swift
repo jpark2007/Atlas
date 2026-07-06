@@ -316,27 +316,39 @@ struct DashboardTasksSection: View {
 // MARK: - Focus card
 
 struct FocusCard: View {
+    @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var focus: FocusViewModel
+
     var body: some View {
-        AtlasCard {
-            HStack(spacing: 12) {
-                Image(systemName: "timer")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
-                    .frame(width: 34, height: 34)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Focus session")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text("25 min · Pomodoro")
-                        .atlasMono(size: 11, weight: .regular)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+        // Wired to enter Focus: start the session (which drives the window into true
+        // fullscreen via FocusView) and route the detail pane to FocusView.
+        Button {
+            focus.startSession()
+            state.route = .focus
+        } label: {
+            AtlasCard {
+                HStack(spacing: 12) {
+                    Image(systemName: "timer")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                        .frame(width: 34, height: 34)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Focus session")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        Text("25 min · Pomodoro")
+                            .atlasMono(size: 11, weight: .regular)
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    }
+                    Spacer()
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 }
-                Spacer()
-                Image(systemName: "play.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
             }
         }
+        .buttonStyle(.plain)
+        .help("Enter fullscreen focus")
     }
 }
 

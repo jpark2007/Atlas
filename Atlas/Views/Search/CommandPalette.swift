@@ -68,6 +68,9 @@ enum CommandResult: Identifiable {
 
 struct CommandPaletteOverlay: View {
     @EnvironmentObject private var state: AppState
+    /// App-wide focus model — when a session is active, the palette runs in
+    /// notes scope and routes picks to the Focus corner card.
+    @EnvironmentObject private var focus: FocusViewModel
 
     @State private var query = ""
     @State private var selection = 0
@@ -141,7 +144,7 @@ struct CommandPaletteOverlay: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 14))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
-            TextField("Find anything, or create a task…", text: $query)
+            TextField(focus.sessionActive ? "Search your notes…" : "Find anything, or create a task…", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
@@ -284,7 +287,24 @@ struct CommandPaletteOverlay: View {
         )
     }
 
-    /// Ordered result sections, decided by the pure `CommandPaletteModel`.
+    /// Notes-scope (Focus) create row: an instant local note — no project, no Doc
+    /// pairing — that opens straight into the corner card.
+    private var noteCreateAction: PaletteAction {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return PaletteAction(
+            id: CommandPaletteModel.createNoteActionID,
+            title: "Create note \u{201C}\(trimmed)\u{201D}",
+            subtitle: "Press return to open a fresh note",
+            icon: "note.text.badge.plus",
+            run: {
+                let note = state.addNote(title: trimmed.isEmpty ? "Untitled note" : trimmed, body: "")
+                focus.noteToOpen = note
+            }
+        )
+    }
+
+    /// Ordered result sections, decided by the pure `CommandPaletteModel`. Inside a
+    /// focus session the palette narrows to notes scope.
     private var sections: [PaletteSection] {
         CommandPaletteModel.results(
             query: query,
@@ -293,7 +313,8 @@ struct CommandPaletteOverlay: View {
             notes: state.notes,
             events: state.events,
             quickActions: quickActions,
-            createAction: createAction
+            createAction: focus.sessionActive ? noteCreateAction : createAction,
+            scope: focus.sessionActive ? .notes : .all
         )
     }
 
@@ -373,7 +394,12 @@ struct CommandPaletteOverlay: View {
             dismiss()
         case .note(let note):
             state.presentSearch = false
-            editingNote = note
+            // Inside Focus, hand the note to the corner card; otherwise the sheet.
+            if focus.sessionActive {
+                focus.noteToOpen = note
+            } else {
+                editingNote = note
+            }
         case .task(let task):
             state.route = .task(task.id)
             dismiss()

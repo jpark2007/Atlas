@@ -29,9 +29,14 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
 struct RootView: View {
     @EnvironmentObject var state: AppState
+    @EnvironmentObject var focus: FocusViewModel
+
+    /// Collapses the sidebar to a clean, detail-only canvas while a focus session
+    /// is active; restored when it ends.
+    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 220, ideal: 234, max: 300)
         } detail: {
@@ -75,6 +80,9 @@ struct RootView: View {
             .background(AtlasTheme.Colors.bgBase)
         }
         .navigationSplitViewStyle(.balanced)
+        .onChange(of: focus.sessionActive) { _, active in
+            columnVisibility = active ? .detailOnly : .automatic
+        }
         .background(AtlasTheme.Colors.bgBase)
         .toolbar(removing: .sidebarToggle)
         // Do NOT add `.toolbar(.hidden, for: .windowToolbar)` here — it strips the entire

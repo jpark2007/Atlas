@@ -1,12 +1,14 @@
 import Foundation
 import Combine
+import AtlasCore
 
-/// Drives the Pomodoro focus timer.
+/// Drives the Pomodoro focus timer AND the focus-session lifecycle.
 ///
-/// Ported from the old prototype's `FocusViewModel` (carryover) but rebuilt as a
-/// plain `ObservableObject` countdown around a `Foundation.Timer`. It does NOT
-/// touch `AppState`, SwiftData, or any AppKit/menu-bar code — purely the timing
-/// logic for a 25-minute work / 5-minute break cycle.
+/// Rebuilt from the old prototype's `FocusViewModel` as a plain `ObservableObject`
+/// countdown around a `Foundation.Timer`. It stays free of AppKit — the fullscreen
+/// window toggle lives in the view (`FocusView`), which observes `sessionActive`.
+/// Owned app-wide by `AtlasApp` so the `MenuBarExtra` label can bind to the live
+/// countdown even when Atlas isn't frontmost.
 @MainActor
 final class FocusViewModel: ObservableObject {
 
@@ -39,6 +41,15 @@ final class FocusViewModel: ObservableObject {
     /// Count of completed work intervals in this run.
     @Published private(set) var completedWorkIntervals: Int = 0
 
+    /// Whether a focus session is active — the window is (or is going) into true
+    /// fullscreen work mode. Drives the in-session layout, the menu-bar countdown,
+    /// and the fullscreen toggle (`FocusView` observes this).
+    @Published var sessionActive = false
+
+    /// A note the ⌘K notes-scoped palette asked Focus to open in the corner card.
+    /// `FocusView` consumes it (opens the card) and clears it back to `nil`.
+    @Published var noteToOpen: Note?
+
     private var timer: Timer?
 
     // MARK: - Derived display
@@ -62,6 +73,23 @@ final class FocusViewModel: ObservableObject {
 
     var primaryButtonTitle: String { isRunning ? "Pause" : "Start" }
     var primaryButtonIcon: String { isRunning ? "pause.fill" : "play.fill" }
+
+    // MARK: - Session lifecycle
+
+    /// Enters a focus session and starts the countdown. `FocusView` observes
+    /// `sessionActive` and drives the window into true macOS fullscreen.
+    func startSession() {
+        sessionActive = true
+        start()
+    }
+
+    /// Ends the session: pauses the countdown and drops out of session mode.
+    /// `FocusView` observes `sessionActive` and drops the window out of fullscreen.
+    /// Remaining time is preserved so re-entering resumes where it left off.
+    func endSession() {
+        pause()
+        sessionActive = false
+    }
 
     // MARK: - Controls
 

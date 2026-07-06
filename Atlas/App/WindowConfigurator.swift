@@ -49,3 +49,26 @@ struct WindowConfigurator: NSViewRepresentable {
         if let window = nsView.window { configure(window) }
     }
 }
+
+/// Drives the app's main window in and out of true macOS fullscreen for Focus mode.
+///
+/// Idempotent: it only calls `toggleFullScreen` when the window's current state
+/// differs from the requested one, so it is safe to call from onAppear / onChange /
+/// the menu bar (and after the window itself has already left fullscreen) without
+/// double-toggling.
+enum FocusWindow {
+    @MainActor
+    static func setFullScreen(_ on: Bool) {
+        guard let window = mainWindow() else { return }
+        let isFull = window.styleMask.contains(.fullScreen)
+        guard on != isFull else { return }
+        window.toggleFullScreen(nil)
+    }
+
+    /// The main content window (not the capture panel / menu-bar item). Mirrors the
+    /// `canBecomeMain` pick used by `AtlasMenuBarContent.activateMainWindow`.
+    @MainActor
+    private static func mainWindow() -> NSWindow? {
+        NSApp.windows.first { $0.canBecomeMain }
+    }
+}
