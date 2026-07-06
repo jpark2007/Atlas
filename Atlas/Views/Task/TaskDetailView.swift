@@ -123,7 +123,41 @@ struct TaskDetailView: View {
             if live.done {
                 metaChip(icon: "checkmark.circle", label: "Completed")
             }
+            assigneeChip
             Spacer()
+        }
+    }
+
+    /// Claim/assigned state for shared-project tasks — an unclaimed task shows a
+    /// "Claim task" affordance; once claimed, an "Assigned" indicator.
+    @ViewBuilder
+    private var assigneeChip: some View {
+        if live.isClaimable {
+            Button {
+                Task { await state.claimTask(live.id) }
+            } label: {
+                HStack(spacing: 5) {
+                    Circle()
+                        .strokeBorder(AtlasTheme.Colors.textMuted.opacity(0.5), lineWidth: 1)
+                        .frame(width: 12, height: 12)
+                    Text("Claim task")
+                }
+                .font(.system(size: 12, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+            }
+            .buttonStyle(.plain)
+        } else if live.assigneeID != nil {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(AtlasTheme.Colors.accent)
+                    .frame(width: 12, height: 12)
+                Text("Assigned")
+            }
+            .font(.system(size: 12, design: .rounded))
+            .foregroundStyle(AtlasTheme.Colors.textMuted)
+            // A future task can resolve assigneeID -> ProfileRow.displayName once a
+            // member-profile cache exists; showing "Assigned" (not a raw UUID) is
+            // the correct minimal behavior for now.
         }
     }
 

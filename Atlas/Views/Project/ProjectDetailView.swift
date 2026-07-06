@@ -11,6 +11,7 @@ struct ProjectDetailView: View {
 
     @State private var isEditingOverview = false
     @State private var draftOverview = ""
+    @State private var presentInvite = false
 
     /// Add-link sheet toggle, and the last import/Quick-Look problem to surface calmly.
     @State private var presentAddLink = false
@@ -475,6 +476,18 @@ struct ProjectDetailView: View {
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .tracking(-0.4)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                Spacer()
+                Button {
+                    presentInvite = true
+                } label: {
+                    Text("Invite")
+                        .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                .buttonStyle(.plain)
+                .sheet(isPresented: $presentInvite) {
+                    InviteMemberSheet(projectId: project.id)
+                }
             }
             HStack(spacing: 16) {
                 if let m = project.meetingInfo { metaItem("calendar", m) }
