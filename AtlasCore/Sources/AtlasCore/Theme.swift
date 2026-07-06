@@ -5,31 +5,37 @@ import SwiftUI
 /// (`AtlasMobile/Theme/MobileTheme.swift` is the source of truth).
 /// RULES: accent = live/NOW/brand graphics ONLY, never a button fill.
 /// Controls are transparent with 1.5 pt ink outlines. No card chrome —
-/// content sits on the cream bg, sections separate with black-8% hairlines.
+/// content sits on one flat paper bg, sections separate with ink-12% hairlines.
 public enum AtlasTheme {
 
-    /// Strong ink rule (header underlines, outlined controls, hairline separators).
+    /// Strong ink rule (header underlines, outlined controls). Controls keep this 1.5.
     public static let rule: CGFloat = 1.5
 
+    /// Hairline separator width (1 pt) — sections/rows/cards. Controls use `rule` (1.5).
+    public static let hairlineWidth: CGFloat = 1
+
+    /// Wash — the tag/chip background tint for a given color (color at 13%).
+    public static func wash(_ color: Color) -> Color { color.opacity(0.13) }
+
     public enum Colors {
-        // Cream backgrounds (recessed → most elevated). Card/elevated tints are
-        // near-invisible — content reads as sitting on the bg, not on chrome.
-        public static let bgDeep      = Color(hex: "f3f1ec") // recessed
-        public static let bgBase      = Color(hex: "fbfaf7")
-        public static let bgSidebar   = Color(hex: "f7f5f0")
-        public static let bgCard      = Color(hex: "faf8f4") // cream tint, near-invisible
-        public static let bgElevated  = Color(hex: "f8f6f1") // cream tint, near-invisible
+        // One flat paper surface. Every level collapses to a single #f2efe6 —
+        // no card/elevated tints; separation is 1px ink hairlines, never fills.
+        public static let bgDeep      = Color(hex: "f2efe6")
+        public static let bgBase      = Color(hex: "f2efe6")
+        public static let bgSidebar   = Color(hex: "f2efe6")
+        public static let bgCard      = Color(hex: "f2efe6") // card fills die — flat paper
+        public static let bgElevated  = Color(hex: "f2efe6") // elevated fills die — flat paper
 
-        public static let border       = Color.black.opacity(0.08)
-        public static let borderStrong = Color.black.opacity(0.14)
+        public static let border       = Color(hex: "211d17").opacity(0.12)
+        public static let borderStrong = Color(hex: "211d17").opacity(0.28)
 
-        /// The editorial section separator (black 8%).
-        public static let hairline = Color.black.opacity(0.08)
+        /// The editorial section separator (ink 12%).
+        public static let hairline = Color(hex: "211d17").opacity(0.12)
 
         // Text
-        public static let textPrimary   = Color(hex: "1a191d")
-        public static let textSecondary = Color(hex: "6c6a72")
-        public static let textMuted      = Color(hex: "9a98a0")
+        public static let textPrimary   = Color(hex: "211d17")
+        public static let textSecondary = Color(hex: "6f6a5e")
+        public static let textMuted      = Color(hex: "9c968a")
 
         // Brand accent — clay. Graphics only (NOW / live / brand). Never a fill.
         public static let accent     = Color(hex: "d97757")
@@ -91,6 +97,21 @@ public struct AtlasCard<Content: View>: View {
     }
 }
 
+/// THE shared tag/chip — tiny uppercase mono text on a color wash, no outline.
+/// Used for course codes, statuses, space labels, etc. (adopted across views next wave).
+public func atlasTag(text: String, color: Color) -> some View {
+    Text(text)
+        .atlasMono(size: 10, weight: .semibold)
+        .textCase(.uppercase)
+        .foregroundStyle(color)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(
+            AtlasTheme.wash(color),
+            in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+        )
+}
+
 // MARK: - Reusable editorial view modifiers
 //
 // Ported from AtlasMobile with `atlas-` prefixed names (the mobile `ed-` names
@@ -99,19 +120,34 @@ public struct AtlasCard<Content: View>: View {
 // this package builds for both platforms.
 
 extension View {
-    /// Big editorial screen title — 31 / heavy, −0.03em tracking, ink.
+    /// MONO type role (SF Mono) — every number, date, time, and uppercase section label.
+    public func atlasMono(size: CGFloat, weight: SwiftUI.Font.Weight = .regular) -> some View {
+        self.font(.system(size: size, weight: weight, design: .monospaced))
+    }
+
+    /// Convenience mono for inline numerals — SF Mono at body size (13 / regular).
+    public func atlasNumeric() -> some View {
+        self.atlasMono(size: 13, weight: .regular)
+    }
+
+    /// SERIF type role (New York) — content titles.
+    public func atlasTitleSerif(size: CGFloat) -> some View {
+        self.font(.system(size: size, weight: .semibold, design: .serif))
+    }
+
+    /// Big editorial screen title — 31 serif (New York), −0.03em tracking, ink.
     public func atlasScreenTitle() -> some View {
         self
-            .font(.system(size: 31, weight: .heavy, design: .rounded))
+            .atlasTitleSerif(size: 31)
             .tracking(-0.93)            // −0.03em × 31
             .foregroundStyle(AtlasTheme.Colors.textPrimary)
     }
 
-    /// Small uppercase caps label — 11 / bold, +0.08em tracking, muted.
+    /// Small uppercase caps label — 11 mono (SF Mono), wide tracking, secondary.
     public func atlasCapsLabel() -> some View {
         self
-            .font(.system(size: 11, weight: .bold, design: .rounded))
-            .tracking(0.88)             // +0.08em × 11
+            .atlasMono(size: 11, weight: .bold)
+            .tracking(2)                // wide mono tracking (~+0.18em × 11)
             .textCase(.uppercase)
             .foregroundStyle(AtlasTheme.Colors.textSecondary)
     }
@@ -128,7 +164,7 @@ extension View {
             .contentShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous))
     }
 
-    /// Hairline rule (black 8%) along the bottom edge — the editorial row separator.
+    /// Hairline rule (ink 12%) along the bottom edge — the editorial row separator.
     public func atlasHairlineBelow() -> some View {
         self.overlay(alignment: .bottom) {
             Rectangle()
