@@ -16,6 +16,10 @@ struct SettingsView: View {
     /// Space new / quick-captured tasks fall into when none is inferred.
     @AppStorage("tasks.defaultSpaceName") private var defaultTaskSpace: String = "Personal"
 
+    /// Arc-style sidebar behavior — "always" pins it; "hover" hides it until the
+    /// cursor touches the left edge (RootView owns the overlay mechanics).
+    @AppStorage("sidebar.mode") private var sidebarMode: String = "always"
+
     // MARK: – Canvas server-sync state
     @State private var canvasFeedURL = ""
     @State private var canvasSpaceName = "School"
@@ -84,6 +88,8 @@ struct SettingsView: View {
                     account
                     Divider().overlay(AtlasTheme.Colors.border)
                     tasksSection
+                    Divider().overlay(AtlasTheme.Colors.border)
+                    sidebarSection
                     Divider().overlay(AtlasTheme.Colors.border)
                     shortcutsSection
                     Spacer(minLength: 8)
@@ -788,6 +794,36 @@ struct SettingsView: View {
                 .padding(.vertical, 8)
                 .atlasHairlineBelow()
             }
+        }
+    }
+
+    // MARK: – Sidebar section
+
+    private var sidebarSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            label("SIDEBAR")
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sidebar visibility")
+                        .font(.system(size: 13, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text("Slide out keeps it hidden until the cursor touches the left edge")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                Spacer()
+                Picker("Sidebar visibility", selection: $sidebarMode) {
+                    Text("Always visible").tag("always")
+                    Text("Slide out on hover").tag("hover")
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(width: 170)
+                .tint(AtlasTheme.Colors.accent)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .atlasHairlineBelow()
         }
     }
 

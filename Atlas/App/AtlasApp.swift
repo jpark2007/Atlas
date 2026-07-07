@@ -44,14 +44,17 @@ struct AtlasApp: App {
 
         // Menu-bar item: the Atlas mark normally; the live MM:SS countdown while a
         // focus session runs — visible even when Atlas isn't frontmost. Clicking it
-        // surfaces session controls (see AtlasMenuBarContent).
+        // opens the calendar popup (mini-month + agenda) with session controls on
+        // top while a session runs (see AtlasMenuBarContent). `.window` style so
+        // the item can host a real view instead of menu rows.
         MenuBarExtra {
             AtlasMenuBarContent(focus: focus)
                 .environmentObject(state)
+                .preferredColorScheme(.light)   // paper theme — don't follow a dark menu bar
         } label: {
             FocusMenuLabel(focus: focus)
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
     }
 }
 
@@ -69,42 +72,86 @@ struct FocusMenuLabel: View {
     }
 }
 
-/// Dropdown shown from the menu-bar Atlas icon.
+/// The menu-bar calendar popup (`.window` MenuBarExtra): the dashboard's
+/// mini-month + agenda instrument, glanceable over ANY app, with the focus
+/// session controls stacked on top while a session runs.
 struct AtlasMenuBarContent: View {
     @EnvironmentObject private var state: AppState
     @ObservedObject var focus: FocusViewModel
 
     var body: some View {
-        // Session controls surface first while a focus session is running.
-        if focus.sessionActive {
-            Text("Focus · \(focus.phaseLabel) · \(focus.timeFormatted)")
+        VStack(alignment: .leading, spacing: 14) {
+            if focus.sessionActive {
+                sessionBlock
+                Divider().overlay(AtlasTheme.Colors.hairline)
+            }
+
+            MiniMonthAgenda(
+                onOpenCalendar: {
+                    Self.activateMainWindow()
+                    state.route = .calendar
+                },
+                agendaLimit: 8   // a stacked day must not grow the popup unbounded
+            )
+
+            Divider().overlay(AtlasTheme.Colors.hairline)
+
+            footerRow
+        }
+        .padding(16)
+        .frame(width: 340)
+        .background(AtlasTheme.Colors.bgBase)
+    }
+
+    /// Focus session controls — the same actions the old menu rows offered.
+    private var sessionBlock: some View {
+        HStack(spacing: 10) {
+            Text("FOCUS · \(focus.phaseLabel.uppercased()) · \(focus.timeFormatted)")
+                .atlasMono(size: 11, weight: .semibold)
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+            Spacer()
             Button(focus.isRunning ? "Pause" : "Resume") { focus.toggle() }
-            Button("End Session") {
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.accentText)
+            Button("End") {
                 focus.endSession()
                 // Belt-and-suspenders: drop fullscreen directly too, since this can
                 // fire while Atlas isn't frontmost. Idempotent with FocusView's own
                 // sessionActive→setFullScreen sync.
                 FocusWindow.setFullScreen(false)
             }
-            Divider()
+            .buttonStyle(.plain)
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
+    }
 
-        Button("Open Atlas") { Self.activateMainWindow() }
-
-        // No ⌘⇧K here on purpose: a MenuBarExtra key-equivalent shadows BOTH the
-        // Carbon global hotkey and the in-app capture shortcut whenever Atlas is the
-        // active app, breaking ⌘⇧K. The global hotkey + in-app shortcut own that combo.
-        Button("Quick Capture") {
-            Self.activateMainWindow()
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
-                state.presentCapture = true
+    /// Open / capture / quit — the old menu rows as quiet mono buttons.
+    // No ⌘⇧K equivalent here on purpose: a MenuBarExtra key-equivalent shadows BOTH
+    // the Carbon global hotkey and the in-app capture shortcut whenever Atlas is the
+    // active app, breaking ⌘⇧K. The global hotkey + in-app shortcut own that combo.
+    private var footerRow: some View {
+        HStack(spacing: 14) {
+            footerButton("Open Atlas") { Self.activateMainWindow() }
+            footerButton("Quick Capture") {
+                Self.activateMainWindow()
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                    state.presentCapture = true
+                }
             }
+            Spacer()
+            footerButton("Quit") { NSApp.terminate(nil) }
         }
+    }
 
-        Divider()
-
-        Button("Quit Atlas") { NSApp.terminate(nil) }
-            .keyboardShortcut("q")
+    private func footerButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+        }
+        .buttonStyle(.plain)
     }
 
     /// Bring the main Atlas window to the front (it may be hidden or behind).
