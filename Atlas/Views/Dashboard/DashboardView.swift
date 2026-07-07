@@ -184,7 +184,9 @@ struct DashboardView: View {
     /// earliest `dueDate` first, `scheduledAt` as the tiebreaker. Independent of
     /// the calendar selection (a fixed "what's next" glance).
     private var focusTasks: [TaskItem] {
-        let open = state.tasks.filter { !$0.done }
+        // Just-checked tasks linger (struck-through) before sliding out — see
+        // AppState.recentlyCompleted.
+        let open = state.tasks.filter { !$0.done || state.recentlyCompleted.contains($0.id) }
         let sorted = open.sorted { a, b in
             switch (a.dueDate, b.dueDate) {
             case let (da?, db?):
@@ -214,7 +216,8 @@ struct DashboardView: View {
                 HStack(spacing: 8) {
                     Text(task.title)
                         .font(.system(size: 13, design: .rounded))
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .strikethrough(task.done)
+                        .foregroundStyle(task.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                         .lineLimit(1)
                     Spacer(minLength: 8)
                     if !task.dueLabel.isEmpty {

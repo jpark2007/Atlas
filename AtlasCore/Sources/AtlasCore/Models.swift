@@ -169,6 +169,9 @@ public struct TaskItem: Identifiable {
     public var dueLabel: String
     public var status: TaskStatus = .open
     public var done: Bool = false
+    /// When the task was checked off; nil while open (and for tasks completed
+    /// before this column existed — those group under "Earlier").
+    public var completedAt: Date? = nil
     public var scheduledAt: Date? = nil
     public var dueDate: Date? = nil
     public var durationMin: Int? = nil
@@ -190,12 +193,13 @@ public struct TaskItem: Identifiable {
     /// Who created this task — set once at creation, never changed.
     public var createdByID: UUID? = nil
 
-    public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectName: String = "", notes: String = "", spaceID: UUID? = nil, assigneeID: UUID? = nil, createdByID: UUID? = nil) {
+    public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, completedAt: Date? = nil, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectName: String = "", notes: String = "", spaceID: UUID? = nil, assigneeID: UUID? = nil, createdByID: UUID? = nil) {
         self.id = id
         self.title = title
         self.dueLabel = dueLabel
         self.status = status
         self.done = done
+        self.completedAt = completedAt
         self.scheduledAt = scheduledAt
         self.dueDate = dueDate
         self.durationMin = durationMin

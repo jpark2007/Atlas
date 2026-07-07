@@ -11,6 +11,11 @@ final class AppState: ObservableObject {
     @Published var spaces: [Space] = MockData.spaces
     @Published var events: [CalendarEvent] = MockData.events
     @Published var tasks: [TaskItem] = MockData.tasks
+
+    /// Tasks checked off moments ago that still linger (struck-through) in pending
+    /// lists before sliding out — see `toggleTask`. Pending filters treat a task as
+    /// visible while its id is in here.
+    @Published var recentlyCompleted: Set<UUID> = []
     @Published var notes: [Note] = MockData.notes
     @Published var goals: [Goal] = MockData.goals
 
@@ -446,11 +451,26 @@ final class AppState: ObservableObject {
     }
 
     func toggleTask(_ id: UUID) {
-        if let i = tasks.firstIndex(where: { $0.id == id }) {
-            tasks[i].done.toggle()
-            let updated = tasks[i]
-            Task { try? await self.db?.upsertTask(updated) }
+        guard let i = tasks.firstIndex(where: { $0.id == id }) else { return }
+        tasks[i].done.toggle()
+        tasks[i].completedAt = tasks[i].done ? Date() : nil
+        let updated = tasks[i]
+        if updated.done {
+            // Mirror mobile: the checked row lingers ~0.9s (struck-through, filled
+            // check) in pending lists before sliding out, so completion is felt.
+            recentlyCompleted.insert(id)
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 900_000_000)
+                _ = withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    self.recentlyCompleted.remove(id)
+                }
+            }
+        } else {
+            recentlyCompleted.remove(id)
         }
+        // Scoped PATCH (done/completed_at only) — a check-off must never stomp a
+        // collaborator's concurrent edit to the task's other columns.
+        Task { try? await self.db?.setTaskDone(id: id, done: updated.done, completedAt: updated.completedAt) }
     }
 
     // MARK: - Calendar / capture surface (shared by Stage 1 screens)

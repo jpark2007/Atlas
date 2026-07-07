@@ -200,6 +200,7 @@ public struct TaskRow: Codable {
     public var dueDate: Date?
     public var status: String        // persisted as text — see encode/decode helpers below
     public var done: Bool
+    public var completedAt: Date?
     public var scheduledAt: Date?
     public var notes: String?
     public var noteId: UUID?
@@ -218,6 +219,7 @@ public struct TaskRow: Codable {
         case dueDate     = "due_date"
         case status
         case done
+        case completedAt = "completed_at"
         case scheduledAt = "scheduled_at"
         case notes
         case noteId      = "note_id"
@@ -236,6 +238,7 @@ public struct TaskRow: Codable {
         self.dueDate     = t.dueDate
         self.status      = TaskRow.encode(status: t.status)
         self.done        = t.done
+        self.completedAt = t.completedAt
         self.scheduledAt = t.scheduledAt
         self.notes       = t.notes
         self.noteId      = t.noteID
@@ -252,6 +255,7 @@ public struct TaskRow: Codable {
                  dueLabel: TaskItem.dueLabel(for: dueDate),
                  status: TaskRow.decode(status: status),
                  done: done,
+                 completedAt: completedAt,
                  scheduledAt: scheduledAt,
                  dueDate: dueDate,
                  durationMin: durationMin,
@@ -1117,6 +1121,23 @@ public final class AtlasDB {
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
                        extraHeaders: ["Prefer": "return=minimal"],
                        sess: sess)
+    }
+
+    /// Flips a task's done state via a scoped PATCH — done/completed_at only, so a
+    /// check-off never stomps a collaborator's concurrent edit to the row's other
+    /// columns (the same reasoning as `claimTask` below). Explicit JSON so
+    /// `completed_at` is written as NULL on un-check rather than omitted.
+    public func setTaskDone(id: UUID, done: Bool, completedAt: Date?) async throws {
+        let sess = try await requireSession()
+        let iso = ISO8601DateFormatter()
+        let payload: [String: Any] = [
+            "done": done,
+            "completed_at": completedAt.map { iso.string(from: $0) } ?? NSNull()
+        ]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        try await send(method: "PATCH", table: "tasks",
+                       query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                       body: body, sess: sess)
     }
 
     /// Claims a shared task for the caller WITHOUT touching `user_id`/`project_id` —

@@ -31,8 +31,12 @@ struct ProjectDetailView: View {
     /// an unsaved draft pre-linked to this project.
     @State private var editingNote: Note?
 
-    /// Live tasks tagged to this project.
-    private var liveTasks: [TaskItem] {
+    /// Whether the collapsed completed-tasks / past-events groups are expanded.
+    @State private var showCompleted = false
+    @State private var showPast = false
+
+    /// All tasks tagged to this project, deadline-ordered.
+    private var allTasks: [TaskItem] {
         state.tasks
             .filter { $0.projectName == project.name && $0.spaceName == project.spaceName }
             .sorted {
@@ -45,15 +49,37 @@ struct ProjectDetailView: View {
             }
     }
 
-    /// Live events tagged to this project.
-    private var liveEvents: [CalendarEvent] {
+    /// Open tasks (plus just-checked ones still lingering) — the default list.
+    private var liveTasks: [TaskItem] {
+        allTasks.filter { !$0.done || state.recentlyCompleted.contains($0.id) }
+    }
+
+    /// Checked-off tasks behind the "N COMPLETED" reveal, newest finish first.
+    private var completedTasks: [TaskItem] {
+        allTasks
+            .filter { $0.done && !state.recentlyCompleted.contains($0.id) }
+            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+    }
+
+    /// All events tagged to this project, in time order.
+    private var allEvents: [CalendarEvent] {
         state.events
             .filter { $0.spaceName == project.spaceName && ($0.projectID == project.id || $0.subtitle == project.name) }
             .sorted { $0.start < $1.start }
     }
 
+    /// Upcoming (or still in progress) events — the default list.
+    private var liveEvents: [CalendarEvent] {
+        allEvents.filter { $0.end >= state.now }
+    }
+
+    /// Elapsed events behind the "N PAST" reveal, most recent first.
+    private var pastEvents: [CalendarEvent] {
+        allEvents.filter { $0.end < state.now }.sorted { $0.start > $1.start }
+    }
+
     private var isEmptyProject: Bool {
-        project.overview.isEmpty && liveTasks.isEmpty
+        project.overview.isEmpty && allTasks.isEmpty
     }
 
     var body: some View {
@@ -64,8 +90,8 @@ struct ProjectDetailView: View {
                     badges
                     titleBlock
                     overview
-                    if !liveTasks.isEmpty  { liveTasksSection }
-                    if !liveEvents.isEmpty { liveEventsSection }
+                    if !liveTasks.isEmpty || !completedTasks.isEmpty { liveTasksSection }
+                    if !liveEvents.isEmpty || !pastEvents.isEmpty    { liveEventsSection }
                     if isEmptyProject { starterTemplate }
                     notesSection
                     referencesSection
@@ -632,10 +658,23 @@ struct ProjectDetailView: View {
                     }
                 }
             }
+            if !completedTasks.isEmpty {
+                RevealRow(count: completedTasks.count, noun: "COMPLETED", isOpen: $showCompleted)
+                if showCompleted {
+                    VStack(spacing: 0) {
+                        ForEach(Array(completedTasks.enumerated()), id: \.element.id) { i, task in
+                            liveTaskRow(task, trailingLabel: task.completedAt.map(LifecycleDate.short) ?? "")
+                            if i < completedTasks.count - 1 {
+                                Divider().overlay(AtlasTheme.Colors.hairline)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
-    private func liveTaskRow(_ task: TaskItem) -> some View {
+    private func liveTaskRow(_ task: TaskItem, trailingLabel: String? = nil) -> some View {
         Button { state.route = .task(task.id) } label: {
             HStack(spacing: 12) {
                 Button {
@@ -652,8 +691,9 @@ struct ProjectDetailView: View {
                     .strikethrough(task.done)
                     .foregroundStyle(task.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                 Spacer()
-                if !task.dueLabel.isEmpty {
-                    Text(task.dueLabel)
+                let label = trailingLabel ?? task.dueLabel
+                if !label.isEmpty {
+                    Text(label)
                         .atlasMono(size: 11)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
@@ -681,27 +721,48 @@ struct ProjectDetailView: View {
             .projectSectionHeader()
             VStack(spacing: 0) {
                 ForEach(Array(liveEvents.enumerated()), id: \.element.id) { i, event in
-                    HStack(spacing: 12) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(event.color)
-                            .frame(width: 3, height: 30)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(event.title)
-                                .font(.system(size: 13, weight: .medium, design: .rounded))
-                                .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                            Text("\(event.timeLabel) · \(event.durationLabel)")
-                                .atlasMono(size: 11)
-                                .foregroundStyle(AtlasTheme.Colors.textMuted)
-                        }
-                        Spacer()
-                    }
-                    .padding(.vertical, 9)
+                    eventRow(event)
                     if i < liveEvents.count - 1 {
                         Divider().overlay(AtlasTheme.Colors.hairline)
                     }
                 }
             }
+            if !pastEvents.isEmpty {
+                RevealRow(count: pastEvents.count, noun: "PAST", isOpen: $showPast)
+                if showPast {
+                    VStack(spacing: 0) {
+                        ForEach(Array(pastEvents.enumerated()), id: \.element.id) { i, event in
+                            eventRow(event, dimmed: true)
+                            if i < pastEvents.count - 1 {
+                                Divider().overlay(AtlasTheme.Colors.hairline)
+                            }
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    private func eventRow(_ event: CalendarEvent, dimmed: Bool = false) -> some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(event.color)
+                .frame(width: 3, height: 30)
+                .opacity(dimmed ? 0.4 : 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.title)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(dimmed ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
+                // A past event needs its date — a bare time would be ambiguous.
+                Text(dimmed
+                     ? "\(LifecycleDate.short(event.start)) · \(event.timeLabel)"
+                     : "\(event.timeLabel) · \(event.durationLabel)")
+                    .atlasMono(size: 11)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 9)
     }
 
     private var pinned: some View {

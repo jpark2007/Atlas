@@ -25,10 +25,15 @@ struct AtlasSegmentedPicker<Option: Hashable & Identifiable>: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, 6)
                         .overlay(alignment: .bottom) {
+                            // Text-width and lifted off the frame edge — a full-width
+                            // bar there collides with the container outline's corner
+                            // curve on the first/last segment.
                             if selected {
-                                Rectangle()
+                                Capsule()
                                     .fill(AtlasTheme.Colors.accent)
                                     .frame(height: 2)
+                                    .padding(.horizontal, 14)
+                                    .padding(.bottom, 3)
                             }
                         }
                         .contentShape(Rectangle())

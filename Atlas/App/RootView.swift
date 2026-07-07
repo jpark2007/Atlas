@@ -10,6 +10,7 @@ enum Route: Hashable {
     case calendarDetail
     case space(UUID)
     case task(UUID)
+    case completed
     case settings
 }
 
@@ -74,6 +75,8 @@ struct RootView: View {
                     } else {
                         PlaceholderView(title: "Not found", systemImage: "questionmark")
                     }
+                case .completed:
+                    CompletedView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

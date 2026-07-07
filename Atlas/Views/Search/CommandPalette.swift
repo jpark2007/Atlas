@@ -339,6 +339,10 @@ struct CommandPaletteOverlay: View {
                           icon: "plus.circle.fill",
                           run: { state.presentCapture = true }),
 
+            PaletteAction(id: "completed", title: "Completed Tasks", subtitle: "Everything you've finished",
+                          icon: "checkmark.square.fill",
+                          run: { state.route = .completed }),
+
             PaletteAction(id: "new-note", title: "New Note", subtitle: "Create a blank note",
                           icon: "note.text.badge.plus",
                           run: {
