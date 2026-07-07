@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+@testable import AtlasCore
 @testable import Atlas
 
 /// TDD for ShortcutStore:

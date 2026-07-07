@@ -1,4 +1,5 @@
 import XCTest
+@testable import AtlasCore
 @testable import Atlas
 
 /// Month-grid date math. Uses an injected Gregorian calendar with an explicit

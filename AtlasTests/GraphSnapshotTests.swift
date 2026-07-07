@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+@testable import AtlasCore
 @testable import Atlas
 
 /// Locks the pure node/edge derivation behind the relationship graph.

@@ -202,6 +202,7 @@ struct CommandPaletteOverlay: View {
             shortcutHint("⌘K", "find or create")
             shortcutHint("⌘⇧K", "braindump")
             Spacer()
+            shortcutHint("t: e: n: p:", "narrow")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
@@ -282,13 +283,18 @@ struct CommandPaletteOverlay: View {
 
     // MARK: Search
 
-    /// The persistent "Create '<query>' as task" row. Always the leading result
-    /// for a non-empty query — even when there are matches. `activate()` runs it
-    /// and dismisses; the closure here just creates the task (capture filing can
-    /// hang off `addTask` later). Stable id (`createActionID`) so the row is the
-    /// guaranteed default selection and is testable.
+    /// The typed text with any `t:`/`e:`/`n:`/`p:` prefix stripped — what the
+    /// Create rows should actually name.
+    private var createTitle: String {
+        CommandPaletteModel.parseScope(query).rest
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The "Create '<query>' as task" row — the model places it LAST (or alone,
+    /// auto-selected, when nothing matches). Stable id (`createActionID`) so
+    /// tests can find it regardless of the query text it carries.
     private var createAction: PaletteAction {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = createTitle
         return PaletteAction(
             id: CommandPaletteModel.createActionID,
             title: "Create \u{201C}\(trimmed)\u{201D} as task",
@@ -298,10 +304,11 @@ struct CommandPaletteOverlay: View {
         )
     }
 
-    /// Notes-scope (Focus) create row: an instant local note — no project, no Doc
-    /// pairing — that opens straight into the corner card.
+    /// Create-note row (Focus scope, or under `n:`): an instant local note — no
+    /// project, no Doc pairing. Inside Focus it opens in the corner card; outside,
+    /// in the palette's own editor sheet.
     private var noteCreateAction: PaletteAction {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = createTitle
         return PaletteAction(
             id: CommandPaletteModel.createNoteActionID,
             title: "Create note \u{201C}\(trimmed)\u{201D}",
@@ -309,7 +316,11 @@ struct CommandPaletteOverlay: View {
             icon: "note.text.badge.plus",
             run: {
                 let note = state.addNote(title: trimmed.isEmpty ? "Untitled note" : trimmed, body: "")
-                focus.noteToOpen = note
+                if focus.sessionActive {
+                    focus.noteToOpen = note
+                } else {
+                    editingNote = note
+                }
             }
         )
     }
@@ -323,18 +334,16 @@ struct CommandPaletteOverlay: View {
             tasks: state.tasks,
             notes: state.notes,
             events: state.events,
+            now: state.now,
             quickActions: quickActions,
-            createAction: focus.sessionActive ? noteCreateAction : createAction,
+            createTask: createAction,
+            createNote: noteCreateAction,
             scope: focus.sessionActive ? .notes : .all
         )
     }
 
     private var quickActions: [PaletteAction] {
         [
-            PaletteAction(id: "metrics", title: "Open Metrics", subtitle: "View your stats",
-                          icon: "chart.bar.fill",
-                          run: { state.settingsSection = .metrics; state.route = .settings }),
-
             PaletteAction(id: "new-task", title: "New Task", subtitle: "Capture a to-do with AI filing",
                           icon: "plus.circle.fill",
                           run: { state.presentCapture = true }),

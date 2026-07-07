@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+@testable import AtlasCore
 @testable import Atlas
 
 /// WS-5 — pure Google Calendar ⇄ Atlas mapping. Dates are compared to formatter

@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+@testable import AtlasCore
 @testable import Atlas
 
 /// Phase 1a — the data-loss-critical reaper. `reapableEventIDs` decides which local

@@ -1,4 +1,5 @@
 import XCTest
+@testable import AtlasCore
 @testable import Atlas
 
 /// Gap-finding logic for auto-scheduling. Synthetic busy intervals only — no

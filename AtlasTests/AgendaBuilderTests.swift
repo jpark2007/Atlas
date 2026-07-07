@@ -1,4 +1,5 @@
 import XCTest
+@testable import AtlasCore
 @testable import Atlas
 
 /// Ordering / membership rules for the agenda (List) view. Injected Gregorian/UTC

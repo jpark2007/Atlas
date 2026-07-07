@@ -1,4 +1,5 @@
 import XCTest
+@testable import AtlasCore
 @testable import Atlas
 
 /// Locks the WS-10 native foundation: a note's project link survives the DB
