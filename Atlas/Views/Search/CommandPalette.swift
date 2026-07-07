@@ -198,11 +198,12 @@ struct CommandPaletteOverlay: View {
             .onChange(of: selection) { _, value in
                 guard keyboardMove else { return }
                 keyboardMove = false
-                withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(value, anchor: .center) }
+                guard flat.indices.contains(value) else { return }
+                withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(flat[value].id, anchor: .center) }
             }
             // A new query resets the selection to the top hit — bring it into view.
             .onChange(of: query) { _, _ in
-                if !flat.isEmpty { proxy.scrollTo(0, anchor: .top) }
+                if let first = flat.first { proxy.scrollTo(first.id, anchor: .top) }
             }
         }
     }
@@ -258,8 +259,12 @@ struct CommandPaletteOverlay: View {
                 .padding(.bottom, 2)
             ForEach(Array(items.enumerated()), id: \.element.id) { offset, item in
                 let index = base + offset
+                // Identity MUST be the item's own id, never the flat index: an
+                // index-keyed row in a lazy stack gets reused verbatim when the
+                // query changes, gluing last keystroke's rows under this
+                // keystroke's section headers.
                 row(item, selected: index == selection)
-                    .id(index)
+                    .id(item.id)
                     .contentShape(Rectangle())
                     .onTapGesture { selection = index; activate() }
                     .onHover { if $0 { selection = index } }
