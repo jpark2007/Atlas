@@ -73,7 +73,7 @@ struct FocusView: View {
         VStack(spacing: 36) {
             Spacer(minLength: 0)
             phaseLabel
-            timerDial
+            timerType
             landingControls
             cycleMeta
             Spacer(minLength: 0)
@@ -196,60 +196,55 @@ struct FocusView: View {
             .foregroundStyle(isBreak ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textMuted)
     }
 
-    private var timerDial: some View {
-        ZStack {
-            // Subtle progress ring behind the digits.
-            Circle()
-                .stroke(AtlasTheme.Colors.border, lineWidth: 4)
-            Circle()
-                .trim(from: 0, to: focus.progress)
-                .stroke(
-                    AngularGradient(
-                        colors: [AtlasTheme.Colors.accentDeep, AtlasTheme.Colors.accent],
-                        center: .center
-                    ),
-                    style: StrokeStyle(lineWidth: 4, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-                .animation(.linear(duration: 0.3), value: focus.progress)
-
-            Text(focus.timeFormatted)
-                .atlasMono(size: 96, weight: .ultraLight)
-                .monospacedDigit()
-                .foregroundStyle(focus.isRunning
-                    ? AtlasTheme.Colors.textPrimary
-                    : AtlasTheme.Colors.textSecondary)
-                .contentTransition(.numericText())
+    /// Plain type on paper — the dashboard-clock language. Huge mono digits with
+    /// a clay colon, a thin clay progress hairline beneath; no ring, no box.
+    private var timerType: some View {
+        VStack(spacing: 26) {
+            digitsRow
+            progressHairline
         }
-        .frame(width: 320, height: 320)
-        // Instrument-container language (consistent with the calendar month grid and
-        // the corner timer): the ring sits inside a hairline-outlined panel on flat
-        // paper — no fill, no shadow.
-        .padding(28)
-        .overlay(
-            RoundedRectangle(cornerRadius: AtlasTheme.Radius.card, style: .continuous)
-                .strokeBorder(AtlasTheme.Colors.borderStrong, lineWidth: 1)
-        )
+    }
+
+    private var digitsRow: some View {
+        // Split MM:SS so the colon carries the clay accent, like the dashboard clock.
+        let parts = focus.timeFormatted.split(separator: ":", maxSplits: 1).map(String.init)
+        return HStack(alignment: .firstTextBaseline, spacing: 4) {
+            bigDigits(parts.first ?? "")
+            Text(":")
+                .atlasMono(size: 96, weight: .semibold)
+                .foregroundStyle(AtlasTheme.Colors.accent)
+            bigDigits(parts.count > 1 ? parts[1] : "")
+        }
+    }
+
+    private func bigDigits(_ s: String) -> some View {
+        Text(s)
+            .atlasMono(size: 96, weight: .semibold)
+            .monospacedDigit()
+            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+            .contentTransition(.numericText())
+    }
+
+    private var progressHairline: some View {
+        ZStack(alignment: .leading) {
+            Rectangle().fill(AtlasTheme.Colors.border)
+            Rectangle().fill(AtlasTheme.Colors.accent)
+                .scaleEffect(x: focus.progress, anchor: .leading)
+                .animation(.linear(duration: 0.3), value: focus.progress)
+        }
+        .frame(width: 320, height: 2)
     }
 
     private var cycleMeta: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-            Text(intervalsText)
-                .atlasMono(size: 11)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
-        .overlay(Capsule().strokeBorder(AtlasTheme.Colors.border, lineWidth: 1))
-        .contentShape(Capsule())
+        Text(intervalsText)
+            .atlasMono(size: 11, weight: .medium)
+            .tracking(1.2)
+            .foregroundStyle(AtlasTheme.Colors.textMuted)
     }
 
     private var intervalsText: String {
         let n = focus.completedWorkIntervals
-        return n == 1 ? "1 focus interval done" : "\(n) focus intervals done"
+        return n == 1 ? "1 INTERVAL DONE" : "\(n) INTERVALS DONE"
     }
 
     private var isBreak: Bool { focus.phase == .shortBreak }

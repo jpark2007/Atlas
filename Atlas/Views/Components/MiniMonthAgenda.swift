@@ -103,7 +103,12 @@ struct MiniMonthAgenda: View {
 
     private var monthGrid: some View {
         let cells = MonthGrid.cells(for: visibleMonth, calendar: calendar)
-        let weeks = stride(from: 0, to: cells.count, by: 7).map { Array(cells[$0 ..< min($0 + 7, cells.count)]) }
+        // Unlike the full calendar (fixed 6-week height), the mini grid drops
+        // trailing weeks that are pure next-month spill — one less row of days
+        // for most months.
+        let weeks = stride(from: 0, to: cells.count, by: 7)
+            .map { Array(cells[$0 ..< min($0 + 7, cells.count)]) }
+            .filter { week in week.contains { MonthGrid.isInMonth($0, of: visibleMonth, calendar: calendar) } }
         let dots = dotDayStarts()
         return VStack(spacing: 2) {
             ForEach(Array(weeks.enumerated()), id: \.offset) { _, week in
