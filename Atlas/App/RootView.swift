@@ -95,7 +95,13 @@ struct RootView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .onAppear { applyColumnVisibility() }
-        .onChange(of: focus.sessionActive) { _, _ in applyColumnVisibility() }
+        .onChange(of: focus.sessionActive) { _, _ in
+            applyColumnVisibility()
+            // A session can start while the overlay is out (menu-bar/palette) —
+            // it must not reappear stuck open when the session ends.
+            hoverHideTask?.cancel()
+            hoverSidebarVisible = false
+        }
         .onChange(of: sidebarMode) { _, _ in
             applyColumnVisibility()
             hoverSidebarVisible = false

@@ -176,9 +176,8 @@ struct DashboardView: View {
     /// earliest `dueDate` first, `scheduledAt` as the tiebreaker. Independent of
     /// the calendar selection (a fixed "what's next" glance).
     private var focusTasks: [TaskItem] {
-        // Just-checked tasks linger (struck-through) before sliding out — see
-        // AppState.recentlyCompleted.
-        let open = state.tasks.filter { !$0.done || state.recentlyCompleted.contains($0.id) }
+        // Just-checked tasks linger (struck-through) before sliding out.
+        let open = state.tasks.filter(state.isVisiblyPending)
         let sorted = open.sorted { a, b in
             switch (a.dueDate, b.dueDate) {
             case let (da?, db?):

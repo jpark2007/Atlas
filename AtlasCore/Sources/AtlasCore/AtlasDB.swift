@@ -810,13 +810,16 @@ public final class AtlasDB {
         return try isoDecoder.decode([T].self, from: data)
     }
 
-    /// POST (upsert) or DELETE — no response body expected (`return=minimal`).
+    /// POST (upsert) or DELETE — most callers expect no response body
+    /// (`return=minimal`) and ignore the returned data; `setTaskDone` opts into
+    /// `return=representation` to detect a zero-row PATCH.
+    @discardableResult
     private func send(method: String,
                       table: String,
                       query: [URLQueryItem] = [],
                       extraHeaders: [String: String] = [:],
                       body: Data? = nil,
-                      sess: SupabaseSession) async throws {
+                      sess: SupabaseSession) async throws -> Data {
         var comps = URLComponents(
             url: SupabaseConfig.restBase.appendingPathComponent(table),
             resolvingAgainstBaseURL: false)!
@@ -832,6 +835,7 @@ public final class AtlasDB {
 
         let (data, response) = try await URLSession.shared.data(for: req)
         try validate(response: response, data: data)
+        return data
     }
 
     private func validate(response: URLResponse, data: Data) throws {
@@ -1133,18 +1137,28 @@ public final class AtlasDB {
     /// check-off never stomps a collaborator's concurrent edit to the row's other
     /// columns (the same reasoning as `claimTask` below). Explicit JSON so
     /// `completed_at` is written as NULL on un-check rather than omitted.
-    public func setTaskDone(id: UUID, done: Bool, completedAt: Date?) async throws {
+    ///
+    /// Returns whether a row matched: a PATCH on a row that never landed (an
+    /// earlier offline upsert was swallowed) "succeeds" against zero rows —
+    /// callers fall back to a full upsert so the completion isn't silently lost.
+    @discardableResult
+    public func setTaskDone(id: UUID, done: Bool, completedAt: Date?) async throws -> Bool {
         let sess = try await requireSession()
-        let iso = ISO8601DateFormatter()
         let payload: [String: Any] = [
             "done": done,
-            "completed_at": completedAt.map { iso.string(from: $0) } ?? NSNull()
+            "completed_at": completedAt.map { Self.isoFormatter.string(from: $0) } ?? NSNull()
         ]
         let body = try JSONSerialization.data(withJSONObject: payload)
-        try await send(method: "PATCH", table: "tasks",
-                       query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
-                       body: body, sess: sess)
+        let data = try await send(method: "PATCH", table: "tasks",
+                                  query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                                  extraHeaders: ["Prefer": "return=representation"],
+                                  body: body, sess: sess)
+        let rows = (try? JSONSerialization.jsonObject(with: data)) as? [Any]
+        return !(rows?.isEmpty ?? true)
     }
+
+    /// Shared by the hand-built JSON writers (thread-safe per Apple docs).
+    private static let isoFormatter = ISO8601DateFormatter()
 
     /// Claims a shared task for the caller WITHOUT touching `user_id`/`project_id` —
     /// unlike `upsertTask` (which stamps the caller as owner and has no project_id

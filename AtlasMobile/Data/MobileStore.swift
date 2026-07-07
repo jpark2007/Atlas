@@ -153,6 +153,24 @@ final class MobileStore: ObservableObject {
                       })
     }
 
+    /// Done-flips persist via the scoped PATCH (done/completed_at only): a full-row
+    /// upsert omits a nil completedAt, so an un-check would leave the stale stamp
+    /// in the DB — and it could stomp a collaborator's concurrent column edits.
+    func setTaskDone(_ t: TaskItem) async {
+        let prior = snapshot.tasks.first { $0.id == t.id }
+        if let i = snapshot.tasks.firstIndex(where: { $0.id == t.id }) {
+            snapshot.tasks[i] = t
+        }
+        await persist({
+            let matched = try await self.db.setTaskDone(id: t.id, done: t.done, completedAt: t.completedAt)
+            if !matched { try await self.db.upsertTask(t) }   // row never landed — self-heal
+        },
+        rollback: {
+            guard let prior, let i = self.snapshot.tasks.firstIndex(where: { $0.id == t.id }) else { return }
+            self.snapshot.tasks[i] = prior
+        })
+    }
+
     func deleteTask(id: UUID) async {
         let prior = snapshot.tasks.first { $0.id == id }
         snapshot.tasks.removeAll { $0.id == id }

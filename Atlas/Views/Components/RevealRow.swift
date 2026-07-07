@@ -27,6 +27,36 @@ struct RevealRow: View {
     }
 }
 
+/// Project/space event row — color bar, title, mono time line. `dimmed` is the
+/// past-event treatment: faded bar, muted title, and a dated time line (a past
+/// event with a bare time would be ambiguous). Shared so the two views can't
+/// drift apart.
+struct LifecycleEventRow: View {
+    let event: CalendarEvent
+    var dimmed = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(event.color)
+                .frame(width: 3, height: 30)
+                .opacity(dimmed ? 0.4 : 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.title)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(dimmed ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
+                Text(dimmed
+                     ? "\(LifecycleDate.short(event.start)) · \(event.timeLabel)"
+                     : "\(event.timeLabel) · \(event.durationLabel)")
+                    .atlasMono(size: 11)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 10)
+    }
+}
+
 /// "JUL 3" — the short mono date completed/past rows carry.
 enum LifecycleDate {
     static func short(_ date: Date) -> String {

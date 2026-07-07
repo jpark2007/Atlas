@@ -343,7 +343,7 @@ struct TasksView: View {
                 _ = withAnimation(MobileTheme.spring) { justCompleted.remove(task.id) }
             }
         }
-        Task { await store.updateTask(updated) }
+        Task { await store.setTaskDone(updated) }
     }
 
     private func delete(_ task: TaskItem) {

@@ -51,13 +51,13 @@ struct ProjectDetailView: View {
 
     /// Open tasks (plus just-checked ones still lingering) — the default list.
     private var liveTasks: [TaskItem] {
-        allTasks.filter { !$0.done || state.recentlyCompleted.contains($0.id) }
+        allTasks.filter(state.isVisiblyPending)
     }
 
     /// Checked-off tasks behind the "N COMPLETED" reveal, newest finish first.
     private var completedTasks: [TaskItem] {
         allTasks
-            .filter { $0.done && !state.recentlyCompleted.contains($0.id) }
+            .filter(state.isSettledDone)
             .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
     }
 
@@ -644,9 +644,11 @@ struct ProjectDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 sectionLabel("TASKS")
-                Text("\(liveTasks.count)")
-                    .atlasMono(size: 10, weight: .medium)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                if !liveTasks.isEmpty {   // "TASKS 0" over a completed-only reveal reads as a bug
+                    Text("\(liveTasks.count)")
+                        .atlasMono(size: 10, weight: .medium)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
                 Spacer()
             }
             .projectSectionHeader()
@@ -713,15 +715,17 @@ struct ProjectDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 sectionLabel("EVENTS")
-                Text("\(liveEvents.count)")
-                    .atlasMono(size: 10, weight: .medium)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                if !liveEvents.isEmpty {
+                    Text("\(liveEvents.count)")
+                        .atlasMono(size: 10, weight: .medium)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
                 Spacer()
             }
             .projectSectionHeader()
             VStack(spacing: 0) {
                 ForEach(Array(liveEvents.enumerated()), id: \.element.id) { i, event in
-                    eventRow(event)
+                    LifecycleEventRow(event: event)
                     if i < liveEvents.count - 1 {
                         Divider().overlay(AtlasTheme.Colors.hairline)
                     }
@@ -732,7 +736,7 @@ struct ProjectDetailView: View {
                 if showPast {
                     VStack(spacing: 0) {
                         ForEach(Array(pastEvents.enumerated()), id: \.element.id) { i, event in
-                            eventRow(event, dimmed: true)
+                            LifecycleEventRow(event: event, dimmed: true)
                             if i < pastEvents.count - 1 {
                                 Divider().overlay(AtlasTheme.Colors.hairline)
                             }
@@ -741,28 +745,6 @@ struct ProjectDetailView: View {
                 }
             }
         }
-    }
-
-    private func eventRow(_ event: CalendarEvent, dimmed: Bool = false) -> some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(event.color)
-                .frame(width: 3, height: 30)
-                .opacity(dimmed ? 0.4 : 1)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(event.title)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(dimmed ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
-                // A past event needs its date — a bare time would be ambiguous.
-                Text(dimmed
-                     ? "\(LifecycleDate.short(event.start)) · \(event.timeLabel)"
-                     : "\(event.timeLabel) · \(event.durationLabel)")
-                    .atlasMono(size: 11)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-            }
-            Spacer()
-        }
-        .padding(.vertical, 9)
     }
 
     private var pinned: some View {

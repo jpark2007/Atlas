@@ -88,6 +88,7 @@ struct AtlasMenuBarContent: View {
 
             MiniMonthAgenda(
                 onOpenCalendar: {
+                    Self.closePopup()
                     Self.activateMainWindow()
                     state.route = .calendar
                 },
@@ -133,8 +134,12 @@ struct AtlasMenuBarContent: View {
     // active app, breaking ⌘⇧K. The global hotkey + in-app shortcut own that combo.
     private var footerRow: some View {
         HStack(spacing: 14) {
-            footerButton("Open Atlas") { Self.activateMainWindow() }
+            footerButton("Open Atlas") {
+                Self.closePopup()
+                Self.activateMainWindow()
+            }
             footerButton("Quick Capture") {
+                Self.closePopup()
                 Self.activateMainWindow()
                 withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
                     state.presentCapture = true
@@ -142,7 +147,15 @@ struct AtlasMenuBarContent: View {
             }
             Spacer()
             footerButton("Quit") { NSApp.terminate(nil) }
+                .keyboardShortcut("q")   // parity with the old menu row's ⌘Q
         }
+    }
+
+    /// A `.window` MenuBarExtra panel doesn't auto-dismiss on button clicks the
+    /// way menu rows did — close it before switching to the main window, or it
+    /// stays floating over the app. The panel is key while its button is clicked.
+    private static func closePopup() {
+        NSApp.keyWindow?.close()
     }
 
     private func footerButton(_ title: String, action: @escaping () -> Void) -> some View {

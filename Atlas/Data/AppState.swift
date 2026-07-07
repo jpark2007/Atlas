@@ -16,6 +16,11 @@ final class AppState: ObservableObject {
     /// lists before sliding out — see `toggleTask`. Pending filters treat a task as
     /// visible while its id is in here.
     @Published var recentlyCompleted: Set<UUID> = []
+    /// Per-task linger timers, cancelled on re-toggle so a fresh check-off always
+    /// gets its full 0.9s.
+    private var lingerTasks: [UUID: Task<Void, Never>] = [:]
+    /// Per-task done-write chain — rapid check→uncheck must persist in order.
+    private var doneWrites: [UUID: Task<Void, Never>] = [:]
     @Published var notes: [Note] = MockData.notes
     @Published var goals: [Goal] = MockData.goals
 
@@ -455,22 +460,45 @@ final class AppState: ObservableObject {
         tasks[i].done.toggle()
         tasks[i].completedAt = tasks[i].done ? Date() : nil
         let updated = tasks[i]
+        lingerTasks[id]?.cancel()   // a re-toggle must not inherit the old timer
         if updated.done {
             // Mirror mobile: the checked row lingers ~0.9s (struck-through, filled
             // check) in pending lists before sliding out, so completion is felt.
             recentlyCompleted.insert(id)
-            Task { @MainActor in
+            lingerTasks[id] = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 900_000_000)
+                guard !Task.isCancelled else { return }
                 _ = withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                     self.recentlyCompleted.remove(id)
                 }
+                self.lingerTasks[id] = nil
             }
         } else {
             recentlyCompleted.remove(id)
         }
         // Scoped PATCH (done/completed_at only) — a check-off must never stomp a
-        // collaborator's concurrent edit to the task's other columns.
-        Task { try? await self.db?.setTaskDone(id: id, done: updated.done, completedAt: updated.completedAt) }
+        // collaborator's concurrent edit to the task's other columns. Chained per
+        // task so a rapid check→uncheck can't land out of order, with a full-
+        // upsert fallback when the row never reached the DB (offline capture).
+        let previousWrite = doneWrites[id]
+        doneWrites[id] = Task { @MainActor in
+            await previousWrite?.value
+            guard let db = self.db else { return }
+            let matched = (try? await db.setTaskDone(id: id, done: updated.done,
+                                                     completedAt: updated.completedAt)) ?? false
+            if !matched { try? await db.upsertTask(updated) }
+        }
+    }
+
+    /// The one authoritative spelling of the linger rule — a task shows in pending
+    /// lists while open OR just-checked and lingering; it settles into completed
+    /// lists only after the linger ends. Every pending/completed filter uses these.
+    func isVisiblyPending(_ task: TaskItem) -> Bool {
+        !task.done || recentlyCompleted.contains(task.id)
+    }
+
+    func isSettledDone(_ task: TaskItem) -> Bool {
+        task.done && !recentlyCompleted.contains(task.id)
     }
 
     // MARK: - Calendar / capture surface (shared by Stage 1 screens)

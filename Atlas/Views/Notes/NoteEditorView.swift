@@ -73,13 +73,14 @@ struct NoteEditorView: View {
             }
         }
         // Markdown bodies — a linked Doc-note (always Markdown) or a rich native
-        // note (`bodyFormat == .md`) — parse structurally; legacy plain natives
-        // keep the plain-text path from `init`.
+        // note — parse structurally; legacy plain natives keep the plain-text
+        // path from `init`. `isMarkdownBody` is the single rule (it covers a
+        // Doc-note even before `state.references` has loaded, via googleDocId).
         .onAppear {
             // Adopt the freshest persisted version (the passed snapshot can predate a
             // cron pull), parse a Markdown body, and set the baseline.
             if let live = liveNote { draft = live }
-            if docReference != nil || draft.bodyFormat == .md {
+            if draft.isMarkdownBody || docReference != nil {
                 doc = RichDoc.fromMarkdown(draft.body)
             }
             baselineUpdatedAt = liveNote?.updatedAt ?? draft.updatedAt
@@ -565,6 +566,7 @@ struct NoteEditorView: View {
     private func persistDocNoteBody() {
         var updated = draft
         updated.body = doc.markdown
+        updated.bodyFormat = .md   // the stored body IS Markdown — keep the stamp honest
         state.updateNote(updated)
         // Advance the baseline past our OWN write so `reconcileSyncedVersion` doesn't read
         // this editor's save as a "newer version synced from Google" and false-banner. Safe

@@ -24,13 +24,13 @@ struct SpaceDetailView: View {
 
     /// Open tasks (plus just-checked ones still lingering) — the default list.
     private var spaceTasks: [TaskItem] {
-        allTasks.filter { !$0.done || state.recentlyCompleted.contains($0.id) }
+        allTasks.filter(state.isVisiblyPending)
     }
 
     /// Checked-off tasks behind the "N COMPLETED" reveal, newest finish first.
     private var completedTasks: [TaskItem] {
         allTasks
-            .filter { $0.done && !state.recentlyCompleted.contains($0.id) }
+            .filter(state.isSettledDone)
             .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
     }
 
@@ -72,7 +72,9 @@ struct SpaceDetailView: View {
                 .atlasTitleSerif(size: 26)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Spacer()
-            Text("\(spaceTasks.count) tasks · \(spaceEvents.count) events")
+            // Counts describe the visible (pending/upcoming) lists — a finished
+            // space saying "0 tasks" above a 30-COMPLETED reveal would read wrong.
+            Text("\(spaceTasks.count) open · \(spaceEvents.count) upcoming")
                 .atlasMono(size: 12)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
@@ -150,7 +152,7 @@ struct SpaceDetailView: View {
             sectionLabel("EVENTS")
             VStack(spacing: 0) {
                 ForEach(Array(spaceEvents.enumerated()), id: \.element.id) { i, event in
-                    eventRow(event)
+                    LifecycleEventRow(event: event)
                     if i < spaceEvents.count - 1 {
                         Divider().overlay(AtlasTheme.Colors.hairline)
                     }
@@ -161,7 +163,7 @@ struct SpaceDetailView: View {
                 if showPast {
                     VStack(spacing: 0) {
                         ForEach(Array(pastEvents.enumerated()), id: \.element.id) { i, event in
-                            eventRow(event, dimmed: true)
+                            LifecycleEventRow(event: event, dimmed: true)
                             if i < pastEvents.count - 1 {
                                 Divider().overlay(AtlasTheme.Colors.hairline)
                             }
@@ -170,28 +172,6 @@ struct SpaceDetailView: View {
                 }
             }
         }
-    }
-
-    private func eventRow(_ event: CalendarEvent, dimmed: Bool = false) -> some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(event.color)
-                .frame(width: 3, height: 32)
-                .opacity(dimmed ? 0.4 : 1)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(event.title)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(dimmed ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
-                // A past event needs its date — a bare time would be ambiguous.
-                Text(dimmed
-                     ? "\(LifecycleDate.short(event.start)) · \(event.timeLabel)"
-                     : "\(event.timeLabel) · \(event.durationLabel)")
-                    .atlasMono(size: 11)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-            }
-            Spacer()
-        }
-        .padding(.vertical, 10)
     }
 
     // MARK: Empty

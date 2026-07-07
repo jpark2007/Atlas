@@ -170,7 +170,8 @@ public struct TaskItem: Identifiable {
     public var status: TaskStatus = .open
     public var done: Bool = false
     /// When the task was checked off; nil while open (and for tasks completed
-    /// before this column existed — those group under "Earlier").
+    /// before this column existed — those render undated and sort oldest in
+    /// completed lists).
     public var completedAt: Date? = nil
     public var scheduledAt: Date? = nil
     public var dueDate: Date? = nil
@@ -349,11 +350,28 @@ public struct Note: Identifiable {
 }
 
 extension Note {
-    /// Body as displayable plain text — parses Markdown-encoded bodies (rich
-    /// native notes, or a linked Doc-note whose body is always Markdown) so
+    /// The one rule for "is `body` Markdown-encoded": stamped `.md` by the rich
+    /// editor, or backed by a Google Doc (a Doc-note's body is always the
+    /// Markdown transport form, even where a legacy row still says `plain`).
+    /// Editor parsing and previews both use this — they must never disagree.
+    public var isMarkdownBody: Bool {
+        bodyFormat == .md || googleDocId != nil
+    }
+
+    /// Body as displayable plain text — parses Markdown-encoded bodies so
     /// previews never leak `#`/`**` syntax; legacy plain bodies pass through.
+    /// Parsing is bounded: previews show a line or two, so a huge imported Doc
+    /// shouldn't be fully parsed on every list row render.
     public var previewText: String {
-        (bodyFormat == .md || googleDocId != nil) ? RichDoc.fromMarkdown(body).plainText : body
+        isMarkdownBody ? RichDoc.fromMarkdown(String(body.prefix(600))).plainText : body
+    }
+
+    /// The FULL body as plain text (unbounded — unlike `previewText`), with
+    /// Markdown escapes/marks resolved. `[[mention]]` scanning uses this: in the
+    /// stored Markdown an inline mark or escape can split a mention token
+    /// (`[[The**sis]]**`), which would silently drop graph backlinks.
+    public var plainTextBody: String {
+        isMarkdownBody ? RichDoc.fromMarkdown(body).plainText : body
     }
 }
 

@@ -6,13 +6,13 @@ import AtlasCore
 /// calendar popup can show the same instrument over any app.
 ///
 /// `selectedDay` drives the agenda only; `visibleMonth` is which month the grid
-/// pages. `onOpenCalendar` backs the FULL VIEW link (hidden when nil);
-/// `agendaLimit` caps the agenda rows (the popover sets it so a stacked day
-/// can't grow the popup unbounded).
+/// pages. `onOpenCalendar` backs the FULL VIEW link; `agendaLimit` caps the
+/// agenda rows (the popover sets it so a stacked day can't grow the popup
+/// unbounded).
 struct MiniMonthAgenda: View {
     @EnvironmentObject var state: AppState
 
-    var onOpenCalendar: (() -> Void)? = nil
+    let onOpenCalendar: () -> Void
     var agendaLimit: Int? = nil
 
     /// Navigator selection — the agenda's day. Defaults to today.
@@ -22,10 +22,20 @@ struct MiniMonthAgenda: View {
 
     private let calendar = Calendar.current
 
+    /// Live "today" — the menu-bar popup instance survives for the app's whole
+    /// lifetime, so the selection must follow the date, not launch day.
+    private var today: Date { calendar.startOfDay(for: state.now) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             miniCalendar
             agenda
+        }
+        // Midnight rollover: re-anchor the glance to the new day. Without this a
+        // long-lived instance (the MenuBarExtra window) opens on yesterday.
+        .onChange(of: today) { _, newToday in
+            selectedDay = newToday
+            visibleMonth = newToday
         }
     }
 
@@ -94,20 +104,22 @@ struct MiniMonthAgenda: View {
     private var monthGrid: some View {
         let cells = MonthGrid.cells(for: visibleMonth, calendar: calendar)
         let weeks = stride(from: 0, to: cells.count, by: 7).map { Array(cells[$0 ..< min($0 + 7, cells.count)]) }
+        let dots = dotDayStarts()
         return VStack(spacing: 2) {
             ForEach(Array(weeks.enumerated()), id: \.offset) { _, week in
                 HStack(spacing: 0) {
-                    ForEach(week, id: \.self) { day in dayCell(day) }
+                    ForEach(week, id: \.self) { day in
+                        dayCell(day, hasItems: dots.contains(calendar.startOfDay(for: day)))
+                    }
                 }
             }
         }
     }
 
-    private func dayCell(_ day: Date) -> some View {
+    private func dayCell(_ day: Date, hasItems: Bool) -> some View {
         let inMonth = MonthGrid.isInMonth(day, of: visibleMonth, calendar: calendar)
         let isToday = calendar.isDate(day, inSameDayAs: state.now)
         let isSelected = calendar.isDate(day, inSameDayAs: selectedDay)
-        let hasItems = dayHasItems(day)
 
         return ZStack {
             // today keeps the solid clay square; a non-today selection gets the outline.
@@ -148,16 +160,20 @@ struct MiniMonthAgenda: View {
         }
     }
 
-    /// A day carries a dot when it has events, scheduled work-blocks, or an open
-    /// task deadline — the three sources the calendar draws (mirrors
-    /// `events(on:)` + `scheduledWorkBlocks(on:)` + `CalendarView.deadlineEvents`).
-    private func dayHasItems(_ day: Date) -> Bool {
-        if !state.events(on: day).isEmpty { return true }
-        if !state.scheduledWorkBlocks(on: day).isEmpty { return true }
-        return state.tasks.contains { task in
-            guard !task.done, let due = task.dueDate else { return false }
-            return calendar.isDate(due, inSameDayAs: day)
+    /// The days that carry a dot: events, scheduled work-blocks, or an open task
+    /// deadline — the three sources the calendar draws (mirrors `events(on:)` +
+    /// `scheduledWorkBlocks(on:)` + `CalendarView.deadlineEvents`). One pass over
+    /// the collections per render instead of one per grid cell.
+    private func dotDayStarts() -> Set<Date> {
+        var days = Set<Date>()
+        for event in state.events { days.insert(calendar.startOfDay(for: event.start)) }
+        for task in state.tasks where !task.done {
+            if let at = task.scheduledAt, !task.needsReplan(now: state.now) {
+                days.insert(calendar.startOfDay(for: at))
+            }
+            if let due = task.dueDate { days.insert(calendar.startOfDay(for: due)) }
         }
+        return days
     }
 
     // MARK: - Agenda (the selected day's events + work-blocks)
@@ -176,19 +192,17 @@ struct MiniMonthAgenda: View {
                     .buttonStyle(.plain)
                 }
                 Spacer()
-                if let onOpenCalendar {
-                    Button(action: onOpenCalendar) {
-                        HStack(spacing: 4) {
-                            Text("FULL VIEW")
-                                .atlasMono(size: 10, weight: .semibold)
-                                .tracking(0.8)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 8, weight: .semibold))
-                        }
-                        .foregroundStyle(AtlasTheme.Colors.accentText)
+                Button(action: onOpenCalendar) {
+                    HStack(spacing: 4) {
+                        Text("FULL VIEW")
+                            .atlasMono(size: 10, weight: .semibold)
+                            .tracking(0.8)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .semibold))
                     }
-                    .buttonStyle(.plain)
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
+                .buttonStyle(.plain)
             }
 
             let items = agendaItems

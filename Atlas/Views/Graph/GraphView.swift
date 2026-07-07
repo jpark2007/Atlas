@@ -117,7 +117,7 @@ enum GraphSnapshot {
 
         // [[mentions]] inside note bodies → edge to any node sharing that title.
         for note in notes where seen.contains(note.id) {
-            for mention in GraphSnapshot.mentions(in: note.body) {
+            for mention in GraphSnapshot.mentions(in: note.plainTextBody) {
                 if let target = byTitle[mention.lowercased()], target != note.id {
                     link(note.id, target, weight: 1.0)
                 }

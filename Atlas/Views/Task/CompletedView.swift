@@ -31,9 +31,11 @@ struct CompletedView: View {
     }
 
     var body: some View {
-        ScrollView {
+        // Grouping is O(n log n) over all done tasks — run it once per render.
+        let groups = self.groups
+        return ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                header
+                header(total: groups.reduce(0) { $0 + $1.tasks.count })
                 if groups.isEmpty {
                     emptyState
                 } else {
@@ -45,13 +47,13 @@ struct CompletedView: View {
         .background(AtlasTheme.Colors.bgBase)
     }
 
-    private var header: some View {
+    private func header(total: Int) -> some View {
         HStack(spacing: 12) {
             Text("Completed")
                 .atlasTitleSerif(size: 26)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Spacer()
-            Text("\(groups.reduce(0) { $0 + $1.tasks.count }) tasks")
+            Text("\(total) tasks")
                 .atlasMono(size: 12)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
