@@ -74,6 +74,11 @@ struct CommandPaletteOverlay: View {
 
     @State private var query = ""
     @State private var selection = 0
+    /// True only when the selection just moved via the arrow keys — the list
+    /// auto-scrolls to keep it visible ONLY then. Hover also moves the selection,
+    /// and auto-scrolling on hover fights the user's own scroll wheel (rows pass
+    /// under the cursor → selection jumps → list re-centers → scroll stutters).
+    @State private var keyboardMove = false
     @State private var editingNote: Note?
     @FocusState private var fieldFocused: Bool
 
@@ -191,7 +196,13 @@ struct CommandPaletteOverlay: View {
                 .padding(8)
             }
             .onChange(of: selection) { _, value in
+                guard keyboardMove else { return }
+                keyboardMove = false
                 withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(value, anchor: .center) }
+            }
+            // A new query resets the selection to the top hit — bring it into view.
+            .onChange(of: query) { _, _ in
+                if !flat.isEmpty { proxy.scrollTo(0, anchor: .top) }
             }
         }
     }
@@ -202,7 +213,6 @@ struct CommandPaletteOverlay: View {
             shortcutHint("⌘K", "find or create")
             shortcutHint("⌘⇧K", "braindump")
             Spacer()
-            shortcutHint("t: e: n: p:", "narrow")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
@@ -407,7 +417,10 @@ struct CommandPaletteOverlay: View {
 
     private func move(_ delta: Int) {
         guard !flat.isEmpty else { return }
-        selection = max(0, min(flat.count - 1, selection + delta))
+        let target = max(0, min(flat.count - 1, selection + delta))
+        guard target != selection else { return }
+        keyboardMove = true
+        selection = target
     }
 
     private func activate() {
