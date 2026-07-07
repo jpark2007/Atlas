@@ -378,6 +378,9 @@ public struct NoteRow: Codable {
     public var projectId: UUID?
     public var title: String
     public var body: String
+    /// Optional so decoding survives a DB that predates migration 0018;
+    /// nil reads as the column default, "plain".
+    public var bodyFormat: String?
     public var updatedAt: Date
     public var isExternal: Bool
     public var googleDocId: String?
@@ -390,6 +393,7 @@ public struct NoteRow: Codable {
         case projectId   = "project_id"
         case title
         case body
+        case bodyFormat  = "body_format"
         case updatedAt   = "updated_at"
         case isExternal  = "is_external"
         case googleDocId = "google_doc_id"
@@ -402,6 +406,7 @@ public struct NoteRow: Codable {
         self.projectId   = n.projectID
         self.title       = n.title
         self.body        = n.body
+        self.bodyFormat  = n.bodyFormat.rawValue
         self.updatedAt   = n.updatedAt
         self.isExternal  = n.isExternal
         self.googleDocId = n.googleDocId
@@ -410,6 +415,7 @@ public struct NoteRow: Codable {
 
     public func toDomain() -> Note {
         var note = Note(id: id, title: title, body: body,
+             bodyFormat: bodyFormat.flatMap(Note.BodyFormat.init(rawValue:)) ?? .plain,
              spaceName: spaceName, projectID: projectId,
              updatedAt: updatedAt, isExternal: isExternal,
              googleDocId: googleDocId)

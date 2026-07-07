@@ -303,9 +303,18 @@ public struct NoteRef: Identifiable {
 /// A full note with an editable body — the source of truth for the Notes editor
 /// and ⌘K search. Attachable to a space/project; `[[mentions]]` create backlinks.
 public struct Note: Identifiable {
+    /// How `body` is encoded. Legacy native notes are literal text (`plain`);
+    /// anything the rich editor saves is Markdown (`md`, the same transport form
+    /// linked Doc-notes use) so headings/bold/lists persist. A plain body
+    /// converts the first time it's edited — no bulk rewrite.
+    public enum BodyFormat: String {
+        case plain, md
+    }
+
     public var id = UUID()
     public var title: String
     public var body: String
+    public var bodyFormat: BodyFormat = .plain
     public var spaceName: String? = nil
     /// The project this note belongs to (WS-10 native linking). Drives the per-
     /// project Notes list and, later, the per-project Google Drive folder that
@@ -324,10 +333,11 @@ public struct Note: Identifiable {
     /// The parent space's id — authoritative once set; the name remains for display.
     public var spaceID: UUID? = nil
 
-    public init(id: UUID = UUID(), title: String, body: String, spaceName: String? = nil, projectID: UUID? = nil, updatedAt: Date = Date(), isExternal: Bool = false, googleDocId: String? = nil, docSyncedAt: Date? = nil, spaceID: UUID? = nil) {
+    public init(id: UUID = UUID(), title: String, body: String, bodyFormat: BodyFormat = .plain, spaceName: String? = nil, projectID: UUID? = nil, updatedAt: Date = Date(), isExternal: Bool = false, googleDocId: String? = nil, docSyncedAt: Date? = nil, spaceID: UUID? = nil) {
         self.id = id
         self.title = title
         self.body = body
+        self.bodyFormat = bodyFormat
         self.spaceName = spaceName
         self.projectID = projectID
         self.updatedAt = updatedAt
@@ -335,6 +345,15 @@ public struct Note: Identifiable {
         self.googleDocId = googleDocId
         self.docSyncedAt = docSyncedAt
         self.spaceID = spaceID
+    }
+}
+
+extension Note {
+    /// Body as displayable plain text — parses Markdown-encoded bodies (rich
+    /// native notes, or a linked Doc-note whose body is always Markdown) so
+    /// previews never leak `#`/`**` syntax; legacy plain bodies pass through.
+    public var previewText: String {
+        (bodyFormat == .md || googleDocId != nil) ? RichDoc.fromMarkdown(body).plainText : body
     }
 }
 

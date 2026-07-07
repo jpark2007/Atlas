@@ -224,7 +224,7 @@ struct ProjectDetailView: View {
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 if !note.body.isEmpty {
-                    Text(note.body)
+                    Text(note.previewText)
                         .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .lineLimit(1)

@@ -72,14 +72,16 @@ struct NoteEditorView: View {
                     )
             }
         }
-        // A linked Doc-note stores its body as Markdown (the two-way transport form),
-        // so parse it structurally rather than as plain text. Native notes keep the
-        // plain-text path from `init`.
+        // Markdown bodies — a linked Doc-note (always Markdown) or a rich native
+        // note (`bodyFormat == .md`) — parse structurally; legacy plain natives
+        // keep the plain-text path from `init`.
         .onAppear {
             // Adopt the freshest persisted version (the passed snapshot can predate a
-            // cron pull), parse a linked Doc-note's Markdown body, and set the baseline.
+            // cron pull), parse a Markdown body, and set the baseline.
             if let live = liveNote { draft = live }
-            if docReference != nil { doc = RichDoc.fromMarkdown(draft.body) }
+            if docReference != nil || draft.bodyFormat == .md {
+                doc = RichDoc.fromMarkdown(draft.body)
+            }
             baselineUpdatedAt = liveNote?.updatedAt ?? draft.updatedAt
         }
         // Keep an OPEN Doc-note fresh without navigating away: pull the latest from the
@@ -310,16 +312,11 @@ struct NoteEditorView: View {
             levelButton("Sub-heading", kind: .subheading)
             levelButton("Normal", kind: .normal)
 
-            // Inline marks (B/I/U) only survive the round-trip through a linked Doc's
-            // Markdown. A native note saves as plain text (`doc.plainText`), which discards
-            // them, so hide the controls rather than offer marks that Done silently eats.
-            if docReference != nil {
-                Divider().frame(height: 16).overlay(AtlasTheme.Colors.border)
+            Divider().frame(height: 16).overlay(AtlasTheme.Colors.border)
 
-                markButton("bold", mark: .bold)
-                markButton("italic", mark: .italic)
-                markButton("underline", mark: .underline)
-            }
+            markButton("bold", mark: .bold)
+            markButton("italic", mark: .italic)
+            markButton("underline", mark: .underline)
 
             Divider().frame(height: 16).overlay(AtlasTheme.Colors.border)
 
@@ -517,8 +514,11 @@ struct NoteEditorView: View {
         if let ref = docReference {
             commitDocNote(ref)
         } else {
+            // Native notes save Markdown too, so headings/marks/lists persist.
+            // A legacy plain body converts here, on its first edit.
             var updated = draft
-            updated.body = doc.plainText
+            updated.body = doc.markdown
+            updated.bodyFormat = .md
             state.updateNote(updated)
             onDone?(updated)
             closeHost()
