@@ -543,7 +543,7 @@ struct NoteEditorView: View {
     private func push(ref: Reference, service: DocNoteWriteBack, overwrite: Bool) async {
         defer { isPushing = false }
         do {
-            switch try await service.writeBack(reference: ref, markdown: doc.markdown, overwrite: overwrite) {
+            switch try await service.writeBack(reference: ref, markdown: doc.markdown, tabId: nil, overwrite: overwrite) {
             case .written(let modifiedTime):
                 // Sync the in-memory baseline to what the server just re-stored, so a
                 // second save this session doesn't compare against a now-stale time.
@@ -552,6 +552,10 @@ struct NoteEditorView: View {
                 closeHost()
             case .changedInGoogle:
                 showStaleConflict = true   // surface refresh/overwrite; stay open
+            case .multitabUnsupported, .tabReadOnly:
+                // Task 8 wires user-facing alerts; for now keep the local copy and close.
+                persistDocNoteBody()
+                closeHost()
             }
         } catch {
             // Never lose the user's work: keep the local Markdown copy and close;
@@ -579,7 +583,7 @@ struct NoteEditorView: View {
 // MARK: - Write-back surface (integrate wires a concrete impl)
 
 /// The outcome of a Google-Doc write-back attempt.
-enum DocWriteBackOutcome {
+enum DocWriteBackOutcome: Equatable {
     /// Guard passed; the Doc was rewritten from the note's Markdown. Carries Drive's
     /// new `modifiedTime` (the re-baselined value the server stored) so the client can
     /// refresh its in-memory reference and not false-trip the guard on a rapid re-save.
@@ -587,6 +591,12 @@ enum DocWriteBackOutcome {
     /// Drive moved past our stored `modifiedTime` — surface refresh/overwrite rather
     /// than blind-writing (the design doc's staleness guard).
     case changedInGoogle
+    /// Legacy whole-file write refused: the Doc has tabs. Enable per-tab sync
+    /// (Settings) or edit in Google Docs.
+    case multitabUnsupported(tabCount: Int)
+    /// Per-tab write refused: the tab's live content is beyond the editable
+    /// vocabulary (table/image/rich formatting).
+    case tabReadOnly(reason: String?)
 }
 
 /// Narrow client surface for the two-way Google-Doc write-back the design doc mandates:
@@ -596,7 +606,8 @@ enum DocWriteBackOutcome {
 protocol DocNoteWriteBack {
     /// Push `markdown` to the Doc backing `reference`. `overwrite` skips the guard
     /// (used after the user chose "Overwrite Google Doc" on a stale conflict).
-    func writeBack(reference: Reference, markdown: String, overwrite: Bool) async throws -> DocWriteBackOutcome
+    /// `tabId` scopes a per-tab write for multi-tab Docs; `nil` is the legacy whole-file path.
+    func writeBack(reference: Reference, markdown: String, tabId: String?, overwrite: Bool) async throws -> DocWriteBackOutcome
 }
 
 private struct DocNoteWriteBackKey: EnvironmentKey {
