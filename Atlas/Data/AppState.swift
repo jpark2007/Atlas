@@ -517,6 +517,16 @@ final class AppState: ObservableObject {
         return nil
     }
 
+    /// Canvas assignments mirrored onto projects — they never enter `tasks`.
+    var assignmentTasks: [TaskItem] {
+        spaces.flatMap(\.projects).flatMap(\.assignments)
+    }
+
+    /// Task lookup across both pools: the flat store first, then project assignments.
+    func task(_ id: UUID) -> TaskItem? {
+        tasks.first { $0.id == id } ?? assignmentTasks.first { $0.id == id }
+    }
+
     // MARK: - Spaces (follow-up: add a top-level bucket)
 
     /// Create a new top-level Space and persist it via the existing

@@ -346,15 +346,27 @@ struct CommandPaletteOverlay: View {
         CommandPaletteModel.results(
             query: query,
             projects: state.spaces.flatMap(\.projects),
-            tasks: state.tasks,
+            tasks: searchableTasks,
             notes: state.notes,
-            events: state.events,
+            events: state.events + state.externalEvents,
             now: state.now,
             quickActions: quickActions,
             createTask: createAction,
             createNote: noteCreateAction,
             scope: focus.sessionActive ? .notes : .all
         )
+    }
+
+    /// Flat tasks plus Canvas assignments (which live on project.assignments,
+    /// never in `state.tasks`), skipping any assignment that duplicates an
+    /// existing task — server Canvas sync can also write the same item into
+    /// `tasks` under a different id.
+    private var searchableTasks: [TaskItem] {
+        let existing = Set(state.tasks.map { "\($0.title.lowercased())|\($0.projectName)" })
+        let extra = state.assignmentTasks.filter {
+            !existing.contains("\($0.title.lowercased())|\($0.projectName)")
+        }
+        return state.tasks + extra
     }
 
     private var quickActions: [PaletteAction] {

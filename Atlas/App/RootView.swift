@@ -81,7 +81,7 @@ struct RootView: View {
                         PlaceholderView(title: "Not found", systemImage: "questionmark")
                     }
                 case .task(let id):
-                    if let task = state.tasks.first(where: { $0.id == id }) {
+                    if let task = state.task(id) {
                         TaskDetailView(task: task)
                     } else {
                         PlaceholderView(title: "Not found", systemImage: "questionmark")

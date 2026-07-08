@@ -102,8 +102,24 @@ enum CommandPaletteModel {
         rank(query, tasks, title: \.title, tie: taskOrder)
     }
 
+    /// Notes match on title OR body — a title hit always ranks above a
+    /// body-only hit, mirroring `score`'s existing prefix/word bonuses within
+    /// each field.
     static func matchingNotes(query: String, notes: [Note]) -> [Note] {
-        rank(query, notes, title: \.title) { $0.updatedAt > $1.updatedAt }
+        let q = normalized(query)
+        guard !q.isEmpty else { return [] }
+        return notes
+            .compactMap { note -> (Note, Int)? in
+                if let titleScore = score(query: query, title: note.title) {
+                    return (note, titleScore + 10)
+                }
+                if score(query: query, title: note.body) != nil {
+                    return (note, 0)
+                }
+                return nil
+            }
+            .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.updatedAt > $1.0.updatedAt }
+            .map(\.0)
     }
 
     static func matchingEvents(query: String, events: [CalendarEvent]) -> [CalendarEvent] {

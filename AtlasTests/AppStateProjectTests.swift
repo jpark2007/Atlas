@@ -77,4 +77,32 @@ final class AppStateProjectTests: XCTestCase {
         let totalAfter = state.spaces.reduce(0) { $0 + $1.projects.count }
         XCTAssertEqual(totalBefore, totalAfter)
     }
+
+    // MARK: - assignmentTasks / task(_:) lookup
+
+    func testAssignmentTasksSurfacesCanvasAssignments() {
+        let state = AppState()
+        let project = state.addProject(toSpaceNamed: "School", name: "Orgo")!
+        let assignment = TaskItem(title: "Problem Set 3", dueLabel: "Fri")
+        let spaceIndex = state.spaces.firstIndex { $0.name == "School" }!
+        let projectIndex = state.spaces[spaceIndex].projects.firstIndex { $0.id == project.id }!
+        state.spaces[spaceIndex].projects[projectIndex].assignments = [assignment]
+
+        XCTAssertTrue(state.assignmentTasks.contains { $0.id == assignment.id })
+    }
+
+    func testTaskLookupFindsFlatTasksAndAssignments() {
+        let state = AppState()
+        let project = state.addProject(toSpaceNamed: "School", name: "Orgo")!
+        let assignment = TaskItem(title: "Problem Set 3", dueLabel: "Fri")
+        let spaceIndex = state.spaces.firstIndex { $0.name == "School" }!
+        let projectIndex = state.spaces[spaceIndex].projects.firstIndex { $0.id == project.id }!
+        state.spaces[spaceIndex].projects[projectIndex].assignments = [assignment]
+
+        XCTAssertEqual(state.task(assignment.id)?.id, assignment.id)
+        if let flatTask = state.tasks.first {
+            XCTAssertEqual(state.task(flatTask.id)?.id, flatTask.id)
+        }
+        XCTAssertNil(state.task(UUID()))
+    }
 }
