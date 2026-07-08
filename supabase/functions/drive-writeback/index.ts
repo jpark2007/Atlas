@@ -306,13 +306,16 @@ Deno.serve(async (req: Request) => {
     const newModifiedTime = mRes.ok ? (await mRes.json()).modifiedTime as string : null;
 
     // Persist: tab body + reference baseline (storm guard vs the pull cron).
+    // Tabs are keyed by NOTE (0023) — a save may arrive via any sibling reference,
+    // so filter by note_id, and re-baseline EVERY sibling ref of this Doc (matching
+    // the pull's sibling re-baseline) so no project's ref goes spuriously stale.
     const nowISO = new Date().toISOString();
     await admin.from("doc_note_tabs")
       .update({ body_md: markdown, updated_at: nowISO })
-      .eq("reference_id", refRow.id).eq("tab_id", tabId).eq("user_id", userId);
+      .eq("note_id", noteId).eq("tab_id", tabId).eq("user_id", userId);
     const { error: bErr } = await admin.from("project_references")
       .update({ modified_time: newModifiedTime, last_synced_at: nowISO, sync_state: "synced" })
-      .eq("id", refRow.id).eq("user_id", userId);
+      .eq("drive_file_id", fileId).eq("user_id", userId);
     if (bErr) return json({ ok: true, modifiedTime: newModifiedTime, warning: "baseline not stored" });
     return json({ ok: true, modifiedTime: newModifiedTime });
   }
