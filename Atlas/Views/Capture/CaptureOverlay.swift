@@ -137,13 +137,13 @@ struct CaptureCommandBar: View {
                     .frame(width: 20, height: 20)
             } else {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 16, weight: .semibold))
+                    .atlasFont(size: 18, weight: .semibold)
                     .foregroundStyle(AtlasTheme.Colors.accent)
             }
 
             TextField("Capture anything — a task, a thought…", text: $text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 17, weight: .regular, design: .rounded))
+                .atlasFont(size: 19, weight: .regular, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .tint(AtlasTheme.Colors.accent)
                 .focused($fieldFocused)
@@ -180,7 +180,7 @@ struct CaptureCommandBar: View {
     private var trailingStatus: some View {
         if let msg = confirmation {
             Text(msg)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .atlasFont(size: 13, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.accentText)
                 .fixedSize()
                 .transition(.opacity)
@@ -203,7 +203,7 @@ struct CaptureCommandBar: View {
                 .opacity(dotPulse ? 1 : 0.3)
                 .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: dotPulse)
             Text("Listening…")
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .atlasFont(size: 12, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.accentText)
         }
         .fixedSize()
@@ -213,7 +213,7 @@ struct CaptureCommandBar: View {
 
     private func statusLabel(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .medium, design: .rounded))
+            .atlasFont(size: 12, weight: .medium, design: .rounded)
             .foregroundStyle(color)
             .fixedSize()
             .transition(.opacity)
@@ -223,7 +223,7 @@ struct CaptureCommandBar: View {
         Button(action: toggleVoice) {
             ZStack {
                 Image(systemName: speech.isListening ? "stop.fill" : "mic.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .atlasFont(size: 14, weight: .semibold)
                     .foregroundStyle(speech.isListening
                                      ? AtlasTheme.Colors.accent
                                      : AtlasTheme.Colors.textPrimary)
@@ -251,7 +251,7 @@ struct CaptureCommandBar: View {
     private var hint: some View {
         HStack(spacing: 8) {
             Text("Atlas files it for you")
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
 
             Text("\u{21A9}") // ↩ return glyph

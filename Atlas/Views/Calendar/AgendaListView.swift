@@ -47,13 +47,13 @@ struct AgendaListView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "calendar.badge.checkmark")
-                .font(.system(size: 30, weight: .light))
+                .atlasFont(size: 33, weight: .light)
                 .foregroundStyle(AtlasTheme.Colors.accent)
             Text("Nothing upcoming")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .atlasFont(size: 17, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Text("Scheduled events and dated tasks will show up here.")
-                .font(.system(size: 12, design: .rounded))
+                .atlasFont(size: 13, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -103,17 +103,17 @@ struct AgendaListView: View {
                 HStack(spacing: 6) {
                     if item.kind == .task {
                         Image(systemName: "checkmark.square")
-                            .font(.system(size: 10))
+                            .atlasFont(size: 11)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     Text(item.title)
-                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                        .atlasFont(size: 14, weight: .semibold, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         .lineLimit(1)
                 }
                 if !item.spaceName.isEmpty {
                     Text(item.spaceName)
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .atlasFont(size: 11, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
             }

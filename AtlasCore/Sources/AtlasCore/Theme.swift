@@ -79,16 +79,6 @@ public enum AtlasTheme {
         public static let control: CGFloat = 14
         public static let chip: CGFloat    = 10
     }
-
-    public enum Font {
-        public static func kicker() -> SwiftUI.Font { .system(size: 11, weight: .semibold, design: .rounded) }
-        public static func sectionLabel() -> SwiftUI.Font { .system(size: 11, weight: .semibold, design: .rounded) }
-        public static func greeting() -> SwiftUI.Font { .system(size: 28, weight: .semibold, design: .rounded) }
-        public static func cardTitle() -> SwiftUI.Font { .system(size: 14, weight: .semibold, design: .rounded) }
-        public static func body() -> SwiftUI.Font { .system(size: 13, weight: .regular, design: .rounded) }
-        public static func bodyMedium() -> SwiftUI.Font { .system(size: 13, weight: .medium, design: .rounded) }
-        public static func small() -> SwiftUI.Font { .system(size: 11, weight: .regular, design: .rounded) }
-    }
 }
 
 /// A standard Atlas content section — no chrome. Padding + a hairline rule along

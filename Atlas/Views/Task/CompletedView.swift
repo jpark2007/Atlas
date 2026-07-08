@@ -80,13 +80,13 @@ struct CompletedView: View {
                     state.toggleTask(task.id)   // reopen — row returns to pending lists
                 } label: {
                     Image(systemName: "checkmark.square.fill")
-                        .font(.system(size: 15))
+                        .atlasFont(size: 17)
                         .foregroundStyle(AtlasTheme.Colors.accent)
                 }
                 .buttonStyle(.plain)
 
                 Text(task.title)
-                    .font(.system(size: 13, design: .rounded))
+                    .atlasFont(size: 14, design: .rounded)
                     .strikethrough(true)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()
@@ -96,7 +96,7 @@ struct CompletedView: View {
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9))
+                    .atlasFont(size: 10)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             .padding(.vertical, 9)
@@ -108,10 +108,10 @@ struct CompletedView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "checkmark.square")
-                .font(.system(size: 28, weight: .light))
+                .atlasFont(size: 31, weight: .light)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Text("Nothing completed yet.")
-                .font(.system(size: 13, design: .rounded))
+                .atlasFont(size: 14, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
         .frame(maxWidth: .infinity)

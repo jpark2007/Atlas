@@ -148,11 +148,11 @@ struct ProjectDetailView: View {
     private var importWaitingSheet: some View {
         VStack(spacing: 18) {
             Text("Import from Drive")
-                .font(.system(size: 17, weight: .semibold, design: .rounded))
+                .atlasFont(size: 19, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             ProgressView().controlSize(.large)
             Text("Continue in your browser to choose files…")
-                .font(.system(size: 13, design: .rounded))
+                .atlasFont(size: 14, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .multilineTextAlignment(.center)
             Button("Cancel") {
@@ -161,7 +161,7 @@ struct ProjectDetailView: View {
                 isImporting = false
             }
             .buttonStyle(.plain)
-            .font(.system(size: 13, weight: .medium, design: .rounded))
+            .atlasFont(size: 14, weight: .medium, design: .rounded)
             .foregroundStyle(AtlasTheme.Colors.textSecondary)
             .keyboardShortcut(.cancelAction)
         }
@@ -184,8 +184,8 @@ struct ProjectDetailView: View {
                 Spacer()
                 Button(action: newNote) {
                     HStack(spacing: 4) {
-                        Image(systemName: "plus").font(.system(size: 10, weight: .semibold))
-                        Text("New").font(.system(size: 11, weight: .semibold, design: .rounded))
+                        Image(systemName: "plus").atlasFont(size: 11, weight: .semibold)
+                        Text("New").atlasFont(size: 12, weight: .semibold, design: .rounded)
                     }
                     .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
@@ -196,7 +196,7 @@ struct ProjectDetailView: View {
 
             if projectNotes.isEmpty {
                 Text("No notes yet. Notes you add here live in this project — and, once Google is connected, sync to a Drive folder for \(project.name) as Google Docs.")
-                    .font(.system(size: 12, design: .rounded))
+                    .atlasFont(size: 13, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -217,26 +217,26 @@ struct ProjectDetailView: View {
         let linked = note.googleDocId != nil
         return HStack(spacing: 12) {
             Image(systemName: linked ? "doc.text.fill" : "note.text")
-                .font(.system(size: 14))
+                .atlasFont(size: 15)
                 .foregroundStyle(linked ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textMuted)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
                 Text(note.title.isEmpty ? "Untitled note" : note.title)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .atlasFont(size: 14, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 if !note.body.isEmpty {
                     Text(note.previewText)
-                        .font(.system(size: 11, design: .rounded))
+                        .atlasFont(size: 12, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .lineLimit(1)
                 }
             }
             Spacer()
             if linked {
-                Text("Doc ↗").font(.system(size: 10, design: .rounded)).foregroundStyle(AtlasTheme.Colors.accentText)
+                Text("Doc ↗").atlasFont(size: 11, design: .rounded).foregroundStyle(AtlasTheme.Colors.accentText)
             }
             Image(systemName: "chevron.right")
-                .font(.system(size: 9))
+                .atlasFont(size: 10)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
         .padding(.vertical, 9)
@@ -278,13 +278,13 @@ struct ProjectDetailView: View {
 
             if let referenceError {
                 Text(referenceError)
-                    .font(.system(size: 11, design: .rounded))
+                    .atlasFont(size: 12, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.danger)
             }
 
             if refs.isEmpty {
                 Text("No references yet. Import Google Docs, PDFs, and files from Drive, or add a link — they live in this project and can attach to its tasks and events.")
-                    .font(.system(size: 12, design: .rounded))
+                    .atlasFont(size: 13, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -313,8 +313,8 @@ struct ProjectDetailView: View {
                                        action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 10, weight: .semibold))
-                Text(title).font(.system(size: 11, weight: .semibold, design: .rounded))
+                Image(systemName: icon).atlasFont(size: 11, weight: .semibold)
+                Text(title).atlasFont(size: 12, weight: .semibold, design: .rounded)
             }
             .foregroundStyle(AtlasTheme.Colors.accentText)
         }
@@ -459,7 +459,7 @@ struct ProjectDetailView: View {
             HStack(spacing: 8) {
                 sectionLabel("STARTER TASKS")
                 Text("editable suggestions — rewrite or remove")
-                    .font(.system(size: 10, design: .rounded))
+                    .atlasFont(size: 11, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()
             }
@@ -467,25 +467,25 @@ struct ProjectDetailView: View {
 
             if starterTasks.isEmpty {
                 Text("Cleared. Add an overview above to describe this project.")
-                    .font(.system(size: 12, design: .rounded))
+                    .atlasFont(size: 13, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             } else {
                 VStack(spacing: 0) {
                     ForEach(starterTasks.indices, id: \.self) { i in
                         HStack(spacing: 12) {
                             Image(systemName: "circle.dashed")
-                                .font(.system(size: 14))
+                                .atlasFont(size: 15)
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                             TextField("Task", text: $starterTasks[i])
                                 .textFieldStyle(.plain)
-                                .font(.system(size: 13, design: .rounded))
+                                .atlasFont(size: 14, design: .rounded)
                                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             Spacer()
                             Button {
                                 starterTasks.remove(at: i)
                             } label: {
                                 Image(systemName: "trash")
-                                    .font(.system(size: 11))
+                                    .atlasFont(size: 12)
                                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                             }
                             .buttonStyle(.plain)
@@ -527,7 +527,7 @@ struct ProjectDetailView: View {
                     presentInvite = true
                 } label: {
                     Text("Invite")
-                        .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
@@ -545,8 +545,8 @@ struct ProjectDetailView: View {
 
     private func metaItem(_ icon: String, _ text: String, accent: Bool = false) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 10))
-            Text(text).font(.system(size: 12, design: .rounded))
+            Image(systemName: icon).atlasFont(size: 11)
+            Text(text).atlasFont(size: 13, design: .rounded)
         }
         .foregroundStyle(accent ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textSecondary)
     }
@@ -562,7 +562,7 @@ struct ProjectDetailView: View {
                         isEditingOverview = true
                     } label: {
                         Image(systemName: "pencil")
-                            .font(.system(size: 11))
+                            .atlasFont(size: 12)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     .buttonStyle(.plain)
@@ -582,16 +582,16 @@ struct ProjectDetailView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "plus")
-                            .font(.system(size: 11))
+                            .atlasFont(size: 12)
                         Text("Add an overview…")
-                            .font(.system(size: 13, design: .rounded))
+                            .atlasFont(size: 14, design: .rounded)
                     }
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
             } else {
                 Text(project.overview)
-                    .font(.system(size: 13, design: .rounded))
+                    .atlasFont(size: 14, design: .rounded)
                     .lineSpacing(4)
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
             }
@@ -603,13 +603,13 @@ struct ProjectDetailView: View {
             ZStack(alignment: .topLeading) {
                 if draftOverview.isEmpty {
                     Text("What is this project about?")
-                        .font(.system(size: 13, design: .rounded))
+                        .atlasFont(size: 14, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .padding(.leading, 5).padding(.top, 1)
                         .allowsHitTesting(false)
                 }
                 TextEditor(text: $draftOverview)
-                    .font(.system(size: 13, design: .rounded))
+                    .atlasFont(size: 14, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .scrollContentBackground(.hidden)
                     .tint(AtlasTheme.Colors.accent)
@@ -622,7 +622,7 @@ struct ProjectDetailView: View {
                 Spacer()
                 Button("Cancel") { isEditingOverview = false }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     .keyboardShortcut(.cancelAction)
                 Button("Save") {
@@ -632,7 +632,7 @@ struct ProjectDetailView: View {
                     isEditingOverview = false
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .atlasFont(size: 13, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .keyboardShortcut(.return, modifiers: .command)
             }
@@ -684,13 +684,13 @@ struct ProjectDetailView: View {
                     state.toggleTask(task.id)
                 } label: {
                     Image(systemName: task.done ? "checkmark.square.fill" : "square")
-                        .font(.system(size: 15))
+                        .atlasFont(size: 17)
                         .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
 
                 Text(task.title)
-                    .font(.system(size: 13, design: .rounded))
+                    .atlasFont(size: 14, design: .rounded)
                     .strikethrough(task.done)
                     .foregroundStyle(task.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                 Spacer()
@@ -701,7 +701,7 @@ struct ProjectDetailView: View {
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9))
+                    .atlasFont(size: 10)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             .padding(.vertical, 9)
@@ -763,14 +763,14 @@ struct ProjectDetailView: View {
                 ForEach(project.pinned) { res in
                     HStack(spacing: 8) {
                         Image(systemName: res.systemImage)
-                            .font(.system(size: 12))
+                            .atlasFont(size: 13)
                             .foregroundStyle(AtlasTheme.Colors.textSecondary)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(res.title)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .atlasFont(size: 13, weight: .medium, design: .rounded)
                                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             Text(res.source)
-                                .font(.system(size: 10, design: .rounded))
+                                .atlasFont(size: 11, design: .rounded)
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                         }
                     }
@@ -787,7 +787,7 @@ struct ProjectDetailView: View {
     private var linkedReferences: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
-                Image(systemName: "link").font(.system(size: 11))
+                Image(systemName: "link").atlasFont(size: 12)
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 Text("LINKED REFERENCES").atlasCapsLabel()
                 Text("\(project.backlinks.count)")
@@ -802,15 +802,15 @@ struct ProjectDetailView: View {
                         Circle().fill(link.color).frame(width: 7, height: 7)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(link.title)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .atlasFont(size: 13, weight: .medium, design: .rounded)
                                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             Text(link.meta)
-                                .font(.system(size: 10, design: .rounded))
+                                .atlasFont(size: 11, design: .rounded)
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                         }
                         Spacer()
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 9))
+                            .atlasFont(size: 10)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     .padding(.vertical, 10)
@@ -821,7 +821,7 @@ struct ProjectDetailView: View {
             }
 
             Text("Every task, event, and note that mentions this Class appears here automatically.")
-                .font(.system(size: 10, design: .rounded))
+                .atlasFont(size: 11, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                 .padding(.top, 4)
         }

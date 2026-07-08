@@ -46,10 +46,10 @@ struct UnscheduledTray: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 6) {
                     Image(systemName: "tray.full")
-                        .font(.system(size: 12))
+                        .atlasFont(size: 13)
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     Text("Unscheduled")
-                        .font(AtlasTheme.Font.cardTitle())
+                        .atlasFont(size: 15, weight: .semibold)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text("\(displayedTasks.count)")
                         .atlasMono(size: 11, weight: .medium)
@@ -57,7 +57,7 @@ struct UnscheduledTray: View {
                 }
 
                 Text("Drag onto the grid, or use Suggest a time")
-                    .font(.system(size: 10.5, design: .rounded))
+                    .atlasFont(size: 12, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
 
                 if displayedTasks.isEmpty {
@@ -65,7 +65,7 @@ struct UnscheduledTray: View {
                         Image(systemName: "checkmark.circle")
                             .foregroundStyle(AtlasTheme.Colors.green)
                         Text("All scheduled")
-                            .font(.system(size: 12, design: .rounded))
+                            .atlasFont(size: 13, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     }
                     .padding(.vertical, 8)
@@ -133,7 +133,7 @@ struct UnscheduledTray: View {
             // Check it off — completes the task; it then drops out of the tray.
             Button { onToggleDone(task.id) } label: {
                 Image(systemName: "square")
-                    .font(.system(size: 15))
+                    .atlasFont(size: 17)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .contentShape(Rectangle())
             }
@@ -144,7 +144,7 @@ struct UnscheduledTray: View {
                 .frame(width: 3, height: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(task.title)
-                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                    .atlasFont(size: 14, weight: .semibold, design: .rounded)
                     .foregroundStyle(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textPrimary)
                     .lineLimit(1)
                 if !task.dueLabel.isEmpty {
@@ -153,7 +153,7 @@ struct UnscheduledTray: View {
             }
             Spacer(minLength: 0)
             Image(systemName: "line.3.horizontal")
-                .font(.system(size: 10))
+                .atlasFont(size: 11)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
         .padding(.horizontal, 10)
@@ -241,7 +241,7 @@ private struct DueDatePopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .atlasFont(size: 14, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .lineLimit(2)
 
@@ -257,7 +257,7 @@ private struct DueDatePopover: View {
                 onSuggest()
             } label: {
                 Label("Suggest a time today", systemImage: "wand.and.stars")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
             }
             .buttonStyle(.plain)
             .foregroundStyle(AtlasTheme.Colors.accentText)
@@ -268,11 +268,11 @@ private struct DueDatePopover: View {
                 Button("Clear") { onSave(nil) }
                     .buttonStyle(.plain)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    .font(.system(size: 12, design: .rounded))
+                    .atlasFont(size: 13, design: .rounded)
                 Spacer()
                 Button("Set due date") { onSave(date) }
                     .keyboardShortcut(.defaultAction)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .atlasFont(size: 13, weight: .semibold, design: .rounded)
             }
         }
         .padding(14)

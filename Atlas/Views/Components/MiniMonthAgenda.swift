@@ -69,7 +69,7 @@ struct MiniMonthAgenda: View {
     private func chevron(_ systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 10, weight: .semibold))
+                .atlasFont(size: 11, weight: .semibold)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
@@ -203,7 +203,7 @@ struct MiniMonthAgenda: View {
                             .atlasMono(size: 10, weight: .semibold)
                             .tracking(0.8)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 8, weight: .semibold))
+                            .atlasFont(size: 9, weight: .semibold)
                     }
                     .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
@@ -214,7 +214,7 @@ struct MiniMonthAgenda: View {
             let shown = agendaLimit.map { Array(items.prefix($0)) } ?? items
             if items.isEmpty {
                 Text("Nothing scheduled.")
-                    .font(.system(size: 12, design: .rounded))
+                    .atlasFont(size: 13, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .padding(.vertical, 6)
             } else {
@@ -259,7 +259,7 @@ struct MiniMonthAgenda: View {
                 .fill(event.color)
                 .frame(width: 7, height: 7)
             Text(event.title)
-                .font(.system(size: 13, design: .rounded))
+                .atlasFont(size: 14, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: 8)

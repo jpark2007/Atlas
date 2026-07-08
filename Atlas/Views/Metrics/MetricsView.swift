@@ -16,7 +16,7 @@ struct MetricsStatCell: View {
                 .atlasMono(size: 22, weight: .semibold)
                 .foregroundStyle(accent ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textPrimary)
             Text(label)
-                .font(AtlasTheme.Font.small())
+                .atlasFont(size: 12)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -96,7 +96,7 @@ struct MetricsSpaceDonut: View {
                         HStack(spacing: 8) {
                             Circle().fill(load.color).frame(width: 7, height: 7)
                             Text(load.spaceName)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .atlasFont(size: 13, weight: .medium, design: .rounded)
                                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             Spacer(minLength: 10)
                             Text("\(load.openCount) open / \(load.totalCount) total")
@@ -109,7 +109,7 @@ struct MetricsSpaceDonut: View {
             }
         } else {
             Text("No task data yet.")
-                .font(.system(size: 12, design: .rounded))
+                .atlasFont(size: 13, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
@@ -134,7 +134,7 @@ struct MetricsView: View {
                     Button { state.presentGraph = true } label: {
                         HStack(spacing: 6) {
                             BrandLogo(size: 16).opacity(0.85)
-                            Text("Graph").font(.system(size: 12, weight: .medium, design: .rounded))
+                            Text("Graph").atlasFont(size: 13, weight: .medium, design: .rounded)
                                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                         }
                     }
@@ -213,7 +213,7 @@ struct MetricsView: View {
     private func cardTitle(_ title: String, icon: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .atlasFont(size: 12, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Text(title)
                 .atlasCapsLabel()

@@ -121,7 +121,7 @@ struct MonthGridView: View {
                 .fill(event.isReadOnly ? AtlasTheme.Colors.textSecondary : event.color)
                 .frame(width: 5, height: 5)
             Text(event.title)
-                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                .atlasFont(size: 10, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: 0)

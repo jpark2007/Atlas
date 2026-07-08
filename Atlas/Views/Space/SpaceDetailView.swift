@@ -77,7 +77,7 @@ struct SpaceDetailView: View {
                 presentInvite = true
             } label: {
                 Text("Invite")
-                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             .buttonStyle(.plain)
@@ -128,14 +128,14 @@ struct SpaceDetailView: View {
                     state.toggleTask(task.id)
                 } label: {
                     Image(systemName: task.done ? "checkmark.square.fill" : "square")
-                        .font(.system(size: 15))
+                        .atlasFont(size: 17)
                         .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(task.title)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .atlasFont(size: 14, weight: .medium, design: .rounded)
                         .strikethrough(task.done)
                         .foregroundStyle(task.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                     if !task.dueLabel.isEmpty {
@@ -148,7 +148,7 @@ struct SpaceDetailView: View {
                 Spacer()
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9))
+                    .atlasFont(size: 10)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             .padding(.vertical, 10)
@@ -191,10 +191,10 @@ struct SpaceDetailView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "tray")
-                .font(.system(size: 28, weight: .light))
+                .atlasFont(size: 31, weight: .light)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Text("No tasks or events in \(space.name) yet.")
-                .font(.system(size: 13, design: .rounded))
+                .atlasFont(size: 14, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
         .frame(maxWidth: .infinity)

@@ -117,7 +117,7 @@ struct AtlasMenuBarContent: View {
             Spacer()
             Button(focus.isRunning ? "Pause" : "Resume") { focus.toggle() }
                 .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .atlasFont(size: 12, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.accentText)
             Button("End") {
                 focus.endSession()
@@ -127,7 +127,7 @@ struct AtlasMenuBarContent: View {
                 FocusWindow.setFullScreen(false)
             }
             .buttonStyle(.plain)
-            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .atlasFont(size: 12, weight: .semibold, design: .rounded)
             .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
     }
@@ -165,7 +165,7 @@ struct AtlasMenuBarContent: View {
     private func footerButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
         .buttonStyle(.plain)

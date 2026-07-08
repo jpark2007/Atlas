@@ -29,7 +29,7 @@ struct TaskDragPreview: View {
         HStack(spacing: 6) {
             RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 3, height: 20)
             Text(title)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .atlasFont(size: 13, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .lineLimit(1)
         }
@@ -242,13 +242,13 @@ struct EventTile: View {
                 // Work-block checkbox — signals "planned work, tickable" (vs a fixed event).
                 if event.isWorkBlock {
                     Image(systemName: "square")
-                        .font(.system(size: 11, weight: .medium))
+                        .atlasFont(size: 12, weight: .medium)
                         .foregroundStyle(tileAccentColor)
                         .padding(.top, compact ? 0 : 1)
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(event.title)
-                        .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                        .atlasFont(size: 13, weight: .semibold, design: .rounded)
                         .foregroundStyle(titleColor)
                         .lineLimit(1)
                     if !compact {
@@ -264,7 +264,7 @@ struct EventTile: View {
                 // Read-only source glyph — indicates external / Apple Calendar origin
                 if event.isReadOnly {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 8, weight: .medium))
+                        .atlasFont(size: 9, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .padding(.top, compact ? 1 : 3)
                 }
@@ -320,7 +320,7 @@ struct DeadlineRailMarker: View {
     var body: some View {
         Button { showList.toggle() } label: {
             Image(systemName: "flag.fill")
-                .font(.system(size: 11, weight: .bold))
+                .atlasFont(size: 12, weight: .bold)
                 .foregroundStyle(AtlasTheme.Colors.danger)
                 .frame(width: CalendarLayout.deadlineRailWidth,
                        height: CalendarLayout.deadlineLabelHeight)
@@ -353,10 +353,10 @@ struct DeadlineListPopover: View {
             ForEach(deadlines) { dl in
                 HStack(spacing: 8) {
                     Image(systemName: "flag.fill")
-                        .font(.system(size: 8))
+                        .atlasFont(size: 9)
                         .foregroundStyle(dl.color)
                     Text(dl.title)
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .atlasFont(size: 13, weight: .semibold, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         .lineLimit(1)
                     if dl.hasSpecificTime {
@@ -415,9 +415,9 @@ struct DeadlineStrip: View {
 
     private func pill(_ dl: CalendarEvent) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: "flag.fill").font(.system(size: 8))
+            Image(systemName: "flag.fill").atlasFont(size: 9)
             Text(dl.title)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .atlasFont(size: 12, weight: .semibold, design: .rounded)
                 .lineLimit(1)
             if dl.hasSpecificTime {
                 Text(dl.timeLabel)

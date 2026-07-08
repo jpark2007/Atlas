@@ -159,7 +159,7 @@ struct DashboardView: View {
             let tasks = focusTasks
             if tasks.isEmpty {
                 Text("Nothing due — you're clear.")
-                    .font(.system(size: 12, design: .rounded))
+                    .atlasFont(size: 13, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .padding(.vertical, 6)
             } else {
@@ -198,7 +198,7 @@ struct DashboardView: View {
                 withAnimation(.easeOut(duration: 0.2)) { state.toggleTask(task.id) }
             } label: {
                 Image(systemName: task.done ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 14))
+                    .atlasFont(size: 15)
                     .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
             }
             .buttonStyle(.plain)
@@ -206,7 +206,7 @@ struct DashboardView: View {
             Button { state.route = .task(task.id) } label: {
                 HStack(spacing: 8) {
                     Text(task.title)
-                        .font(.system(size: 13, design: .rounded))
+                        .atlasFont(size: 14, design: .rounded)
                         .strikethrough(task.done)
                         .foregroundStyle(task.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                         .lineLimit(1)
@@ -232,9 +232,9 @@ struct DashboardView: View {
         Button { state.presentCapture = true } label: {
             HStack(spacing: 6) {
                 Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .atlasFont(size: 12, weight: .semibold, design: .rounded)
                 Text("Add a task")
-                    .font(.system(size: 12, design: .rounded))
+                    .atlasFont(size: 13, design: .rounded)
             }
             .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
@@ -251,7 +251,7 @@ struct DashboardView: View {
             let notes = recentNotesList
             if notes.isEmpty {
                 Text("No notes yet.")
-                    .font(.system(size: 12, design: .rounded))
+                    .atlasFont(size: 13, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .padding(.vertical, 6)
             } else {

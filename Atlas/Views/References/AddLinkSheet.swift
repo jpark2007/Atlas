@@ -29,18 +29,18 @@ struct AddLinkSheet: View {
     private var headerBar: some View {
         HStack(alignment: .center, spacing: 12) {
             Text("Add link")
-                .font(.system(size: 17, weight: .semibold, design: .rounded))
+                .atlasFont(size: 19, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Spacer()
             Button("Cancel") { dismiss() }
                 .buttonStyle(.plain)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .atlasFont(size: 14, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .keyboardShortcut(.cancelAction)
 
             Button("Add") { save() }
                 .buttonStyle(.plain)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .atlasFont(size: 14, weight: .semibold, design: .rounded)
                 .foregroundStyle(canSave ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textMuted)
                 .disabled(!canSave)
                 .keyboardShortcut(.return, modifiers: .command)
@@ -58,7 +58,7 @@ struct AddLinkSheet: View {
                 boxedField {
                     TextField("What is this?", text: $title)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .atlasFont(size: 15, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
@@ -69,7 +69,7 @@ struct AddLinkSheet: View {
                 boxedField {
                     TextField("https://…", text: $urlString)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 14, design: .rounded))
+                        .atlasFont(size: 15, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)

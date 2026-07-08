@@ -47,18 +47,18 @@ struct ReferenceListRow: View {
             Button { if let u = reference.externalURL { openURL(u) } } label: {
                 HStack(spacing: 10) {
                     Image(systemName: reference.typeGlyph)
-                        .font(.system(size: 13))
+                        .atlasFont(size: 14)
                         .foregroundStyle(reference.kind == .docNote
                                          ? AtlasTheme.Colors.accentText
                                          : AtlasTheme.Colors.textMuted)
                         .frame(width: 18)
                     Text(reference.title.isEmpty ? "Untitled" : reference.title)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .atlasFont(size: 14, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         .lineLimit(1)
                     if reference.externalURL != nil {
                         Image(systemName: "arrow.up.right")
-                            .font(.system(size: 9, weight: .semibold))
+                            .atlasFont(size: 10, weight: .semibold)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     Spacer(minLength: 0)
@@ -68,7 +68,7 @@ struct ReferenceListRow: View {
             if let onRemove {
                 Button(action: onRemove) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13))
+                        .atlasFont(size: 14)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
@@ -101,13 +101,13 @@ struct AttachReferencePicker: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Attach reference")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .atlasFont(size: 19, weight: .bold, design: .rounded)
                     .tracking(-0.3)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Spacer()
                 Button { dismiss() } label: {
                     Text("Done")
-                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                        .atlasFont(size: 14, weight: .semibold, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         .padding(.horizontal, 16).padding(.vertical, 6)
                         .overlay(
@@ -150,23 +150,23 @@ struct AttachReferencePicker: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: ref.typeGlyph)
-                    .font(.system(size: 13))
+                    .atlasFont(size: 14)
                     .foregroundStyle(ref.kind == .docNote
                                      ? AtlasTheme.Colors.accentText
                                      : AtlasTheme.Colors.textMuted)
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(ref.title.isEmpty ? "Untitled" : ref.title)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .atlasFont(size: 14, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         .lineLimit(1)
                     Text(kindLabel(ref))
-                        .font(AtlasTheme.Font.small())
+                        .atlasFont(size: 12)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: selected ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 15))
+                    .atlasFont(size: 17)
                     .foregroundStyle(selected ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textMuted)
             }
             .padding(.vertical, 10)
@@ -186,7 +186,7 @@ struct AttachReferencePicker: View {
 
     private func emptyState(_ message: String) -> some View {
         Text(message)
-            .font(.system(size: 13, design: .rounded))
+            .atlasFont(size: 14, design: .rounded)
             .foregroundStyle(AtlasTheme.Colors.textMuted)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             .multilineTextAlignment(.center)
