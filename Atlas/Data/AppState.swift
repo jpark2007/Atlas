@@ -431,13 +431,15 @@ final class AppState: ObservableObject {
         }
         self.projectMembers = membersByProject
 
-        // Per-space membership rosters — mirrors the per-project loop above,
-        // one level up. Spaces themselves live only in `spaces`. Runs
-        // independently of the "shared with me" lookup below, which needs
-        // `myUserId` and may bail early.
+        // One round-trip for every visible space-membership row, grouped by
+        // space, mirroring the per-project fetch above — instead of one
+        // fetch-and-filter per space. Spaces themselves live only in `spaces`.
+        // Runs independently of the "shared with me" lookup below, which
+        // needs `myUserId` and may bail early.
+        let membersByAllSpaces = (try? await db.loadAllSpaceMembers()) ?? [:]
         var membersBySpace: [UUID: [SpaceMemberRow]] = [:]
         for space in spaces {
-            membersBySpace[space.id] = (try? await db.loadSpaceMembers(spaceId: space.id)) ?? []
+            membersBySpace[space.id] = membersByAllSpaces[space.id] ?? []
         }
         self.spaceMembers = membersBySpace
 

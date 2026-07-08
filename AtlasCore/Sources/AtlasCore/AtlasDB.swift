@@ -1041,6 +1041,18 @@ public final class AtlasDB {
         return all.filter { $0.spaceId == spaceId }
     }
 
+    /// Every space-member row the caller may see (RLS-scoped), grouped by
+    /// space id. One round-trip that replaces the per-space N+1 loop of
+    /// `loadSpaceMembers(spaceId:)` — the old path fetched the whole
+    /// `space_members` table once per space and filtered client-side.
+    /// Rows within each group keep `added_at` order (the fetch is ordered and
+    /// `Dictionary(grouping:)` preserves element order). Best-effort: a missing
+    /// table (pre-migration) yields an empty map rather than throwing.
+    public func loadAllSpaceMembers() async throws -> [UUID: [SpaceMemberRow]] {
+        let all: [SpaceMemberRow] = (try? await getAll("space_members", order: "added_at")) ?? []
+        return Dictionary(grouping: all, by: { $0.spaceId })
+    }
+
     @discardableResult
     public func createSpaceInvite(spaceId: UUID, inviteeEmail: String) async throws -> InviteRow {
         let sess = try await requireSession()
