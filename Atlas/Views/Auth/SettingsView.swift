@@ -20,6 +20,9 @@ struct SettingsView: View {
     /// cursor touches the left edge (RootView owns the overlay mechanics).
     @AppStorage("sidebar.mode") private var sidebarMode: String = "always"
 
+    /// User-adjustable global text scale — same AppStorage key AtlasApp injects into the environment.
+    @AppStorage("appearance.textScale") private var textScale: Double = 1.0
+
     // MARK: – Canvas server-sync state
     @State private var canvasFeedURL = ""
     @State private var canvasSpaceName = "School"
@@ -86,6 +89,8 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     account
+                    Divider().overlay(AtlasTheme.Colors.border)
+                    appearanceSection
                     Divider().overlay(AtlasTheme.Colors.border)
                     tasksSection
                     Divider().overlay(AtlasTheme.Colors.border)
@@ -794,6 +799,37 @@ struct SettingsView: View {
                 .padding(.vertical, 8)
                 .atlasHairlineBelow()
             }
+        }
+    }
+
+    // MARK: – Appearance section
+
+    private var appearanceSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            label("APPEARANCE")
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Text size")
+                        .font(.system(size: 13, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text("Applies everywhere, immediately")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                Spacer()
+                Picker("Text size", selection: $textScale) {
+                    Text("Small").tag(0.9)
+                    Text("Default").tag(1.0)
+                    Text("Large").tag(1.15)
+                    Text("X-Large").tag(1.3)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 260)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .atlasHairlineBelow()
         }
     }
 
