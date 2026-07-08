@@ -1069,6 +1069,27 @@ public final class AtlasDB {
         return rows.first
     }
 
+    /// The server's bare view of the Google connection: just `status`
+    /// (active | error | revoked) and `last_error`. A lighter cousin of
+    /// `loadGoogleConnection()` for a Settings connection badge — nil ⇒ no
+    /// connection row. RLS (owner-read, migration 0006) scopes it to the caller.
+    public struct GoogleConnectionStatus: Codable {
+        public var status: String
+        public var lastError: String?
+
+        enum CodingKeys: String, CodingKey {
+            case status
+            case lastError = "last_error"
+        }
+    }
+
+    public func fetchGoogleConnectionStatus() async throws -> GoogleConnectionStatus? {
+        let rows: [GoogleConnectionStatus] = try await getColumns(
+            "google_connections",
+            columns: "status,last_error")
+        return rows.first
+    }
+
     /// Reads the caller's `canvas_connections` row (server-owned Canvas sync state),
     /// or nil when the user has no Canvas connection. Selects only the owner-granted
     /// columns; RLS scopes the query to the signed-in user. Mirrors `loadGoogleConnection()`.

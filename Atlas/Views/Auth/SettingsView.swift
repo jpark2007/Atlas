@@ -20,6 +20,9 @@ struct SettingsView: View {
     /// cursor touches the left edge (RootView owns the overlay mechanics).
     @AppStorage("sidebar.mode") private var sidebarMode: String = "always"
 
+    /// Beta flag: multi-tab Google Docs edit tab-by-tab (the editor reads this key).
+    @AppStorage("notes.perTabDocsSync.enabled") private var perTabSyncEnabled = false
+
     // MARK: – Canvas server-sync state
     @State private var canvasFeedURL = ""
     @State private var canvasSpaceName = "School"
@@ -40,6 +43,12 @@ struct SettingsView: View {
     // MARK: – Cloud-sync (server-owned) state
     @State private var cloudSyncWorking = false
     @State private var cloudSyncError: String? = nil
+
+    // MARK: – Google connection badge state
+    /// Raw `google_connections.status` (active | error | revoked), nil when there's
+    /// no connection row. Loaded from the server on `.task` — the app must say when
+    /// it isn't actually connected, independent of the local Google-sync toggles.
+    @State private var connectionStatus: String? = nil
 
     private let ekService = EventKitService()
 
@@ -326,9 +335,55 @@ struct SettingsView: View {
             label("INTEGRATIONS")
             row(icon: "calendar", tint: AtlasTheme.Colors.school, title: "Google Calendar / Drive / Gmail",
                 subtitle: "Sign in with Google to enable")
+            googleConnectionBadge
             row(icon: "applelogo", tint: AtlasTheme.Colors.textSecondary, title: "Sign in with Apple",
                 subtitle: "Enable signing in Xcode to use on device")
+
+            // ── Per-tab Google Doc sync (beta) ──────────────────────────
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Per-tab Google Doc sync (beta)")
+                        .font(.system(size: 13, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text("Multi-tab Docs edit tab-by-tab; tabs with tables stay read-only.")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                Spacer()
+                Toggle("", isOn: $perTabSyncEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(AtlasTheme.Colors.textPrimary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .atlasHairlineBelow()
         }
+        // The server's view of the Google connection — direct db read (AppState owns
+        // the AtlasDB handle); nil db (offline/mock) leaves the badge as "Not connected".
+        .task {
+            connectionStatus = try? await state.db?.fetchGoogleConnectionStatus()?.status
+        }
+    }
+
+    /// Live server-side Google connection status, aligned under the Google row.
+    /// active ⇒ "Connected"; revoked/error (any non-active) ⇒ reconnect warning;
+    /// no connection row ⇒ "Not connected".
+    @ViewBuilder
+    private var googleConnectionBadge: some View {
+        Group {
+            switch connectionStatus {
+            case "active":
+                Text("Connected").foregroundStyle(AtlasTheme.Colors.textMuted)
+            case .some:
+                Text("⚠ Reconnect needed — sync is stopped")
+                    .foregroundStyle(AtlasTheme.Colors.warning)
+            case .none:
+                Text("Not connected").foregroundStyle(AtlasTheme.Colors.textMuted)
+            }
+        }
+        .font(.system(size: 11, design: .rounded))
+        .padding(.leading, 34)
     }
 
     // MARK: – Calendars section
