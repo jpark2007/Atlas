@@ -246,17 +246,23 @@ export async function pullDocNoteReference(
       const harvestedIds = new Set<string>();
       for (const t of tabs) for (const img of t.images) harvestedIds.add(img.objectId);
       let allImagesOk = true;
+      // Re-host EVERY tab's images — read-only tabs need them for display too.
+      // Only writable tabs get the strict treatment (a failed/unsupported image
+      // downgrades the tab so we never rewrite a tab whose image we can't
+      // re-insert); on read-only tabs a failure just skips that image's display.
       for (const t of tabs) {
-        if (!t.writable) continue;
         for (const img of t.images) {
           try {
             const { bytes, contentType } = await fetchDocImage(img.contentUri, accessToken);
             const ext = extForContentType(contentType);
             if (!ext) {
-              t.writable = false;
-              t.readonlyReason = "unsupported image format";
-              allImagesOk = false;
-              break;
+              if (t.writable) {
+                t.writable = false;
+                t.readonlyReason = "unsupported image format";
+                allImagesOk = false;
+                break;
+              }
+              continue;
             }
             const path = `${userId}/${noteId}/${img.objectId}.${ext}`;
             const { error: sErr } = await admin.storage.from("doc-images")
@@ -274,10 +280,13 @@ export async function pullDocNoteReference(
             }, { onConflict: "note_id,object_id" });
             if (iErr) throw new Error(iErr.message);
           } catch (_e) {
-            t.writable = false;
-            t.readonlyReason = "image fetch failed";
-            allImagesOk = false;
-            break;
+            if (t.writable) {
+              t.writable = false;
+              t.readonlyReason = "image fetch failed";
+              allImagesOk = false;
+              break;
+            }
+            // read-only tab: display-only image, skip on failure
           }
         }
       }
