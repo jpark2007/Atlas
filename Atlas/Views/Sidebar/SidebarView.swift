@@ -249,6 +249,9 @@ struct SidebarView: View {
                                           weight: state.route == spaceRoute ? .semibold : .medium,
                                           design: .rounded))
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        if state.isSharedSpace(space) {
+                            sharedSpaceMemberCluster(for: space)
+                        }
                         Spacer()
                     }
                     .contentShape(Rectangle())
@@ -357,6 +360,23 @@ struct SidebarView: View {
     @ViewBuilder
     private func sharedMemberCluster(for project: Project) -> some View {
         let members = state.projectMembers[project.id] ?? []
+        HStack(spacing: -6) {
+            ForEach(members.prefix(2), id: \.userId) { member in
+                Circle()
+                    .fill(AtlasTheme.Colors.bgSidebar)
+                    .frame(width: 14, height: 14)
+                    .overlay(
+                        Circle().strokeBorder(AtlasTheme.Colors.textMuted.opacity(0.4), lineWidth: 0.75)
+                    )
+            }
+        }
+    }
+
+    /// Space-level counterpart to `sharedMemberCluster(for:)` — same minimal
+    /// placeholder-circle treatment, one level up.
+    @ViewBuilder
+    private func sharedSpaceMemberCluster(for space: Space) -> some View {
+        let members = state.spaceMembers[space.id] ?? []
         HStack(spacing: -6) {
             ForEach(members.prefix(2), id: \.userId) { member in
                 Circle()
