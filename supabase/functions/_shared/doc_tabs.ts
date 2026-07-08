@@ -257,3 +257,76 @@ export function parseInline(src: string): Span[] {
   flush();
   return spans;
 }
+
+// ── Markdown → batchUpdate requests (one tab) ───────────────────────────────
+
+/** Replace the ENTIRE content of tab `tabId` (current body endIndex `endIndex`)
+ *  with `markdown`. Mirrors GoogleDocsMapper.batchUpdateBody's request order,
+ *  with every location/range scoped by tabId. Indices are UTF-16 (JS .length). */
+export function renderRequests(tabId: string, endIndex: number, markdown: string): unknown[] {
+  const requests: unknown[] = [];
+  if (endIndex > 2) {
+    requests.push({ deleteContentRange: { range: { tabId, startIndex: 1, endIndex: endIndex - 1 } } });
+  }
+
+  // Split into lines; a trailing "\n" yields a spurious last "" — drop it.
+  const lines = markdown.split("\n");
+  if (lines.length && lines[lines.length - 1] === "") lines.pop();
+
+  let index = 1;
+  let numbered = 0;
+  for (const rawLine of lines) {
+    let kind: "h1" | "h2" | "bullet" | "numbered" | "normal" = "normal";
+    let rest = rawLine;
+    const num = /^(\d+)\. /.exec(rawLine);
+    if (rawLine.startsWith("# ")) { kind = "h1"; rest = rawLine.slice(2); }
+    else if (rawLine.startsWith("## ")) { kind = "h2"; rest = rawLine.slice(3); }
+    else if (rawLine.startsWith("- ")) { kind = "bullet"; rest = rawLine.slice(2); }
+    else if (num) { kind = "numbered"; rest = rawLine.slice(num[0].length); }
+    numbered = kind === "numbered" ? numbered + 1 : 0;
+
+    const spans = parseInline(rest);
+    const text = spans.map((s) => s.text).join("") + "\n";
+    const start = index;
+    const end = start + text.length - 1; // style ranges exclude the trailing \n
+
+    requests.push({ insertText: { location: { tabId, index: start }, text } });
+    requests.push({ updateParagraphStyle: {
+      range: { tabId, startIndex: start, endIndex: end },
+      paragraphStyle: { namedStyleType: kind === "h1" ? "HEADING_1" : kind === "h2" ? "HEADING_2" : "NORMAL_TEXT" },
+      fields: "namedStyleType",
+    } });
+    if (kind === "bullet" || kind === "numbered") {
+      requests.push({ createParagraphBullets: {
+        range: { tabId, startIndex: start, endIndex: end },
+        bulletPreset: kind === "numbered" ? "NUMBERED_DECIMAL_ALPHA_ROMAN" : "BULLET_DISC_CIRCLE_SQUARE",
+      } });
+    }
+
+    let cursor = start;
+    for (const s of spans) {
+      const sEnd = cursor + s.text.length;
+      if (s.link !== undefined) {
+        requests.push({ updateTextStyle: {
+          range: { tabId, startIndex: cursor, endIndex: sEnd },
+          textStyle: { link: { url: s.link } }, fields: "link",
+        } });
+      } else {
+        const fields: string[] = [];
+        const style: Record<string, boolean> = {};
+        if (s.bold) { style.bold = true; fields.push("bold"); }
+        if (s.italic) { style.italic = true; fields.push("italic"); }
+        if (s.underline) { style.underline = true; fields.push("underline"); }
+        if (fields.length) {
+          requests.push({ updateTextStyle: {
+            range: { tabId, startIndex: cursor, endIndex: sEnd },
+            textStyle: style, fields: fields.join(","),
+          } });
+        }
+      }
+      cursor = sEnd;
+    }
+    index += text.length;
+  }
+  return requests;
+}

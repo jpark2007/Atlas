@@ -165,3 +165,63 @@ Deno.test("divergence: empty styled run drops marks (no degenerate '****')", () 
   assertEquals(t.markdown.includes("****"), false);
   assertEquals(t.writable, true);
 });
+
+// ── Task 3: renderer (markdown → tabId-scoped batchUpdate requests) ─────────
+import { renderRequests } from "./doc_tabs.ts";
+
+Deno.test("renderRequests: clears the tab then rebuilds line by line", () => {
+  const reqs = renderRequests("t.X", 20, "# Head\nplain **bold**\n- item\n") as any[];
+  // 1. clear existing content (endIndex 20 → delete [1, 19))
+  assertEquals(reqs[0], { deleteContentRange: { range: { tabId: "t.X", startIndex: 1, endIndex: 19 } } });
+  // 2. "Head\n" inserted at 1, styled HEADING_1 over [1,5)
+  assertEquals(reqs[1], { insertText: { location: { tabId: "t.X", index: 1 }, text: "Head\n" } });
+  assertEquals(reqs[2], { updateParagraphStyle: {
+    range: { tabId: "t.X", startIndex: 1, endIndex: 5 },
+    paragraphStyle: { namedStyleType: "HEADING_1" }, fields: "namedStyleType" } });
+  // 3. "plain bold\n" at 6 (UTF-16 length of "Head\n" is 5), NORMAL_TEXT, bold over "bold"
+  assertEquals(reqs[3], { insertText: { location: { tabId: "t.X", index: 6 }, text: "plain bold\n" } });
+  assertEquals(reqs[4], { updateParagraphStyle: {
+    range: { tabId: "t.X", startIndex: 6, endIndex: 16 },
+    paragraphStyle: { namedStyleType: "NORMAL_TEXT" }, fields: "namedStyleType" } });
+  assertEquals(reqs[5], { updateTextStyle: {
+    range: { tabId: "t.X", startIndex: 12, endIndex: 16 },
+    textStyle: { bold: true }, fields: "bold" } });
+  // 4. "item\n" at 17, bulleted
+  assertEquals(reqs[6], { insertText: { location: { tabId: "t.X", index: 17 }, text: "item\n" } });
+  assertEquals(reqs[7], { updateParagraphStyle: {
+    range: { tabId: "t.X", startIndex: 17, endIndex: 21 },
+    paragraphStyle: { namedStyleType: "NORMAL_TEXT" }, fields: "namedStyleType" } });
+  assertEquals(reqs[8], { createParagraphBullets: {
+    range: { tabId: "t.X", startIndex: 17, endIndex: 21 },
+    bulletPreset: "BULLET_DISC_CIRCLE_SQUARE" } });
+  assertEquals(reqs.length, 9);
+});
+
+Deno.test("renderRequests: empty tab (endIndex 2) emits no delete", () => {
+  const reqs = renderRequests("t.X", 2, "hi\n") as any[];
+  assertEquals("insertText" in (reqs[0] as any), true);
+});
+
+Deno.test("renderRequests: links become updateTextStyle link requests", () => {
+  const reqs = renderRequests("t.X", 2, "see [site](https://x.com)\n") as any[];
+  const linkReq = reqs.find((r: any) => r.updateTextStyle?.textStyle?.link) as any;
+  assertEquals(linkReq.updateTextStyle.textStyle.link.url, "https://x.com");
+  assertEquals(linkReq.updateTextStyle.fields, "link");
+  // "see " is 4 chars → link over [5, 9)
+  assertEquals(linkReq.updateTextStyle.range, { tabId: "t.X", startIndex: 5, endIndex: 9 });
+});
+
+Deno.test("renderRequests: numbered list uses the numbered preset", () => {
+  const reqs = renderRequests("t.X", 2, "1. one\n2. two\n") as any[];
+  const bullets = reqs.filter((r: any) => r.createParagraphBullets);
+  assertEquals(bullets.length, 2);
+  assertEquals((bullets[0] as any).createParagraphBullets.bulletPreset, "NUMBERED_DECIMAL_ALPHA_ROMAN");
+});
+
+Deno.test("round-trip: reader output re-renders to requests that reproduce the text", () => {
+  // md → requests: concatenated insertText payloads must equal the md's plain text lines.
+  const md = "# Head\nplain **bold** and [site](https://x.com)\n- item\n";
+  const reqs = renderRequests("t.X", 2, md) as any[];
+  const inserted = reqs.filter((r: any) => r.insertText).map((r: any) => r.insertText.text).join("");
+  assertEquals(inserted, "Head\nplain bold and site\nitem\n");
+});
