@@ -456,9 +456,22 @@ final class AppState: ObservableObject {
     }
 
     /// Tabs of a multi-tab Doc note, ordered. Empty for single-tab docs or on error.
-    func loadDocTabs(referenceID: UUID) async -> [DocNoteTab] {
+    func loadDocTabs(noteID: UUID) async -> [DocNoteTab] {
         guard let db else { return [] }
-        return (try? await db.fetchDocNoteTabs(referenceID: referenceID)) ?? []
+        return (try? await db.fetchDocNoteTabs(noteID: noteID)) ?? []
+    }
+
+    /// Re-hosted inline images of a Doc note. Empty when none, or on error.
+    func loadDocImages(noteID: UUID) async -> [DocNoteImage] {
+        guard let db else { return [] }
+        return (try? await db.fetchDocNoteImages(noteID: noteID)) ?? []
+    }
+
+    /// Downloads one Doc-image object's bytes from Storage. Throws so the editor can
+    /// fall back to the literal placeholder when the fetch fails.
+    func downloadDocImage(path: String) async throws -> Data {
+        guard let db else { throw AtlasDBError.notAuthenticated }
+        return try await db.downloadDocImage(path: path)
     }
 
     /// Send a project invite. Errors are swallowed to a debug log — the

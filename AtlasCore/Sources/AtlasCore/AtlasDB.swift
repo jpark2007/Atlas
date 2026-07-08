@@ -556,6 +556,7 @@ public struct ReferenceAttachmentRow: Codable {
 public struct DocNoteTabRow: Codable {
     public var id: UUID
     public var referenceId: UUID
+    public var noteId: UUID
     public var tabId: String
     public var parentTabId: String?
     public var title: String
@@ -567,6 +568,7 @@ public struct DocNoteTabRow: Codable {
     enum CodingKeys: String, CodingKey {
         case id
         case referenceId    = "reference_id"
+        case noteId         = "note_id"
         case tabId          = "tab_id"
         case parentTabId    = "parent_tab_id"
         case title
@@ -580,6 +582,43 @@ public struct DocNoteTabRow: Codable {
         DocNoteTab(id: id, referenceID: referenceId, tabId: tabId, parentTabId: parentTabId,
                    title: title, ord: ord, bodyMD: bodyMd, writable: writable,
                    readonlyReason: readonlyReason)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DocNoteImageRow — one re-hosted inline image of a Doc note
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A row from `doc_note_images` (migration `0023`). One row per inline image the
+/// pull pipeline re-hosted into the private `doc-images` bucket. Clients only read
+/// these; all writes flow through service-role edge functions. `user_id` /
+/// `created_at` are owned by the server and unused here, so they're omitted from
+/// the row rather than decoded (extra JSON keys are ignored), matching `DocNoteTabRow`.
+public struct DocNoteImageRow: Codable {
+    public var id: UUID
+    public var noteId: UUID
+    public var tabId: String
+    public var objectId: String
+    public var storagePath: String
+    public var widthPt: Double?
+    public var heightPt: Double?
+    public var cropLocked: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case noteId       = "note_id"
+        case tabId        = "tab_id"
+        case objectId     = "object_id"
+        case storagePath  = "storage_path"
+        case widthPt      = "width_pt"
+        case heightPt     = "height_pt"
+        case cropLocked   = "crop_locked"
+    }
+
+    public func toDomain() -> DocNoteImage {
+        DocNoteImage(id: id, noteID: noteId, tabId: tabId, objectId: objectId,
+                     storagePath: storagePath, widthPt: widthPt, heightPt: heightPt,
+                     cropLocked: cropLocked)
     }
 }
 
@@ -983,11 +1022,41 @@ public final class AtlasDB {
     }
 
     /// The tabs of a multi-tab Google Doc note, ordered by `ord`. Filters the
-    /// `doc_note_tabs` table (RLS-scoped) down to one reference client-side,
-    /// mirroring `loadProjectMembers`. Single-tab Docs have no rows here.
-    public func fetchDocNoteTabs(referenceID: UUID) async throws -> [DocNoteTab] {
+    /// `doc_note_tabs` table (RLS-scoped) down to one NOTE client-side, mirroring
+    /// `loadProjectMembers`. Keyed by `note_id` (0023) so a Doc imported into several
+    /// projects shares one tab set. Single-tab Docs have no rows here.
+    public func fetchDocNoteTabs(noteID: UUID) async throws -> [DocNoteTab] {
         let rows: [DocNoteTabRow] = try await getAll("doc_note_tabs", order: "ord")
-        return rows.filter { $0.referenceId == referenceID }.map { $0.toDomain() }
+        return rows.filter { $0.noteId == noteID }.map { $0.toDomain() }
+    }
+
+    /// The re-hosted inline images of a Doc note. Filters the `doc_note_images`
+    /// table (RLS-scoped) down to one note client-side, mirroring `fetchDocNoteTabs`.
+    /// Notes with no inline images have no rows here.
+    public func fetchDocNoteImages(noteID: UUID) async throws -> [DocNoteImage] {
+        let rows: [DocNoteImageRow] = try await getAll("doc_note_images")
+        return rows.filter { $0.noteId == noteID }.map { $0.toDomain() }
+    }
+
+    /// Downloads one object's bytes from the private `doc-images` Storage bucket via
+    /// the authenticated-object endpoint. Uses the SAME auth as every PostgREST call —
+    /// `apikey: anonKey` + the user's `Bearer` JWT — so the owner-read policy on
+    /// `storage.objects` (path prefix = user id) scopes the read to the caller's own
+    /// images. `path` is the object key: `<user_id>/<note_id>/<object_id>.<ext>`.
+    public func downloadDocImage(path: String) async throws -> Data {
+        let sess = try await requireSession()
+        let url = SupabaseConfig.url
+            .appendingPathComponent("storage/v1/object/authenticated/doc-images")
+            .appendingPathComponent(path)
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.setValue(SupabaseConfig.anonKey,       forHTTPHeaderField: "apikey")
+        req.setValue("Bearer \(sess.accessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        try validate(response: response, data: data)
+        return data
     }
 
     /// Reads the caller's `google_connections` row (server-owned Google sync state),

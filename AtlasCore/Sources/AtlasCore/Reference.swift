@@ -136,3 +136,35 @@ public struct DocNoteTab: Identifiable, Equatable, Hashable {
         return "\(parent.title) ▸ \(title)"
     }
 }
+
+// MARK: - Doc images (re-hosted inline Google Doc images)
+
+/// One re-hosted inline image of a Doc note. Mirrors `doc_note_images` (migration
+/// `0023`). The pull pipeline downloads the Doc's image bytes into the private
+/// `doc-images` Storage bucket while the Docs `contentUri` is still fresh, records
+/// this row, and rewrites the tab's Markdown with a `![image:<objectId>]` placeholder
+/// line. The editor renders it from `storagePath`; write-back re-inserts it at the
+/// preserved size. `cropLocked == true` ⇒ the image carries a crop/rotation/adjustment
+/// the dialect can't round-trip, so its tab stays read-only.
+public struct DocNoteImage: Identifiable, Equatable, Hashable {
+    public let id: UUID
+    public let noteID: UUID
+    public let tabId: String
+    public let objectId: String
+    public let storagePath: String
+    public let widthPt: Double?
+    public let heightPt: Double?
+    public let cropLocked: Bool
+
+    public init(id: UUID, noteID: UUID, tabId: String, objectId: String,
+                storagePath: String, widthPt: Double?, heightPt: Double?, cropLocked: Bool) {
+        self.id = id
+        self.noteID = noteID
+        self.tabId = tabId
+        self.objectId = objectId
+        self.storagePath = storagePath
+        self.widthPt = widthPt
+        self.heightPt = heightPt
+        self.cropLocked = cropLocked
+    }
+}

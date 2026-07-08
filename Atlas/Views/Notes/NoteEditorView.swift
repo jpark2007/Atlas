@@ -50,6 +50,9 @@ struct NoteEditorView: View {
     @State private var docTabs: [DocNoteTab] = []
     /// The tab whose `bodyMD` is currently loaded into `doc`.
     @State private var selectedTab: DocNoteTab?
+    /// Re-hosted inline images for this note (all tabs), looked up by `objectId` when a
+    /// block's text is an `![image:<id>]` placeholder. Empty for notes without images.
+    @State private var docImages: [DocNoteImage] = []
     /// Per-tab dirty flag — the analogue of `isDirty` for the selected tab's body, so a
     /// save/switch only pushes a tab the user actually edited (incl. style-only edits).
     @State private var tabDirty = false
@@ -110,8 +113,11 @@ struct NoteEditorView: View {
         // first tab's body. Single-tab Docs and flag OFF fall through untouched — `docTabs`
         // stays empty and every path below behaves exactly as it does today.
         .task {
-            guard perTabSyncEnabled, let ref = docReference else { return }
-            let tabs = await state.loadDocTabs(referenceID: ref.id)
+            guard perTabSyncEnabled, docReference != nil else { return }
+            // Images are keyed by note, so load them even for single-tab Docs (their
+            // placeholders live in `notes.body`). Tabs only re-seat `doc` when >1.
+            docImages = await state.loadDocImages(noteID: draft.id)
+            let tabs = await state.loadDocTabs(noteID: draft.id)
             guard tabs.count > 1 else { return }
             docTabs = tabs
             let first = tabs[0]
@@ -204,8 +210,13 @@ struct NoteEditorView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array(doc.blocks.enumerated()), id: \.element.id) { index, block in
-                        blockRow(index: index, block: block)
+                    ForEach(renderSegments) { segment in
+                        switch segment {
+                        case let .block(index, block):
+                            blockRow(index: index, block: block)
+                        case let .table(_, lines):
+                            PipeTableView(rows: parsePipeTable(lines: lines))
+                        }
                     }
                 }
                 .padding(.horizontal, 18)
@@ -467,12 +478,12 @@ struct NoteEditorView: View {
     /// explicit Reload). Always a Doc-note here, so parse the Markdown body.
     private func loadFresh(_ live: Note) {
         draft = live
-        if !docTabs.isEmpty, let ref = docReference {
+        if !docTabs.isEmpty, docReference != nil {
             // Per-tab mode: notes.body is the cron-owned concatenated preview —
             // reload the tab rows and re-seat the current tab instead of parsing
             // the preview into the buffer.
             Task {
-                let tabs = await state.loadDocTabs(referenceID: ref.id)
+                let tabs = await state.loadDocTabs(noteID: draft.id)
                 guard tabs.count > 1 else { return }
                 docTabs = tabs
                 let current = tabs.first(where: { $0.tabId == selectedTab?.tabId }) ?? tabs[0]
@@ -564,25 +575,103 @@ struct NoteEditorView: View {
 
     // MARK: - Block row
 
+    /// One item in the render plan: an ordinary block (kept editable, with its real
+    /// index) or a folded pipe-table run (read-only tabs only).
+    private enum BlockSegment: Identifiable {
+        case block(index: Int, block: RichDoc.Block)
+        case table(id: UUID, lines: [String])
+
+        var id: String {
+            switch self {
+            case let .block(_, block): return "b-\(block.id.uuidString)"
+            case let .table(id, _):    return "t-\(id.uuidString)"
+            }
+        }
+    }
+
+    /// The block-level render plan. In a READ-ONLY tab a run of consecutive `|`-pipe
+    /// lines folds into one table grid; every other block renders on its own (image
+    /// placeholders become images in `blockRow`, the rest stay editable rows). Editable
+    /// tabs never fold — a table locks the tab, so grid display is a read-only concern.
+    private var renderSegments: [BlockSegment] {
+        let blocks = doc.blocks
+        guard tabReadOnly else {
+            return blocks.enumerated().map { .block(index: $0.offset, block: $0.element) }
+        }
+        var segments: [BlockSegment] = []
+        var i = 0
+        while i < blocks.count {
+            if isPipeLine(blocks[i].text) {
+                let startID = blocks[i].id
+                var lines: [String] = []
+                while i < blocks.count, isPipeLine(blocks[i].text) {
+                    lines.append(blocks[i].text)
+                    i += 1
+                }
+                segments.append(.table(id: startID, lines: lines))
+            } else {
+                segments.append(.block(index: i, block: blocks[i]))
+                i += 1
+            }
+        }
+        return segments
+    }
+
+    private func isPipeLine(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespaces).hasPrefix("|")
+    }
+
     @ViewBuilder
     private func blockRow(index: Int, block: RichDoc.Block) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            if block.kind.isList {
-                Text(listGlyph(for: index, block: block))
-                    .font(AtlasTheme.Font.body())
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    .frame(minWidth: 18, alignment: .trailing)
+        // An `![image:<id>]` block renders as the actual re-hosted image (both editable
+        // and read-only tabs). The block stays in `doc.blocks`, so deleting it removes
+        // the image on save — intentional.
+        if let objectId = imagePlaceholderObjectId(block.text) {
+            imageBlock(objectId: objectId, placeholder: block.text)
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if block.kind.isList {
+                    Text(listGlyph(for: index, block: block))
+                        .font(AtlasTheme.Font.body())
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .frame(minWidth: 18, alignment: .trailing)
+                }
+                TextField("", text: textBinding(for: index), axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(font(for: block.kind))
+                    .bold(block.uniformMarks.contains(.bold))
+                    .italic(block.uniformMarks.contains(.italic))
+                    .underline(block.uniformMarks.contains(.underline))
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .focused($focusedBlock, equals: block.id)
+                    .onSubmit { addBlockAfter(index) }
             }
-            TextField("", text: textBinding(for: index), axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(font(for: block.kind))
-                .bold(block.uniformMarks.contains(.bold))
-                .italic(block.uniformMarks.contains(.italic))
-                .underline(block.uniformMarks.contains(.underline))
-                .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                .focused($focusedBlock, equals: block.id)
-                .onSubmit { addBlockAfter(index) }
         }
+    }
+
+    /// The re-hosted image for an `![image:<objectId>]` placeholder, or the literal
+    /// placeholder text when no image row exists (older pull, or the fetch never landed).
+    @ViewBuilder
+    private func imageBlock(objectId: String, placeholder: String) -> some View {
+        if let image = docImages.first(where: { $0.objectId == objectId }) {
+            DocImageBlockView(image: image,
+                              download: { try await state.downloadDocImage(path: $0) },
+                              placeholder: placeholder)
+        } else {
+            Text(placeholder)
+                .font(AtlasTheme.Font.body())
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+        }
+    }
+
+    /// The object id in an `![image:<id>]` line (trimmed), else nil. Mirrors the
+    /// edge function's `^!\[image:([^\]]+)\]$` placeholder grammar.
+    private func imagePlaceholderObjectId(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        let prefix = "![image:"
+        guard trimmed.hasPrefix(prefix), trimmed.hasSuffix("]") else { return nil }
+        let id = trimmed.dropFirst(prefix.count).dropLast()
+        return id.isEmpty || id.contains("]") ? nil : String(id)
     }
 
     private func listGlyph(for index: Int, block: RichDoc.Block) -> String {
