@@ -104,7 +104,7 @@ public struct ReferenceAttachment: Identifiable {
 /// `writable == false` ⇒ the tab contains content Atlas can't safely rewrite
 /// (table, image, exotic formatting — `readonlyReason`); the editor shows it
 /// read-only and the server refuses writes to it regardless.
-public struct DocNoteTab: Identifiable, Equatable {
+public struct DocNoteTab: Identifiable, Equatable, Hashable {
     public let id: UUID
     public let referenceID: UUID
     public let tabId: String

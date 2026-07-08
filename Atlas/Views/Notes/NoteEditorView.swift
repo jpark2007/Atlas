@@ -39,6 +39,22 @@ struct NoteEditorView: View {
     /// True while a manual "Sync now" reload is in flight.
     @State private var isSyncingNow = false
 
+    /// Per-tab Google Doc sync (beta). OFF ⇒ behavior is identical to single-tab today:
+    /// tabs never load, the switcher never renders, and saves take the legacy whole-file path.
+    @AppStorage("notes.perTabDocsSync.enabled") private var perTabSyncEnabled = false
+    /// Loaded tabs for a multi-tab Doc note (empty for single-tab docs or flag OFF). When
+    /// non-empty the editor is in per-tab mode: `doc` holds ONE tab, saves are tab-scoped.
+    @State private var docTabs: [DocNoteTab] = []
+    /// The tab whose `bodyMD` is currently loaded into `doc`.
+    @State private var selectedTab: DocNoteTab?
+    /// Per-tab dirty flag — the analogue of `isDirty` for the selected tab's body, so a
+    /// save/switch only pushes a tab the user actually edited (incl. style-only edits).
+    @State private var tabDirty = false
+    /// Legacy whole-file write refused because the Doc has tabs (flag OFF path).
+    @State private var showMultitabNotice = false
+    /// Per-tab write refused because the tab's live content is beyond the editable vocabulary.
+    @State private var showTabReadOnlyNotice = false
+
     private let onDone: ((Note) -> Void)?
     /// Overlay hosts (the corner note card) can't rely on `dismiss` — it only works
     /// in real presentations (sheets). They pass a close callback instead.
@@ -85,6 +101,18 @@ struct NoteEditorView: View {
             }
             baselineUpdatedAt = liveNote?.updatedAt ?? draft.updatedAt
         }
+        // Per-tab mode (flag ON + multi-tab Doc): load the tabs and switch `doc` to the
+        // first tab's body. Single-tab Docs and flag OFF fall through untouched — `docTabs`
+        // stays empty and every path below behaves exactly as it does today.
+        .task {
+            guard perTabSyncEnabled, let ref = docReference else { return }
+            let tabs = await state.loadDocTabs(referenceID: ref.id)
+            guard tabs.count > 1 else { return }
+            docTabs = tabs
+            let first = tabs[0]
+            selectedTab = first
+            doc = RichDoc.fromMarkdown(first.bodyMD)
+        }
         // Keep an OPEN Doc-note fresh without navigating away: pull the latest from the
         // Atlas cloud on a gentle cadence (the cron writes Google→DB every ~5 min; this
         // surfaces it into `state.notes`). Native notes have nothing to pull — Doc-only.
@@ -115,6 +143,16 @@ struct NoteEditorView: View {
         } message: {
             Text("Your edits and the Google Doc have diverged. Overwrite replaces the Doc with your version; keeping Google's discards your local edits.")
         }
+        .alert("This Doc has multiple tabs", isPresented: $showMultitabNotice) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Atlas kept your local copy but didn't push it — enable per-tab sync in Settings → General, or edit this Doc in Google Docs.")
+        }
+        .alert("Tab is read-only", isPresented: $showTabReadOnlyNotice) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("This tab's content (table, image, or rich formatting) can only be edited in Google Docs.")
+        }
     }
 
     private var core: some View {
@@ -130,7 +168,24 @@ struct NoteEditorView: View {
             if let ref = docReference { docBadgeRow(ref) }
             if newerVersionAvailable { newerVersionBanner }
 
+            if !docTabs.isEmpty {
+                AtlasSegmentedPicker(
+                    options: docTabs,
+                    label: { $0.displayTitle(in: docTabs) },
+                    selection: Binding(
+                        get: { selectedTab ?? docTabs[0] },
+                        set: { switchTab(to: $0) }
+                    )
+                )
+                .padding(.horizontal, 18)
+                .padding(.vertical, 6)
+                if let tab = selectedTab, !tab.writable {
+                    readOnlyTabBanner(tab)
+                }
+            }
+
             styleBar
+                .disabled(tabReadOnly)
 
             Divider().overlay(AtlasTheme.Colors.border)
 
@@ -144,6 +199,7 @@ struct NoteEditorView: View {
                 .padding(.vertical, 12)
             }
             .frame(minHeight: 200)
+            .disabled(tabReadOnly)
 
             Divider().overlay(AtlasTheme.Colors.border)
 
@@ -160,6 +216,14 @@ struct NoteEditorView: View {
     }
 
     private var docURL: URL? { docReference?.externalURL }
+
+    /// True when the selected multi-tab Doc tab is read-only — locks the style bar and
+    /// block editors. `false` for single-tab / flag-OFF (no `selectedTab`).
+    private var tabReadOnly: Bool { selectedTab.map { !$0.writable } ?? false }
+
+    /// The tab a per-tab save targets. `nil` for single-tab / flag-OFF (the legacy
+    /// whole-file write-back path); the selected tab's id in per-tab mode.
+    private var activeTabId: String? { docTabs.isEmpty ? nil : selectedTab?.tabId }
 
     /// The persisted note this editor backs, looked up live so a cron pull is observable
     /// (the passed `note` is a value snapshot that never updates on its own).
@@ -286,6 +350,51 @@ struct NoteEditorView: View {
         .background(AtlasTheme.Colors.warning.opacity(0.08))
     }
 
+    /// Shown for a read-only tab (table/image/rich formatting Atlas can't safely rewrite):
+    /// editing is locked and the escape hatch deep-links to THIS tab in Google Docs.
+    /// Mirrors `newerVersionBanner`'s warning-tint styling.
+    private func readOnlyTabBanner(_ tab: DocNoteTab) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "lock.doc")
+                .font(.system(size: 11))
+                .foregroundStyle(AtlasTheme.Colors.accentText)
+            Text("This tab has content Atlas can't safely edit\(tab.readonlyReason.map { " (\($0))" } ?? "") — read-only here.")
+                .font(AtlasTheme.Font.small())
+                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+            Spacer()
+            Button {
+                if let ref = docReference, let fileId = ref.driveFileId,
+                   let url = URL(string: "https://docs.google.com/document/d/\(fileId)/edit?tab=\(tab.tabId)") {
+                    openURL(url)
+                }
+            } label: {
+                Text("Open in Google Docs")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
+            }
+            .buttonStyle(.plain)
+            .help("Edit this tab in Google Docs")
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 6)
+        .background(AtlasTheme.Colors.warning.opacity(0.08))
+    }
+
+    /// Switch the editor to another tab, saving the current tab first if it was edited
+    /// (fire-and-forget; the editor stays open regardless of the push outcome). Reloads
+    /// the target tab's Markdown into `doc` and clears the per-tab dirty flag.
+    private func switchTab(to tab: DocNoteTab) {
+        guard tab.id != selectedTab?.id else { return }
+        if tabDirty, let current = selectedTab, current.writable, let ref = docReference {
+            let markdown = doc.markdown
+            let service = writeBackService
+            Task { _ = try? await service?.writeBack(reference: ref, markdown: markdown, tabId: current.tabId, overwrite: false) }
+        }
+        selectedTab = tab
+        doc = RichDoc.fromMarkdown(tab.bodyMD)
+        tabDirty = false
+    }
+
     /// React to a cron pull that advanced the backing note past our loaded baseline.
     /// Clean buffer → adopt Google's version live. Dirty buffer → keep the user's work
     /// and only raise the banner.
@@ -332,7 +441,7 @@ struct NoteEditorView: View {
 
     private func levelButton(_ title: String, kind: RichDoc.BlockKind) -> some View {
         let active = isActiveKind(kind)
-        return Button { doc.setKind(kind, at: activeIndex); isDirty = true } label: {
+        return Button { doc.setKind(kind, at: activeIndex); isDirty = true; tabDirty = true } label: {
             Text(title)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(active ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
@@ -349,7 +458,7 @@ struct NoteEditorView: View {
 
     private func markButton(_ systemImage: String, mark: RichDoc.InlineMarks) -> some View {
         let active = isActiveMark(mark)
-        return Button { doc.toggleMark(mark, at: activeIndex); isDirty = true } label: {
+        return Button { doc.toggleMark(mark, at: activeIndex); isDirty = true; tabDirty = true } label: {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(active ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
@@ -365,7 +474,7 @@ struct NoteEditorView: View {
 
     private func listButton(_ systemImage: String, kind: RichDoc.BlockKind) -> some View {
         let active = isActiveKind(kind)
-        return Button { doc.toggleListKind(kind, at: activeIndex); isDirty = true } label: {
+        return Button { doc.toggleListKind(kind, at: activeIndex); isDirty = true; tabDirty = true } label: {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(active ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
@@ -486,12 +595,14 @@ struct NoteEditorView: View {
                 guard doc.blocks.indices.contains(index) else { return }
                 doc.blocks[index].setText(newValue)
                 isDirty = true
+                tabDirty = true
             })
     }
 
     private func addBlockAfter(_ index: Int) {
         let newID = doc.insertBlock(after: index)
         isDirty = true
+        tabDirty = true
         DispatchQueue.main.async { focusedBlock = newID }
     }
 
@@ -530,6 +641,19 @@ struct NoteEditorView: View {
     /// to Google through the write-back guard. With no service wired yet the local
     /// save still lands and the cron reconciles later.
     private func commitDocNote(_ ref: Reference) {
+        // Per-tab mode: notes.body is a cron-owned preview, so a single tab's Markdown must
+        // never persist over it. A read-only or unedited tab has nothing to push — just close.
+        if !docTabs.isEmpty {
+            if tabReadOnly || !tabDirty {
+                closeHost()
+                return
+            }
+            guard let service = writeBackService else { closeHost(); return }
+            isPushing = true
+            Task { await push(ref: ref, service: service, overwrite: false) }
+            return
+        }
+        // Single-tab / flag-OFF: legacy whole-file path, unchanged.
         guard let service = writeBackService else {
             persistDocNoteBody()
             closeHost()
@@ -543,24 +667,31 @@ struct NoteEditorView: View {
     private func push(ref: Reference, service: DocNoteWriteBack, overwrite: Bool) async {
         defer { isPushing = false }
         do {
-            switch try await service.writeBack(reference: ref, markdown: doc.markdown, tabId: nil, overwrite: overwrite) {
+            switch try await service.writeBack(reference: ref, markdown: doc.markdown, tabId: activeTabId, overwrite: overwrite) {
             case .written(let modifiedTime):
                 // Sync the in-memory baseline to what the server just re-stored, so a
                 // second save this session doesn't compare against a now-stale time.
                 if let modifiedTime { state.markReferenceSynced(ref.id, modifiedTime: modifiedTime) }
-                persistDocNoteBody()
+                // Single-tab persists the whole-note Markdown; a multi-tab Doc's notes.body is
+                // the cron-owned preview the server refreshes, so one tab must not overwrite it.
+                if docTabs.isEmpty { persistDocNoteBody() }
                 closeHost()
             case .changedInGoogle:
                 showStaleConflict = true   // surface refresh/overwrite; stay open
-            case .multitabUnsupported, .tabReadOnly:
-                // Task 8 wires user-facing alerts; for now keep the local copy and close.
+            case .multitabUnsupported:
+                // Legacy whole-file path (flag OFF) refused because the Doc grew tabs: keep the
+                // local copy and tell the user nothing was pushed. Stay open behind the alert.
                 persistDocNoteBody()
-                closeHost()
+                showMultitabNotice = true
+            case .tabReadOnly:
+                // Server re-verified this tab as read-only since our pull (it gained rich
+                // content in Google). Don't clobber the preview; surface the notice, stay open.
+                showTabReadOnlyNotice = true
             }
         } catch {
-            // Never lose the user's work: keep the local Markdown copy and close;
-            // the cron will push it on the next tick.
-            persistDocNoteBody()
+            // Never lose the single-tab user's work: keep the local Markdown copy and close;
+            // the cron will push it on the next tick. Multi-tab keeps the cron preview intact.
+            if docTabs.isEmpty { persistDocNoteBody() }
             closeHost()
         }
     }
