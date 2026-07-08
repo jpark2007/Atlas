@@ -1073,7 +1073,7 @@ public final class AtlasDB {
     /// Delete-then-insert the caller's own published window — simple and
     /// self-healing, matching the plan's stated strategy over per-event diffing.
     public func publishAvailability(_ blocks: [AvailabilityBlockRow], windowStart: Date, windowEnd: Date) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         // Delete the caller's existing rows whose start_at falls in the window.
         try await send(method: "DELETE", table: "availability_blocks",
                        query: [
@@ -1092,8 +1092,8 @@ public final class AtlasDB {
     }
 
     public func setSharingPref(kind: String, targetId: UUID, detailLevel: String) async throws {
-        let sess = try requireSession()
-        let pref = SharingPrefRow(userId: try currentUserId(), kind: kind, targetId: targetId, detailLevel: detailLevel)
+        let sess = try await requireSession()
+        let pref = SharingPrefRow(userId: try await currentUserId(), kind: kind, targetId: targetId, detailLevel: detailLevel)
         let body = try isoEncoder.encode(pref)
         try await send(method: "POST", table: "sharing_prefs",
                        query: [URLQueryItem(name: "on_conflict", value: "user_id,kind,target_id")],

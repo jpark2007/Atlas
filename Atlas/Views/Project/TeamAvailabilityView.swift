@@ -10,6 +10,12 @@ struct TeamAvailabilityView: View {
     let project: Project
     @EnvironmentObject var state: AppState
 
+    /// Resolved lazily via `.task` since `AtlasDB.currentUserId()` is async and
+    /// a `View`'s computed properties can't be. Nil briefly on first appearance
+    /// (renders the full roster including self for that one frame) then excludes
+    /// self once resolved.
+    @State private var myUserId: UUID?
+
     private var days: [Date] {
         let cal = Calendar.current
         let start = cal.startOfDay(for: Date())
@@ -17,10 +23,9 @@ struct TeamAvailabilityView: View {
     }
 
     private var members: [ProjectMemberRow] {
-        guard let myUserId = try? state.db?.currentUserId() else {
-            return state.projectMembers[project.id] ?? []
-        }
-        return (state.projectMembers[project.id] ?? []).filter { $0.userId != myUserId }
+        let roster = state.projectMembers[project.id] ?? []
+        guard let myUserId else { return roster }
+        return roster.filter { $0.userId != myUserId }
     }
 
     var body: some View {
@@ -54,6 +59,9 @@ struct TeamAvailabilityView: View {
             Divider()
         }
         .padding(.vertical, 8)
+        .task {
+            myUserId = try? await state.db?.currentUserId()
+        }
     }
 
     @ViewBuilder

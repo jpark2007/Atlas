@@ -218,7 +218,7 @@ final class AppState: ObservableObject {
     /// combined — fire-and-forget, never throws to the caller. Delete-then-insert
     /// on the server keeps this self-healing with no per-event diffing.
     func publishAvailability() async {
-        guard let db, let userId = try? db.currentUserId() else { return }
+        guard let db, let userId = try? await db.currentUserId() else { return }
         let cal = Calendar.current
         let windowStart = cal.startOfDay(for: Date())
         guard let windowEnd = cal.date(byAdding: .day, value: 14, to: windowStart) else { return }
@@ -248,7 +248,7 @@ final class AppState: ObservableObject {
     /// `project` (excluding the signed-in user, whose own `events` are
     /// already the source of truth locally).
     func loadTeammateAvailability(forProject project: Project) async {
-        guard let db, let myUserId = try? db.currentUserId() else { return }
+        guard let db, let myUserId = try? await db.currentUserId() else { return }
         let memberIds = (projectMembers[project.id] ?? []).map(\.userId).filter { $0 != myUserId }
         guard !memberIds.isEmpty else { return }
         let cal = Calendar.current
