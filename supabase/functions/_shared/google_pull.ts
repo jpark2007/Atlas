@@ -129,6 +129,39 @@ async function docsGetWithTabs(accessToken: string, fileId: string): Promise<unk
   return await res.json();
 }
 
+// ── Image re-host helpers ────────────────────────────────────────
+/** Map a Content-Type to the storage extension Docs' insertInlineImage accepts
+ *  (PNG/JPEG/GIF only). Anything else ⇒ null (caller locks the tab). */
+function extForContentType(contentType: string): "png" | "jpg" | "gif" | null {
+  const ct = contentType.split(";")[0].trim().toLowerCase();
+  if (ct === "image/png") return "png";
+  if (ct === "image/jpeg") return "jpg";
+  if (ct === "image/gif") return "gif";
+  return null;
+}
+
+/** Download a Docs image from its short-lived, possession-based contentUri. It is
+ *  fetched with NO auth header first (the URI itself is the credential); on
+ *  401/403 we retry once WITH the Bearer token. Throws on any other failure. */
+async function fetchDocImage(
+  contentUri: string | null,
+  accessToken: string,
+): Promise<{ bytes: Uint8Array; contentType: string }> {
+  if (!contentUri) throw new Error("image has no contentUri");
+  let res = await fetch(contentUri);
+  if (res.status === 401 || res.status === 403) {
+    await res.body?.cancel();
+    res = await fetch(contentUri, { headers: { Authorization: `Bearer ${accessToken}` } });
+  }
+  if (!res.ok) {
+    await res.body?.cancel();
+    throw new Error(`image fetch ${res.status}`);
+  }
+  const contentType = res.headers.get("content-type") ?? "";
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  return { bytes, contentType };
+}
+
 // ── doc_note pull ───────────────────────────────────────────────
 // A minimal projection of a project_references row for the doc_note pull.
 export interface DocNoteRef {
@@ -203,6 +236,51 @@ export async function pullDocNoteReference(
     // Multi-tab Doc: per-tab storage + concatenated preview in notes.body. Tabs are
     // keyed by NOTE (v2) — skip entirely for a note-less doc_note ref.
     if (!dryRun && ref.note_id) {
+      const noteId = ref.note_id;
+      // ── Re-host inline images to Storage while contentUri is still fresh ──
+      // Only WRITABLE tabs are ever rewritten, so only their images need re-hosting
+      // (read-only tabs are display-only). A per-image failure or an unsupported
+      // format downgrades just THAT tab to read-only for this pull (its flags are
+      // written by the upsert below); other tabs continue. `harvestedIds` is every
+      // image that still exists in the Doc — the prune set.
+      const harvestedIds = new Set<string>();
+      for (const t of tabs) for (const img of t.images) harvestedIds.add(img.objectId);
+      let allImagesOk = true;
+      for (const t of tabs) {
+        if (!t.writable) continue;
+        for (const img of t.images) {
+          try {
+            const { bytes, contentType } = await fetchDocImage(img.contentUri, accessToken);
+            const ext = extForContentType(contentType);
+            if (!ext) {
+              t.writable = false;
+              t.readonlyReason = "unsupported image format";
+              allImagesOk = false;
+              break;
+            }
+            const path = `${userId}/${noteId}/${img.objectId}.${ext}`;
+            const { error: sErr } = await admin.storage.from("doc-images")
+              .upload(path, bytes, { contentType, upsert: true });
+            if (sErr) throw new Error(sErr.message);
+            const { error: iErr } = await admin.from("doc_note_images").upsert({
+              user_id: userId,
+              note_id: noteId,
+              tab_id: t.tabId,
+              object_id: img.objectId,
+              storage_path: path,
+              width_pt: img.widthPt,
+              height_pt: img.heightPt,
+              crop_locked: img.cropLocked,
+            }, { onConflict: "note_id,object_id" });
+            if (iErr) throw new Error(iErr.message);
+          } catch (_e) {
+            t.writable = false;
+            t.readonlyReason = "image fetch failed";
+            allImagesOk = false;
+            break;
+          }
+        }
+      }
       const { error: uErr } = await admin.from("doc_note_tabs").upsert(
         tabs.map((t) => ({
           user_id: userId,
@@ -226,6 +304,19 @@ export async function pullDocNoteReference(
         .delete().eq("note_id", ref.note_id).eq("user_id", userId)
         .not("tab_id", "in", `(${liveIds.map((id) => `"${id}"`).join(",")})`);
       if (gErr) throw new Error(`tab prune failed: ${gErr.message}`);
+      // Drop image rows for objects no longer in the Doc — but ONLY on a fully
+      // successful pull. A partial pull (an image fetch failed) must keep every old
+      // mapping, because the editor's still-old body_md placeholders point at them
+      // and a later write may re-insert from those Storage copies.
+      if (allImagesOk) {
+        let pruneQ = admin.from("doc_note_images")
+          .delete().eq("note_id", noteId).eq("user_id", userId);
+        if (harvestedIds.size) {
+          pruneQ = pruneQ.not("object_id", "in", `(${[...harvestedIds].map((id) => `"${id}"`).join(",")})`);
+        }
+        const { error: ipErr } = await pruneQ;
+        if (ipErr) throw new Error(`image prune failed: ${ipErr.message}`);
+      }
       const { error: nErr } = await admin.from("notes")
         .update({ body: tabsPreviewMarkdown(tabs), updated_at: runISO })
         .eq("id", ref.note_id).eq("user_id", userId);

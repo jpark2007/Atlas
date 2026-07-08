@@ -19,6 +19,14 @@
  * on normal blocks). See doc_tabs_test.ts "divergence:" cases.
  */
 
+export interface DocImage {
+  objectId: string;
+  contentUri: string | null;
+  widthPt: number | null;
+  heightPt: number | null;
+  cropLocked: boolean;
+}
+
 export interface DocTab {
   tabId: string;
   parentTabId: string | null;
@@ -27,6 +35,7 @@ export interface DocTab {
   markdown: string;
   writable: boolean;
   readonlyReason: string | null;
+  images: DocImage[];
 }
 
 export interface Span {
@@ -78,6 +87,7 @@ function walk(tabs: any[], parent: string | null, acc: DocTab[]) {
       markdown: conv.markdown,
       writable: conv.reason === null,
       readonlyReason: conv.reason,
+      images: conv.images,
     });
     if (Array.isArray(t?.childTabs) && t.childTabs.length) {
       walk(t.childTabs, tp.tabId as string, acc);
@@ -88,9 +98,13 @@ function walk(tabs: any[], parent: string | null, acc: DocTab[]) {
 // ── Docs JSON → markdown (one tab) ──────────────────────────────────────────
 
 // deno-lint-ignore no-explicit-any
-function tabToMarkdown(documentTab: any): { markdown: string; reason: string | null } {
+function tabToMarkdown(documentTab: any): { markdown: string; reason: string | null; images: DocImage[] } {
   const content: any[] = documentTab?.body?.content ?? [];
   const lists: any = documentTab?.lists ?? {};
+  // Inline objects (images) live PER-TAB when the Doc is fetched with
+  // includeTabsContent=true, keyed by the inlineObjectId in paragraph elements.
+  const inlineObjects: any = documentTab?.inlineObjects ?? {};
+  const images: DocImage[] = [];
   let reason: string | null = null;
   const flag = (r: string) => { if (reason === null) reason = r; };
   const lines: string[] = [];
@@ -142,14 +156,33 @@ function tabToMarkdown(documentTab: any): { markdown: string; reason: string | n
     }
 
     let line = "";
+    let hadImage = false;
+    let hadText = false;
     for (const e of p.elements ?? []) {
       if (e.textRun !== undefined) {
         const runReason = runToMarkdown(e.textRun);
         line += runReason.md;
+        if (runReason.md !== "") hadText = true;
         if (runReason.reason) flag(runReason.reason);
       } else if (e.inlineObjectElement !== undefined) {
-        flag("image");
-        line += "![image]";
+        // Inline image: harvest it (for re-host at pull time + re-insert at write
+        // time) and emit a placeholder token. A cropped/rotated/adjusted image
+        // can't round-trip through the dialect, so it locks the tab.
+        const objectId = e.inlineObjectElement.inlineObjectId as string;
+        const embedded = inlineObjects[objectId]?.inlineObjectProperties?.embeddedObject ?? {};
+        const imgProps = embedded.imageProperties ?? {};
+        const size = embedded.size ?? {};
+        const cropLocked = isCropLocked(imgProps);
+        images.push({
+          objectId,
+          contentUri: typeof imgProps.contentUri === "string" ? imgProps.contentUri : null,
+          widthPt: typeof size.width?.magnitude === "number" ? size.width.magnitude : null,
+          heightPt: typeof size.height?.magnitude === "number" ? size.height.magnitude : null,
+          cropLocked,
+        });
+        if (cropLocked) flag("cropped image");
+        hadImage = true;
+        line += `![image:${objectId}]`;
       } else if (e.person !== undefined || e.richLink !== undefined) {
         flag("smart chip");
       } else if (e.pageBreak !== undefined || e.columnBreak !== undefined ||
@@ -158,6 +191,11 @@ function tabToMarkdown(documentTab: any): { markdown: string; reason: string | n
         flag("unsupported inline element");
       }
     }
+    // The renderer can only re-insert an image that occupies its OWN clean line
+    // (`![image:id]`). An image sharing its paragraph with text — or carrying a
+    // heading/list prefix — can't round-trip, so it locks the tab. A solo plain
+    // image is the editable case (no flag).
+    if (hadImage && (hadText || prefix !== "")) flag("inline image in text");
     // Normal paragraphs (no heading/list prefix) get their leading block marker
     // escaped, mirroring RichDocMarkdown.swift's `escapingLeadingMarker` so
     // literal "# …"/"- …"/"N. …" text doesn't re-parse as structure.
@@ -166,7 +204,19 @@ function tabToMarkdown(documentTab: any): { markdown: string; reason: string | n
   });
 
   const markdown = lines.join("\n") + (lines.length ? "\n" : "");
-  return { markdown, reason };
+  return { markdown, reason, images };
+}
+
+/** True when an image carries a crop, rotation, or brightness/contrast/
+ *  transparency adjustment (any non-zero) — none of which survive a dialect
+ *  round-trip, so such an image locks its tab (re-insert would drop them). */
+// deno-lint-ignore no-explicit-any
+function isCropLocked(imgProps: any): boolean {
+  if (!imgProps) return false;
+  const nz = (v: unknown) => typeof v === "number" && v !== 0;
+  const cp = imgProps.cropProperties ?? {};
+  if (nz(cp.offsetLeft) || nz(cp.offsetRight) || nz(cp.offsetTop) || nz(cp.offsetBottom) || nz(cp.angle)) return true;
+  return nz(imgProps.angle) || nz(imgProps.brightness) || nz(imgProps.contrast) || nz(imgProps.transparency);
 }
 
 // deno-lint-ignore no-explicit-any
@@ -266,10 +316,31 @@ export function parseInline(src: string): Span[] {
 
 // ── Markdown → batchUpdate requests (one tab) ───────────────────────────────
 
+/** Thrown by renderRequests when a `![image:id]` placeholder has no entry in the
+ *  `images` map (its re-hosted copy is missing). Writeback maps this to a 409
+ *  tab_readonly so the tab isn't corrupted by dropping the image. */
+export class UnmappedImageError extends Error {
+  objectId: string;
+  constructor(objectId: string) {
+    super(`unmapped image: ${objectId}`);
+    this.name = "UnmappedImageError";
+    this.objectId = objectId;
+  }
+}
+
 /** Replace the ENTIRE content of tab `tabId` (current body endIndex `endIndex`)
  *  with `markdown`. Mirrors GoogleDocsMapper.batchUpdateBody's request order,
- *  with every location/range scoped by tabId. Indices are UTF-16 (JS .length). */
-export function renderRequests(tabId: string, endIndex: number, markdown: string): unknown[] {
+ *  with every location/range scoped by tabId. Indices are UTF-16 (JS .length).
+ *
+ *  `images` maps an image objectId → its re-hosted, publicly-fetchable URI (+
+ *  preserved size). A `![image:id]` line re-inserts that image via
+ *  insertInlineImage; an id absent from the map throws UnmappedImageError. */
+export function renderRequests(
+  tabId: string,
+  endIndex: number,
+  markdown: string,
+  images?: Record<string, { uri: string; widthPt?: number | null; heightPt?: number | null }>,
+): unknown[] {
   const requests: unknown[] = [];
   if (endIndex > 2) {
     requests.push({ deleteContentRange: { range: { tabId, startIndex: 1, endIndex: endIndex - 1 } } });
@@ -283,6 +354,36 @@ export function renderRequests(tabId: string, endIndex: number, markdown: string
   let numbered = 0;
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];
+    const isLast = i === lines.length - 1;
+
+    // ── Image line: `![image:<objectId>]` alone on its line re-inserts the image ──
+    // An inline image occupies exactly 1 UTF-16 unit and gets NO paragraph style.
+    const imgMatch = /^!\[image:([^\]]+)\]$/.exec(rawLine);
+    if (imgMatch) {
+      numbered = 0;
+      const objectId = imgMatch[1];
+      const img = images?.[objectId];
+      if (!img) throw new UnmappedImageError(objectId);
+      const insert: Record<string, unknown> = { location: { tabId, index }, uri: img.uri };
+      if (img.widthPt != null && img.heightPt != null) {
+        insert.objectSize = {
+          width: { magnitude: img.widthPt, unit: "PT" },
+          height: { magnitude: img.heightPt, unit: "PT" },
+        };
+      }
+      requests.push({ insertInlineImage: insert });
+      // The image is 1 unit; unless it's the last line, terminate its paragraph
+      // with a newline at index+1. Advance 2 (image + "\n"), or 1 when last (the
+      // tab's mandatory final paragraph mark supplies the terminal newline).
+      if (!isLast) {
+        requests.push({ insertText: { location: { tabId, index: index + 1 }, text: "\n" } });
+        index += 2;
+      } else {
+        index += 1;
+      }
+      continue;
+    }
+
     let kind: "h1" | "h2" | "bullet" | "numbered" | "normal" = "normal";
     let rest = rawLine;
     const num = /^(\d+)\. /.exec(rawLine);
@@ -298,7 +399,6 @@ export function renderRequests(tabId: string, endIndex: number, markdown: string
     // supplies the terminal newline — so the LAST line must NOT add its own "\n",
     // or every write grows the tab by one empty paragraph (cumulative drift,
     // caught by the live E2E round-trip proof).
-    const isLast = i === lines.length - 1;
     const text = isLast ? content : content + "\n";
     const start = index;
     const end = start + content.length; // style ranges exclude the newline

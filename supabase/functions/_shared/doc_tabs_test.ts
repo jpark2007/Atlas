@@ -1,5 +1,5 @@
 // supabase/functions/_shared/doc_tabs_test.ts
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { readTabs, countTabs, tabsPreviewMarkdown, parseInline } from "./doc_tabs.ts";
 
 // Minimal fixture mirroring the real documents.get?includeTabsContent=true shape
@@ -185,7 +185,7 @@ Deno.test("divergence: empty styled run drops marks (no degenerate '****')", () 
 });
 
 // ── Task 3: renderer (markdown → tabId-scoped batchUpdate requests) ─────────
-import { renderRequests } from "./doc_tabs.ts";
+import { renderRequests, UnmappedImageError } from "./doc_tabs.ts";
 
 Deno.test("renderRequests: clears the tab then rebuilds line by line", () => {
   const reqs = renderRequests("t.X", 20, "# Head\nplain **bold**\n- item\n") as any[];
@@ -265,4 +265,156 @@ Deno.test("drift regression: inserted text + mandatory newline == canonical md",
     // Docs rejects empty insertText — none may ever be emitted.
     assertEquals(inserts.every((t: string) => t.length > 0), true, `empty insert for ${JSON.stringify(md)}`);
   }
+});
+
+// ── Task 5: image pipeline (harvest + placeholder + re-insert) ──────────────
+
+// One tab: an intro paragraph then a solo-paragraph inline image, with the image
+// living in the per-tab inlineObjects map (documents.get?includeTabsContent=true).
+const IMAGE_DOC = {
+  tabs: [{
+    tabProperties: { tabId: "t.img", title: "Img", index: 0 },
+    documentTab: {
+      body: { content: [
+        { sectionBreak: {} },
+        { paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+            elements: [{ textRun: { content: "intro\n", textStyle: {} } }] } },
+        { paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+            elements: [
+              { inlineObjectElement: { inlineObjectId: "kix.img1" } },
+              { textRun: { content: "\n", textStyle: {} } },
+            ] } },
+      ] },
+      inlineObjects: {
+        "kix.img1": { inlineObjectProperties: { embeddedObject: {
+          imageProperties: { contentUri: "https://lh3.example/img1" },
+          size: { width: { magnitude: 200, unit: "PT" }, height: { magnitude: 100, unit: "PT" } },
+        } } },
+      },
+      lists: {},
+    },
+    childTabs: [],
+  }],
+};
+
+Deno.test("image harvest: solo-paragraph image stays writable + emits id placeholder", () => {
+  const t = readTabs(IMAGE_DOC)[0];
+  assertEquals(t.writable, true);
+  assertEquals(t.readonlyReason, null);
+  assertEquals(t.markdown, "intro\n![image:kix.img1]\n");
+  assertEquals(t.images.length, 1);
+  assertEquals(t.images[0], {
+    objectId: "kix.img1",
+    contentUri: "https://lh3.example/img1",
+    widthPt: 200,
+    heightPt: 100,
+    cropLocked: false,
+  });
+});
+
+Deno.test("image harvest: cropped image flags the tab read-only ('cropped image')", () => {
+  const doc = { tabs: [{
+    tabProperties: { tabId: "t.crop", title: "Crop", index: 0 },
+    documentTab: {
+      body: { content: [
+        { sectionBreak: {} },
+        { paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+            elements: [
+              { inlineObjectElement: { inlineObjectId: "kix.c" } },
+              { textRun: { content: "\n", textStyle: {} } },
+            ] } },
+      ] },
+      inlineObjects: {
+        "kix.c": { inlineObjectProperties: { embeddedObject: {
+          imageProperties: { contentUri: "https://lh3.example/c", cropProperties: { offsetLeft: 0.1 } },
+          size: { width: { magnitude: 50, unit: "PT" }, height: { magnitude: 50, unit: "PT" } },
+        } } },
+      },
+      lists: {},
+    },
+    childTabs: [],
+  }] };
+  const t = readTabs(doc)[0];
+  assertEquals(t.writable, false);
+  assertEquals(t.readonlyReason, "cropped image");
+  assertEquals(t.images[0].cropLocked, true);
+  // Placeholder is still emitted so the editor can display the (read-only) image.
+  assertEquals(t.markdown.includes("![image:kix.c]"), true);
+});
+
+Deno.test("image harvest: image sharing a line with text flags 'inline image in text'", () => {
+  const doc = { tabs: [{
+    tabProperties: { tabId: "t.mix", title: "Mix", index: 0 },
+    documentTab: {
+      body: { content: [
+        { sectionBreak: {} },
+        { paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+            elements: [
+              { textRun: { content: "before ", textStyle: {} } },
+              { inlineObjectElement: { inlineObjectId: "kix.m" } },
+              { textRun: { content: " after\n", textStyle: {} } },
+            ] } },
+      ] },
+      inlineObjects: {
+        "kix.m": { inlineObjectProperties: { embeddedObject: {
+          imageProperties: { contentUri: "https://lh3.example/m" }, size: {},
+        } } },
+      },
+      lists: {},
+    },
+    childTabs: [],
+  }] };
+  const t = readTabs(doc)[0];
+  assertEquals(t.writable, false);
+  assertEquals(t.readonlyReason, "inline image in text");
+  // Missing dimensions come through as null (never 0).
+  assertEquals(t.images[0].widthPt, null);
+  assertEquals(t.images[0].heightPt, null);
+});
+
+Deno.test("renderRequests: known image line emits insertInlineImage + correct index accounting", () => {
+  const images = { "kix.a": { uri: "https://signed/a", widthPt: 200, heightPt: 100 } };
+  // image (own line, NOT last) then a text line.
+  const reqs = renderRequests("t.X", 2, "![image:kix.a]\nafter\n", images) as any[];
+  // image = 1 UTF-16 unit at index 1, WITH objectSize; no paragraph style.
+  assertEquals(reqs[0], { insertInlineImage: {
+    location: { tabId: "t.X", index: 1 }, uri: "https://signed/a",
+    objectSize: { width: { magnitude: 200, unit: "PT" }, height: { magnitude: 100, unit: "PT" } },
+  } });
+  // paragraph-terminating newline at index+1 (image was not the last line).
+  assertEquals(reqs[1], { insertText: { location: { tabId: "t.X", index: 2 }, text: "\n" } });
+  // "after" now starts at index 3 (image 1 + newline 1).
+  assertEquals(reqs[2], { insertText: { location: { tabId: "t.X", index: 3 }, text: "after" } });
+  assertEquals(reqs[3], { updateParagraphStyle: {
+    range: { tabId: "t.X", startIndex: 3, endIndex: 8 },
+    paragraphStyle: { namedStyleType: "NORMAL_TEXT" }, fields: "namedStyleType" } });
+  assertEquals(reqs.length, 4);
+});
+
+Deno.test("renderRequests: image as the LAST line adds no trailing newline (drift-safe)", () => {
+  const images = { "kix.a": { uri: "https://signed/a", widthPt: 10, heightPt: 20 } };
+  const reqs = renderRequests("t.X", 2, "text\n![image:kix.a]\n", images) as any[];
+  // "text\n" occupies 5 units (indices 1..5) → image inserts at index 6.
+  const last = reqs[reqs.length - 1] as any;
+  assertEquals(last, { insertInlineImage: {
+    location: { tabId: "t.X", index: 6 }, uri: "https://signed/a",
+    objectSize: { width: { magnitude: 10, unit: "PT" }, height: { magnitude: 20, unit: "PT" } },
+  } });
+  // No stray "\n" insert after the final image (the mandatory final mark supplies it).
+  const trailingNewlines = reqs.filter((r: any) => r.insertText?.text === "\n");
+  assertEquals(trailingNewlines.length, 0);
+});
+
+Deno.test("renderRequests: image without dimensions omits objectSize", () => {
+  const reqs = renderRequests("t.X", 2, "![image:kix.a]\n", { "kix.a": { uri: "https://signed/a" } }) as any[];
+  assertEquals(reqs[0], { insertInlineImage: { location: { tabId: "t.X", index: 1 }, uri: "https://signed/a" } });
+  assertEquals(reqs.length, 1);
+});
+
+Deno.test("renderRequests: unmapped image id throws UnmappedImageError", () => {
+  const err = assertThrows(
+    () => renderRequests("t.X", 2, "![image:kix.zzz]\n"),
+    UnmappedImageError,
+  ) as UnmappedImageError;
+  assertEquals(err.objectId, "kix.zzz");
 });

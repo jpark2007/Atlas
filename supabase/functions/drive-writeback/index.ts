@@ -41,7 +41,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { readTabs, renderRequests } from "../_shared/doc_tabs.ts";
+import { readTabs, renderRequests, UnmappedImageError } from "../_shared/doc_tabs.ts";
 
 const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const DRIVE_BASE = "https://www.googleapis.com/drive/v3";
@@ -251,7 +251,41 @@ Deno.serve(async (req: Request) => {
     const endIndex = tabEndIndex(docJson, tabId);
     if (endIndex === null) return json({ error: "Tab not found in Doc" }, 404);
 
-    const requests = renderRequests(tabId, endIndex, markdown);
+    // ── Image re-insert: mint a short-lived signed URL per re-hosted image so
+    // insertInlineImage can fetch it (Docs COPIES the bytes at insert, so 10 min
+    // is ample). Keyed by the object ids the pull harvested — the same ids the
+    // markdown's `![image:id]` placeholders carry. After the write the Doc assigns
+    // NEW object ids to the re-inserted images; we deliberately do NOT reconcile
+    // them here. The next pull re-harvests ids/URIs, re-upserts doc_note_images,
+    // AND regenerates body_md from the Doc — refreshing placeholders and rows
+    // TOGETHER. Until then the editor's old body_md still maps old ids → the
+    // still-present doc_note_images rows, so we must never delete those rows on
+    // write (the pull prunes stale ones once it re-baselines).
+    const { data: imageRows } = await admin.from("doc_note_images")
+      .select("object_id, storage_path, width_pt, height_pt")
+      .eq("user_id", userId).eq("note_id", noteId).eq("tab_id", tabId);
+    const images: Record<string, { uri: string; widthPt?: number | null; heightPt?: number | null }> = {};
+    for (const row of imageRows ?? []) {
+      const { data: signed } = await admin.storage.from("doc-images")
+        .createSignedUrl(row.storage_path as string, 600);
+      if (signed?.signedUrl) {
+        images[row.object_id as string] = {
+          uri: signed.signedUrl,
+          widthPt: row.width_pt as number | null,
+          heightPt: row.height_pt as number | null,
+        };
+      }
+    }
+
+    let requests: unknown[];
+    try {
+      requests = renderRequests(tabId, endIndex, markdown, images);
+    } catch (e) {
+      if (e instanceof UnmappedImageError) {
+        return json({ ok: false, error: "tab_readonly", reason: "unmapped image" }, 409);
+      }
+      throw e;
+    }
     const buRes = await fetch(
       `${DOCS_BASE}/documents/${encodeURIComponent(fileId)}:batchUpdate`,
       {
