@@ -1,4 +1,5 @@
 import XCTest
+@testable import AtlasCore
 @testable import Atlas
 
 /// WS-10 — the constrained notes document model. Pure value transforms, so the

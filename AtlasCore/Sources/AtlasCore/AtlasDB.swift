@@ -110,7 +110,7 @@ public struct SpaceRow: Codable {
     public var colorToken: String
     public var sort: Int
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id
         case userId     = "user_id"
         case name
@@ -147,7 +147,7 @@ public struct ProjectRow: Codable {
     public var overview: String
     public var spaceId: UUID?
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id
         case userId       = "user_id"
         case spaceName    = "space_name"
@@ -200,6 +200,7 @@ public struct TaskRow: Codable {
     public var dueDate: Date?
     public var status: String        // persisted as text — see encode/decode helpers below
     public var done: Bool
+    public var completedAt: Date?
     public var scheduledAt: Date?
     public var notes: String?
     public var noteId: UUID?
@@ -209,7 +210,7 @@ public struct TaskRow: Codable {
     public var assigneeId: UUID?
     public var createdBy: UUID?
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id
         case userId      = "user_id"
         case projectId   = "project_id"
@@ -218,6 +219,7 @@ public struct TaskRow: Codable {
         case dueDate     = "due_date"
         case status
         case done
+        case completedAt = "completed_at"
         case scheduledAt = "scheduled_at"
         case notes
         case noteId      = "note_id"
@@ -236,6 +238,7 @@ public struct TaskRow: Codable {
         self.dueDate     = t.dueDate
         self.status      = TaskRow.encode(status: t.status)
         self.done        = t.done
+        self.completedAt = t.completedAt
         self.scheduledAt = t.scheduledAt
         self.notes       = t.notes
         self.noteId      = t.noteID
@@ -252,6 +255,7 @@ public struct TaskRow: Codable {
                  dueLabel: TaskItem.dueLabel(for: dueDate),
                  status: TaskRow.decode(status: status),
                  done: done,
+                 completedAt: completedAt,
                  scheduledAt: scheduledAt,
                  dueDate: dueDate,
                  durationMin: durationMin,
@@ -307,7 +311,7 @@ public struct EventRow: Codable {
     public var noteId: UUID?
     public var spaceId: UUID?
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id
         case userId    = "user_id"
         case spaceName = "space_name"
@@ -374,18 +378,22 @@ public struct NoteRow: Codable {
     public var projectId: UUID?
     public var title: String
     public var body: String
+    /// Optional so decoding survives a DB that predates migration 0018;
+    /// nil reads as the column default, "plain".
+    public var bodyFormat: String?
     public var updatedAt: Date
     public var isExternal: Bool
     public var googleDocId: String?
     public var spaceId: UUID?
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id
         case userId      = "user_id"
         case spaceName   = "space_name"
         case projectId   = "project_id"
         case title
         case body
+        case bodyFormat  = "body_format"
         case updatedAt   = "updated_at"
         case isExternal  = "is_external"
         case googleDocId = "google_doc_id"
@@ -398,6 +406,7 @@ public struct NoteRow: Codable {
         self.projectId   = n.projectID
         self.title       = n.title
         self.body        = n.body
+        self.bodyFormat  = n.bodyFormat.rawValue
         self.updatedAt   = n.updatedAt
         self.isExternal  = n.isExternal
         self.googleDocId = n.googleDocId
@@ -406,6 +415,7 @@ public struct NoteRow: Codable {
 
     public func toDomain() -> Note {
         var note = Note(id: id, title: title, body: body,
+             bodyFormat: bodyFormat.flatMap(Note.BodyFormat.init(rawValue:)) ?? .plain,
              spaceName: spaceName, projectID: projectId,
              updatedAt: updatedAt, isExternal: isExternal,
              googleDocId: googleDocId)
@@ -546,7 +556,7 @@ public struct GoalRow: Codable {
     public var progress: Double
     public var label: String
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id
         case userId   = "user_id"
         case title
@@ -771,18 +781,21 @@ public struct SharingPrefRow: Codable {
 ///
 /// If `session()` returns nil, every method throws `AtlasDBError.notAuthenticated`.
 /// Callers guard offline mode externally; this client fails cleanly rather than crashing.
+///
+/// The provider is async so callers can validate/refresh the token per request
+/// (the JWT TTL is 1 hour) — pass a refresh-if-needed provider, not a raw read.
 public final class AtlasDB {
 
-    private let sessionProvider: () -> SupabaseSession?
+    private let sessionProvider: () async -> SupabaseSession?
 
-    public init(session: @escaping () -> SupabaseSession?) {
+    public init(session: @escaping () async -> SupabaseSession?) {
         self.sessionProvider = session
     }
 
     // MARK: - Internal helpers
 
-    private func requireSession() throws -> SupabaseSession {
-        guard let s = sessionProvider() else {
+    private func requireSession() async throws -> SupabaseSession {
+        guard let s = await sessionProvider() else {
             throw AtlasDBError.notAuthenticated
         }
         return s
@@ -791,7 +804,7 @@ public final class AtlasDB {
     /// GET `<restBase>/<table>?select=*&order=<column>` and decode the JSON array.
     /// Pass `order` to ensure stable, deterministic row ordering across launches.
     private func getAll<T: Decodable>(_ table: String, order: String? = nil) async throws -> [T] {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         var comps = URLComponents(
             url: SupabaseConfig.restBase.appendingPathComponent(table),
             resolvingAgainstBaseURL: false)!
@@ -816,7 +829,7 @@ public final class AtlasDB {
     /// where a `select=*` would be rejected because RLS column-grants hide some
     /// columns (e.g. `google_connections.vault_secret_id`).
     private func getColumns<T: Decodable>(_ table: String, columns: String) async throws -> [T] {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         var comps = URLComponents(
             url: SupabaseConfig.restBase.appendingPathComponent(table),
             resolvingAgainstBaseURL: false)!
@@ -833,13 +846,16 @@ public final class AtlasDB {
         return try isoDecoder.decode([T].self, from: data)
     }
 
-    /// POST (upsert) or DELETE — no response body expected (`return=minimal`).
+    /// POST (upsert) or DELETE — most callers expect no response body
+    /// (`return=minimal`) and ignore the returned data; `setTaskDone` opts into
+    /// `return=representation` to detect a zero-row PATCH.
+    @discardableResult
     private func send(method: String,
                       table: String,
                       query: [URLQueryItem] = [],
                       extraHeaders: [String: String] = [:],
                       body: Data? = nil,
-                      sess: SupabaseSession) async throws {
+                      sess: SupabaseSession) async throws -> Data {
         var comps = URLComponents(
             url: SupabaseConfig.restBase.appendingPathComponent(table),
             resolvingAgainstBaseURL: false)!
@@ -855,6 +871,7 @@ public final class AtlasDB {
 
         let (data, response) = try await URLSession.shared.data(for: req)
         try validate(response: response, data: data)
+        return data
     }
 
     private func validate(response: URLResponse, data: Data) throws {
@@ -905,6 +922,14 @@ public final class AtlasDB {
         )
     }
 
+    /// Re-pulls just the notes table. The references reload path uses this so an
+    /// imported Doc's linked note (created server-side by `drive-import` and filled
+    /// by the sync cron) surfaces without an app relaunch.
+    public func loadNotes() async throws -> [Note] {
+        let rows: [NoteRow] = try await getAll("notes", order: "id")
+        return rows.map { $0.toDomain() }
+    }
+
     /// Reads the caller's `google_connections` row (server-owned Google sync state),
     /// or nil when the user has no cloud connection. Selects only the owner-granted
     /// columns; RLS scopes the query to the signed-in user.
@@ -939,8 +964,8 @@ public final class AtlasDB {
     /// reference (`sessionProvider`), so this is the one accessor `AppState`
     /// and other callers should use rather than threading the session
     /// through separately.
-    public func currentUserId() throws -> UUID {
-        let sess = try requireSession()
+    public func currentUserId() async throws -> UUID {
+        let sess = try await requireSession()
         guard let id = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "session user.id is not a valid UUID")
         }
@@ -950,13 +975,25 @@ public final class AtlasDB {
     /// The signed-in user's raw JWT access token, needed by realtime
     /// subscriptions (which authorize postgres_changes against this token's
     /// claims, not just the anon apikey header used for REST calls).
-    public func currentAccessToken() throws -> String {
-        try requireSession().accessToken
+    public func currentAccessToken() async throws -> String {
+        try await requireSession().accessToken
     }
 
     public func loadProjectMembers(projectId: UUID) async throws -> [ProjectMemberRow] {
         let all: [ProjectMemberRow] = (try? await getAll("project_members", order: "added_at")) ?? []
         return all.filter { $0.projectId == projectId }
+    }
+
+    /// Every project-member row the caller may see (RLS-scoped), grouped by
+    /// project id. One round-trip that replaces the per-project N+1 loop of
+    /// `loadProjectMembers(projectId:)` — the old path fetched the whole
+    /// `project_members` table once per project and filtered client-side.
+    /// Rows within each group keep `added_at` order (the fetch is ordered and
+    /// `Dictionary(grouping:)` preserves element order). Best-effort: a missing
+    /// table (pre-migration) yields an empty map rather than throwing.
+    public func loadAllProjectMembers() async throws -> [UUID: [ProjectMemberRow]] {
+        let all: [ProjectMemberRow] = (try? await getAll("project_members", order: "added_at")) ?? []
+        return Dictionary(grouping: all, by: { $0.projectId })
     }
 
     /// Fetches specific projects by id — used for "Shared with me" rows,
@@ -976,9 +1013,9 @@ public final class AtlasDB {
 
     @discardableResult
     public func createProjectInvite(projectId: UUID, inviteeEmail: String) async throws -> InviteRow {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         let invite = InviteRow(id: UUID(), kind: .project, targetId: projectId,
-                               inviterId: try currentUserId(), inviteeEmail: inviteeEmail,
+                               inviterId: try await currentUserId(), inviteeEmail: inviteeEmail,
                                status: .pending, createdAt: "")
         let body = try isoEncoder.encode(invite)
         try await send(method: "POST", table: "invites", body: body, sess: sess)
@@ -993,7 +1030,7 @@ public final class AtlasDB {
     /// and `send`'s `table` parameter is appended directly onto `restBase`, so
     /// `table: "rpc/accept_invite"` reaches the right endpoint.
     public func respondToInvite(id: UUID, accept: Bool) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         if accept {
             let body = try JSONSerialization.data(withJSONObject: ["invite_id": id.uuidString])
             try await send(method: "POST", table: "rpc/accept_invite", body: body, sess: sess)
@@ -1011,7 +1048,7 @@ public final class AtlasDB {
     /// `send`/`isoEncoder`/`upsertHeaders` plumbing, but scoped by `user_id`
     /// (the `profiles` primary key) instead of `id`.
     public func updateDisplayName(_ name: String) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard var row = try await loadProfile() else {
             throw AtlasDBError.requestFailed(0, "No profile row for signed-in user")
         }
@@ -1073,20 +1110,70 @@ public final class AtlasDB {
     }
 
     /// Seed all tables from a snapshot (first-run). Upserts each row so it is safe
-    /// to call if some rows already exist.
+    /// to call if some rows already exist. Builds every row up front (stamping
+    /// ownership exactly as the per-row `upsert*` methods do) and POSTs one array
+    /// body per table (PostgREST batch upsert) instead of one request per row.
     public func seedInitial(_ snapshot: AtlasSnapshot) async throws {
-        for (index, space) in snapshot.spaces.enumerated() { try await upsertSpace(space, sort: index) }
-        for project in snapshot.projects { try await upsertProject(project) }
-        for task    in snapshot.tasks    { try await upsertTask(task) }
-        for event   in snapshot.events   { try await upsertEvent(event) }
-        for note    in snapshot.notes    { try await upsertNote(note) }
-        for goal    in snapshot.goals    { try await upsertGoal(goal) }
+        let sess = try await requireSession()
+        guard let userId = UUID(uuidString: sess.user.id) else {
+            throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
+        }
+
+        let spaceRows: [SpaceRow] = snapshot.spaces.enumerated().map { index, space in
+            var row = SpaceRow(domain: space, sort: index); row.userId = userId; return row
+        }
+        let projectRows: [ProjectRow] = snapshot.projects.map { project in
+            var row = ProjectRow(domain: project); row.userId = userId; return row
+        }
+        let taskRows: [TaskRow] = snapshot.tasks.map { task in
+            var row = TaskRow(domain: task); row.userId = userId
+            if row.createdBy == nil { row.createdBy = userId }   // mirrors upsertTask
+            return row
+        }
+        let eventRows: [EventRow] = snapshot.events.map { event in
+            var row = EventRow(domain: event); row.userId = userId; return row
+        }
+        let noteRows: [NoteRow] = snapshot.notes.map { note in
+            var row = NoteRow(domain: note); row.userId = userId; return row
+        }
+        let goalRows: [GoalRow] = snapshot.goals.map { goal in
+            var row = GoalRow(domain: goal); row.userId = userId; return row
+        }
+
+        try await seedRows(spaceRows,   into: "spaces",   columns: columnList(SpaceRow.CodingKeys.self),   sess: sess)
+        try await seedRows(projectRows, into: "projects", columns: columnList(ProjectRow.CodingKeys.self), sess: sess)
+        try await seedRows(taskRows,    into: "tasks",    columns: columnList(TaskRow.CodingKeys.self),    sess: sess)
+        try await seedRows(eventRows,   into: "events",   columns: columnList(EventRow.CodingKeys.self),   sess: sess)
+        try await seedRows(noteRows,    into: "notes",    columns: columnList(NoteRow.CodingKeys.self),    sess: sess)
+        try await seedRows(goalRows,    into: "goals",    columns: columnList(GoalRow.CodingKeys.self),    sess: sess)
+    }
+
+    /// The comma-joined wire column names for a seeded row type, taken from its
+    /// `CodingKeys`. Passed as PostgREST's `?columns=` so a batch upsert declares an
+    /// explicit, uniform column set — otherwise PostgREST infers the INSERT columns
+    /// from the FIRST array element (whose synthesized `encodeIfPresent` omits nil
+    /// optionals), which would silently drop or 400 on a column only later rows set.
+    private func columnList<K: CodingKey & CaseIterable>(_ keys: K.Type) -> String {
+        keys.allCases.map(\.stringValue).joined(separator: ",")
+    }
+
+    /// POSTs `rows` as a single PostgREST batch upsert (`on_conflict=id`,
+    /// merge-duplicates) with an explicit `columns` set (see `columnList`). No-op for
+    /// an empty array — matches the old per-row loop, which issued no request for an
+    /// empty table.
+    private func seedRows<Row: Encodable>(_ rows: [Row], into table: String, columns: String,
+                                          sess: SupabaseSession) async throws {
+        guard !rows.isEmpty else { return }
+        let body = try isoEncoder.encode(rows)
+        try await send(method: "POST", table: table,
+                       query: upsertQuery + [URLQueryItem(name: "columns", value: columns)],
+                       extraHeaders: upsertHeaders, body: body, sess: sess)
     }
 
     // MARK: Spaces / Projects
 
     public func upsertSpace(_ s: Space, sort: Int = 0) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1098,7 +1185,7 @@ public final class AtlasDB {
     }
 
     public func upsertProject(_ p: Project) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1112,7 +1199,7 @@ public final class AtlasDB {
     // MARK: Tasks
 
     public func upsertTask(_ t: TaskItem) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1125,12 +1212,39 @@ public final class AtlasDB {
     }
 
     public func deleteTask(id: UUID) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         try await send(method: "DELETE", table: "tasks",
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
                        extraHeaders: ["Prefer": "return=minimal"],
                        sess: sess)
     }
+
+    /// Flips a task's done state via a scoped PATCH — done/completed_at only, so a
+    /// check-off never stomps a collaborator's concurrent edit to the row's other
+    /// columns (the same reasoning as `claimTask` below). Explicit JSON so
+    /// `completed_at` is written as NULL on un-check rather than omitted.
+    ///
+    /// Returns whether a row matched: a PATCH on a row that never landed (an
+    /// earlier offline upsert was swallowed) "succeeds" against zero rows —
+    /// callers fall back to a full upsert so the completion isn't silently lost.
+    @discardableResult
+    public func setTaskDone(id: UUID, done: Bool, completedAt: Date?) async throws -> Bool {
+        let sess = try await requireSession()
+        let payload: [String: Any] = [
+            "done": done,
+            "completed_at": completedAt.map { Self.isoFormatter.string(from: $0) } ?? NSNull()
+        ]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let data = try await send(method: "PATCH", table: "tasks",
+                                  query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                                  extraHeaders: ["Prefer": "return=representation"],
+                                  body: body, sess: sess)
+        let rows = (try? JSONSerialization.jsonObject(with: data)) as? [Any]
+        return !(rows?.isEmpty ?? true)
+    }
+
+    /// Shared by the hand-built JSON writers (thread-safe per Apple docs).
+    private static let isoFormatter = ISO8601DateFormatter()
 
     /// Claims a shared task for the caller WITHOUT touching `user_id`/`project_id` —
     /// unlike `upsertTask` (which stamps the caller as owner and has no project_id
@@ -1138,7 +1252,7 @@ public final class AtlasDB {
     /// Routing claims through `upsertTask` would silently reassign task ownership
     /// and wipe its project linkage — this scoped PATCH avoids both.
     public func claimTask(id: UUID, assigneeId: UUID) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         let body = try JSONSerialization.data(withJSONObject: ["assignee_id": assigneeId.uuidString])
         try await send(method: "PATCH", table: "tasks",
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
@@ -1148,7 +1262,7 @@ public final class AtlasDB {
     // MARK: Events
 
     public func upsertEvent(_ e: CalendarEvent) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1160,7 +1274,7 @@ public final class AtlasDB {
     }
 
     public func deleteEvent(id: UUID) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         try await send(method: "DELETE", table: "events",
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
                        extraHeaders: ["Prefer": "return=minimal"],
@@ -1170,7 +1284,7 @@ public final class AtlasDB {
     // MARK: Notes / Goals
 
     public func upsertNote(_ n: Note) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1182,7 +1296,7 @@ public final class AtlasDB {
     }
 
     public func upsertGoal(_ g: Goal) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1196,7 +1310,7 @@ public final class AtlasDB {
     // MARK: References (Docs → Notes import)
 
     public func upsertReference(_ r: Reference) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1208,7 +1322,7 @@ public final class AtlasDB {
     }
 
     public func deleteReference(id: UUID) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         try await send(method: "DELETE", table: "project_references",
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
                        extraHeaders: ["Prefer": "return=minimal"],
@@ -1216,7 +1330,7 @@ public final class AtlasDB {
     }
 
     public func upsertReferenceAttachment(_ a: ReferenceAttachment) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {
             throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
         }
@@ -1228,7 +1342,7 @@ public final class AtlasDB {
     }
 
     public func deleteReferenceAttachment(id: UUID) async throws {
-        let sess = try requireSession()
+        let sess = try await requireSession()
         try await send(method: "DELETE", table: "reference_attachments",
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
                        extraHeaders: ["Prefer": "return=minimal"],

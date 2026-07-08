@@ -169,6 +169,10 @@ public struct TaskItem: Identifiable {
     public var dueLabel: String
     public var status: TaskStatus = .open
     public var done: Bool = false
+    /// When the task was checked off; nil while open (and for tasks completed
+    /// before this column existed — those render undated and sort oldest in
+    /// completed lists).
+    public var completedAt: Date? = nil
     public var scheduledAt: Date? = nil
     public var dueDate: Date? = nil
     public var durationMin: Int? = nil
@@ -190,12 +194,13 @@ public struct TaskItem: Identifiable {
     /// Who created this task — set once at creation, never changed.
     public var createdByID: UUID? = nil
 
-    public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectName: String = "", notes: String = "", spaceID: UUID? = nil, assigneeID: UUID? = nil, createdByID: UUID? = nil) {
+    public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, completedAt: Date? = nil, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectName: String = "", notes: String = "", spaceID: UUID? = nil, assigneeID: UUID? = nil, createdByID: UUID? = nil) {
         self.id = id
         self.title = title
         self.dueLabel = dueLabel
         self.status = status
         self.done = done
+        self.completedAt = completedAt
         self.scheduledAt = scheduledAt
         self.dueDate = dueDate
         self.durationMin = durationMin
@@ -299,9 +304,18 @@ public struct NoteRef: Identifiable {
 /// A full note with an editable body — the source of truth for the Notes editor
 /// and ⌘K search. Attachable to a space/project; `[[mentions]]` create backlinks.
 public struct Note: Identifiable {
+    /// How `body` is encoded. Legacy native notes are literal text (`plain`);
+    /// anything the rich editor saves is Markdown (`md`, the same transport form
+    /// linked Doc-notes use) so headings/bold/lists persist. A plain body
+    /// converts the first time it's edited — no bulk rewrite.
+    public enum BodyFormat: String {
+        case plain, md
+    }
+
     public var id = UUID()
     public var title: String
     public var body: String
+    public var bodyFormat: BodyFormat = .plain
     public var spaceName: String? = nil
     /// The project this note belongs to (WS-10 native linking). Drives the per-
     /// project Notes list and, later, the per-project Google Drive folder that
@@ -320,10 +334,11 @@ public struct Note: Identifiable {
     /// The parent space's id — authoritative once set; the name remains for display.
     public var spaceID: UUID? = nil
 
-    public init(id: UUID = UUID(), title: String, body: String, spaceName: String? = nil, projectID: UUID? = nil, updatedAt: Date = Date(), isExternal: Bool = false, googleDocId: String? = nil, docSyncedAt: Date? = nil, spaceID: UUID? = nil) {
+    public init(id: UUID = UUID(), title: String, body: String, bodyFormat: BodyFormat = .plain, spaceName: String? = nil, projectID: UUID? = nil, updatedAt: Date = Date(), isExternal: Bool = false, googleDocId: String? = nil, docSyncedAt: Date? = nil, spaceID: UUID? = nil) {
         self.id = id
         self.title = title
         self.body = body
+        self.bodyFormat = bodyFormat
         self.spaceName = spaceName
         self.projectID = projectID
         self.updatedAt = updatedAt
@@ -331,6 +346,32 @@ public struct Note: Identifiable {
         self.googleDocId = googleDocId
         self.docSyncedAt = docSyncedAt
         self.spaceID = spaceID
+    }
+}
+
+extension Note {
+    /// The one rule for "is `body` Markdown-encoded": stamped `.md` by the rich
+    /// editor, or backed by a Google Doc (a Doc-note's body is always the
+    /// Markdown transport form, even where a legacy row still says `plain`).
+    /// Editor parsing and previews both use this — they must never disagree.
+    public var isMarkdownBody: Bool {
+        bodyFormat == .md || googleDocId != nil
+    }
+
+    /// Body as displayable plain text — parses Markdown-encoded bodies so
+    /// previews never leak `#`/`**` syntax; legacy plain bodies pass through.
+    /// Parsing is bounded: previews show a line or two, so a huge imported Doc
+    /// shouldn't be fully parsed on every list row render.
+    public var previewText: String {
+        isMarkdownBody ? RichDoc.fromMarkdown(String(body.prefix(600))).plainText : body
+    }
+
+    /// The FULL body as plain text (unbounded — unlike `previewText`), with
+    /// Markdown escapes/marks resolved. `[[mention]]` scanning uses this: in the
+    /// stored Markdown an inline mark or escape can split a mention token
+    /// (`[[The**sis]]**`), which would silently drop graph backlinks.
+    public var plainTextBody: String {
+        isMarkdownBody ? RichDoc.fromMarkdown(body).plainText : body
     }
 }
 

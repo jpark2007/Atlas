@@ -68,9 +68,17 @@ enum CommandResult: Identifiable {
 
 struct CommandPaletteOverlay: View {
     @EnvironmentObject private var state: AppState
+    /// App-wide focus model — when a session is active, the palette runs in
+    /// notes scope and routes picks to the Focus corner card.
+    @EnvironmentObject private var focus: FocusViewModel
 
     @State private var query = ""
     @State private var selection = 0
+    /// True only when the selection just moved via the arrow keys — the list
+    /// auto-scrolls to keep it visible ONLY then. Hover also moves the selection,
+    /// and auto-scrolling on hover fights the user's own scroll wheel (rows pass
+    /// under the cursor → selection jumps → list re-centers → scroll stutters).
+    @State private var keyboardMove = false
     @State private var editingNote: Note?
     @FocusState private var fieldFocused: Bool
 
@@ -141,7 +149,7 @@ struct CommandPaletteOverlay: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 14))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
-            TextField("Find anything, or create a task…", text: $query)
+            TextField(focus.sessionActive ? "Search your notes…" : "Find anything, or create a task…", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
@@ -154,11 +162,17 @@ struct CommandPaletteOverlay: View {
                 // the field animates in often fails to land, so typing did nothing.
                 .onAppear { DispatchQueue.main.async { fieldFocused = true } }
             Text("esc")
-                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .atlasMono(size: 10, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                 .padding(.horizontal, 6).padding(.vertical, 3)
                 .background(AtlasTheme.Colors.bgDeep)
                 .clipShape(RoundedRectangle(cornerRadius: 5))
+                // Hairline keycap — bgDeep now equals paper, so the outline is what
+                // reads the chip (same idiom as the capture bar's return key).
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1)
+                )
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
@@ -182,7 +196,14 @@ struct CommandPaletteOverlay: View {
                 .padding(8)
             }
             .onChange(of: selection) { _, value in
-                withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(value, anchor: .center) }
+                guard keyboardMove else { return }
+                keyboardMove = false
+                guard flat.indices.contains(value) else { return }
+                withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(flat[value].id, anchor: .center) }
+            }
+            // A new query resets the selection to the top hit — bring it into view.
+            .onChange(of: query) { _, _ in
+                if let first = flat.first { proxy.scrollTo(first.id, anchor: .top) }
             }
         }
     }
@@ -201,11 +222,16 @@ struct CommandPaletteOverlay: View {
     private func shortcutHint(_ glyph: String, _ label: String) -> some View {
         HStack(spacing: 5) {
             Text(glyph)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .atlasMono(size: 10, weight: .semibold)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .padding(.horizontal, 5).padding(.vertical, 2)
                 .background(AtlasTheme.Colors.bgDeep)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
+                // Hairline keycap — bgDeep equals paper now, so the outline reads it.
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1)
+                )
             Text(label)
                 .font(.system(size: 11, design: .rounded))
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
@@ -225,7 +251,7 @@ struct CommandPaletteOverlay: View {
     private func group(_ title: String, base: Int, items: [CommandResult]) -> some View {
         if !items.isEmpty {
             Text(title.uppercased())
-                .font(AtlasTheme.Font.sectionLabel())
+                .atlasMono(size: 11, weight: .semibold)
                 .tracking(1.1)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                 .padding(.horizontal, 12)
@@ -233,8 +259,12 @@ struct CommandPaletteOverlay: View {
                 .padding(.bottom, 2)
             ForEach(Array(items.enumerated()), id: \.element.id) { offset, item in
                 let index = base + offset
+                // Identity MUST be the item's own id, never the flat index: an
+                // index-keyed row in a lazy stack gets reused verbatim when the
+                // query changes, gluing last keystroke's rows under this
+                // keystroke's section headers.
                 row(item, selected: index == selection)
-                    .id(index)
+                    .id(item.id)
                     .contentShape(Rectangle())
                     .onTapGesture { selection = index; activate() }
                     .onHover { if $0 { selection = index } }
@@ -268,13 +298,18 @@ struct CommandPaletteOverlay: View {
 
     // MARK: Search
 
-    /// The persistent "Create '<query>' as task" row. Always the leading result
-    /// for a non-empty query — even when there are matches. `activate()` runs it
-    /// and dismisses; the closure here just creates the task (capture filing can
-    /// hang off `addTask` later). Stable id (`createActionID`) so the row is the
-    /// guaranteed default selection and is testable.
+    /// The typed text with any `t:`/`e:`/`n:`/`p:` prefix stripped — what the
+    /// Create rows should actually name.
+    private var createTitle: String {
+        CommandPaletteModel.parseScope(query).rest
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The "Create '<query>' as task" row — the model places it LAST (or alone,
+    /// auto-selected, when nothing matches). Stable id (`createActionID`) so
+    /// tests can find it regardless of the query text it carries.
     private var createAction: PaletteAction {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = createTitle
         return PaletteAction(
             id: CommandPaletteModel.createActionID,
             title: "Create \u{201C}\(trimmed)\u{201D} as task",
@@ -284,7 +319,29 @@ struct CommandPaletteOverlay: View {
         )
     }
 
-    /// Ordered result sections, decided by the pure `CommandPaletteModel`.
+    /// Create-note row (Focus scope, or under `n:`): an instant local note — no
+    /// project, no Doc pairing. Inside Focus it opens in the corner card; outside,
+    /// in the palette's own editor sheet.
+    private var noteCreateAction: PaletteAction {
+        let trimmed = createTitle
+        return PaletteAction(
+            id: CommandPaletteModel.createNoteActionID,
+            title: "Create note \u{201C}\(trimmed)\u{201D}",
+            subtitle: "Press return to open a fresh note",
+            icon: "note.text.badge.plus",
+            run: {
+                let note = state.addNote(title: trimmed.isEmpty ? "Untitled note" : trimmed, body: "")
+                if focus.sessionActive {
+                    focus.noteToOpen = note
+                } else {
+                    editingNote = note
+                }
+            }
+        )
+    }
+
+    /// Ordered result sections, decided by the pure `CommandPaletteModel`. Inside a
+    /// focus session the palette narrows to notes scope.
     private var sections: [PaletteSection] {
         CommandPaletteModel.results(
             query: query,
@@ -292,20 +349,23 @@ struct CommandPaletteOverlay: View {
             tasks: state.tasks,
             notes: state.notes,
             events: state.events,
+            now: state.now,
             quickActions: quickActions,
-            createAction: createAction
+            createTask: createAction,
+            createNote: noteCreateAction,
+            scope: focus.sessionActive ? .notes : .all
         )
     }
 
     private var quickActions: [PaletteAction] {
         [
-            PaletteAction(id: "metrics", title: "Open Metrics", subtitle: "View your stats",
-                          icon: "chart.bar.fill",
-                          run: { state.settingsSection = .metrics; state.route = .settings }),
-
             PaletteAction(id: "new-task", title: "New Task", subtitle: "Capture a to-do with AI filing",
                           icon: "plus.circle.fill",
                           run: { state.presentCapture = true }),
+
+            PaletteAction(id: "completed", title: "Completed Tasks", subtitle: "Everything you've finished",
+                          icon: "checkmark.square.fill",
+                          run: { state.route = .completed }),
 
             PaletteAction(id: "new-note", title: "New Note", subtitle: "Create a blank note",
                           icon: "note.text.badge.plus",
@@ -362,7 +422,10 @@ struct CommandPaletteOverlay: View {
 
     private func move(_ delta: Int) {
         guard !flat.isEmpty else { return }
-        selection = max(0, min(flat.count - 1, selection + delta))
+        let target = max(0, min(flat.count - 1, selection + delta))
+        guard target != selection else { return }
+        keyboardMove = true
+        selection = target
     }
 
     private func activate() {
@@ -373,7 +436,12 @@ struct CommandPaletteOverlay: View {
             dismiss()
         case .note(let note):
             state.presentSearch = false
-            editingNote = note
+            // Inside Focus, hand the note to the corner card; otherwise the sheet.
+            if focus.sessionActive {
+                focus.noteToOpen = note
+            } else {
+                editingNote = note
+            }
         case .task(let task):
             state.route = .task(task.id)
             dismiss()

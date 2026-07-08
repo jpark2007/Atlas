@@ -1,4 +1,5 @@
 import XCTest
+@testable import AtlasCore
 @testable import Atlas
 
 /// WS-10 — pure RichDoc ⇄ Google Docs mapping. Fixtures only, no network/consent.

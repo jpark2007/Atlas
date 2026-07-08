@@ -1,299 +1,224 @@
 import SwiftUI
 import AtlasCore
 
+/// The dashboard, restructured to the locked Phase-3 mockup (spec 3.1):
+/// a tiny mono greeting/date title bar, then a two-column body — a main column
+/// (live clock · today's focus · recent notes) beside a right rail (an outlined
+/// mini-month date navigator · the selected day's agenda).
+///
+/// The rail (navigator + agenda, its own `selectedDay`/`visibleMonth`) lives in
+/// `MiniMonthAgenda`, shared with the menu-bar calendar popup. The focus list is
+/// always the next upcoming OPEN tasks by deadline, NEVER the rail's selected
+/// day (a fixed glance at what's next, per the binding data semantics).
 struct DashboardView: View {
     @EnvironmentObject var state: AppState
 
+    /// The note open in the corner-card editor (nil = closed) — same host idiom
+    /// as ProjectDetailView: an overlay, not a modal sheet.
+    @State private var editingNote: Note?
+
+    /// How many upcoming tasks the focus list shows.
+    private let focusCount = 8
+    /// How many recent notes the notes section shows.
+    private let noteCount = 5
+
+    private let calendar = Calendar.current
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                header
+            VStack(alignment: .leading, spacing: 26) {
+                titleBar
 
-                HStack(alignment: .top, spacing: 18) {
-                    // Schedule + tasks stacked on the left so tasks sit directly under
-                    // the schedule (no dead space); focus/goals/metrics on the right.
-                    VStack(spacing: 18) {
-                        ScheduleCard(entries: state.todaysEvents)
-                        DashboardTasksSection()
+                HStack(alignment: .top, spacing: 26) {
+                    VStack(alignment: .leading, spacing: 26) {
+                        clockBlock
+                        focusList
+                        recentNotes
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                    VStack(spacing: 18) {
-                        FocusCard()
-                        GoalsCard(goals: state.goals)
-                        MetricsCard()
-                    }
-                    .frame(width: 320)
+                    MiniMonthAgenda(onOpenCalendar: { state.route = .calendar })
+                        .frame(width: 348)
                 }
             }
             .padding(28)
         }
         .background(AtlasTheme.Colors.bgBase)
+        // Corner-card editor (not a modal sheet) — the dashboard stays visible
+        // behind it; drag-resize and expand live in `NoteCardOverlay`.
+        .overlay(alignment: .bottomTrailing) {
+            if let note = editingNote {
+                NoteCardOverlay(note: note) { editingNote = nil }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: editingNote?.id)
     }
 
-    private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(todayKicker)
-                    .font(AtlasTheme.Font.kicker())
-                    .tracking(1.4)
-                    .foregroundStyle(AtlasTheme.Colors.accentText)
-                Text("\(greeting), \(state.userName)")
-                    .atlasScreenTitle()
-            }
+    // MARK: - Title bar (tiny mono greeting left · date right)
+
+    private var titleBar: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(greeting)
+                .atlasMono(size: 11, weight: .semibold)
+                .tracking(1.4)
+                .foregroundStyle(AtlasTheme.Colors.accentText)
             Spacer()
+            Text(titleDate)
+                .atlasMono(size: 11, weight: .semibold)
+                .tracking(1.4)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
 
-    /// Live date kicker (e.g. "THURSDAY · JUNE 26"), driven by `state.now` so it
-    /// refreshes as the day rolls over — replaces the old hardcoded mock string.
-    private var todayKicker: String {
-        let f = DateFormatter()
-        f.dateFormat = "EEEE · MMMM d"
-        return f.string(from: state.now).uppercased()
-    }
-
-    /// Time-of-day greeting, driven by `state.now`.
+    /// Time-of-day greeting, uppercased ("GOOD AFTERNOON"), driven by `state.now`.
     private var greeting: String {
-        switch Calendar.current.component(.hour, from: state.now) {
-        case 5..<12:  return "Good morning"
-        case 12..<17: return "Good afternoon"
-        default:      return "Good evening"
-        }
-    }
-}
-
-// MARK: - Schedule card
-
-struct ScheduleCard: View {
-    @EnvironmentObject var state: AppState
-    let entries: [CalendarEvent]
-
-    private let rowHeight: CGFloat = 52
-
-    var body: some View {
-        AtlasCard {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("Today's schedule")
-                        .atlasCapsLabel()
-                    Spacer()
-                    Button { state.route = .calendar } label: {
-                        HStack(spacing: 4) {
-                            Text("Open calendar")
-                            Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold, design: .rounded))
-                        }
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(AtlasTheme.Colors.accentText)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.bottom, 6)
-
-                if entries.isEmpty {
-                    Text("Nothing scheduled today.")
-                        .font(.system(size: 12, design: .rounded))
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                        .padding(.vertical, 18)
-                } else {
-                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                        scheduleRow(entry)
-                        if index < entries.count - 1 {
-                            Divider().overlay(AtlasTheme.Colors.border).padding(.leading, 64)
-                        }
-                    }
-                }
-            }
+        switch calendar.component(.hour, from: state.now) {
+        case 5..<12:  return "GOOD MORNING"
+        case 12..<17: return "GOOD AFTERNOON"
+        default:      return "GOOD EVENING"
         }
     }
 
-    private func scheduleRow(_ entry: CalendarEvent) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            Text(entry.timeLabel)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(AtlasTheme.Colors.textSecondary)
-                .frame(width: 50, alignment: .leading)
-            // Work-blocks (scheduled tasks) get a hollow circle (planned/unchecked);
-            // real events keep the solid bar (a committed block of time).
-            if entry.isWorkBlock {
-                Circle()
-                    .stroke(entry.color, lineWidth: 1.5)
-                    .frame(width: 9, height: 9)
-                    .frame(width: 3, alignment: .leading)
-            } else {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(entry.color)
-                    .frame(width: 3, height: 30)
+    /// "MON — JUL 6, 2026" — driven by `state.now`.
+    private var titleDate: String {
+        "\(DashFmt.weekdayShort.string(from: state.now)) — \(DashFmt.monthDayYear.string(from: state.now))"
+            .uppercased()
+    }
+
+    // MARK: - Clock block (live 12-hour clock + dateline, plain on paper)
+
+    /// Huge mono ink digits, clay colons, muted seconds, small AM/PM; a mono
+    /// dateline below; a hairline under the whole block. No panel, no boxes, no
+    /// flip animation. `TimelineView` ticks it once a second.
+    private var clockBlock: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            VStack(alignment: .leading, spacing: 10) {
+                clockDigits(context.date)
+                Text(dateline(context.date))
+                    .atlasMono(size: 12, weight: .medium)
+                    .tracking(1.6)
+                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.title)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                Text(entry.subtitle)
-                    .font(.system(size: 11, design: .rounded))
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-            }
-            Spacer()
-            Text(entry.durationLabel)
-                .font(.system(size: 11, design: .rounded))
+            .padding(.bottom, 18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .atlasHairlineBelow()
+        }
+    }
+
+    private func clockDigits(_ date: Date) -> some View {
+        let h24 = calendar.component(.hour, from: date)
+        let h = h24 % 12 == 0 ? 12 : h24 % 12
+        let m = calendar.component(.minute, from: date)
+        let s = calendar.component(.second, from: date)
+        let ampm = h24 < 12 ? "AM" : "PM"
+        return HStack(alignment: .firstTextBaseline, spacing: 0) {
+            bigDigit("\(h)")
+            bigColon
+            bigDigit(String(format: "%02d", m))
+            Text(":")
+                .atlasMono(size: 26, weight: .semibold)
+                .foregroundStyle(AtlasTheme.Colors.accent)
+                .padding(.leading, 4)
+            Text(String(format: "%02d", s))
+                .atlasMono(size: 26, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
-        }
-        .frame(height: rowHeight)
-    }
-}
-
-// MARK: - Tasks section (full-width, grouped by due-date bucket)
-
-/// The all-tasks list, moved out of the cramped right rail into a full-width
-/// section under "Today's schedule." Tasks are grouped under due-date headings
-/// (Overdue / Today / This week / Later / No date) via `TaskGrouping`, with an
-/// optional space filter above the groups.
-struct DashboardTasksSection: View {
-    @EnvironmentObject var state: AppState
-
-    @State private var expandedSpaces: Set<String> = []
-    /// Tasks fading out before deletion (completed 2 s ago).
-    @State private var fadingOut: Set<UUID> = []
-
-    private var spaceOrder: [String] { state.spaces.map(\.name) }
-
-    private var visibleTasks: [TaskItem] {
-        state.tasks.filter { !fadingOut.contains($0.id) }
-    }
-
-    private var groups: [(spaceName: String, tasks: [TaskItem])] {
-        TaskGrouping.bySpace(tasks: visibleTasks, spaceOrder: spaceOrder)
-    }
-
-    var body: some View {
-        AtlasCard {
-            VStack(alignment: .leading, spacing: 14) {
-                header
-                addAffordance
-
-                if groups.isEmpty {
-                    Text("No tasks yet — add one above.")
-                        .font(.system(size: 12, design: .rounded))
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                        .padding(.vertical, 14)
-                } else {
-                    ForEach(Array(groups.enumerated()), id: \.element.spaceName) { index, group in
-                        spaceSection(group)
-                        if index < groups.count - 1 {
-                            Divider().overlay(AtlasTheme.Colors.border)
-                        }
-                    }
-                }
-            }
-        }
-        .onAppear { expandedSpaces = Set(groups.map(\.spaceName)) }
-    }
-
-    // MARK: Header
-
-    private var header: some View {
-        HStack(spacing: 6) {
-            Text("Tasks").atlasCapsLabel()
-            Text("\(visibleTasks.count)")
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+            Text(ampm)
+                .atlasMono(size: 15, weight: .semibold)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
-            Spacer()
+                .padding(.leading, 8)
         }
     }
 
-    // MARK: Space sections
-
-    private func spaceSection(_ group: (spaceName: String, tasks: [TaskItem])) -> some View {
-        let isExpanded = Binding(
-            get: { expandedSpaces.contains(group.spaceName) },
-            set: { if $0 { expandedSpaces.insert(group.spaceName) }
-                  else   { expandedSpaces.remove(group.spaceName) } }
-        )
-        return DisclosureGroup(isExpanded: isExpanded) {
-            VStack(spacing: 2) {
-                ForEach(group.tasks) { task in taskRow(task) }
-            }
-            .padding(.top, 4)
-        } label: {
-            spaceHeading(group.spaceName, count: group.tasks.count)
-        }
+    private func bigDigit(_ s: String) -> some View {
+        Text(s)
+            .atlasMono(size: 64, weight: .semibold)
+            .foregroundStyle(AtlasTheme.Colors.textPrimary)
     }
 
-    private func spaceHeading(_ name: String, count: Int) -> some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(state.spaces.first { $0.name == name }?.color ?? AtlasTheme.Colors.accent)
-                .frame(width: 7, height: 7)
-            Text(name.uppercased())
-                .font(AtlasTheme.Font.sectionLabel())
-                .tracking(1.1)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-            Text("\(count)")
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-            Spacer()
-        }
+    private var bigColon: some View {
+        Text(":")
+            .atlasMono(size: 64, weight: .semibold)
+            .foregroundStyle(AtlasTheme.Colors.accent)
     }
 
-    // MARK: Affordances
+    /// "MONDAY —— JUL 6 / 2026".
+    private func dateline(_ date: Date) -> String {
+        let day = DashFmt.weekdayFull.string(from: date).uppercased()
+        let md  = DashFmt.monthDay.string(from: date).uppercased()
+        let yr  = DashFmt.year.string(from: date)
+        return "\(day) —— \(md) / \(yr)"
+    }
 
-    private var addAffordance: some View {
-        Button { state.presentCapture = true } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(AtlasTheme.Colors.accentText)
-                Text("Add a task — Atlas files it for you")
+    // MARK: - Focus list (next upcoming open tasks — NOT the selected day)
+
+    private var focusList: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("TODAY'S FOCUS").atlasCapsLabel()
+
+            let tasks = focusTasks
+            if tasks.isEmpty {
+                Text("Nothing due — you're clear.")
                     .font(.system(size: 12, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
-                Spacer()
-                Text("⌘⇧K")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .padding(.vertical, 6)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(tasks) { task in focusRow(task) }
+                }
             }
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .overlay(
-                RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous)
-                    .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous))
+
+            addTaskAffordance
         }
-        .buttonStyle(.plain)
     }
 
-    // MARK: Task row
+    /// The next `focusCount` OPEN tasks ordered by deadline: dated before undated,
+    /// earliest `dueDate` first, `scheduledAt` as the tiebreaker. Independent of
+    /// the calendar selection (a fixed "what's next" glance).
+    private var focusTasks: [TaskItem] {
+        // Just-checked tasks linger (struck-through) before sliding out.
+        let open = state.tasks.filter(state.isVisiblyPending)
+        let sorted = open.sorted { a, b in
+            switch (a.dueDate, b.dueDate) {
+            case let (da?, db?):
+                if da != db { return da < db }
+                return (a.scheduledAt ?? .distantFuture) < (b.scheduledAt ?? .distantFuture)
+            case (_?, nil): return true       // dated tasks come before undated
+            case (nil, _?): return false
+            case (nil, nil):
+                return (a.scheduledAt ?? .distantFuture) < (b.scheduledAt ?? .distantFuture)
+            }
+        }
+        return Array(sorted.prefix(focusCount))
+    }
 
-    private func taskRow(_ task: TaskItem) -> some View {
+    private func focusRow(_ task: TaskItem) -> some View {
         HStack(spacing: 10) {
-            // Checkbox — toggles done and schedules deletion
             Button {
-                let wasDone = task.done
-                state.toggleTask(task.id)
-                if !wasDone { scheduleRemoval(task.id) }
+                withAnimation(.easeOut(duration: 0.2)) { state.toggleTask(task.id) }
             } label: {
                 Image(systemName: task.done ? "checkmark.square.fill" : "square")
                     .font(.system(size: 14))
-                    .foregroundStyle(task.done ? task.spaceColor : AtlasTheme.Colors.textMuted)
+                    .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
             }
             .buttonStyle(.plain)
 
-            // Row body — navigates to task detail
             Button { state.route = .task(task.id) } label: {
-                HStack(spacing: 0) {
+                HStack(spacing: 8) {
                     Text(task.title)
                         .font(.system(size: 13, design: .rounded))
                         .strikethrough(task.done)
                         .foregroundStyle(task.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
-                    Spacer()
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
                     if !task.dueLabel.isEmpty {
                         Text(task.dueLabel)
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .atlasMono(size: 11, weight: .medium)
                             .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     }
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9))
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                        .padding(.leading, 6)
+                    if !task.spaceName.isEmpty {
+                        atlasTag(text: task.spaceName, color: task.spaceColor)
+                    }
                 }
                 .contentShape(Rectangle())
             }
@@ -302,82 +227,107 @@ struct DashboardTasksSection: View {
         .padding(.vertical, 6)
     }
 
-    private func scheduleRemoval(_ id: UUID) {
-        Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            withAnimation(.easeOut(duration: 0.25)) { fadingOut.insert(id) }
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            state.deleteTask(id: id)
-            fadingOut.remove(id)
-        }
-    }
-}
-
-// MARK: - Focus card
-
-struct FocusCard: View {
-    var body: some View {
-        AtlasCard {
-            HStack(spacing: 12) {
-                Image(systemName: "timer")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
-                    .frame(width: 34, height: 34)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Focus session")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text("25 min · Pomodoro")
-                        .font(.system(size: 11, design: .rounded))
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                }
-                Spacer()
-                Image(systemName: "play.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
+    /// Plain text affordance (not a boxed input) — opens the existing quick capture.
+    private var addTaskAffordance: some View {
+        Button { state.presentCapture = true } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                Text("Add a task")
+                    .font(.system(size: 12, design: .rounded))
             }
+            .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
+        .buttonStyle(.plain)
+        .padding(.top, 2)
     }
-}
 
-// MARK: - Goals card
+    // MARK: - Recent notes (plain rows, corner-card open)
 
-struct GoalsCard: View {
-    let goals: [Goal]
+    private var recentNotes: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("RECENT NOTES").atlasCapsLabel()
 
-    var body: some View {
-        AtlasCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 6) {
-                    Image(systemName: "target")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    Text("Long-term goals")
-                        .atlasCapsLabel()
-                }
-                ForEach(goals) { goal in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text(goal.title)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                            Spacer()
-                            Text(goal.label)
-                                .font(.system(size: 10, design: .rounded))
-                                .foregroundStyle(AtlasTheme.Colors.textMuted)
+            let notes = recentNotesList
+            if notes.isEmpty {
+                Text("No notes yet.")
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .padding(.vertical, 6)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(notes.enumerated()), id: \.element.id) { index, note in
+                        noteRow(note)
+                        if index < notes.count - 1 {
+                            Divider().overlay(AtlasTheme.Colors.hairline)
                         }
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(AtlasTheme.Colors.hairline)
-                                Capsule()
-                                    .fill(AtlasTheme.Colors.accent)
-                                    .frame(width: max(6, geo.size.width * goal.progress))
-                            }
-                        }
-                        .frame(height: 5)
                     }
                 }
             }
         }
+    }
+
+    private var recentNotesList: [Note] {
+        Array(state.notes.sorted { $0.updatedAt > $1.updatedAt }.prefix(noteCount))
+    }
+
+    private func noteRow(_ note: Note) -> some View {
+        Button { editingNote = note } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(note.title.isEmpty ? "Untitled note" : note.title)
+                            .atlasTitleSerif(size: 15)
+                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                            .lineLimit(1)
+                        if isLinkedDoc(note) {
+                            atlasTag(text: "Google Doc", color: AtlasTheme.Colors.accentText)
+                        }
+                    }
+                    Text(noteMeta(note))
+                        .atlasMono(size: 11, weight: .regular)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// A note is a linked Doc-note when a `.docNote` reference points back at it
+    /// (mirrors `NotesListView.isLinkedDoc`).
+    private func isLinkedDoc(_ note: Note) -> Bool {
+        state.references.contains { $0.kind == .docNote && $0.noteID == note.id }
+    }
+
+    /// "JUL 5 · SCHOOL" — date, then space when the note has one.
+    private func noteMeta(_ note: Note) -> String {
+        let date = DashFmt.monthDay.string(from: note.updatedAt).uppercased()
+        if let space = note.spaceName, !space.isEmpty {
+            return "\(date) · \(space.uppercased())"
+        }
+        return date
+    }
+
+}
+
+// MARK: - Cached formatters
+
+/// Cached `DateFormatter`s for the dashboard's mono datelines. Strings that mix
+/// em-dashes / slashes are composed in code from these plain patterns so no
+/// literal-quoting is needed.
+private enum DashFmt {
+    static let weekdayShort  = formatter("EEE")
+    static let weekdayFull   = formatter("EEEE")
+    static let monthDay      = formatter("MMM d")
+    static let monthDayYear  = formatter("MMM d, yyyy")
+    static let year          = formatter("yyyy")
+
+    private static func formatter(_ format: String) -> DateFormatter {
+        let f = DateFormatter()
+        f.dateFormat = format
+        return f
     }
 }

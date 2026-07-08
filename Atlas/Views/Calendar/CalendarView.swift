@@ -132,7 +132,7 @@ struct CalendarView: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("CALENDAR")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .atlasMono(size: 11, weight: .bold)
                         .tracking(0.88)
                         .textCase(.uppercase)
                         .foregroundStyle(AtlasTheme.Colors.accentText)
@@ -224,14 +224,8 @@ struct CalendarView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(
-                (isHidden ? Color.clear : space.color.opacity(0.14))
-            )
-            .clipShape(Capsule())
-            .overlay(
-                Capsule().strokeBorder(
-                    isHidden ? AtlasTheme.Colors.border : space.color.opacity(0.4),
-                    lineWidth: 1
-                )
+                isHidden ? Color.clear : AtlasTheme.wash(space.color),
+                in: RoundedRectangle(cornerRadius: 4, style: .continuous)
             )
             .opacity(isHidden ? 0.6 : 1)
         }
@@ -269,7 +263,7 @@ struct CalendarView: View {
 
             Button { selectedDate = Calendar.current.startOfDay(for: Date()) } label: {
                 Text("Today")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .atlasMono(size: 11, weight: .bold)
                     .tracking(0.88)
                     .textCase(.uppercase)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)

@@ -47,6 +47,14 @@ struct MonthGridView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // Instrument-container language (matches the dashboard mini-month, P3-1):
+        // the whole month reads as one outlined box — a hairline-stroked rounded
+        // container, its grid lines clipped to the rounded corners.
+        .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AtlasTheme.Radius.card, style: .continuous)
+                .strokeBorder(AtlasTheme.Colors.borderStrong, lineWidth: 1)
+        )
     }
 
     // MARK: - Weekday header
@@ -55,9 +63,7 @@ struct MonthGridView: View {
         HStack(spacing: 0) {
             ForEach(Array(cells.prefix(7)), id: \.self) { day in
                 Text(CalendarFormat.weekdayShort.string(from: day).uppercased())
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .tracking(0.8)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .atlasCapsLabel()
                     .frame(maxWidth: .infinity)
             }
         }
@@ -79,7 +85,7 @@ struct MonthGridView: View {
             }
             if events.count > maxChips {
                 Text("+\(events.count - maxChips) more")
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .atlasMono(size: 9, weight: .semibold)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .padding(.leading, 2)
             }
@@ -100,7 +106,7 @@ struct MonthGridView: View {
     private func dayNumber(_ day: Date, inMonth: Bool, isToday: Bool) -> some View {
         let number = "\(calendar.component(.day, from: day))"
         return Text(number)
-            .font(.system(size: 11.5, weight: isToday ? .heavy : .medium, design: .rounded))
+            .atlasMono(size: 11.5, weight: isToday ? .heavy : .medium)
             .foregroundStyle(
                 isToday ? AtlasTheme.Colors.accentText
                         : (inMonth ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textMuted)
@@ -122,7 +128,9 @@ struct MonthGridView: View {
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 2)
-        .background((event.isReadOnly ? AtlasTheme.Colors.textSecondary : event.color).opacity(0.14))
-        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .background(
+            AtlasTheme.wash(event.isReadOnly ? AtlasTheme.Colors.textSecondary : event.color),
+            in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+        )
     }
 }

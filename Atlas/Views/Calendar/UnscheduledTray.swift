@@ -52,7 +52,7 @@ struct UnscheduledTray: View {
                         .font(AtlasTheme.Font.cardTitle())
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text("\(displayedTasks.count)")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .atlasMono(size: 11, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
 
@@ -110,11 +110,11 @@ struct UnscheduledTray: View {
                 .fill(spaceColor(for: name))
                 .frame(width: 7, height: 7)
             Text(name.uppercased())
-                .font(AtlasTheme.Font.sectionLabel())
+                .atlasMono(size: 11, weight: .semibold)
                 .tracking(1.1)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Text("\(count)")
-                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .atlasMono(size: 10, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Spacer()
         }
@@ -132,10 +132,10 @@ struct UnscheduledTray: View {
         return HStack(spacing: 9) {
             // Check it off — completes the task; it then drops out of the tray.
             Button { onToggleDone(task.id) } label: {
-                Image(systemName: "circle")
+                Image(systemName: "square")
                     .font(.system(size: 15))
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    .contentShape(Circle())
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Mark done")
@@ -148,9 +148,7 @@ struct UnscheduledTray: View {
                     .foregroundStyle(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textPrimary)
                     .lineLimit(1)
                 if !task.dueLabel.isEmpty {
-                    Text("Due \(task.dueLabel)")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundStyle(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textMuted)
+                    atlasTag(text: "Due \(task.dueLabel)", color: overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textMuted)
                 }
             }
             Spacer(minLength: 0)
@@ -162,7 +160,7 @@ struct UnscheduledTray: View {
         .padding(.vertical, 8)
         // A grabbable chip: transparent on the cream bg, a hairline outline for the
         // drag affordance (overdue keeps the danger tint + red outline).
-        .background(overdue ? AtlasTheme.Colors.danger.opacity(0.14) : Color.clear)
+        .background(overdue ? AtlasTheme.wash(AtlasTheme.Colors.danger) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous)

@@ -35,7 +35,7 @@ struct TaskDragPreview: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .background(AtlasTheme.Colors.bgElevated)
+        .background(AtlasTheme.wash(color))
         .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous)
             .strokeBorder(color.opacity(0.5), lineWidth: AtlasTheme.rule))
@@ -51,7 +51,7 @@ struct HourGutter: View {
         VStack(spacing: 0) {
             ForEach(CalendarLayout.startHour..<CalendarLayout.endHour, id: \.self) { hour in
                 Text(label(for: hour))
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .atlasMono(size: 10, weight: .bold)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .offset(y: -6)
@@ -241,7 +241,7 @@ struct EventTile: View {
             HStack(alignment: .top, spacing: 4) {
                 // Work-block checkbox — signals "planned work, tickable" (vs a fixed event).
                 if event.isWorkBlock {
-                    Image(systemName: "circle")
+                    Image(systemName: "square")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(tileAccentColor)
                         .padding(.top, compact ? 0 : 1)
@@ -253,7 +253,7 @@ struct EventTile: View {
                         .lineLimit(1)
                     if !compact {
                         Text("\(event.timeLabel) · \(event.durationLabel)")
-                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .atlasMono(size: 9, weight: .bold)
                             .tracking(0.5)
                             .textCase(.uppercase)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
@@ -328,7 +328,7 @@ struct DeadlineRailMarker: View {
                 .overlay(alignment: .topTrailing) {
                     if cluster.count > 1 {
                         Text("\(cluster.count)")
-                            .font(.system(size: 7, weight: .heavy, design: .rounded))
+                            .atlasMono(size: 7, weight: .heavy)
                             .foregroundStyle(.white)
                             .frame(width: 10, height: 10)
                             .background(Circle().fill(AtlasTheme.Colors.danger))
@@ -362,7 +362,7 @@ struct DeadlineListPopover: View {
                     if dl.hasSpecificTime {
                         Spacer(minLength: 12)
                         Text(dl.timeLabel)
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .atlasMono(size: 11, weight: .medium)
                             .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     }
                 }
@@ -391,7 +391,7 @@ struct DeadlineStrip: View {
         let overflow = Array(deadlines.dropFirst(maxVisible))
         HStack(spacing: 6) {
             Text("DUE")
-                .font(.system(size: 9, weight: .bold, design: .rounded))
+                .atlasMono(size: 9, weight: .bold)
                 .tracking(0.6)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             ForEach(visible) { dl in
@@ -399,13 +399,7 @@ struct DeadlineStrip: View {
             }
             if !overflow.isEmpty {
                 Button { showOverflow.toggle() } label: {
-                    Text("+\(overflow.count)")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(AtlasTheme.Colors.textMuted.opacity(0.12)))
-                        .overlay(Capsule().stroke(AtlasTheme.Colors.textMuted.opacity(0.45), lineWidth: 1))
+                    atlasTag(text: "+\(overflow.count)", color: AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
                 .popover(isPresented: $showOverflow, arrowEdge: .bottom) {
@@ -427,15 +421,14 @@ struct DeadlineStrip: View {
                 .lineLimit(1)
             if dl.hasSpecificTime {
                 Text(dl.timeLabel)
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .atlasMono(size: 10, weight: .medium)
                     .lineLimit(1)
             }
         }
         .foregroundStyle(dl.color)
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
-        .background(Capsule().fill(dl.color.opacity(0.12)))
-        .overlay(Capsule().stroke(dl.color.opacity(0.45), lineWidth: 1))
+        .background(AtlasTheme.wash(dl.color), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
     }
 }
 

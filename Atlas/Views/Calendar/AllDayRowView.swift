@@ -73,8 +73,7 @@ struct AllDayRowView: View {
                     .padding(.horizontal, 4)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: 18)
-                    .background(event.color.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .background(AtlasTheme.wash(event.color), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                     .opacity(isPastDay ? 0.65 : 1)
             }
         }
@@ -89,7 +88,7 @@ struct AllDayRowView: View {
                 .lineLimit(1)
             if event.hasSpecificTime {
                 Text(event.timeLabel)
-                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .atlasMono(size: 9, weight: .medium)
                     .lineLimit(1)
             }
         }
@@ -97,8 +96,7 @@ struct AllDayRowView: View {
         .padding(.horizontal, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 18)
-        .background(Capsule().fill(event.color.opacity(0.12)))
-        .overlay(Capsule().stroke(event.color.opacity(0.45), lineWidth: 1))
+        .background(AtlasTheme.wash(event.color), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
     }
 }
 
@@ -115,7 +113,7 @@ private struct CollapsedDeadlinePill: View {
             HStack(spacing: 4) {
                 Image(systemName: "flag.fill").font(.system(size: 7))
                 Text("\(deadlines.count) due")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .atlasMono(size: 10, weight: .semibold)
                     .lineLimit(1)
                 Image(systemName: "chevron.right").font(.system(size: 6, weight: .bold))
             }
@@ -123,8 +121,7 @@ private struct CollapsedDeadlinePill: View {
             .padding(.horizontal, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 18)
-            .background(Capsule().fill(color.opacity(0.12)))
-            .overlay(Capsule().stroke(color.opacity(0.45), lineWidth: 1))
+            .background(AtlasTheme.wash(color), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
         }
         .buttonStyle(.plain)
         .popover(isPresented: $show, arrowEdge: .bottom) {

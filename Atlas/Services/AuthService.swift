@@ -22,6 +22,7 @@ final class AuthService: ObservableObject {
 
     private let api = SupabaseAuth()
     private let sessionKey = "atlas.supabase.session"
+    private var refreshTask: Task<SupabaseSession?, Never>?
     private var pkceVerifier: String?
     private var webAuthSession: ASWebAuthenticationSession?
     private let presenter = AuthPresentationAnchor()
@@ -48,10 +49,38 @@ final class AuthService: ObservableObject {
     }
 
     private func refreshIfPossible() async {
-        guard let refreshToken = session?.refreshToken else { return }
-        if let fresh = try? await api.refresh(refreshToken: refreshToken) {
-            persist(fresh)
+        _ = await validSession()
+    }
+
+    /// A session whose access token is valid right now — refreshed first when the
+    /// stored one is expired or within a minute of it (mirrors mobile's
+    /// `SessionStore.refreshIfNeeded`). Supabase callers (edge functions, AtlasDB)
+    /// must use this instead of reading `session` directly: the JWT TTL is 1 hour
+    /// and nothing else refreshes it mid-session. Returns nil when signed out or
+    /// the refresh token itself is rejected — ask the user to sign in again.
+    ///
+    /// Concurrent callers share one in-flight refresh: GoTrue rotates refresh
+    /// tokens, so parallel refreshes with the same token can revoke the session.
+    func validSession() async -> SupabaseSession? {
+        guard let current = session else { return nil }
+        guard let expiresAt = current.expiresAt,
+              Date().timeIntervalSince1970 >= expiresAt - 60 else {   // 60 s skew
+            return current
         }
+        if let inFlight = refreshTask { return await inFlight.value }
+        let task = Task { () -> SupabaseSession? in
+            guard let fresh = try? await api.refresh(refreshToken: current.refreshToken) else { return nil }
+            persist(fresh)
+            return fresh
+        }
+        refreshTask = task
+        let result = await task.value
+        refreshTask = nil
+        return result
+    }
+
+    func validAccessToken() async -> String? {
+        await validSession()?.accessToken
     }
 
     private func persist(_ session: SupabaseSession) {

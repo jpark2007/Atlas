@@ -14,15 +14,61 @@ struct ReferenceRowView: View {
     var onTap: () -> Void
     var onOpenExternal: () -> Void
     var onQuickLook: (() -> Void)?      // `.file` only
+    var onEditNote: (() -> Void)?       // `.docNote` only — opens the linked note in Atlas
+    /// On-demand refresh from the Atlas cloud (`.docNote` only). Async so the row can
+    /// spin while it runs; nil hides the button.
+    var onSyncNow: (() async -> Void)?
     var onRemove: () -> Void
+
+    /// True while `onSyncNow` is in flight — drives the row's inline spinner.
+    @State private var isSyncing = false
 
     var body: some View {
         HStack(spacing: 8) {
             Button(action: onTap) { content }
                 .buttonStyle(.plain)
+            // A linked Doc's primary row click edits it in Atlas (`onTap`); this small
+            // trailing badge is the demoted secondary "open in Google Docs" action.
+            if reference.kind == .docNote {
+                Button(action: onOpenExternal) {
+                    Text("Doc ↗")
+                        .font(.system(size: 10, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(externalActionTitle)
+                .accessibilityLabel(externalActionTitle)
+            }
+            if let onSyncNow { syncNowButton(onSyncNow) }
             menu
         }
         .padding(.vertical, 9)
+    }
+
+    /// Sync now: re-reads the cron-maintained cloud (the cron pulls Drive→DB every
+    /// ~5 min) so the freshest synced version surfaces on demand.
+    private func syncNowButton(_ action: @escaping () async -> Void) -> some View {
+        Button {
+            guard !isSyncing else { return }
+            isSyncing = true
+            Task { await action(); isSyncing = false }
+        } label: {
+            Group {
+                if isSyncing {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+            }
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isSyncing)
+        .help("Sync now — check for the latest synced version")
     }
 
     private var content: some View {
@@ -44,23 +90,20 @@ struct ReferenceRowView: View {
                         .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .lineLimit(1)
-                    if reference.kind != .link { syncChip }
+                    if reference.kind != .link { syncDisplay }
                 }
             }
 
             Spacer(minLength: 8)
-
-            if reference.kind == .docNote {
-                Text("Doc ↗")
-                    .font(.system(size: 10, design: .rounded))
-                    .foregroundStyle(AtlasTheme.Colors.accentText)
-            }
         }
         .contentShape(Rectangle())
     }
 
     private var menu: some View {
         Menu {
+            if let onEditNote {
+                Button { onEditNote() } label: { Label("Edit in Atlas", systemImage: "square.and.pencil") }
+            }
             if let onQuickLook {
                 Button { onQuickLook() } label: { Label("Quick Look", systemImage: "eye") }
             }
@@ -118,13 +161,29 @@ struct ReferenceRowView: View {
         }
     }
 
-    private var syncChip: some View {
-        HStack(spacing: 4) {
-            Circle().fill(syncColor).frame(width: 5, height: 5)
-            Text(syncLabel)
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundStyle(syncColor)
+    /// A synced reference shows a LIVE "Synced Xm ago" (`Text(_:style:.relative)` ticks
+    /// on its own, so it never freezes at render); other states keep the status tag.
+    @ViewBuilder
+    private var syncDisplay: some View {
+        if reference.syncState == .synced, let d = reference.lastSyncedAt {
+            syncedText(d)
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+        } else {
+            syncChip
         }
+    }
+
+    /// "Synced …" guarded so a near-now or clock-skewed-future timestamp reads "just now"
+    /// rather than the signed-relative "in 3 sec ago".
+    private func syncedText(_ d: Date) -> Text {
+        d.timeIntervalSinceNow < -1
+            ? Text("Synced ") + Text(d, style: .relative) + Text(" ago")
+            : Text("Synced just now")
+    }
+
+    private var syncChip: some View {
+        atlasTag(text: syncLabel, color: syncColor)
     }
 
     private var syncLabel: String {

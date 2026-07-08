@@ -83,9 +83,10 @@ extension AppState {
         references.filter { $0.projectID == projectID }
     }
 
-    /// Re-pulls the reference pool + attachments from Supabase so a browser-side Drive
-    /// import surfaces without an app relaunch (the picker registers rows server-side;
-    /// nothing pushes them to the client). Best-effort — a nil `db` or a failed load
+    /// Re-pulls the reference pool + attachments + notes from Supabase so a
+    /// browser-side Drive import (and the cron's pending→synced flip + note fill)
+    /// surfaces without an app relaunch — the server creates/updates those rows;
+    /// nothing pushes them to the client. Best-effort — a nil `db` or a failed load
     /// leaves the current state untouched. Optimistic local rows whose write-through
     /// hasn't landed yet are preserved (unioned by id), so an in-flight add/link is
     /// never dropped by a concurrent reload.
@@ -101,6 +102,14 @@ extension AppState {
         let serverAttachIDs = Set(loaded.attachments.map(\.id))
         let localOnlyAttach = referenceAttachments.filter { !serverAttachIDs.contains($0.id) }
         referenceAttachments = loaded.attachments + localOnlyAttach
+
+        // Linked doc-notes live in `notes` — pull them too or an imported Doc's
+        // content (and its Notes-section entry) only appears after a relaunch.
+        if let serverNotes = try? await db.loadNotes() {
+            let serverNoteIDs = Set(serverNotes.map(\.id))
+            let localOnlyNotes = notes.filter { !serverNoteIDs.contains($0.id) }
+            notes = serverNotes + localOnlyNotes
+        }
     }
 
     // MARK: Attach / detach — tasks

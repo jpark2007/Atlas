@@ -11,6 +11,16 @@ final class AppState: ObservableObject {
     @Published var spaces: [Space] = MockData.spaces
     @Published var events: [CalendarEvent] = MockData.events
     @Published var tasks: [TaskItem] = MockData.tasks
+
+    /// Tasks checked off moments ago that still linger (struck-through) in pending
+    /// lists before sliding out — see `toggleTask`. Pending filters treat a task as
+    /// visible while its id is in here.
+    @Published var recentlyCompleted: Set<UUID> = []
+    /// Per-task linger timers, cancelled on re-toggle so a fresh check-off always
+    /// gets its full 0.9s.
+    private var lingerTasks: [UUID: Task<Void, Never>] = [:]
+    /// Per-task done-write chain — rapid check→uncheck must persist in order.
+    private var doneWrites: [UUID: Task<Void, Never>] = [:]
     @Published var notes: [Note] = MockData.notes
     @Published var goals: [Goal] = MockData.goals
 
@@ -124,7 +134,7 @@ final class AppState: ObservableObject {
     }
 
     /// Guards against double-bootstrap if `bootstrap(db:)` is called more than once.
-    private var didBootstrap = false
+    private var bootstrappedUser: String?
 
     /// Quick-capture pill presentation (toggled by the ⌘ hotkey / Tasks card).
     @Published var presentCapture: Bool = false
@@ -253,9 +263,11 @@ final class AppState: ObservableObject {
     /// Load all persisted data for the signed-in user. Seeds from MockData on
     /// first run (empty DB). On any failure keeps the existing in-memory MockData
     /// so the UI is never left blank. Stores the `db` reference for write-through.
-    func bootstrap(db: AtlasDB) async {
-        guard !didBootstrap else { return }
-        didBootstrap = true
+    /// Keyed on `userID` so signing into a different account re-loads instead of
+    /// keeping (and writing into) the previous user's data.
+    func bootstrap(db: AtlasDB, userID: String?) async {
+        guard bootstrappedUser != userID else { return }
+        bootstrappedUser = userID
         self.db = db
         do {
             var snapshot = try await db.loadAll()
@@ -287,19 +299,27 @@ final class AppState: ObservableObject {
 
         } catch {
             // Keep existing in-memory MockData — never blank the UI on a DB error.
+            // Reset the guard so the next appearance/sign-in retries the load.
             print("[AtlasDB] bootstrap failed — keeping MockData. Error: \(error.localizedDescription)")
+            bootstrappedUser = nil
         }
 
-        // Collab phase 1: surface the user's profile (created by the signup
-        // trigger). Nil = migration not deployed; degrade silently.
-        self.profile = try? await self.db?.loadProfile()
-        await self.loadCollabState()
-        await startRealtimeSync(supabaseURL: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey)
+        // Bootstrap tail: profile, collab, Google, and Canvas are independent
+        // loads — kick them off concurrently (was four serial awaits) so their
+        // network round-trips overlap. Realtime sync reads collab's
+        // `sharedWithMeProjects`, so it still runs only after collab completes.
+        //   • profile — collab phase 1: surface the user's profile (created by
+        //     the signup trigger). Nil = migration not deployed; degrade silently.
+        async let profileRow = self.db?.loadProfile()
+        async let collabDone: Void = self.loadCollabState()
+        async let googleDone: Void = self.refreshGoogleConnection()   // Google sync mode from the cloud connection
+        async let canvasDone: Void = self.refreshCanvasConnection()   // Canvas status for Settings from launch
 
-        // Re-derive server-owned Google sync mode from the cloud connection.
-        await refreshGoogleConnection()
-        // Load the Canvas connection so Settings shows its live status from launch.
-        await refreshCanvasConnection()
+        self.profile = try? await profileRow
+        await collabDone
+        await startRealtimeSync(supabaseURL: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey)
+        await googleDone
+        await canvasDone
 
         // Collab phase 3: publish this device's derived availability, then keep it
         // fresh on an hourly timer (local edits also trigger a debounced publish).
@@ -365,7 +385,7 @@ final class AppState: ObservableObject {
         let sharedProjectIds = spaces.flatMap { $0.projects }.filter(isShared).map(\.id)
             + sharedWithMeProjects.map(\.id)
         guard !sharedProjectIds.isEmpty,
-              let accessToken = try? db?.currentAccessToken() else { return }
+              let accessToken = try? await db?.currentAccessToken() else { return }
         let sync = RealtimeSyncService(supabaseURL: supabaseURL, anonKey: anonKey, accessToken: accessToken)
         await sync.subscribe(projectIds: sharedProjectIds) { [weak self] in
             Task { @MainActor in
@@ -389,17 +409,22 @@ final class AppState: ObservableObject {
         guard let db else { return }
         self.pendingInvites = (try? await db.loadPendingInvites()) ?? []
 
+        // One round-trip for every visible membership row, grouped by project,
+        // instead of one fetch-and-filter per project. Keep the dict shape
+        // identical to before — a key (defaulting to []) for each of my
+        // projects — so `isShared`/the sidebar see exactly today's values.
+        let membersByAllProjects = (try? await db.loadAllProjectMembers()) ?? [:]
         var membersByProject: [UUID: [ProjectMemberRow]] = [:]
         for space in spaces {
             for project in space.projects {
-                membersByProject[project.id] = (try? await db.loadProjectMembers(projectId: project.id)) ?? []
+                membersByProject[project.id] = membersByAllProjects[project.id] ?? []
             }
         }
         self.projectMembers = membersByProject
 
         // Projects I'm a member of but don't own land in "Shared with me",
         // not nested under any of my own spaces (they belong to someone else's).
-        guard let myUserId = try? db.currentUserId() else { return }
+        guard let myUserId = try? await db.currentUserId() else { return }
         let myProjectIds = Set(spaces.flatMap { $0.projects.map(\.id) })
         let memberProjectIds = Set(membersByProject.filter { _, members in
             members.contains { $0.userId == myUserId }
@@ -440,7 +465,7 @@ final class AppState: ObservableObject {
     /// Claim an unassigned shared task as the signed-in user's own.
     func claimTask(_ taskId: UUID) async {
         guard let i = tasks.firstIndex(where: { $0.id == taskId }),
-              let userId = try? db?.currentUserId() else { return }
+              let userId = try? await db?.currentUserId() else { return }
         tasks[i].claim(by: userId)
         try? await db?.claimTask(id: taskId, assigneeId: userId)
     }
@@ -522,11 +547,49 @@ final class AppState: ObservableObject {
     }
 
     func toggleTask(_ id: UUID) {
-        if let i = tasks.firstIndex(where: { $0.id == id }) {
-            tasks[i].done.toggle()
-            let updated = tasks[i]
-            Task { try? await self.db?.upsertTask(updated) }
+        guard let i = tasks.firstIndex(where: { $0.id == id }) else { return }
+        tasks[i].done.toggle()
+        tasks[i].completedAt = tasks[i].done ? Date() : nil
+        let updated = tasks[i]
+        lingerTasks[id]?.cancel()   // a re-toggle must not inherit the old timer
+        if updated.done {
+            // Mirror mobile: the checked row lingers ~0.9s (struck-through, filled
+            // check) in pending lists before sliding out, so completion is felt.
+            recentlyCompleted.insert(id)
+            lingerTasks[id] = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 900_000_000)
+                guard !Task.isCancelled else { return }
+                _ = withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    self.recentlyCompleted.remove(id)
+                }
+                self.lingerTasks[id] = nil
+            }
+        } else {
+            recentlyCompleted.remove(id)
         }
+        // Scoped PATCH (done/completed_at only) — a check-off must never stomp a
+        // collaborator's concurrent edit to the task's other columns. Chained per
+        // task so a rapid check→uncheck can't land out of order, with a full-
+        // upsert fallback when the row never reached the DB (offline capture).
+        let previousWrite = doneWrites[id]
+        doneWrites[id] = Task { @MainActor in
+            await previousWrite?.value
+            guard let db = self.db else { return }
+            let matched = (try? await db.setTaskDone(id: id, done: updated.done,
+                                                     completedAt: updated.completedAt)) ?? false
+            if !matched { try? await db.upsertTask(updated) }
+        }
+    }
+
+    /// The one authoritative spelling of the linger rule — a task shows in pending
+    /// lists while open OR just-checked and lingering; it settles into completed
+    /// lists only after the linger ends. Every pending/completed filter uses these.
+    func isVisiblyPending(_ task: TaskItem) -> Bool {
+        !task.done || recentlyCompleted.contains(task.id)
+    }
+
+    func isSettledDone(_ task: TaskItem) -> Bool {
+        task.done && !recentlyCompleted.contains(task.id)
     }
 
     // MARK: - Calendar / capture surface (shared by Stage 1 screens)
@@ -648,6 +711,16 @@ final class AppState: ObservableObject {
     func setTaskProject(taskId: UUID, projectName: String) {
         if let i = tasks.firstIndex(where: { $0.id == taskId }) {
             tasks[i].projectName = projectName
+            let updated = tasks[i]
+            Task { try? await self.db?.upsertTask(updated) }
+        }
+    }
+
+    /// Link (or clear) a task's tagged note (`noteID` — independent of the
+    /// project-scoped `ReferenceAttachment` system).
+    func setTaskNote(taskId: UUID, noteID: UUID?) {
+        if let i = tasks.firstIndex(where: { $0.id == taskId }) {
+            tasks[i].noteID = noteID
             let updated = tasks[i]
             Task { try? await self.db?.upsertTask(updated) }
         }

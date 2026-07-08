@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+@testable import AtlasCore
 @testable import Atlas
 
 // MARK: - AtlasDB DTO Mapping Tests (TDD — RED before AtlasDB.swift exists, GREEN after)

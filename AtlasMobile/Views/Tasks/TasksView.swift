@@ -335,6 +335,7 @@ struct TasksView: View {
     private func toggle(_ task: TaskItem) {
         var updated = task
         updated.done.toggle()
+        updated.completedAt = updated.done ? Date() : nil
         if updated.done {
             justCompleted.insert(task.id)
             Task {
@@ -342,7 +343,7 @@ struct TasksView: View {
                 _ = withAnimation(MobileTheme.spring) { justCompleted.remove(task.id) }
             }
         }
-        Task { await store.updateTask(updated) }
+        Task { await store.setTaskDone(updated) }
     }
 
     private func delete(_ task: TaskItem) {

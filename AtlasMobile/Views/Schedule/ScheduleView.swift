@@ -325,7 +325,8 @@ struct ScheduleView: View {
     private func toggle(_ task: TaskItem) {
         var updated = task
         updated.done.toggle()
-        Task { await store.updateTask(updated) }
+        updated.completedAt = updated.done ? Date() : nil
+        Task { await store.setTaskDone(updated) }
     }
 
     private func delete(_ task: TaskItem) {

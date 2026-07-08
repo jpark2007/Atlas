@@ -17,6 +17,9 @@ struct TaskDetailView: View {
     @State private var dueHover = false
     @State private var showRefPicker = false
     @State private var referenceSelection: Set<UUID> = []
+    /// Note currently open in the corner-card editor (nil = closed). Same overlay
+    /// host mechanism as `ProjectDetailView` — clicking the linked note opens it here.
+    @State private var editingNote: Note?
 
     var body: some View {
         ScrollView {
@@ -26,6 +29,7 @@ struct TaskDetailView: View {
                 spacePicker
                 projectPicker
                 notesSection
+                linkedNoteSection
                 referencesSection
             }
             .padding(28)
@@ -36,6 +40,15 @@ struct TaskDetailView: View {
         .sheet(isPresented: $showRefPicker, onDismiss: syncTaskAttachments) {
             AttachReferencePicker(projectID: taskProjectID, selection: $referenceSelection)
         }
+        // Corner-card note editor (not a modal sheet): the task stays visible behind
+        // it. Mirrors `ProjectDetailView`'s overlay host so a linked note edits in place.
+        .overlay(alignment: .bottomTrailing) {
+            if let note = editingNote {
+                NoteCardOverlay(note: note) { editingNote = nil }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: editingNote?.id)
     }
 
     // MARK: Header
@@ -45,7 +58,7 @@ struct TaskDetailView: View {
             Button {
                 state.toggleTask(live.id)
             } label: {
-                Image(systemName: live.done ? "checkmark.circle.fill" : "circle")
+                Image(systemName: live.done ? "checkmark.square.fill" : "square")
                     .font(.system(size: 22))
                     .foregroundStyle(live.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
             }
@@ -106,7 +119,7 @@ struct TaskDetailView: View {
                 HStack(spacing: 5) {
                     Image(systemName: "calendar").font(.system(size: 11))
                     Text(live.dueLabel.isEmpty ? "Set due date" : "Due \(dueChipLabel)")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .atlasMono(size: 12, weight: .medium)
                 }
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .padding(.horizontal, 8).padding(.vertical, 4)
@@ -121,7 +134,7 @@ struct TaskDetailView: View {
                 metaChip(icon: "clock", label: "Scheduled \(shortDate(at))")
             }
             if live.done {
-                metaChip(icon: "checkmark.circle", label: "Completed")
+                atlasTag(text: "Completed", color: AtlasTheme.Colors.accent)
             }
             assigneeChip
             Spacer()
@@ -147,14 +160,7 @@ struct TaskDetailView: View {
             }
             .buttonStyle(.plain)
         } else if live.assigneeID != nil {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(AtlasTheme.Colors.accent)
-                    .frame(width: 12, height: 12)
-                Text("Assigned")
-            }
-            .font(.system(size: 12, design: .rounded))
-            .foregroundStyle(AtlasTheme.Colors.textMuted)
+            atlasTag(text: "Assigned", color: AtlasTheme.Colors.accent)
             // A future task can resolve assigneeID -> ProfileRow.displayName once a
             // member-profile cache exists; showing "Assigned" (not a raw UUID) is
             // the correct minimal behavior for now.
@@ -206,7 +212,7 @@ struct TaskDetailView: View {
             Image(systemName: icon)
                 .font(.system(size: 11))
             Text(label)
-                .font(.system(size: 12, design: .rounded))
+                .atlasMono(size: 12)
         }
         .foregroundStyle(AtlasTheme.Colors.textSecondary)
     }
@@ -370,6 +376,86 @@ struct TaskDetailView: View {
         let f = DateFormatter()
         f.dateFormat = "MMM d, h:mm a"
         return f.string(from: date)
+    }
+
+    // MARK: Linked note
+
+    /// The note this task is tagged to, if the tag still resolves. Global-notes
+    /// scope — mirrors the calendar event detail, not the project-scoped references
+    /// below (`noteID` and `ReferenceAttachment` are two independent systems).
+    private var linkedNote: Note? {
+        guard let id = live.noteID else { return nil }
+        return state.notes.first { $0.id == id }
+    }
+
+    private var linkedNoteSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("LINKED NOTE").atlasCapsLabel()
+            HStack(spacing: 8) {
+                if let note = linkedNote {
+                    // Primary click: open the note in the in-app corner-card editor.
+                    Button { editingNote = note } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "doc.text").font(.system(size: 11))
+                            Text(note.title.isEmpty ? "Untitled note" : note.title)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                        }
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    }
+                    .buttonStyle(.plain)
+                    // Secondary: re-tag to a different note.
+                    notePickerMenu {
+                        Image(systemName: "chevron.down").font(.system(size: 9))
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    }
+                    // Unlink.
+                    Button { setNoteID(nil) } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                } else {
+                    notePickerMenu {
+                        HStack(spacing: 6) {
+                            Image(systemName: "doc.text").font(.system(size: 11))
+                            Text("Tag a note…").font(.system(size: 12, weight: .medium, design: .rounded))
+                            Image(systemName: "chevron.down").font(.system(size: 9))
+                        }
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    }
+                }
+                Spacer()
+            }
+        }
+    }
+
+    /// The note-picking menu — None / every note / New note… — mirroring
+    /// `CalendarEventDetailView.linkedNoteSection`. `New note…` creates a global
+    /// note, links it, and opens it in the corner-card editor.
+    @ViewBuilder
+    private func notePickerMenu<L: View>(@ViewBuilder label: () -> L) -> some View {
+        Menu {
+            Button("None") { setNoteID(nil) }
+            Divider()
+            ForEach(state.notes) { note in
+                Button(note.title.isEmpty ? "Untitled note" : note.title) { setNoteID(note.id) }
+            }
+            Divider()
+            Button("New note…") {
+                let n = state.addNote(title: live.title.isEmpty ? "Untitled note" : live.title)
+                setNoteID(n.id)
+                editingNote = n
+            }
+        } label: {
+            label()
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    /// Link (or clear) the task's tagged note and persist it.
+    private func setNoteID(_ id: UUID?) {
+        state.setTaskNote(taskId: live.id, noteID: id)
     }
 
     // MARK: References

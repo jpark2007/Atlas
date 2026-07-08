@@ -1,4 +1,5 @@
 import XCTest
+@testable import AtlasCore
 @testable import Atlas
 
 /// TDD: decode CaptureResult from raw JSON for each kind.

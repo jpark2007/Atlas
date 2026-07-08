@@ -272,12 +272,40 @@ final class PickerRedirectListener {
     private func respond(_ connection: NWConnection, ok: Bool) {
         let title = ok ? "Files selected" : "Drive import failed"
         let message = ok
-            ? "You can close this tab and return to Atlas."
+            ? "Atlas is importing them now — you can close this tab."
             : "Something went wrong. Return to Atlas and try again."
+        // Editorial-light, self-contained (no webfonts — the landing serif's Georgia
+        // fallback). Tokens mirror landing/styles.css: paper/ink/clay + 11px kicker.
         let html = """
-        <html><head><meta charset="utf-8"><title>\(title)</title></head>\
-        <body style="font-family:-apple-system,system-ui;background:#1a1714;color:#f0e9df;\
-        text-align:center;padding-top:80px"><h2>\(title)</h2><p>\(message)</p></body></html>
+        <!DOCTYPE html>
+        <html lang="en"><head>
+        <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="color-scheme" content="light"><title>\(title)</title>
+        <style>
+          body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+                 background: #fbfaf7; color: #1a191d; text-align: center;
+                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+          main { padding: 32px; }
+          main > * { opacity: 0; animation: rise 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) forwards; }
+          .kicker { margin: 0; font-size: 11px; font-weight: 600;
+                    letter-spacing: 0.08em; text-transform: uppercase; color: #b04f2f; }
+          h1 { margin: 14px 0 0; font-family: Georgia, "Times New Roman", serif;
+               font-weight: 500; font-size: clamp(34px, 6vw, 46px); letter-spacing: -0.021em;
+               animation-delay: 0.08s; }
+          hr { width: 40px; margin: 22px auto; border: 0;
+               border-top: 1px solid rgba(0, 0, 0, 0.14); animation-delay: 0.16s; }
+          p { margin: 0; color: #6c6a72; font-size: 15px; line-height: 1.5;
+              animation-delay: 0.24s; }
+          @keyframes rise { from { opacity: 0; transform: translateY(10px); }
+                            to { opacity: 1; transform: none; } }
+          @media (prefers-reduced-motion: reduce) { main > * { animation: none; opacity: 1; } }
+        </style></head>
+        <body><main>
+          <p class="kicker">Atlas</p>
+          <h1>\(title)</h1>
+          <hr>
+          <p>\(message)</p>
+        </main></body></html>
         """
         let bodyData = Data(html.utf8)
         let header = "HTTP/1.1 200 OK\r\n" +

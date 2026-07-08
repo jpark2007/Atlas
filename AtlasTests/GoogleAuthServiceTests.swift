@@ -1,5 +1,6 @@
 import XCTest
 import CryptoKit
+@testable import AtlasCore
 @testable import Atlas
 
 /// WS-5 — pure OAuth logic for the Google Desktop-app PKCE flow.

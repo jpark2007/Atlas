@@ -31,8 +31,12 @@ struct ProjectDetailView: View {
     /// an unsaved draft pre-linked to this project.
     @State private var editingNote: Note?
 
-    /// Live tasks tagged to this project.
-    private var liveTasks: [TaskItem] {
+    /// Whether the collapsed completed-tasks / past-events groups are expanded.
+    @State private var showCompleted = false
+    @State private var showPast = false
+
+    /// All tasks tagged to this project, deadline-ordered.
+    private var allTasks: [TaskItem] {
         state.tasks
             .filter { $0.projectName == project.name && $0.spaceName == project.spaceName }
             .sorted {
@@ -45,15 +49,37 @@ struct ProjectDetailView: View {
             }
     }
 
-    /// Live events tagged to this project.
-    private var liveEvents: [CalendarEvent] {
+    /// Open tasks (plus just-checked ones still lingering) — the default list.
+    private var liveTasks: [TaskItem] {
+        allTasks.filter(state.isVisiblyPending)
+    }
+
+    /// Checked-off tasks behind the "N COMPLETED" reveal, newest finish first.
+    private var completedTasks: [TaskItem] {
+        allTasks
+            .filter(state.isSettledDone)
+            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+    }
+
+    /// All events tagged to this project, in time order.
+    private var allEvents: [CalendarEvent] {
         state.events
             .filter { $0.spaceName == project.spaceName && ($0.projectID == project.id || $0.subtitle == project.name) }
             .sorted { $0.start < $1.start }
     }
 
+    /// Upcoming (or still in progress) events — the default list.
+    private var liveEvents: [CalendarEvent] {
+        allEvents.filter { $0.end >= state.now }
+    }
+
+    /// Elapsed events behind the "N PAST" reveal, most recent first.
+    private var pastEvents: [CalendarEvent] {
+        allEvents.filter { $0.end < state.now }.sorted { $0.start > $1.start }
+    }
+
     private var isEmptyProject: Bool {
-        project.overview.isEmpty && liveTasks.isEmpty
+        project.overview.isEmpty && allTasks.isEmpty
     }
 
     var body: some View {
@@ -64,8 +90,8 @@ struct ProjectDetailView: View {
                     badges
                     titleBlock
                     overview
-                    if !liveTasks.isEmpty  { liveTasksSection }
-                    if !liveEvents.isEmpty { liveEventsSection }
+                    if !liveTasks.isEmpty || !completedTasks.isEmpty { liveTasksSection }
+                    if !liveEvents.isEmpty || !pastEvents.isEmpty    { liveEventsSection }
                     if state.isShared(project) { teamSection }
                     if isEmptyProject { starterTemplate }
                     notesSection
@@ -83,11 +109,32 @@ struct ProjectDetailView: View {
         }
         .background(AtlasTheme.Colors.bgBase)
         .onAppear { seedStarterIfNeeded() }
-        .sheet(item: $editingNote) { note in
-            NoteEditorView(note: note)
-                .frame(width: 560, height: 540)
-                .background(AtlasTheme.Colors.bgDeep)
+        // Surface server-side reference/note changes (the cron flips pending→synced,
+        // fills doc-note bodies, and re-pulls later Google edits) without a relaunch:
+        // refresh on entry, then keep refreshing while an import is settling (fast) OR
+        // any Doc-note is present (steady) — a Doc can change on Google's side any time,
+        // so its rows' "Last synced" and content stay fresh while the project is open.
+        // Stops when nothing can change server-side. Cancelled automatically on exit.
+        .task(id: project.id) {
+            await state.reloadReferences()
+            while !Task.isCancelled {
+                let refs = state.references(in: project.id)
+                let hasPending  = refs.contains { $0.syncState == .pending }
+                let hasDocNotes = refs.contains { $0.kind == .docNote }
+                guard hasPending || hasDocNotes else { break }
+                try? await Task.sleep(for: .seconds(hasPending ? 20 : 45))
+                await state.reloadReferences()
+            }
         }
+        // Corner-card editor (not a modal sheet): the project stays visible behind
+        // it; drag-resize and expand live in `NoteCardOverlay`.
+        .overlay(alignment: .bottomTrailing) {
+            if let note = editingNote {
+                NoteCardOverlay(note: note) { editingNote = nil }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: editingNote?.id)
         .sheet(isPresented: $presentAddLink) {
             AddLinkSheet(projectID: project.id)
         }
@@ -145,6 +192,7 @@ struct ProjectDetailView: View {
                 .buttonStyle(.plain)
                 .help("New note in this project")
             }
+            .projectSectionHeader()
 
             if projectNotes.isEmpty {
                 Text("No notes yet. Notes you add here live in this project — and, once Google is connected, sync to a Drive folder for \(project.name) as Google Docs.")
@@ -177,7 +225,7 @@ struct ProjectDetailView: View {
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 if !note.body.isEmpty {
-                    Text(note.body)
+                    Text(note.previewText)
                         .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .lineLimit(1)
@@ -217,7 +265,7 @@ struct ProjectDetailView: View {
                 sectionLabel("REFERENCES")
                 if !refs.isEmpty {
                     Text("\(refs.count)")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .atlasMono(size: 10, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer()
@@ -226,6 +274,7 @@ struct ProjectDetailView: View {
                 referenceHeaderButton(icon: "link", title: "Add link") { presentAddLink = true }
                     .help("Attach an external link")
             }
+            .projectSectionHeader()
 
             if let referenceError {
                 Text(referenceError)
@@ -247,6 +296,8 @@ struct ProjectDetailView: View {
                             onTap: { openReference(ref) },
                             onOpenExternal: { openExternal(ref) },
                             onQuickLook: ref.kind == .file ? { quickLook(ref) } : nil,
+                            onEditNote: ref.kind == .docNote ? { openReference(ref) } : nil,
+                            onSyncNow: ref.kind == .docNote ? { await state.reloadReferences() } : nil,
                             onRemove: { state.removeReference(ref.id) }
                         )
                         if i < refs.count - 1 {
@@ -336,7 +387,7 @@ struct ProjectDetailView: View {
     /// redirect), enrich them with Drive metadata, and POST the unchanged
     /// `{projectId, files[]}` contract to `drive-import`.
     private func importFromDrive() {
-        guard let jwt = auth.session?.accessToken else {
+        guard auth.session != nil else {
             referenceError = "Sign in to Atlas to import from Drive."
             return
         }
@@ -373,6 +424,12 @@ struct ProjectDetailView: View {
 
                 let token = try await googleAuth.validAccessToken()
                 let files = await enrichPickedFiles(ids: ids, token: token)
+                // Mint the JWT only now: the interactive picker round-trip can outlive
+                // the 1-hour token TTL, so a click-time capture arrives expired.
+                guard let jwt = await auth.validAccessToken() else {
+                    referenceError = "Your Atlas session expired — sign in again to finish the import."
+                    return
+                }
                 try await registerDriveImports(projectID: project.id, files: files, jwt: jwt)
                 await state.reloadReferences()
             } catch is DriveOnePickError {
@@ -406,6 +463,7 @@ struct ProjectDetailView: View {
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()
             }
+            .projectSectionHeader()
 
             if starterTasks.isEmpty {
                 Text("Cleared. Add an overview above to describe this project.")
@@ -445,24 +503,12 @@ struct ProjectDetailView: View {
 
     private var badges: some View {
         HStack(spacing: 8) {
-            tag(text: project.spaceName, color: project.spaceColor, filled: true)
-            if project.isClass { tag(text: "Class", color: AtlasTheme.Colors.textSecondary, filled: false) }
+            atlasTag(text: project.spaceName, color: project.spaceColor)
+            if project.isClass { atlasTag(text: "Class", color: AtlasTheme.Colors.textSecondary) }
             if project.canvasSynced {
-                tag(text: "CANVAS SYNCED", color: AtlasTheme.Colors.accentText, filled: false)
+                atlasTag(text: "CANVAS SYNCED", color: AtlasTheme.Colors.accentText)
             }
         }
-    }
-
-    private func tag(text: String, color: Color, filled: Bool) -> some View {
-        HStack(spacing: 5) {
-            if filled { Circle().fill(color).frame(width: 6, height: 6) }
-            Text(text)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .tracking(text == text.uppercased() ? 0.8 : 0)
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 9).padding(.vertical, 4)
-        .overlay(Capsule().strokeBorder(color.opacity(0.35), lineWidth: 1))
     }
 
     private var titleBlock: some View {
@@ -470,12 +516,11 @@ struct ProjectDetailView: View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 if let code = project.code {
                     Text(code)
-                        .font(.system(size: 26, weight: .regular, design: .rounded))
+                        .atlasTitleSerif(size: 26)
                         .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
                 Text(project.name)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .tracking(-0.4)
+                    .atlasTitleSerif(size: 26)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Spacer()
                 Button {
@@ -524,6 +569,7 @@ struct ProjectDetailView: View {
                     .help("Edit overview")
                 }
             }
+            .projectSectionHeader()
 
             if isEditingOverview {
                 overviewEditor
@@ -599,11 +645,14 @@ struct ProjectDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 sectionLabel("TASKS")
-                Text("\(liveTasks.count)")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                if !liveTasks.isEmpty {   // "TASKS 0" over a completed-only reveal reads as a bug
+                    Text("\(liveTasks.count)")
+                        .atlasMono(size: 10, weight: .medium)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
                 Spacer()
             }
+            .projectSectionHeader()
             VStack(spacing: 0) {
                 ForEach(Array(liveTasks.enumerated()), id: \.element.id) { i, task in
                     liveTaskRow(task)
@@ -612,16 +661,29 @@ struct ProjectDetailView: View {
                     }
                 }
             }
+            if !completedTasks.isEmpty {
+                RevealRow(count: completedTasks.count, noun: "COMPLETED", isOpen: $showCompleted)
+                if showCompleted {
+                    VStack(spacing: 0) {
+                        ForEach(Array(completedTasks.enumerated()), id: \.element.id) { i, task in
+                            liveTaskRow(task, trailingLabel: task.completedAt.map(LifecycleDate.short) ?? "")
+                            if i < completedTasks.count - 1 {
+                                Divider().overlay(AtlasTheme.Colors.hairline)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
-    private func liveTaskRow(_ task: TaskItem) -> some View {
+    private func liveTaskRow(_ task: TaskItem, trailingLabel: String? = nil) -> some View {
         Button { state.route = .task(task.id) } label: {
             HStack(spacing: 12) {
                 Button {
                     state.toggleTask(task.id)
                 } label: {
-                    Image(systemName: task.done ? "checkmark.circle.fill" : "circle")
+                    Image(systemName: task.done ? "checkmark.square.fill" : "square")
                         .font(.system(size: 15))
                         .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
                 }
@@ -632,9 +694,10 @@ struct ProjectDetailView: View {
                     .strikethrough(task.done)
                     .foregroundStyle(task.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                 Spacer()
-                if !task.dueLabel.isEmpty {
-                    Text(task.dueLabel)
-                        .font(.system(size: 11, design: .rounded))
+                let label = trailingLabel ?? task.dueLabel
+                if !label.isEmpty {
+                    Text(label)
+                        .atlasMono(size: 11)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Image(systemName: "chevron.right")
@@ -653,30 +716,32 @@ struct ProjectDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 sectionLabel("EVENTS")
-                Text("\(liveEvents.count)")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                if !liveEvents.isEmpty {
+                    Text("\(liveEvents.count)")
+                        .atlasMono(size: 10, weight: .medium)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
                 Spacer()
             }
+            .projectSectionHeader()
             VStack(spacing: 0) {
                 ForEach(Array(liveEvents.enumerated()), id: \.element.id) { i, event in
-                    HStack(spacing: 12) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(event.color)
-                            .frame(width: 3, height: 30)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(event.title)
-                                .font(.system(size: 13, weight: .medium, design: .rounded))
-                                .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                            Text("\(event.timeLabel) · \(event.durationLabel)")
-                                .font(.system(size: 11, design: .rounded))
-                                .foregroundStyle(AtlasTheme.Colors.textMuted)
-                        }
-                        Spacer()
-                    }
-                    .padding(.vertical, 9)
+                    LifecycleEventRow(event: event)
                     if i < liveEvents.count - 1 {
                         Divider().overlay(AtlasTheme.Colors.hairline)
+                    }
+                }
+            }
+            if !pastEvents.isEmpty {
+                RevealRow(count: pastEvents.count, noun: "PAST", isOpen: $showPast)
+                if showPast {
+                    VStack(spacing: 0) {
+                        ForEach(Array(pastEvents.enumerated()), id: \.element.id) { i, event in
+                            LifecycleEventRow(event: event, dimmed: true)
+                            if i < pastEvents.count - 1 {
+                                Divider().overlay(AtlasTheme.Colors.hairline)
+                            }
+                        }
                     }
                 }
             }
@@ -693,6 +758,7 @@ struct ProjectDetailView: View {
     private var pinned: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionLabel("PINNED RESOURCES")
+                .projectSectionHeader()
             HStack(spacing: 10) {
                 ForEach(project.pinned) { res in
                     HStack(spacing: 8) {
@@ -725,9 +791,10 @@ struct ProjectDetailView: View {
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 Text("LINKED REFERENCES").atlasCapsLabel()
                 Text("\(project.backlinks.count)")
-                    .font(.system(size: 11, design: .rounded))
+                    .atlasMono(size: 11)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
+            .projectSectionHeader()
 
             VStack(spacing: 0) {
                 ForEach(Array(project.backlinks.enumerated()), id: \.element.id) { i, link in
@@ -762,5 +829,17 @@ struct ProjectDetailView: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text).atlasCapsLabel()
+    }
+}
+
+private extension View {
+    /// The shared section-header treatment (spec 3.2): the mono caps label already
+    /// sits in the row; this makes it a full-width header with a hairline rule below,
+    /// so every section reads with the same editorial mono+hairline heading.
+    func projectSectionHeader() -> some View {
+        self
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 6)
+            .atlasHairlineBelow()
     }
 }

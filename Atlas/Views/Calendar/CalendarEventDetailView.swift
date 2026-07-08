@@ -107,11 +107,7 @@ struct CalendarEventDetailView: View {
             label = item.source.displayName
             color = item.source == .atlas ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.school
         }
-        return Text(label)
-            .font(.system(size: 10, weight: .bold, design: .rounded))
-            .tracking(0.8)
-            .textCase(.uppercase)
-            .foregroundStyle(color)
+        return atlasTag(text: label, color: color)
     }
 
     private var lockBanner: some View {

@@ -1,4 +1,5 @@
 import XCTest
+@testable import AtlasCore
 @testable import Atlas
 
 /// Pure-logic tests for the editable empty-state starter content. No UI.

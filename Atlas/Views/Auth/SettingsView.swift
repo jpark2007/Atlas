@@ -16,6 +16,10 @@ struct SettingsView: View {
     /// Space new / quick-captured tasks fall into when none is inferred.
     @AppStorage("tasks.defaultSpaceName") private var defaultTaskSpace: String = "Personal"
 
+    /// Arc-style sidebar behavior — "always" pins it; "hover" hides it until the
+    /// cursor touches the left edge (RootView owns the overlay mechanics).
+    @AppStorage("sidebar.mode") private var sidebarMode: String = "always"
+
     // MARK: – Canvas server-sync state
     @State private var canvasFeedURL = ""
     @State private var canvasSpaceName = "School"
@@ -84,6 +88,8 @@ struct SettingsView: View {
                     account
                     Divider().overlay(AtlasTheme.Colors.border)
                     tasksSection
+                    Divider().overlay(AtlasTheme.Colors.border)
+                    sidebarSection
                     Divider().overlay(AtlasTheme.Colors.border)
                     shortcutsSection
                     Spacer(minLength: 8)
@@ -184,10 +190,7 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-        )
+        .atlasHairlineBelow()
     }
 
     @ViewBuilder
@@ -368,10 +371,7 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-            )
+            .atlasHairlineBelow()
 
             // ── Google Calendar ──────────────────────────────────────────
             googleCalendarRow
@@ -408,10 +408,7 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-            )
+            .atlasHairlineBelow()
 
             // ── Atlas Native ────────────────────────────────────────────
             HStack(spacing: 12) {
@@ -433,10 +430,7 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-            )
+            .atlasHairlineBelow()
 
             // ── Two-way sync toggle ─────────────────────────────────────
             HStack {
@@ -460,10 +454,7 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-            )
+            .atlasHairlineBelow()
 
             // ── Sync in the cloud (server-owned) ────────────────────────
             // Only when Google is connected locally: hands the refresh token to
@@ -502,10 +493,7 @@ struct SettingsView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-                )
+                .atlasHairlineBelow()
             }
         }
     }
@@ -527,15 +515,18 @@ struct SettingsView: View {
             }
             Spacer()
             if googleAuth.isConnected {
-                // Pre-drive.file sessions can't import from Drive or sync Docs —
-                // reconnect re-runs consent and re-grants all scopes.
-                if !googleAuth.hasDriveScope {
-                    Button("Reconnect for Drive") { Task { await googleAuth.connect() } }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(AtlasTheme.Colors.accentText)
-                        .disabled(googleAuth.isWorking)
+                // Re-run consent (prompt=consent re-grants all scopes). Always available
+                // when connected so a user whose Drive/Docs grant was declined or revoked
+                // — the onepick "access_denied" import banner — can re-consent in one
+                // click; a pre-drive.file session gets the explicit "for Drive" label
+                // since it MUST reconnect to import at all.
+                Button(googleAuth.hasDriveScope ? "Reconnect" : "Reconnect for Drive") {
+                    Task { await googleAuth.connect() }
                 }
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(AtlasTheme.Colors.accentText)
+                .disabled(googleAuth.isWorking)
                 Button("Disconnect") {
                     googleAuth.disconnect()
                     googleCalendarEnabled = false
@@ -566,10 +557,7 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-        )
+        .atlasHairlineBelow()
     }
 
     private var syncSubtitle: String {
@@ -635,10 +623,7 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-        )
+        .atlasHairlineBelow()
     }
 
     private var cloudSyncSubtitle: String {
@@ -807,11 +792,38 @@ struct SettingsView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(AtlasTheme.Colors.bgElevated.opacity(0.5))
-                )
+                .atlasHairlineBelow()
             }
+        }
+    }
+
+    // MARK: – Sidebar section
+
+    private var sidebarSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            label("SIDEBAR")
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sidebar visibility")
+                        .font(.system(size: 13, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text("Slide out keeps it hidden until the cursor touches the left edge")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                Spacer()
+                Picker("Sidebar visibility", selection: $sidebarMode) {
+                    Text("Always visible").tag("always")
+                    Text("Slide out on hover").tag("hover")
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(width: 170)
+                .tint(AtlasTheme.Colors.accent)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .atlasHairlineBelow()
         }
     }
 
@@ -865,7 +877,7 @@ struct SettingsView: View {
 
             // Current combo badge
             Text(isRecording ? "…" : binding.displayString)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .atlasMono(size: 12, weight: .semibold)
                 .foregroundStyle(isRecording ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textSecondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
@@ -873,7 +885,7 @@ struct SettingsView: View {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(isRecording
                               ? AtlasTheme.Colors.accent.opacity(0.12)
-                              : AtlasTheme.Colors.bgElevated)
+                              : Color.clear)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -907,17 +919,18 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        // Recording keeps the accent-highlighted instrument box; idle rows drop the
+        // dead fill and separate with a hairline (paper idiom).
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isRecording
-                      ? AtlasTheme.Colors.accent.opacity(0.05)
-                      : AtlasTheme.Colors.bgElevated.opacity(0.5))
+                .fill(isRecording ? AtlasTheme.Colors.accent.opacity(0.05) : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(isRecording ? AtlasTheme.Colors.accent.opacity(0.25) : Color.clear,
                         lineWidth: 1)
         )
+        .atlasHairlineBelow()
         .animation(.easeInOut(duration: 0.15), value: isRecording)
     }
 
@@ -1001,7 +1014,7 @@ struct SettingsView: View {
     }
 
     private func label(_ t: String) -> some View {
-        Text(t).font(AtlasTheme.Font.sectionLabel()).tracking(1.2)
+        Text(t).atlasMono(size: 11, weight: .semibold).tracking(1.2)
             .foregroundStyle(AtlasTheme.Colors.textMuted)
     }
 
@@ -1024,7 +1037,6 @@ struct SettingsView: View {
         .textFieldStyle(.plain).font(.system(size: 13, design: .rounded))
         .foregroundStyle(AtlasTheme.Colors.textPrimary).tint(AtlasTheme.Colors.accent)
         .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(AtlasTheme.Colors.bgElevated.opacity(0.7))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
             .stroke(AtlasTheme.Colors.border, lineWidth: 1))
