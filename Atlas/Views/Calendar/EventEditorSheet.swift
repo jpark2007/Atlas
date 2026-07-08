@@ -170,7 +170,7 @@ struct EventEditorSheet: View {
                     ZStack(alignment: .topLeading) {
                         if notes.isEmpty {
                             Text("Add notes…")
-                                .atlasFont(size: 14, design: .rounded)
+                                .atlasFont(size: 14, weight: .medium, design: .rounded)
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                                 .padding(.leading, 5).padding(.top, 1)
                                 .allowsHitTesting(false)

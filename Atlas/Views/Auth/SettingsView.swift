@@ -128,7 +128,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(identityTitle).atlasFont(size: 15, weight: .semibold, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text(identitySubtitle).atlasFont(size: 13, design: .rounded)
+                    Text(identitySubtitle).atlasFont(size: 13, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer()
@@ -153,7 +153,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             label("CANVAS")
             Text("Import Canvas assignments and events on a server schedule — no need to keep Atlas open.")
-                .atlasFont(size: 11, design: .rounded)
+                .atlasFont(size: 11, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
 
             if let conn = state.canvasConnection, conn.isServerOwned {
@@ -212,7 +212,7 @@ struct SettingsView: View {
             if !state.spaces.isEmpty {
                 HStack {
                     Text("Items land in")
-                        .atlasFont(size: 13, design: .rounded)
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     Spacer()
                     Picker("Canvas space", selection: $canvasSpaceName) {
@@ -254,7 +254,7 @@ struct SettingsView: View {
             .disabled(canvasWorking)
 
             Text("Canvas → Calendar → Calendar Feed (copy the .ics link)")
-                .atlasFont(size: 11, design: .rounded)
+                .atlasFont(size: 11, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
@@ -342,7 +342,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             label("CALENDARS")
             Text("Aggregate read-only. Pick one source to write new events.")
-                .atlasFont(size: 11, design: .rounded)
+                .atlasFont(size: 11, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
 
             // ── Apple Calendar ───────────────────────────────────────────
@@ -407,7 +407,7 @@ struct SettingsView: View {
                 }
                 Spacer()
                 Image(systemName: "eye.fill")
-                    .atlasFont(size: 12, design: .rounded)
+                    .atlasFont(size: 12, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .help("Read-only import")
             }
@@ -425,7 +425,7 @@ struct SettingsView: View {
                         .atlasFont(size: 14, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text("Always on")
-                        .atlasFont(size: 12, design: .rounded)
+                        .atlasFont(size: 12, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer()
@@ -444,7 +444,7 @@ struct SettingsView: View {
                         .atlasFont(size: 14, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text(syncSubtitle)
-                        .atlasFont(size: 12, design: .rounded)
+                        .atlasFont(size: 12, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer()
@@ -476,7 +476,7 @@ struct SettingsView: View {
                             .atlasFont(size: 14, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         Text("Imported events land in this space")
-                            .atlasFont(size: 12, design: .rounded)
+                            .atlasFont(size: 12, weight: .medium, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     Spacer()
@@ -764,7 +764,7 @@ struct SettingsView: View {
             label("TASKS")
             if state.spaces.isEmpty {
                 Text("Create a space first to set a default.")
-                    .atlasFont(size: 12, design: .rounded)
+                    .atlasFont(size: 12, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             } else {
                 HStack {
@@ -773,7 +773,7 @@ struct SettingsView: View {
                             .atlasFont(size: 14, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         Text("Quick-captured tasks without an inferred space land here")
-                            .atlasFont(size: 12, design: .rounded)
+                            .atlasFont(size: 12, weight: .medium, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     Spacer()
@@ -813,7 +813,7 @@ struct SettingsView: View {
                         .atlasFont(size: 14, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text("Applies everywhere, immediately")
-                        .atlasFont(size: 12, design: .rounded)
+                        .atlasFont(size: 12, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer()
@@ -844,7 +844,7 @@ struct SettingsView: View {
                         .atlasFont(size: 14, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text("Slide out keeps it hidden until the cursor touches the left edge")
-                        .atlasFont(size: 12, design: .rounded)
+                        .atlasFont(size: 12, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer()
@@ -869,7 +869,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             label("SHORTCUTS")
             Text("In-app only. Global system-wide hotkey is deferred (v2).")
-                .atlasFont(size: 11, design: .rounded)
+                .atlasFont(size: 11, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
 
             ForEach(ShortcutAction.allCases) { action in
@@ -947,7 +947,7 @@ struct SettingsView: View {
                 if recordingAction == action { stopRecording() }
             } label: {
                 Image(systemName: "arrow.counterclockwise")
-                    .atlasFont(size: 12, design: .rounded)
+                    .atlasFont(size: 12, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             .buttonStyle(.plain)
@@ -1059,7 +1059,7 @@ struct SettingsView: View {
             Image(systemName: icon).foregroundStyle(tint).frame(width: 22)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).atlasFont(size: 14, design: .rounded).foregroundStyle(AtlasTheme.Colors.textPrimary)
-                Text(subtitle).atlasFont(size: 12, design: .rounded).foregroundStyle(AtlasTheme.Colors.textMuted)
+                Text(subtitle).atlasFont(size: 12, weight: .medium, design: .rounded).foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             Spacer()
         }

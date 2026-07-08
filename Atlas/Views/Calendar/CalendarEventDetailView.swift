@@ -144,7 +144,7 @@ struct CalendarEventDetailView: View {
             fieldGroup("DESCRIPTION") {
                 if isReadOnly {
                     Text(descriptionText.isEmpty ? "—" : descriptionText)
-                        .atlasFont(size: 14, design: .rounded)
+                        .atlasFont(size: 14, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -226,7 +226,7 @@ struct CalendarEventDetailView: View {
                 let refs = state.references(forEvent: item.id)
                 if refs.isEmpty {
                     Text("No references attached.")
-                        .atlasFont(size: 14, design: .rounded)
+                        .atlasFont(size: 14, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 } else {
                     ForEach(refs) { ref in

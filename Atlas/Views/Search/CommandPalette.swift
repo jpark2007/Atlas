@@ -147,7 +147,7 @@ struct CommandPaletteOverlay: View {
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .atlasFont(size: 15)
+                .atlasFont(size: 15, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             TextField(focus.sessionActive ? "Search your notes…" : "Find anything, or create a task…", text: $query)
                 .textFieldStyle(.plain)
@@ -233,14 +233,14 @@ struct CommandPaletteOverlay: View {
                         .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1)
                 )
             Text(label)
-                .atlasFont(size: 12, design: .rounded)
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
 
     private func hint(_ text: String) -> some View {
         Text(text)
-            .atlasFont(size: 14)
+            .atlasFont(size: 14, weight: .medium)
             .foregroundStyle(AtlasTheme.Colors.textMuted)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
@@ -284,7 +284,7 @@ struct CommandPaletteOverlay: View {
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 if let sub = secondary(result) {
                     Text(sub)
-                        .atlasFont(size: 12)
+                        .atlasFont(size: 12, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 }
             }

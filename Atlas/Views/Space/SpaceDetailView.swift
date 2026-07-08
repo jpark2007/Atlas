@@ -148,7 +148,7 @@ struct SpaceDetailView: View {
                 Spacer()
 
                 Image(systemName: "chevron.right")
-                    .atlasFont(size: 10)
+                    .atlasFont(size: 10, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             .padding(.vertical, 10)
@@ -194,7 +194,7 @@ struct SpaceDetailView: View {
                 .atlasFont(size: 31, weight: .light)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Text("No tasks or events in \(space.name) yet.")
-                .atlasFont(size: 14, design: .rounded)
+                .atlasFont(size: 14, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
         .frame(maxWidth: .infinity)

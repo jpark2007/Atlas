@@ -467,7 +467,7 @@ struct GraphView: View {
             ForEach(items, id: \.0) { item in
                 HStack(spacing: 7) {
                     Circle().fill(item.1).frame(width: 8, height: 8)
-                    Text(item.0).atlasFont(size: 11, design: .rounded)
+                    Text(item.0).atlasFont(size: 11, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
             }

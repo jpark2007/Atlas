@@ -46,7 +46,7 @@ struct UnscheduledTray: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 6) {
                     Image(systemName: "tray.full")
-                        .atlasFont(size: 13)
+                        .atlasFont(size: 13, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     Text("Unscheduled")
                         .atlasFont(size: 15, weight: .semibold)
@@ -57,7 +57,7 @@ struct UnscheduledTray: View {
                 }
 
                 Text("Drag onto the grid, or use Suggest a time")
-                    .atlasFont(size: 12, design: .rounded)
+                    .atlasFont(size: 12, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
 
                 if displayedTasks.isEmpty {
@@ -65,7 +65,7 @@ struct UnscheduledTray: View {
                         Image(systemName: "checkmark.circle")
                             .foregroundStyle(AtlasTheme.Colors.green)
                         Text("All scheduled")
-                            .atlasFont(size: 13, design: .rounded)
+                            .atlasFont(size: 13, weight: .medium, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     }
                     .padding(.vertical, 8)
@@ -133,7 +133,7 @@ struct UnscheduledTray: View {
             // Check it off — completes the task; it then drops out of the tray.
             Button { onToggleDone(task.id) } label: {
                 Image(systemName: "square")
-                    .atlasFont(size: 17)
+                    .atlasFont(size: 17, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .contentShape(Rectangle())
             }
@@ -153,7 +153,7 @@ struct UnscheduledTray: View {
             }
             Spacer(minLength: 0)
             Image(systemName: "line.3.horizontal")
-                .atlasFont(size: 11)
+                .atlasFont(size: 11, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
         .padding(.horizontal, 10)

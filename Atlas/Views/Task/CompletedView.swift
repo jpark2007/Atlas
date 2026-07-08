@@ -96,7 +96,7 @@ struct CompletedView: View {
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Image(systemName: "chevron.right")
-                    .atlasFont(size: 10)
+                    .atlasFont(size: 10, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             .padding(.vertical, 9)
@@ -111,7 +111,7 @@ struct CompletedView: View {
                 .atlasFont(size: 31, weight: .light)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Text("Nothing completed yet.")
-                .atlasFont(size: 14, design: .rounded)
+                .atlasFont(size: 14, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
         .frame(maxWidth: .infinity)

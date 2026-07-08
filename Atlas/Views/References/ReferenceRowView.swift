@@ -59,7 +59,7 @@ struct ReferenceRowView: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: "arrow.clockwise")
-                        .atlasFont(size: 12)
+                        .atlasFont(size: 12, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
             }
@@ -87,7 +87,7 @@ struct ReferenceRowView: View {
                     .lineLimit(1)
                 HStack(spacing: 8) {
                     Text(sourceLabel)
-                        .atlasFont(size: 12, design: .rounded)
+                        .atlasFont(size: 12, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .lineLimit(1)
                     if reference.kind != .link { syncDisplay }
@@ -116,7 +116,7 @@ struct ReferenceRowView: View {
             }
         } label: {
             Image(systemName: "ellipsis")
-                .atlasFont(size: 14)
+                .atlasFont(size: 14, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
@@ -167,7 +167,7 @@ struct ReferenceRowView: View {
     private var syncDisplay: some View {
         if reference.syncState == .synced, let d = reference.lastSyncedAt {
             syncedText(d)
-                .atlasFont(size: 12, design: .rounded)
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         } else {
             syncChip

@@ -39,7 +39,7 @@ struct NewSpaceSheet: View {
                     .atlasFont(size: 19, weight: .semibold, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Text("A new top-level bucket alongside your other spaces.")
-                    .atlasFont(size: 13, design: .rounded)
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
             }
             Spacer()

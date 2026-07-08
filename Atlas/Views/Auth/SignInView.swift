@@ -53,7 +53,7 @@ struct SignInView: View {
 
                 Button("Continue without an account") { auth.continueOffline() }
                     .buttonStyle(.plain)
-                    .atlasFont(size: 13, design: .rounded)
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .padding(.top, 4)
             }
@@ -74,7 +74,7 @@ struct SignInView: View {
                 .tracking(-0.9)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Text(mode == .signIn ? "Your whole life, one place." : "Create your account.")
-                .atlasFont(size: 14, design: .rounded)
+                .atlasFont(size: 14, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
     }
@@ -82,7 +82,7 @@ struct SignInView: View {
     /// Editorial field: no fill, no box — an icon + input over a hairline rule.
     private func field(icon: String, placeholder: String, text: Binding<String>, secure: Bool) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon).atlasFont(size: 14)
+            Image(systemName: icon).atlasFont(size: 14, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted).frame(width: 18)
             Group {
                 if secure { SecureField(placeholder, text: text) }
@@ -143,7 +143,7 @@ struct SignInView: View {
     private var dividerOr: some View {
         HStack(spacing: 12) {
             Rectangle().fill(AtlasTheme.Colors.hairline).frame(height: 1)
-            Text("or").atlasFont(size: 12, design: .rounded).foregroundStyle(AtlasTheme.Colors.textMuted)
+            Text("or").atlasFont(size: 12, weight: .medium, design: .rounded).foregroundStyle(AtlasTheme.Colors.textMuted)
             Rectangle().fill(AtlasTheme.Colors.hairline).frame(height: 1)
         }
     }

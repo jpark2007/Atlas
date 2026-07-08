@@ -206,11 +206,11 @@ struct NoteEditorView: View {
         case .synced:
             if let d = ref.lastSyncedAt {
                 lastSyncedText(d)
-                    .atlasFont(size: 12)
+                    .atlasFont(size: 12, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             } else {
                 Text("· Synced")
-                    .atlasFont(size: 12)
+                    .atlasFont(size: 12, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
         case .stale:
@@ -219,11 +219,11 @@ struct NoteEditorView: View {
                 .foregroundStyle(AtlasTheme.Colors.accentText)
         case .error:
             Text("· Sync error")
-                .atlasFont(size: 12)
+                .atlasFont(size: 12, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         case .pending:
             Text("· Not yet synced")
-                .atlasFont(size: 12)
+                .atlasFont(size: 12, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
@@ -271,7 +271,7 @@ struct NoteEditorView: View {
                 .atlasFont(size: 12)
                 .foregroundStyle(AtlasTheme.Colors.accentText)
             Text("A newer version synced from Google — your edits are kept.")
-                .atlasFont(size: 12)
+                .atlasFont(size: 12, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
             Spacer()
             Button { if let live = liveNote { loadFresh(live) } } label: {
@@ -387,7 +387,7 @@ struct NoteEditorView: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             if block.kind.isList {
                 Text(listGlyph(for: index, block: block))
-                    .atlasFont(size: 14)
+                    .atlasFont(size: 14, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .frame(minWidth: 18, alignment: .trailing)
             }
@@ -425,7 +425,7 @@ struct NoteEditorView: View {
             Text(docReference == nil
                  ? "Saved in Atlas · constrained editor"
                  : "Two-way with Google Doc")
-                .atlasFont(size: 12)
+                .atlasFont(size: 12, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Spacer()
             Button { addBlockAfter(doc.blocks.count - 1) } label: {

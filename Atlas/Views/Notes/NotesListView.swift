@@ -80,7 +80,7 @@ struct NotesListView: View {
                         .atlasTitleSerif(size: 14)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     Text(Note.highlighted(note.previewText))
-                        .atlasFont(size: 12)
+                        .atlasFont(size: 12, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                         .lineLimit(2)
                 }

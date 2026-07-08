@@ -139,13 +139,13 @@ struct SidebarView: View {
                 Circle().fill(AtlasTheme.Colors.textPrimary.opacity(0.06))
                     .frame(width: 24, height: 24)
                     .overlay(Image(systemName: "person.fill")
-                        .atlasFont(size: 12).foregroundStyle(AtlasTheme.Colors.textSecondary))
+                        .atlasFont(size: 12, weight: .medium).foregroundStyle(AtlasTheme.Colors.textSecondary))
                 Text(state.userName)
                     .atlasFont(size: 14, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Spacer()
                 Image(systemName: "gearshape")
-                    .atlasFont(size: 13).foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .atlasFont(size: 13, weight: .medium).foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
             .rowChrome(selected: state.route == .settings, hovered: hovered == .settings)
@@ -174,10 +174,10 @@ struct SidebarView: View {
         Button { state.presentSearch = true } label: {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .atlasFont(size: 13)
+                    .atlasFont(size: 13, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Text("Search notes, classes…")
-                    .atlasFont(size: 13, design: .rounded)
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()
                 Text("⌘K")

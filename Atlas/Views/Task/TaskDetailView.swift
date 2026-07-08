@@ -155,7 +155,7 @@ struct TaskDetailView: View {
                         .frame(width: 12, height: 12)
                     Text("Claim task")
                 }
-                .atlasFont(size: 13, design: .rounded)
+                .atlasFont(size: 13, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             .buttonStyle(.plain)
@@ -300,7 +300,7 @@ struct TaskDetailView: View {
                         isEditingNotes = true
                     } label: {
                         Image(systemName: "pencil")
-                            .atlasFont(size: 12)
+                            .atlasFont(size: 12, weight: .medium)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     .buttonStyle(.plain)
@@ -315,7 +315,7 @@ struct TaskDetailView: View {
                     isEditingNotes = true
                 } label: {
                     Text("Add a description…")
-                        .atlasFont(size: 14, design: .rounded)
+                        .atlasFont(size: 14, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
@@ -334,7 +334,7 @@ struct TaskDetailView: View {
             ZStack(alignment: .topLeading) {
                 if notesDraft.isEmpty {
                     Text("Add description, context, links…")
-                        .atlasFont(size: 14, design: .rounded)
+                        .atlasFont(size: 14, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .padding(.leading, 5).padding(.top, 1)
                         .allowsHitTesting(false)
@@ -405,7 +405,7 @@ struct TaskDetailView: View {
                     .buttonStyle(.plain)
                     // Secondary: re-tag to a different note.
                     notePickerMenu {
-                        Image(systemName: "chevron.down").atlasFont(size: 10)
+                        Image(systemName: "chevron.down").atlasFont(size: 10, weight: .medium)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     // Unlink.
@@ -486,7 +486,7 @@ struct TaskDetailView: View {
             let refs = state.references(forTask: live.id)
             if refs.isEmpty {
                 Text("No references attached.")
-                    .atlasFont(size: 14, design: .rounded)
+                    .atlasFont(size: 14, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             } else {
                 ForEach(refs) { ref in

@@ -201,7 +201,7 @@ struct PlaceholderView: View {
                 .atlasFont(size: 24, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Text("Coming next.")
-                .atlasFont(size: 14, design: .rounded)
+                .atlasFont(size: 14, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

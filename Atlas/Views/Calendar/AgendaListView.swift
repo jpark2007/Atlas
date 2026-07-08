@@ -53,7 +53,7 @@ struct AgendaListView: View {
                 .atlasFont(size: 17, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Text("Scheduled events and dated tasks will show up here.")
-                .atlasFont(size: 13, design: .rounded)
+                .atlasFont(size: 13, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -103,7 +103,7 @@ struct AgendaListView: View {
                 HStack(spacing: 6) {
                     if item.kind == .task {
                         Image(systemName: "checkmark.square")
-                            .atlasFont(size: 11)
+                            .atlasFont(size: 11, weight: .medium)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     Text(item.title)

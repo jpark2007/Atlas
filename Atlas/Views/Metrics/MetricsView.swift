@@ -16,7 +16,7 @@ struct MetricsStatCell: View {
                 .atlasMono(size: 22, weight: .semibold)
                 .foregroundStyle(accent ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textPrimary)
             Text(label)
-                .atlasFont(size: 12)
+                .atlasFont(size: 12, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -109,7 +109,7 @@ struct MetricsSpaceDonut: View {
             }
         } else {
             Text("No task data yet.")
-                .atlasFont(size: 13, design: .rounded)
+                .atlasFont(size: 13, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }

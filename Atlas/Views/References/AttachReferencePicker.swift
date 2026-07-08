@@ -68,7 +68,7 @@ struct ReferenceListRow: View {
             if let onRemove {
                 Button(action: onRemove) {
                     Image(systemName: "xmark.circle.fill")
-                        .atlasFont(size: 14)
+                        .atlasFont(size: 14, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
@@ -161,7 +161,7 @@ struct AttachReferencePicker: View {
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         .lineLimit(1)
                     Text(kindLabel(ref))
-                        .atlasFont(size: 12)
+                        .atlasFont(size: 12, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer(minLength: 0)
@@ -186,7 +186,7 @@ struct AttachReferencePicker: View {
 
     private func emptyState(_ message: String) -> some View {
         Text(message)
-            .atlasFont(size: 14, design: .rounded)
+            .atlasFont(size: 14, weight: .medium, design: .rounded)
             .foregroundStyle(AtlasTheme.Colors.textMuted)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             .multilineTextAlignment(.center)

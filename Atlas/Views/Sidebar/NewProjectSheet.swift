@@ -46,7 +46,7 @@ struct NewProjectSheet: View {
                         .fill(state.calendarSpaceColor(named: spaceName))
                         .frame(width: 7, height: 7)
                     Text(spaceName)
-                        .atlasFont(size: 13, design: .rounded)
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 }
             }
@@ -103,7 +103,7 @@ struct NewProjectSheet: View {
                             .atlasFont(size: 14, weight: .medium, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         Text("Classes show a dotted marker and class badge.")
-                            .atlasFont(size: 12, design: .rounded)
+                            .atlasFont(size: 12, weight: .medium, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                 }
@@ -114,7 +114,7 @@ struct NewProjectSheet: View {
                     ZStack(alignment: .topLeading) {
                         if overview.isEmpty {
                             Text("What is this project about?")
-                                .atlasFont(size: 14, design: .rounded)
+                                .atlasFont(size: 14, weight: .medium, design: .rounded)
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 10)

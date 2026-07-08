@@ -159,7 +159,7 @@ struct DashboardView: View {
             let tasks = focusTasks
             if tasks.isEmpty {
                 Text("Nothing due — you're clear.")
-                    .atlasFont(size: 13, design: .rounded)
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .padding(.vertical, 6)
             } else {
@@ -251,7 +251,7 @@ struct DashboardView: View {
             let notes = recentNotesList
             if notes.isEmpty {
                 Text("No notes yet.")
-                    .atlasFont(size: 13, design: .rounded)
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .padding(.vertical, 6)
             } else {

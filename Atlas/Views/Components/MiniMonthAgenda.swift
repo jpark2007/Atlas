@@ -214,7 +214,7 @@ struct MiniMonthAgenda: View {
             let shown = agendaLimit.map { Array(items.prefix($0)) } ?? items
             if items.isEmpty {
                 Text("Nothing scheduled.")
-                    .atlasFont(size: 13, design: .rounded)
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .padding(.vertical, 6)
             } else {
