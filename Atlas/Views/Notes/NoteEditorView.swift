@@ -57,6 +57,8 @@ struct NoteEditorView: View {
     @State private var showMultitabNotice = false
     /// Per-tab write refused because the tab's live content is beyond the editable vocabulary.
     @State private var showTabReadOnlyNotice = false
+    /// Write refused because the note's first pull hasn't landed yet (server belt).
+    @State private var showNotSyncedNotice = false
 
     private let onDone: ((Note) -> Void)?
     /// Overlay hosts (the corner note card) can't rely on `dismiss` — it only works
@@ -156,6 +158,11 @@ struct NoteEditorView: View {
         } message: {
             Text("This tab's content (table, image, or rich formatting) can only be edited in Google Docs.")
         }
+        .alert("Note not synced yet", isPresented: $showNotSyncedNotice) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("This note hasn't finished its first sync — try again in a moment.")
+        }
     }
 
     private var core: some View {
@@ -182,13 +189,16 @@ struct NoteEditorView: View {
                 )
                 .padding(.horizontal, 18)
                 .padding(.vertical, 6)
-                if let tab = selectedTab, !tab.writable {
-                    readOnlyTabBanner(tab)
-                }
+            }
+            // One banner at most — a pending first-sync lock outranks a read-only tab.
+            if syncPending {
+                pendingSyncBanner
+            } else if let tab = selectedTab, !tab.writable {
+                readOnlyTabBanner(tab)
             }
 
             styleBar
-                .disabled(tabReadOnly)
+                .disabled(tabReadOnly || syncPending)
 
             Divider().overlay(AtlasTheme.Colors.border)
 
@@ -202,7 +212,7 @@ struct NoteEditorView: View {
                 .padding(.vertical, 12)
             }
             .frame(minHeight: 200)
-            .disabled(tabReadOnly)
+            .disabled(tabReadOnly || syncPending)
 
             Divider().overlay(AtlasTheme.Colors.border)
 
@@ -223,6 +233,11 @@ struct NoteEditorView: View {
     /// True when the selected multi-tab Doc tab is read-only — locks the style bar and
     /// block editors. `false` for single-tab / flag-OFF (no `selectedTab`).
     private var tabReadOnly: Bool { selectedTab.map { !$0.writable } ?? false }
+
+    /// True while a linked Doc-note's first pull hasn't landed — editing is locked (no
+    /// content to edit yet, and no baseline to write against). Clears once the cron (or
+    /// "Sync now") pulls and flips the reference to `.synced`.
+    private var syncPending: Bool { docReference?.syncState == .pending }
 
     /// The tab a per-tab save targets. `nil` for single-tab / flag-OFF (the legacy
     /// whole-file write-back path); the selected tab's id in per-tab mode.
@@ -384,6 +399,40 @@ struct NoteEditorView: View {
             }
             .buttonStyle(.plain)
             .help("Edit this tab in Google Docs")
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 6)
+        .background(AtlasTheme.Colors.warning.opacity(0.08))
+    }
+
+    /// Shown while a linked Doc-note's first pull hasn't landed (`sync_state == pending`):
+    /// editing is locked until the content arrives. Mirrors `readOnlyTabBanner`'s
+    /// warning-tint styling; "Sync now" forces a pull (same path as `syncNowButton`).
+    private var pendingSyncBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "clock")
+                .font(.system(size: 11))
+                .foregroundStyle(AtlasTheme.Colors.accentText)
+            Text("First sync in progress — content loads shortly.")
+                .font(AtlasTheme.Font.small())
+                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+            Spacer()
+            Button {
+                guard !isSyncingNow else { return }
+                isSyncingNow = true
+                Task {
+                    if let ref = docReference { _ = await referencePull?.pull(referenceID: ref.id) }
+                    await state.reloadReferences()
+                    isSyncingNow = false
+                }
+            } label: {
+                Text("Sync now")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
+            }
+            .buttonStyle(.plain)
+            .disabled(isSyncingNow)
+            .help("Check for the first synced version")
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 6)
@@ -647,6 +696,8 @@ struct NoteEditorView: View {
     }
 
     private func commit() {
+        // Pending first-sync: editing was locked, so there's nothing to push — just close.
+        if syncPending { closeHost(); return }
         doc.normalize()
         if let ref = docReference {
             commitDocNote(ref)
@@ -712,6 +763,11 @@ struct NoteEditorView: View {
                 // Server re-verified this tab as read-only since our pull (it gained rich
                 // content in Google). Don't clobber the preview; surface the notice, stay open.
                 showTabReadOnlyNotice = true
+            case .notSynced:
+                // Server belt: the note's first pull hasn't landed. The editor locks pending
+                // notes, but a race (pending cleared between load and save) can still reach
+                // here — surface the notice, stay open.
+                showNotSyncedNotice = true
             }
         } catch {
             // Never lose the single-tab user's work: keep the local Markdown copy and close;
@@ -753,6 +809,9 @@ enum DocWriteBackOutcome: Equatable {
     /// Per-tab write refused: the tab's live content is beyond the editable
     /// vocabulary (table/image/rich formatting).
     case tabReadOnly(reason: String?)
+    /// Write refused: the note's first pull hasn't landed yet (`sync_state == pending`),
+    /// so there's no content/baseline to write against — retry once it syncs.
+    case notSynced
 }
 
 /// Narrow client surface for the two-way Google-Doc write-back the design doc mandates:

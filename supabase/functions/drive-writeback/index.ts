@@ -167,7 +167,7 @@ Deno.serve(async (req: Request) => {
   // ── Resolve the linked Doc: the project_references row that backs this note ──
   const { data: refRow, error: refErr } = await admin
     .from("project_references")
-    .select("id, drive_file_id, modified_time, kind")
+    .select("id, drive_file_id, modified_time, kind, sync_state")
     .eq("user_id", userId)
     .eq("note_id", noteId)
     .eq("kind", "doc_note")
@@ -175,6 +175,12 @@ Deno.serve(async (req: Request) => {
   if (refErr) return json({ error: "Failed to load reference" }, 500);
   if (!refRow || !refRow.drive_file_id) {
     return json({ error: "Note is not linked to a Google Doc" }, 404);
+  }
+  // Pending belt: the first pull hasn't landed, so there's no content/baseline to write
+  // against yet. Refuse (unless the user chose to overwrite) — the client locks the
+  // editor while pending, this guards the race + any other caller.
+  if (refRow.sync_state === "pending" && !overwrite) {
+    return json({ ok: false, error: "not_synced" }, 409);
   }
   const fileId = refRow.drive_file_id as string;
   // Prefer the client's baseline; fall back to the server's stored baseline.
