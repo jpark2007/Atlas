@@ -41,10 +41,12 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { readTabs, renderRequests } from "../_shared/doc_tabs.ts";
 
 const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const DRIVE_BASE = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3";
+const DOCS_BASE = "https://docs.googleapis.com/v1";
 const GOOGLE_DOC_MIME = "application/vnd.google-apps.document";
 
 const CORS_HEADERS = {
@@ -90,6 +92,23 @@ function sameInstant(a: string | null | undefined, b: string | null | undefined)
   return Number.isFinite(ta) && Number.isFinite(tb) && ta === tb;
 }
 
+// Max endIndex of one tab's body content, searching the tab tree recursively.
+// deno-lint-ignore no-explicit-any
+function tabEndIndex(doc: any, tabId: string): number | null {
+  const stack: any[] = [...(doc?.tabs ?? [])];
+  while (stack.length) {
+    const t = stack.pop();
+    if (t?.tabProperties?.tabId === tabId) {
+      const content: any[] = t?.documentTab?.body?.content ?? [];
+      let max = 1;
+      for (const el of content) if (typeof el?.endIndex === "number" && el.endIndex > max) max = el.endIndex;
+      return max;
+    }
+    for (const c of t?.childTabs ?? []) stack.push(c);
+  }
+  return null;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -117,6 +136,7 @@ Deno.serve(async (req: Request) => {
   let markdown: string;
   let expectedModifiedTime: string | null;
   let overwrite: boolean;
+  let tabId: string | null;
   try {
     const b = await req.json();
     if (typeof b?.noteId !== "string" || !b.noteId.trim()) {
@@ -132,6 +152,8 @@ Deno.serve(async (req: Request) => {
         ? b.expectedModifiedTime.trim()
         : null;
     overwrite = b?.overwrite === true;
+    tabId =
+      typeof b?.tabId === "string" && b.tabId.trim() ? b.tabId.trim() : null;
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
   }
@@ -198,6 +220,76 @@ Deno.serve(async (req: Request) => {
   // when we have NO baseline at all (first write of a never-pulled Doc, nothing to lose).
   if (!overwrite && baseline && !sameInstant(baseline, driveModifiedTime)) {
     return json({ ok: false, error: "stale", driveModifiedTime, expectedModifiedTime: baseline }, 409);
+  }
+
+  // ── Tab awareness: read the live tab tree ONCE (Docs API, `documents` scope) ──
+  // The raw JSON feeds BOTH the writability check (readTabs) and the clearing-delete
+  // bound (tabEndIndex), so this is the only Docs fetch either path needs.
+  const docRes = await fetch(
+    `${DOCS_BASE}/documents/${encodeURIComponent(fileId)}?includeTabsContent=true`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!docRes.ok) {
+    const text = (await docRes.text()).slice(0, 200);
+    return json({ error: `documents.get ${docRes.status}: ${text}` }, 502);
+  }
+  const docJson = await docRes.json();
+  const tabs = readTabs(docJson);
+
+  if (tabId !== null) {
+    // ── Per-tab write: batchUpdate scoped by tabId. Blast radius = this tab. ──
+    const tab = tabs.find((t) => t.tabId === tabId);
+    if (!tab) return json({ error: "Tab not found in Doc" }, 404);
+    // Re-verify writability against the LIVE structure (defense in depth — the tab
+    // may have gained a table/image in Google since the last pull). Never trust a
+    // client-cached flag; the server re-decides from the actual Doc.
+    if (!tab.writable) {
+      return json({ ok: false, error: "tab_readonly", reason: tab.readonlyReason }, 409);
+    }
+    // endIndex of the tab's current content, for the clearing delete — recomputed
+    // from the SAME raw JSON already fetched above (no second Docs round-trip).
+    const endIndex = tabEndIndex(docJson, tabId);
+    if (endIndex === null) return json({ error: "Tab not found in Doc" }, 404);
+
+    const requests = renderRequests(tabId, endIndex, markdown);
+    const buRes = await fetch(
+      `${DOCS_BASE}/documents/${encodeURIComponent(fileId)}:batchUpdate`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ requests }),
+      },
+    );
+    if (!buRes.ok) {
+      const text = (await buRes.text()).slice(0, 200);
+      return json({ error: `documents.batchUpdate ${buRes.status}: ${text}` }, 502);
+    }
+    // Fresh modifiedTime for the new baseline (batchUpdate bumped it).
+    const mRes = await fetch(
+      `${DRIVE_BASE}/files/${encodeURIComponent(fileId)}?fields=modifiedTime&supportsAllDrives=true`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    const newModifiedTime = mRes.ok ? (await mRes.json()).modifiedTime as string : null;
+
+    // Persist: tab body + reference baseline (storm guard vs the pull cron).
+    const nowISO = new Date().toISOString();
+    await admin.from("doc_note_tabs")
+      .update({ body_md: markdown, updated_at: nowISO })
+      .eq("reference_id", refRow.id).eq("tab_id", tabId).eq("user_id", userId);
+    const { error: bErr } = await admin.from("project_references")
+      .update({ modified_time: newModifiedTime, last_synced_at: nowISO, sync_state: "synced" })
+      .eq("id", refRow.id).eq("user_id", userId);
+    if (bErr) return json({ ok: true, modifiedTime: newModifiedTime, warning: "baseline not stored" });
+    return json({ ok: true, modifiedTime: newModifiedTime });
+  }
+
+  // ── Multi-tab guard on the legacy path ──
+  // The whole-file Markdown rewrite below is SAFE only on single-tab Docs. On a
+  // multi-tab Doc the Markdown reconversion destroys the tab tree (undefined
+  // behavior, observed corrupting tab nesting) — refuse; the client must use the
+  // per-tab path. This guard protects all clients and is NOT feature-flagged.
+  if (tabs.length > 1) {
+    return json({ ok: false, error: "multitab_unsupported", tabCount: tabs.length }, 409);
   }
 
   // ── Write-back: upload Markdown, converting back to a Google Doc ──

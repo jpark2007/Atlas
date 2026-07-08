@@ -455,6 +455,12 @@ final class AppState: ObservableObject {
         self.sharedWithMeProjects = (try? await db.loadProjectsByIds(Array(memberProjectIds))) ?? []
     }
 
+    /// Tabs of a multi-tab Doc note, ordered. Empty for single-tab docs or on error.
+    func loadDocTabs(referenceID: UUID) async -> [DocNoteTab] {
+        guard let db else { return [] }
+        return (try? await db.fetchDocNoteTabs(referenceID: referenceID)) ?? []
+    }
+
     /// Send a project invite. Errors are swallowed to a debug log — the
     /// invite sheet reads `pendingInvites`/a future sent-invites list to
     /// reflect success, rather than this call throwing into the UI.

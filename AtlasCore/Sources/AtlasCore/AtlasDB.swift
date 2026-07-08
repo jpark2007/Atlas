@@ -546,6 +546,44 @@ public struct ReferenceAttachmentRow: Codable {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// DocNoteTabRow — one tab of a multi-tab Google Doc note
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A row from `doc_note_tabs` (migration `0020`). One row per Docs tab, keyed by
+/// the stable Docs `tabId`. Clients only ever read tabs; all writes flow through
+/// service-role edge functions. `updated_at` is server-owned and unused here, so
+/// it's omitted from the row rather than decoded leniently like `ReferenceRow`.
+public struct DocNoteTabRow: Codable {
+    public var id: UUID
+    public var referenceId: UUID
+    public var tabId: String
+    public var parentTabId: String?
+    public var title: String
+    public var ord: Int
+    public var bodyMd: String
+    public var writable: Bool
+    public var readonlyReason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case referenceId    = "reference_id"
+        case tabId          = "tab_id"
+        case parentTabId    = "parent_tab_id"
+        case title
+        case ord
+        case bodyMd         = "body_md"
+        case writable
+        case readonlyReason = "readonly_reason"
+    }
+
+    public func toDomain() -> DocNoteTab {
+        DocNoteTab(id: id, referenceID: referenceId, tabId: tabId, parentTabId: parentTabId,
+                   title: title, ord: ord, bodyMD: bodyMd, writable: writable,
+                   readonlyReason: readonlyReason)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GoalRow
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -942,6 +980,14 @@ public final class AtlasDB {
     public func loadNotes() async throws -> [Note] {
         let rows: [NoteRow] = try await getAll("notes", order: "id")
         return rows.map { $0.toDomain() }
+    }
+
+    /// The tabs of a multi-tab Google Doc note, ordered by `ord`. Filters the
+    /// `doc_note_tabs` table (RLS-scoped) down to one reference client-side,
+    /// mirroring `loadProjectMembers`. Single-tab Docs have no rows here.
+    public func fetchDocNoteTabs(referenceID: UUID) async throws -> [DocNoteTab] {
+        let rows: [DocNoteTabRow] = try await getAll("doc_note_tabs", order: "ord")
+        return rows.filter { $0.referenceId == referenceID }.map { $0.toDomain() }
     }
 
     /// Reads the caller's `google_connections` row (server-owned Google sync state),

@@ -16,7 +16,7 @@ struct GoogleDocWriteBackClient: DocNoteWriteBack {
     /// keeps the local Markdown copy).
     let accessToken: () async -> String?
 
-    func writeBack(reference: Reference, markdown: String, overwrite: Bool) async throws -> DocWriteBackOutcome {
+    func writeBack(reference: Reference, markdown: String, tabId: String?, overwrite: Bool) async throws -> DocWriteBackOutcome {
         guard let noteID = reference.noteID else { throw WriteBackError.notLinked }
         guard let jwt = await accessToken() else { throw WriteBackError.notSignedIn }
 
@@ -32,6 +32,7 @@ struct GoogleDocWriteBackClient: DocNoteWriteBack {
             "markdown": markdown,
             "overwrite": overwrite,
         ]
+        if let tabId { body["tabId"] = tabId }
         // The client's own baseline catches a Google-side edit the cron pulled into the
         // DB but not yet into this in-memory reference — send it when we have one; the
         // server falls back to its stored baseline otherwise.
@@ -60,10 +61,19 @@ struct GoogleDocWriteBackClient: DocNoteWriteBack {
             }
             return .written(modifiedTime: newModifiedTime)
         }
-        // Only the explicit "stale" guard maps to the refresh/overwrite dialog; any
-        // other 4xx/5xx (not connected, trashed, Drive error) is a hard failure.
-        if code == 409, (payload?["error"] as? String) == "stale" {
-            return .changedInGoogle
+        // The server's 409 guards map to specific outcomes; any other 4xx/5xx
+        // (not connected, trashed, Drive error) is a hard failure below.
+        if code == 409, let err = payload?["error"] as? String {
+            switch err {
+            case "stale":
+                return .changedInGoogle
+            case "multitab_unsupported":
+                return .multitabUnsupported(tabCount: payload?["tabCount"] as? Int ?? 0)
+            case "tab_readonly":
+                return .tabReadOnly(reason: payload?["reason"] as? String)
+            default:
+                break
+            }
         }
         throw WriteBackError.server((payload?["error"] as? String) ?? "HTTP \(code)")
     }

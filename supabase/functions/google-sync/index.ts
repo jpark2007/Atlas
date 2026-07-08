@@ -79,10 +79,12 @@
  */
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { readTabs, tabsPreviewMarkdown } from "../_shared/doc_tabs.ts";
 
 const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const GCAL_BASE = "https://www.googleapis.com/calendar/v3";
 const DRIVE_BASE = "https://www.googleapis.com/drive/v3";
+const DOCS_BASE = "https://docs.googleapis.com/v1";
 const BATCH_LIMIT = 20; // connections processed per invocation (oldest first)
 const REF_BATCH = 100;  // Drive references pulled per user per tick (least-recently-synced first)
 const FULL_WINDOW_BACK_DAYS = 30;
@@ -375,6 +377,17 @@ async function driveExportMarkdown(accessToken: string, fileId: string): Promise
   return await res.text();
 }
 
+// Docs API read with the full tab tree. Requires the `documents` scope
+// (granted at connect alongside drive.file — GoogleAuthService.scopes).
+async function docsGetWithTabs(accessToken: string, fileId: string): Promise<unknown> {
+  const res = await fetch(
+    `${DOCS_BASE}/documents/${encodeURIComponent(fileId)}?includeTabsContent=true`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) throw new Error(`documents.get ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return await res.json();
+}
+
 /**
  * Pull this user's Drive-backed references (design doc §Server-flow 3). Shares the
  * calendar sync's access token, so the refresh token MUST carry `drive.file` (403s
@@ -446,14 +459,57 @@ async function syncUserReferences(
         // Never-baselined (import) OR Drive strictly newer ⇒ pull content.
         const changed = !Number.isFinite(storedMs) || (Number.isFinite(driveMs) && driveMs > storedMs);
         if (changed) {
-          const markdown = await driveExportMarkdown(accessToken, row.drive_file_id);
-          if (!dryRun) {
-            if (row.note_id) {
-              const { error: nErr } = await admin.from("notes")
-                .update({ body: markdown, updated_at: runStartISO })
-                .eq("id", row.note_id).eq("user_id", userId);
-              if (nErr) throw new Error(`note update failed: ${nErr.message}`);
+          const docJson = await docsGetWithTabs(accessToken, row.drive_file_id);
+          const tabs = readTabs(docJson);
+          if (tabs.length <= 1) {
+            // Single-tab Doc: legacy Drive-Markdown pull, unchanged.
+            const markdown = await driveExportMarkdown(accessToken, row.drive_file_id);
+            if (!dryRun) {
+              if (row.note_id) {
+                const { error: nErr } = await admin.from("notes")
+                  .update({ body: markdown, updated_at: runStartISO })
+                  .eq("id", row.note_id).eq("user_id", userId);
+                if (nErr) throw new Error(`note update failed: ${nErr.message}`);
+              }
+              // Doc went from multi-tab to single-tab: clear any stale tab rows.
+              const { error: dErr } = await admin.from("doc_note_tabs")
+                .delete().eq("reference_id", row.id).eq("user_id", userId);
+              if (dErr) throw new Error(`tab cleanup failed: ${dErr.message}`);
             }
+          } else {
+            // Multi-tab Doc: per-tab storage + concatenated preview in notes.body.
+            if (!dryRun) {
+              const { error: uErr } = await admin.from("doc_note_tabs").upsert(
+                tabs.map((t) => ({
+                  user_id: userId,
+                  reference_id: row.id,
+                  tab_id: t.tabId,
+                  parent_tab_id: t.parentTabId,
+                  title: t.title,
+                  ord: t.ord,
+                  body_md: t.markdown,
+                  writable: t.writable,
+                  readonly_reason: t.readonlyReason,
+                  updated_at: runStartISO,
+                })),
+                { onConflict: "reference_id,tab_id" },
+              );
+              if (uErr) throw new Error(`tab upsert failed: ${uErr.message}`);
+              // Tabs deleted in Google disappear from the tree — drop their rows.
+              const liveIds = tabs.map((t) => t.tabId);
+              const { error: gErr } = await admin.from("doc_note_tabs")
+                .delete().eq("reference_id", row.id).eq("user_id", userId)
+                .not("tab_id", "in", `(${liveIds.map((id) => `"${id}"`).join(",")})`);
+              if (gErr) throw new Error(`tab prune failed: ${gErr.message}`);
+              if (row.note_id) {
+                const { error: nErr } = await admin.from("notes")
+                  .update({ body: tabsPreviewMarkdown(tabs), updated_at: runStartISO })
+                  .eq("id", row.note_id).eq("user_id", userId);
+                if (nErr) throw new Error(`note update failed: ${nErr.message}`);
+              }
+            }
+          }
+          if (!dryRun) {
             const { error: rErr } = await admin.from("project_references")
               .update({
                 modified_time: meta.modifiedTime ?? null,
