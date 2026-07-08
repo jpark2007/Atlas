@@ -23,8 +23,8 @@ final class AvailabilityMergeTests: XCTestCase {
         let blocks = AvailabilityDerivation.busyBlocks(from: [ev], excludingDeadlines: true)
         XCTAssertEqual(blocks.count, 1)
         XCTAssertEqual(blocks[0].source, "google")
-        XCTAssertEqual(blocks[0].start, ev.start)
-        XCTAssertEqual(blocks[0].end, ev.end)
+        XCTAssertEqual(blocks[0].startAt, ev.start)
+        XCTAssertEqual(blocks[0].endAt, ev.end)
     }
 
     func testAtlasSourcedEventMapsToAtlasSourceString() {
