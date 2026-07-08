@@ -357,10 +357,10 @@ struct NoteEditorView: View {
     private func readOnlyTabBanner(_ tab: DocNoteTab) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "lock.doc")
-                .font(.system(size: 11))
+                .atlasFont(size: 12)
                 .foregroundStyle(AtlasTheme.Colors.accentText)
             Text("This tab has content Atlas can't safely edit\(tab.readonlyReason.map { " (\($0))" } ?? "") — read-only here.")
-                .font(AtlasTheme.Font.small())
+                .atlasFont(size: 12)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
             Spacer()
             Button {
@@ -370,7 +370,7 @@ struct NoteEditorView: View {
                 }
             } label: {
                 Text("Open in Google Docs")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .atlasFont(size: 12, weight: .semibold)
                     .foregroundStyle(AtlasTheme.Colors.accentText)
             }
             .buttonStyle(.plain)
