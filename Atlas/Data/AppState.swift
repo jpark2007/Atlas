@@ -146,13 +146,25 @@ final class AppState: ObservableObject {
     @Published var now: Date = Date()
     private var clockTimer: Timer?
 
+    /// Periodic timer that re-publishes availability hourly, mirroring `clockTimer`'s
+    /// pattern. Invalidated in `deinit` alongside `clockTimer`.
+    private var availabilityPublishTimer: Timer?
+
+    /// Pending debounced `publishAvailability()` call, restarted by `schedulePublish()`
+    /// on every local calendar/task mutation so a burst of edits collapses into one publish.
+    private var publishDebounceTask: Task<Void, Never>?
+
     init() {
         // Expand the first two spaces by default (matches the prototype).
         expandedSpaces = Set(spaces.prefix(2).map(\.id))
         startClock()
     }
 
-    deinit { clockTimer?.invalidate() }
+    deinit {
+        clockTimer?.invalidate()
+        availabilityPublishTimer?.invalidate()
+        publishDebounceTask?.cancel()
+    }
 
     /// Starts (or restarts) the 60 s clock that publishes `now`. Idempotent.
     func startClock() {
@@ -160,6 +172,64 @@ final class AppState: ObservableObject {
         clockTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.now = Date() }
         }
+    }
+
+    /// Starts (or restarts) the hourly timer that re-publishes availability, in case a
+    /// local edit's debounce was missed (e.g. the app was asleep). Idempotent.
+    func startAvailabilityPublishTimer() {
+        availabilityPublishTimer?.invalidate()
+        availabilityPublishTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.publishAvailability() }
+        }
+    }
+
+    /// Debounces `publishAvailability()` so a burst of local calendar/task edits
+    /// (e.g. dragging a task across several slots) collapses into a single publish,
+    /// 5 s after the last change. Called from the calendar/task mutation points below.
+    func schedulePublish() {
+        publishDebounceTask?.cancel()
+        publishDebounceTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            await self?.publishAvailability()
+        }
+    }
+
+    /// Publishes the next 14 days of anonymized busy intervals derived from
+    /// `events` (already Atlas+Google+Apple merged) — fire-and-forget, never
+    /// throws to the caller. Delete-then-insert on the server keeps this
+    /// self-healing with no per-event diffing.
+    func publishAvailability() async {
+        guard let db, let userId = try? db.currentUserId() else { return }
+        let cal = Calendar.current
+        let windowStart = cal.startOfDay(for: Date())
+        guard let windowEnd = cal.date(byAdding: .day, value: 14, to: windowStart) else { return }
+
+        let relevant = events.filter { $0.start >= windowStart && $0.start < windowEnd }
+        var blocks = AvailabilityDerivation.busyBlocks(from: relevant, excludingDeadlines: true)
+        for i in blocks.indices {
+            blocks[i].userId = userId
+        }
+        try? await db.publishAvailability(blocks, windowStart: windowStart, windowEnd: windowEnd)
+    }
+
+    /// Teammates' published availability, keyed by user id. Populated per-
+    /// project on demand (Team view calls this when it appears), not eagerly
+    /// for every project on every load.
+    @Published var teammateAvailability: [UUID: [AvailabilityBlockRow]] = [:]
+
+    /// Loads the next 14 days of availability for every OTHER member of
+    /// `project` (excluding the signed-in user, whose own `events` are
+    /// already the source of truth locally).
+    func loadTeammateAvailability(forProject project: Project) async {
+        guard let db, let myUserId = try? db.currentUserId() else { return }
+        let memberIds = (projectMembers[project.id] ?? []).map(\.userId).filter { $0 != myUserId }
+        guard !memberIds.isEmpty else { return }
+        let cal = Calendar.current
+        let from = cal.startOfDay(for: Date())
+        guard let to = cal.date(byAdding: .day, value: 14, to: from) else { return }
+        let blocks = (try? await db.loadAvailability(forProjectMemberIds: memberIds, from: from, to: to)) ?? []
+        teammateAvailability = Dictionary(grouping: blocks, by: \.userId)
     }
 
     // MARK: - Supabase Bootstrap
@@ -214,6 +284,11 @@ final class AppState: ObservableObject {
         await refreshGoogleConnection()
         // Load the Canvas connection so Settings shows its live status from launch.
         await refreshCanvasConnection()
+
+        // Collab phase 3: publish this device's derived availability, then keep it
+        // fresh on an hourly timer (local edits also trigger a debounced publish).
+        await publishAvailability()
+        startAvailabilityPublishTimer()
     }
 
     /// Assigns a freshly loaded `AtlasSnapshot` onto the published model arrays —
@@ -595,6 +670,7 @@ final class AppState: ObservableObject {
             let updated = tasks[i]
             Task { try? await self.db?.upsertTask(updated) }
             pushWorkBlockToGoogle(taskID: taskId)
+            schedulePublish()
         }
     }
 
@@ -642,6 +718,7 @@ final class AppState: ObservableObject {
         let updated = tasks[i]
         Task { try? await self.db?.upsertTask(updated) }
         pushWorkBlockToGoogle(taskID: id)
+        schedulePublish()
     }
 
     /// Removes a task's calendar work-block (returns it to the tray) and deletes its mirrored
@@ -654,6 +731,7 @@ final class AppState: ObservableObject {
         let updated = tasks[i]
         Task { try? await self.db?.upsertTask(updated) }
         if let gid, !gid.isEmpty { deleteGoogleEvent(googleEventID: gid) }
+        schedulePublish()
     }
 
     /// Remove a task's calendar slot, returning it to the unscheduled tray.
@@ -662,6 +740,7 @@ final class AppState: ObservableObject {
             tasks[i].scheduledAt = nil
             let updated = tasks[i]
             Task { try? await self.db?.upsertTask(updated) }
+            schedulePublish()
         }
     }
 
@@ -702,6 +781,7 @@ final class AppState: ObservableObject {
             }
         }
         pushNewEventToGoogle(event)
+        schedulePublish()
     }
 
     func updateEvent(_ event: CalendarEvent) {
@@ -721,6 +801,7 @@ final class AppState: ObservableObject {
         }
         Task { try? await self.db?.upsertEvent(event) }
         pushUpdatedEventToGoogle(event)
+        schedulePublish()
     }
 
     func deleteEvent(id: UUID) {
@@ -736,6 +817,7 @@ final class AppState: ObservableObject {
         events.removeAll { $0.id == id }
         Task { try? await self.db?.deleteEvent(id: id) }
         if let removed { pushDeletedEventToGoogle(removed) }
+        schedulePublish()
     }
 
     /// Patches an edited Google-origin event back to Google. Always appropriate when
@@ -763,6 +845,7 @@ final class AppState: ObservableObject {
         let idset = Set(ids)
         events.removeAll { idset.contains($0.id) }
         for id in ids { Task { try? await self.db?.deleteEvent(id: id) } }
+        schedulePublish()
     }
 
     // MARK: - Google Calendar write-back (Atlas → Google)
