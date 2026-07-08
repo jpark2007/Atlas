@@ -17,6 +17,9 @@ struct NoteEditorView: View {
     /// The two-way Google-Doc write-back surface. Nil until `integrate` injects one
     /// (the concrete impl is a Supabase edge function — see `DocNoteWriteBack`).
     @Environment(\.docNoteWriteBack) private var writeBackService
+    /// On-demand "Sync now" pull. Nil until `integrate` injects one (the concrete impl
+    /// is the `reference-pull` edge function — see `ReferencePullClient`).
+    @Environment(\.referencePull) private var referencePull
     /// Pauses the doc-note freshness poll while the app is backgrounded (see `pollKey`).
     @Environment(\.scenePhase) private var scenePhase
 
@@ -306,7 +309,14 @@ struct NoteEditorView: View {
         Button {
             guard !isSyncingNow else { return }
             isSyncingNow = true
-            Task { await state.reloadReferences(); isSyncingNow = false }
+            Task {
+                // Force a real Google pull for this reference first (best-effort); the
+                // reload then surfaces it. Falls back to reload-only when the client is
+                // nil, there's no linked reference, or the pull fails.
+                if let ref = docReference { _ = await referencePull?.pull(referenceID: ref.id) }
+                await state.reloadReferences()
+                isSyncingNow = false
+            }
         } label: {
             Group {
                 if isSyncingNow {
@@ -764,5 +774,16 @@ extension EnvironmentValues {
     var docNoteWriteBack: DocNoteWriteBack? {
         get { self[DocNoteWriteBackKey.self] }
         set { self[DocNoteWriteBackKey.self] = newValue }
+    }
+}
+
+private struct ReferencePullKey: EnvironmentKey {
+    static let defaultValue: ReferencePullClient? = nil
+}
+
+extension EnvironmentValues {
+    var referencePull: ReferencePullClient? {
+        get { self[ReferencePullKey.self] }
+        set { self[ReferencePullKey.self] = newValue }
     }
 }

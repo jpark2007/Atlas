@@ -30,6 +30,9 @@ struct AtlasApp: App {
                 // edge-function client, minting a valid Supabase JWT on each save.
                 .environment(\.docNoteWriteBack,
                              GoogleDocWriteBackClient(accessToken: { await auth.validAccessToken() }))
+                // On-demand "Sync now" pull for a single linked Doc-note reference.
+                .environment(\.referencePull,
+                             ReferencePullClient(accessToken: { await auth.validAccessToken() }))
                 .frame(minWidth: 960, minHeight: 600)
                 .preferredColorScheme(.light)
                 .background(GlobalHotkeyInstaller(state: state, auth: auth))

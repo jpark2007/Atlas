@@ -297,7 +297,12 @@ struct ProjectDetailView: View {
                             onOpenExternal: { openExternal(ref) },
                             onQuickLook: ref.kind == .file ? { quickLook(ref) } : nil,
                             onEditNote: ref.kind == .docNote ? { openReference(ref) } : nil,
-                            onSyncNow: ref.kind == .docNote ? { await state.reloadReferences() } : nil,
+                            onSyncNow: ref.kind == .docNote ? {
+                                // Force a real Google pull for this reference first (best-effort),
+                                // then reload to surface it — falls back to reload-only on failure.
+                                _ = await ReferencePullClient(accessToken: { await auth.validAccessToken() }).pull(referenceID: ref.id)
+                                await state.reloadReferences()
+                            } : nil,
                             onRemove: { state.removeReference(ref.id) }
                         )
                         if i < refs.count - 1 {
