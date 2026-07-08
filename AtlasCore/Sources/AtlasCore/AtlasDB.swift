@@ -698,6 +698,20 @@ public struct ProjectMemberRow: Codable {
     }
 }
 
+public struct SpaceMemberRow: Codable {
+    public var spaceId: UUID
+    public var userId: UUID
+    public var role: String
+    public var addedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case spaceId  = "space_id"
+        case userId   = "user_id"
+        case role
+        case addedAt  = "added_at"
+    }
+}
+
 public enum InviteKind: String, Codable {
     case space, project
 }
@@ -1015,6 +1029,34 @@ public final class AtlasDB {
     public func createProjectInvite(projectId: UUID, inviteeEmail: String) async throws -> InviteRow {
         let sess = try await requireSession()
         let invite = InviteRow(id: UUID(), kind: .project, targetId: projectId,
+                               inviterId: try await currentUserId(), inviteeEmail: inviteeEmail,
+                               status: .pending, createdAt: "")
+        let body = try isoEncoder.encode(invite)
+        try await send(method: "POST", table: "invites", body: body, sess: sess)
+        return invite
+    }
+
+    public func loadSpaceMembers(spaceId: UUID) async throws -> [SpaceMemberRow] {
+        let all: [SpaceMemberRow] = (try? await getAll("space_members", order: "added_at")) ?? []
+        return all.filter { $0.spaceId == spaceId }
+    }
+
+    /// Every space-member row the caller may see (RLS-scoped), grouped by
+    /// space id. One round-trip that replaces the per-space N+1 loop of
+    /// `loadSpaceMembers(spaceId:)` — the old path fetched the whole
+    /// `space_members` table once per space and filtered client-side.
+    /// Rows within each group keep `added_at` order (the fetch is ordered and
+    /// `Dictionary(grouping:)` preserves element order). Best-effort: a missing
+    /// table (pre-migration) yields an empty map rather than throwing.
+    public func loadAllSpaceMembers() async throws -> [UUID: [SpaceMemberRow]] {
+        let all: [SpaceMemberRow] = (try? await getAll("space_members", order: "added_at")) ?? []
+        return Dictionary(grouping: all, by: { $0.spaceId })
+    }
+
+    @discardableResult
+    public func createSpaceInvite(spaceId: UUID, inviteeEmail: String) async throws -> InviteRow {
+        let sess = try await requireSession()
+        let invite = InviteRow(id: UUID(), kind: .space, targetId: spaceId,
                                inviterId: try await currentUserId(), inviteeEmail: inviteeEmail,
                                status: .pending, createdAt: "")
         let body = try isoEncoder.encode(invite)

@@ -8,6 +8,7 @@ struct SpaceDetailView: View {
     /// Whether the collapsed completed-tasks / past-events groups are expanded.
     @State private var showCompleted = false
     @State private var showPast = false
+    @State private var presentInvite = false
 
     private var allTasks: [TaskItem] {
         state.tasks
@@ -72,6 +73,17 @@ struct SpaceDetailView: View {
                 .atlasTitleSerif(size: 26)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Spacer()
+            Button {
+                presentInvite = true
+            } label: {
+                Text("Invite")
+                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+            }
+            .buttonStyle(.plain)
+            .sheet(isPresented: $presentInvite) {
+                InviteToSpaceSheet(spaceId: space.id)
+            }
             // Counts describe the visible (pending/upcoming) lists — a finished
             // space saying "0 tasks" above a 30-COMPLETED reveal would read wrong.
             Text("\(spaceTasks.count) open · \(spaceEvents.count) upcoming")

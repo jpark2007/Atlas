@@ -21,7 +21,7 @@ struct InviteInboxSheet: View {
 
             ForEach(state.pendingInvites, id: \.id) { invite in
                 HStack {
-                    Text("Project invite")
+                    Text(invite.kind == .space ? "Space invite" : "Project invite")
                         .font(.system(size: 13))
                     Spacer()
                     Button("Decline") {
