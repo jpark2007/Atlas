@@ -6,6 +6,7 @@ import AtlasCore
 /// presents the chromeless `NoteCardOverlay` corner card instead).
 struct NotesListView: View {
     @EnvironmentObject private var state: AppState
+    @Environment(\.atlasTextScale) private var textScale
     @State private var editingNote: Note?
 
     /// When set (Focus mode), row taps and "New" route the note here instead of the
@@ -79,7 +80,7 @@ struct NotesListView: View {
                     Text(note.title)
                         .atlasTitleSerif(size: 14)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text(Note.highlighted(note.previewText))
+                    Text(Note.highlighted(note.previewText, scale: textScale))
                         .atlasFont(size: 12, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                         .lineLimit(2)

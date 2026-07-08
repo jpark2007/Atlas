@@ -6,7 +6,7 @@ import AtlasCore
 
 extension Note {
     /// Highlights `[[mention]]` tokens in the accent color for display surfaces.
-    static func highlighted(_ text: String) -> AttributedString {
+    static func highlighted(_ text: String, scale: CGFloat = 1.0) -> AttributedString {
         var result = AttributedString(text)
         let pattern = #"\[\[([^\]]+)\]\]"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return result }
@@ -16,7 +16,7 @@ extension Note {
             guard let swiftRange = Range(match.range, in: text),
                   let attrRange = Range(swiftRange, in: result) else { continue }
             result[attrRange].foregroundColor = AtlasTheme.Colors.accentText
-            result[attrRange].font = .system(size: 13, weight: .medium, design: .rounded)
+            result[attrRange].font = .system(size: 14 * scale, weight: .medium, design: .rounded)
         }
         return result
     }
