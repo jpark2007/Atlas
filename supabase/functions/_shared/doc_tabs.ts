@@ -275,7 +275,8 @@ export function renderRequests(tabId: string, endIndex: number, markdown: string
 
   let index = 1;
   let numbered = 0;
-  for (const rawLine of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
     let kind: "h1" | "h2" | "bullet" | "numbered" | "normal" = "normal";
     let rest = rawLine;
     const num = /^(\d+)\. /.exec(rawLine);
@@ -286,11 +287,17 @@ export function renderRequests(tabId: string, endIndex: number, markdown: string
     numbered = kind === "numbered" ? numbered + 1 : 0;
 
     const spans = parseInline(rest);
-    const text = spans.map((s) => s.text).join("") + "\n";
+    const content = spans.map((s) => s.text).join("");
+    // The tab's mandatory final paragraph mark survives the clearing delete and
+    // supplies the terminal newline — so the LAST line must NOT add its own "\n",
+    // or every write grows the tab by one empty paragraph (cumulative drift,
+    // caught by the live E2E round-trip proof).
+    const isLast = i === lines.length - 1;
+    const text = isLast ? content : content + "\n";
     const start = index;
-    const end = start + text.length - 1; // style ranges exclude the trailing \n
+    const end = start + content.length; // style ranges exclude the newline
 
-    requests.push({ insertText: { location: { tabId, index: start }, text } });
+    if (text) requests.push({ insertText: { location: { tabId, index: start }, text } });
     requests.push({ updateParagraphStyle: {
       range: { tabId, startIndex: start, endIndex: end },
       paragraphStyle: { namedStyleType: kind === "h1" ? "HEADING_1" : kind === "h2" ? "HEADING_2" : "NORMAL_TEXT" },

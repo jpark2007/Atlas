@@ -186,8 +186,9 @@ Deno.test("renderRequests: clears the tab then rebuilds line by line", () => {
   assertEquals(reqs[5], { updateTextStyle: {
     range: { tabId: "t.X", startIndex: 12, endIndex: 16 },
     textStyle: { bold: true }, fields: "bold" } });
-  // 4. "item\n" at 17, bulleted
-  assertEquals(reqs[6], { insertText: { location: { tabId: "t.X", index: 17 }, text: "item\n" } });
+  // 4. "item" at 17 (LAST line: no trailing \n — the mandatory final paragraph
+  // mark supplies it; see the drift regression test below), bulleted
+  assertEquals(reqs[6], { insertText: { location: { tabId: "t.X", index: 17 }, text: "item" } });
   assertEquals(reqs[7], { updateParagraphStyle: {
     range: { tabId: "t.X", startIndex: 17, endIndex: 21 },
     paragraphStyle: { namedStyleType: "NORMAL_TEXT" }, fields: "namedStyleType" } });
@@ -219,9 +220,31 @@ Deno.test("renderRequests: numbered list uses the numbered preset", () => {
 });
 
 Deno.test("round-trip: reader output re-renders to requests that reproduce the text", () => {
-  // md → requests: concatenated insertText payloads must equal the md's plain text lines.
+  // md → requests: concatenated insertText payloads must equal the md's plain text
+  // MINUS its final "\n" — the tab's mandatory final paragraph mark supplies that,
+  // so content-after-write == md exactly.
   const md = "# Head\nplain **bold** and [site](https://x.com)\n- item\n";
   const reqs = renderRequests("t.X", 2, md) as any[];
   const inserted = reqs.filter((r: any) => r.insertText).map((r: any) => r.insertText.text).join("");
-  assertEquals(inserted, "Head\nplain bold and site\nitem\n");
+  assertEquals(inserted, "Head\nplain bold and site\nitem");
+});
+
+Deno.test("drift regression: inserted text + mandatory newline == canonical md", () => {
+  // Caught live by the E2E round-trip proof: the renderer used to append "\n" on
+  // the last line too, so every save grew the tab by one empty paragraph
+  // (reader∘renderer == md + "\n", cumulative). The invariant that kills it:
+  // for canonical (\n-terminated) markdown, joined inserts + "\n" == plain-text md.
+  for (const md of [
+    "one line\n",
+    "a\nb\n",
+    "a\n\nb\n",           // interior blank paragraph preserved
+    "trailing blank\n\n", // blank FINAL paragraph: no empty insertText emitted
+    "\n",                 // empty tab
+  ]) {
+    const reqs = renderRequests("t.X", 2, md) as any[];
+    const inserts = reqs.filter((r: any) => r.insertText).map((r: any) => r.insertText.text);
+    assertEquals(inserts.join("") + "\n", md, `unstable for ${JSON.stringify(md)}`);
+    // Docs rejects empty insertText — none may ever be emitted.
+    assertEquals(inserts.every((t: string) => t.length > 0), true, `empty insert for ${JSON.stringify(md)}`);
+  }
 });
