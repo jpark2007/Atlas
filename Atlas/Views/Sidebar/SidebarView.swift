@@ -45,9 +45,9 @@ struct SidebarView: View {
                     } label: {
                         HStack(spacing: 3) {
                             Image(systemName: "plus")
-                                .font(.system(size: 9, weight: .semibold))
+                                .atlasFont(size: 10, weight: .semibold)
                             Text("Space")
-                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                                .atlasFont(size: 12, weight: .semibold, design: .rounded)
                         }
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .contentShape(Rectangle())
@@ -90,7 +90,7 @@ struct SidebarView: View {
                         presentInvites = true
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "envelope.fill").font(.system(size: 10))
+                            Image(systemName: "envelope.fill").atlasFont(size: 11)
                             Text(state.pendingInvites.count == 1 ? "1 invitation" : "\(state.pendingInvites.count) invitations")
                                 .atlasMono(size: 11, weight: .medium)
                         }
@@ -139,13 +139,13 @@ struct SidebarView: View {
                 Circle().fill(AtlasTheme.Colors.textPrimary.opacity(0.06))
                     .frame(width: 24, height: 24)
                     .overlay(Image(systemName: "person.fill")
-                        .font(.system(size: 11)).foregroundStyle(AtlasTheme.Colors.textSecondary))
+                        .atlasFont(size: 12, weight: .medium).foregroundStyle(AtlasTheme.Colors.textSecondary))
                 Text(state.userName)
-                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                    .atlasFont(size: 14, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Spacer()
                 Image(systemName: "gearshape")
-                    .font(.system(size: 12)).foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .atlasFont(size: 13, weight: .medium).foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
             .rowChrome(selected: state.route == .settings, hovered: hovered == .settings)
@@ -161,7 +161,7 @@ struct SidebarView: View {
         HStack(spacing: 10) {
             BrandLogo(size: 26)
             Text("Atlas")
-                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .atlasFont(size: 19, weight: .bold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Spacer()
         }
@@ -174,10 +174,10 @@ struct SidebarView: View {
         Button { state.presentSearch = true } label: {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12))
+                    .atlasFont(size: 13, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Text("Search notes, classes…")
-                    .font(.system(size: 12, design: .rounded))
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()
                 Text("⌘K")
@@ -209,11 +209,11 @@ struct SidebarView: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: icon)
-                    .font(.system(size: 13))
+                    .atlasFont(size: 14)
                     .frame(width: 18)
                     .foregroundStyle(selected ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                 Text(title)
-                    .font(.system(size: 13, weight: selected ? .semibold : .regular, design: .rounded))
+                    .atlasFont(size: 14, weight: selected ? .semibold : .regular, design: .rounded)
                     .foregroundStyle(selected ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                 Spacer()
                 if let trailing {
@@ -245,9 +245,9 @@ struct SidebarView: View {
                             .fill(space.color)
                             .frame(width: 8, height: 8)
                         Text(space.name)
-                            .font(.system(size: 13,
-                                          weight: state.route == spaceRoute ? .semibold : .medium,
-                                          design: .rounded))
+                            .atlasFont(size: 14,
+                                       weight: state.route == spaceRoute ? .semibold : .medium,
+                                       design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         if state.isSharedSpace(space) {
                             sharedSpaceMemberCluster(for: space)
@@ -260,7 +260,7 @@ struct SidebarView: View {
                 // Chevron → expand/collapse projects
                 Button { state.toggleSpace(space.id) } label: {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
+                        .atlasFont(size: 10, weight: .semibold)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
@@ -271,7 +271,7 @@ struct SidebarView: View {
                     newProjectTarget = NewProjectTarget(spaceName: space.name)
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .semibold))
+                        .atlasFont(size: 11, weight: .semibold)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
@@ -311,9 +311,9 @@ struct SidebarView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "plus.circle.dotted")
-                    .font(.system(size: 11))
+                    .atlasFont(size: 12)
                 Text("Add your first project")
-                    .font(.system(size: 12, design: .rounded))
+                    .atlasFont(size: 13, design: .rounded)
                 Spacer()
             }
             .foregroundStyle(AtlasTheme.Colors.textMuted)
@@ -334,10 +334,10 @@ struct SidebarView: View {
         } label: {
             HStack(spacing: 9) {
                 Image(systemName: project.isClass ? "circle.dotted" : "circle")
-                    .font(.system(size: 7))
+                    .atlasFont(size: 8)
                     .foregroundStyle(selected ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textMuted)
                 Text(project.name)
-                    .font(.system(size: 12.5, weight: selected ? .semibold : .regular, design: .rounded))
+                    .atlasFont(size: 14, weight: selected ? .semibold : .regular, design: .rounded)
                     .foregroundStyle(selected ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                 if state.isShared(project) {
                     sharedMemberCluster(for: project)

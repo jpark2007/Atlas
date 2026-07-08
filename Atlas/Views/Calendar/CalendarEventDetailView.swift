@@ -71,8 +71,8 @@ struct CalendarEventDetailView: View {
             HStack {
                 Button(action: close) {
                     HStack(spacing: 4) {
-                        Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
-                        Text("Back").font(.system(size: 12, weight: .medium, design: .rounded))
+                        Image(systemName: "chevron.left").atlasFont(size: 12, weight: .semibold)
+                        Text("Back").atlasFont(size: 13, weight: .medium, design: .rounded)
                     }
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 }
@@ -82,13 +82,13 @@ struct CalendarEventDetailView: View {
             }
             if isReadOnly {
                 Text(title)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .atlasFont(size: 29, weight: .bold, design: .rounded)
                     .tracking(-0.4)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
             } else {
                 TextField("Title", text: $title)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .atlasFont(size: 29, weight: .bold, design: .rounded)
                     .tracking(-0.4)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .tint(AtlasTheme.Colors.accent)
@@ -115,8 +115,8 @@ struct CalendarEventDetailView: View {
             ? "Recurring event — edit the series in \(item.source.displayName)."
             : "Read-only — from \(item.source.displayName)."
         return HStack(spacing: 8) {
-            Image(systemName: "lock.fill").font(.system(size: 11))
-            Text(msg).font(.system(size: 12, design: .rounded))
+            Image(systemName: "lock.fill").atlasFont(size: 12)
+            Text(msg).atlasFont(size: 13, design: .rounded)
         }
         .foregroundStyle(AtlasTheme.Colors.textMuted)
         .padding(.vertical, 10)
@@ -144,12 +144,12 @@ struct CalendarEventDetailView: View {
             fieldGroup("DESCRIPTION") {
                 if isReadOnly {
                     Text(descriptionText.isEmpty ? "—" : descriptionText)
-                        .font(.system(size: 13, design: .rounded))
+                        .atlasFont(size: 14, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     TextEditor(text: $descriptionText)
-                        .font(.system(size: 13, design: .rounded))
+                        .atlasFont(size: 14, design: .rounded)
                         .scrollContentBackground(.hidden)
                         .frame(minHeight: 90)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
@@ -159,7 +159,7 @@ struct CalendarEventDetailView: View {
             if !isReadOnly {
                 Button(action: save) {
                     Text("Save")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .atlasFont(size: 14, weight: .semibold, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         .padding(.horizontal, 22).padding(.vertical, 10)
                         .overlay(
@@ -194,9 +194,9 @@ struct CalendarEventDetailView: View {
                     }
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "doc.text").font(.system(size: 11))
-                        Text(linkedNoteTitle).font(.system(size: 12, weight: .medium, design: .rounded))
-                        Image(systemName: "chevron.down").font(.system(size: 9))
+                        Image(systemName: "doc.text").atlasFont(size: 12)
+                        Text(linkedNoteTitle).atlasFont(size: 13, weight: .medium, design: .rounded)
+                        Image(systemName: "chevron.down").atlasFont(size: 10)
                     }
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 }
@@ -226,7 +226,7 @@ struct CalendarEventDetailView: View {
                 let refs = state.references(forEvent: item.id)
                 if refs.isEmpty {
                     Text("No references attached.")
-                        .font(.system(size: 13, design: .rounded))
+                        .atlasFont(size: 14, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 } else {
                     ForEach(refs) { ref in
@@ -240,7 +240,7 @@ struct CalendarEventDetailView: View {
                     showRefPicker = true
                 } label: {
                     Label("Add reference", systemImage: "plus")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
                 .buttonStyle(.plain)
@@ -268,21 +268,21 @@ struct CalendarEventDetailView: View {
                 Button(action: deleteOrUnschedule) {
                     Label(isWorkBlock ? "Unschedule" : "Delete",
                           systemImage: isWorkBlock ? "tray.and.arrow.down" : "trash")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(AtlasTheme.Colors.danger)
             }
             if let pid = item.projectID, state.project(pid) != nil {
                 Button { state.calendarDetailItem = nil; state.route = .project(pid) } label: {
-                    Label("Open Project", systemImage: "folder").font(.system(size: 12, weight: .medium, design: .rounded))
+                    Label("Open Project", systemImage: "folder").atlasFont(size: 13, weight: .medium, design: .rounded)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(AtlasTheme.Colors.accentText)
             }
             if let nid = noteID, let n = state.notes.first(where: { $0.id == nid }) {
                 Button { openNote(n) } label: {
-                    Label("Open Note", systemImage: "arrow.up.right.square").font(.system(size: 12, weight: .medium, design: .rounded))
+                    Label("Open Note", systemImage: "arrow.up.right.square").atlasFont(size: 13, weight: .medium, design: .rounded)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(AtlasTheme.Colors.accentText)

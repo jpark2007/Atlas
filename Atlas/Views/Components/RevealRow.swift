@@ -17,7 +17,7 @@ struct RevealRow: View {
                 Text("\(count) \(noun)")
                     .atlasMono(size: 10, weight: .medium)
                 Image(systemName: isOpen ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
+                    .atlasFont(size: 9, weight: .semibold)
             }
             .foregroundStyle(AtlasTheme.Colors.textMuted)
             .padding(.vertical, 6)
@@ -43,7 +43,7 @@ struct LifecycleEventRow: View {
                 .opacity(dimmed ? 0.4 : 1)
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.title)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .atlasFont(size: 14, weight: .medium, design: .rounded)
                     .foregroundStyle(dimmed ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                 Text(dimmed
                      ? "\(LifecycleDate.short(event.start)) · \(event.timeLabel)"

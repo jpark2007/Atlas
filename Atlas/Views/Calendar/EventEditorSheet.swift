@@ -68,7 +68,7 @@ struct EventEditorSheet: View {
     private var headerBar: some View {
         HStack(alignment: .center, spacing: 12) {
             Text(isEditingExisting ? "Edit Event" : "New Event")
-                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .atlasFont(size: 19, weight: .bold, design: .rounded)
                 .tracking(-0.3)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Spacer()
@@ -79,7 +79,7 @@ struct EventEditorSheet: View {
 
             Button { save() } label: {
                 Text("Save")
-                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                    .atlasFont(size: 14, weight: .semibold, design: .rounded)
                     .foregroundStyle(trimmedTitle.isEmpty ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                     .padding(.horizontal, 16).padding(.vertical, 6)
                     .overlay(
@@ -105,7 +105,7 @@ struct EventEditorSheet: View {
                 field("Title") {
                     TextField("Event title", text: $title)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .atlasFont(size: 15, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         .tint(AtlasTheme.Colors.accent)
                 }
@@ -170,13 +170,13 @@ struct EventEditorSheet: View {
                     ZStack(alignment: .topLeading) {
                         if notes.isEmpty {
                             Text("Add notes…")
-                                .font(.system(size: 13, design: .rounded))
+                                .atlasFont(size: 14, weight: .medium, design: .rounded)
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                                 .padding(.leading, 5).padding(.top, 1)
                                 .allowsHitTesting(false)
                         }
                         TextEditor(text: $notes)
-                            .font(.system(size: 13, design: .rounded))
+                            .atlasFont(size: 14, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             .scrollContentBackground(.hidden)
                             .tint(AtlasTheme.Colors.accent)
@@ -206,7 +206,7 @@ struct EventEditorSheet: View {
             }
             Button { showRefPicker = true } label: {
                 Label("Add reference", systemImage: "plus")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.accentText)
             }
             .buttonStyle(.plain)

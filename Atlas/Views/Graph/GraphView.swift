@@ -280,6 +280,7 @@ final class GraphEngine: ObservableObject {
 struct GraphView: View {
     @EnvironmentObject var state: AppState
     @StateObject private var engine = GraphEngine()
+    @Environment(\.atlasTextScale) private var textScale
 
     @State private var selected: UUID?
     @State private var scale: CGFloat = 1
@@ -399,7 +400,7 @@ struct GraphView: View {
 
             if node.kind.alwaysLabeled || isSel || scale > 1.5 {
                 let text = Text(node.label)
-                    .font(.system(size: node.kind == .space ? 11 : 9,
+                    .font(.system(size: (node.kind == .space ? 12 : 10) * textScale,
                                   weight: node.kind == .space ? .semibold : .regular,
                                   design: .rounded))
                     .foregroundColor(isSel ? AtlasTheme.Colors.textPrimary
@@ -423,7 +424,7 @@ struct GraphView: View {
             HStack(spacing: 8) {
                 BrandLogo(size: 20)
                 Text("Graph")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .atlasFont(size: 17, weight: .semibold, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Text("\(engine.nodes.count) nodes")
                     .atlasMono(size: 11)
@@ -432,7 +433,7 @@ struct GraphView: View {
             Spacer()
             Button { engine.reheat() } label: {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .atlasFont(size: 12, weight: .semibold, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .frame(width: 24, height: 24)
                     .background(AtlasTheme.Colors.bgBase, in: Circle())
@@ -442,7 +443,7 @@ struct GraphView: View {
             .help("Re-run layout")
             Button { state.presentGraph = false } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .atlasFont(size: 12, weight: .semibold, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .frame(width: 24, height: 24)
                     .background(AtlasTheme.Colors.bgBase, in: Circle())
@@ -466,7 +467,7 @@ struct GraphView: View {
             ForEach(items, id: \.0) { item in
                 HStack(spacing: 7) {
                     Circle().fill(item.1).frame(width: 8, height: 8)
-                    Text(item.0).font(.system(size: 10, design: .rounded))
+                    Text(item.0).atlasFont(size: 11, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
             }

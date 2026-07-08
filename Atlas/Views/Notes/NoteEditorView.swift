@@ -19,6 +19,7 @@ struct NoteEditorView: View {
     @Environment(\.docNoteWriteBack) private var writeBackService
     /// Pauses the doc-note freshness poll while the app is backgrounded (see `pollKey`).
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.atlasTextScale) private var textScale
 
     @State private var draft: Note
     @State private var doc: RichDoc
@@ -239,7 +240,7 @@ struct NoteEditorView: View {
     private func docBadgeRow(_ ref: Reference) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "doc.richtext")
-                .font(.system(size: 11))
+                .atlasFont(size: 12)
                 .foregroundStyle(AtlasTheme.Colors.accentText)
             atlasTag(text: "Google Doc", color: AtlasTheme.Colors.accentText)
             syncSubtitleView(ref)
@@ -249,8 +250,8 @@ struct NoteEditorView: View {
                 Button { openURL(url) } label: {
                     HStack(spacing: 3) {
                         Text("Open in Google Docs")
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                        Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .semibold))
+                            .atlasFont(size: 12, weight: .medium, design: .rounded)
+                        Image(systemName: "arrow.up.right").atlasFont(size: 10, weight: .semibold)
                     }
                     .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
@@ -269,24 +270,24 @@ struct NoteEditorView: View {
         case .synced:
             if let d = ref.lastSyncedAt {
                 lastSyncedText(d)
-                    .font(AtlasTheme.Font.small())
+                    .atlasFont(size: 12, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             } else {
                 Text("· Synced")
-                    .font(AtlasTheme.Font.small())
+                    .atlasFont(size: 12, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
         case .stale:
             Text("· Changed in Google — save to overwrite")
-                .font(AtlasTheme.Font.small())
+                .atlasFont(size: 12)
                 .foregroundStyle(AtlasTheme.Colors.accentText)
         case .error:
             Text("· Sync error")
-                .font(AtlasTheme.Font.small())
+                .atlasFont(size: 12, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         case .pending:
             Text("· Not yet synced")
-                .font(AtlasTheme.Font.small())
+                .atlasFont(size: 12, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
@@ -313,7 +314,7 @@ struct NoteEditorView: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 11, weight: .semibold))
+                        .atlasFont(size: 12, weight: .semibold)
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 }
             }
@@ -331,15 +332,15 @@ struct NoteEditorView: View {
     private var newerVersionBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.system(size: 11))
+                .atlasFont(size: 12)
                 .foregroundStyle(AtlasTheme.Colors.accentText)
             Text("A newer version synced from Google — your edits are kept.")
-                .font(AtlasTheme.Font.small())
+                .atlasFont(size: 12, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
             Spacer()
             Button { if let live = liveNote { loadFresh(live) } } label: {
                 Text("Reload")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .atlasFont(size: 12, weight: .semibold, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.accentText)
             }
             .buttonStyle(.plain)
@@ -458,7 +459,7 @@ struct NoteEditorView: View {
         let active = isActiveKind(kind)
         return Button { doc.setKind(kind, at: activeIndex); isDirty = true; tabDirty = true } label: {
             Text(title)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .atlasFont(size: 12, weight: .semibold, design: .rounded)
                 .foregroundStyle(active ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
@@ -475,7 +476,7 @@ struct NoteEditorView: View {
         let active = isActiveMark(mark)
         return Button { doc.toggleMark(mark, at: activeIndex); isDirty = true; tabDirty = true } label: {
             Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
+                .atlasFont(size: 13, weight: .semibold)
                 .foregroundStyle(active ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                 .frame(width: 24, height: 22)
                 .overlay(
@@ -491,7 +492,7 @@ struct NoteEditorView: View {
         let active = isActiveKind(kind)
         return Button { doc.toggleListKind(kind, at: activeIndex); isDirty = true; tabDirty = true } label: {
             Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
+                .atlasFont(size: 13, weight: .semibold)
                 .foregroundStyle(active ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                 .frame(width: 24, height: 22)
                 .overlay(
@@ -510,7 +511,7 @@ struct NoteEditorView: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             if block.kind.isList {
                 Text(listGlyph(for: index, block: block))
-                    .font(AtlasTheme.Font.body())
+                    .atlasFont(size: 14, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .frame(minWidth: 18, alignment: .trailing)
             }
@@ -548,18 +549,18 @@ struct NoteEditorView: View {
             Text(docReference == nil
                  ? "Saved in Atlas · constrained editor"
                  : "Two-way with Google Doc")
-                .font(AtlasTheme.Font.small())
+                .atlasFont(size: 12, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             Spacer()
             Button { addBlockAfter(doc.blocks.count - 1) } label: {
                 Label("Block", systemImage: "plus")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
             }
             .buttonStyle(.plain)
             Button(action: commit) {
                 Text("Done")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .atlasFont(size: 14, weight: .semibold, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 7)
@@ -623,9 +624,9 @@ struct NoteEditorView: View {
 
     private func font(for kind: RichDoc.BlockKind) -> Font {
         switch kind {
-        case .heading:    return .system(size: 22, weight: .bold, design: .rounded)
-        case .subheading: return .system(size: 17, weight: .semibold, design: .rounded)
-        case .normal, .bulleted, .numbered: return AtlasTheme.Font.body()
+        case .heading:    return .system(size: 24 * textScale, weight: .bold, design: .rounded)
+        case .subheading: return .system(size: 19 * textScale, weight: .semibold, design: .rounded)
+        case .normal, .bulleted, .numbered: return .system(size: 14 * textScale, weight: .regular, design: .rounded)
         }
     }
 

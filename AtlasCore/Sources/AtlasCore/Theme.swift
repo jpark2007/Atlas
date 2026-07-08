@@ -1,5 +1,20 @@
 import SwiftUI
 
+public struct AtlasTextScaleKey: EnvironmentKey {
+    public static let defaultValue: CGFloat = 1.0
+}
+
+extension EnvironmentValues {
+    /// Global user-adjustable text scale, set once at the app root from
+    /// `@AppStorage("appearance.textScale")` (see `AtlasApp.swift`). Every
+    /// font in the Mac app should render through `atlasFont` so it responds
+    /// to this value — see that function for the single choke point.
+    public var atlasTextScale: CGFloat {
+        get { self[AtlasTextScaleKey.self] }
+        set { self[AtlasTextScaleKey.self] = newValue }
+    }
+}
+
 /// Atlas design tokens — Editorial Minimal · LIGHT · clay.
 /// Remapped from the dark prototype to the mobile light system
 /// (`AtlasMobile/Theme/MobileTheme.swift` is the source of truth).
@@ -34,8 +49,8 @@ public enum AtlasTheme {
 
         // Text
         public static let textPrimary   = Color(hex: "211d17")
-        public static let textSecondary = Color(hex: "6f6a5e")
-        public static let textMuted      = Color(hex: "9c968a")
+        public static let textSecondary = Color(hex: "565145")
+        public static let textMuted      = Color(hex: "7d7669")
 
         // Brand accent — clay. Graphics only (NOW / live / brand). Never a fill.
         public static let accent     = Color(hex: "d97757")
@@ -63,16 +78,6 @@ public enum AtlasTheme {
         public static let card: CGFloat    = 18
         public static let control: CGFloat = 14
         public static let chip: CGFloat    = 10
-    }
-
-    public enum Font {
-        public static func kicker() -> SwiftUI.Font { .system(size: 11, weight: .semibold, design: .rounded) }
-        public static func sectionLabel() -> SwiftUI.Font { .system(size: 11, weight: .semibold, design: .rounded) }
-        public static func greeting() -> SwiftUI.Font { .system(size: 28, weight: .semibold, design: .rounded) }
-        public static func cardTitle() -> SwiftUI.Font { .system(size: 14, weight: .semibold, design: .rounded) }
-        public static func body() -> SwiftUI.Font { .system(size: 13, weight: .regular, design: .rounded) }
-        public static func bodyMedium() -> SwiftUI.Font { .system(size: 13, weight: .medium, design: .rounded) }
-        public static func small() -> SwiftUI.Font { .system(size: 11, weight: .regular, design: .rounded) }
     }
 }
 
@@ -119,10 +124,21 @@ public func atlasTag(text: String, color: Color) -> some View {
 // modules would make mobile call sites ambiguous). Pure SwiftUI, no UIKit/AppKit:
 // this package builds for both platforms.
 
+private struct AtlasScaledFont: ViewModifier {
+    @Environment(\.atlasTextScale) private var scale
+    let size: CGFloat
+    let weight: SwiftUI.Font.Weight
+    let design: SwiftUI.Font.Design
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: size * scale, weight: weight, design: design))
+    }
+}
+
 extension View {
     /// MONO type role (SF Mono) — every number, date, time, and uppercase section label.
     public func atlasMono(size: CGFloat, weight: SwiftUI.Font.Weight = .regular) -> some View {
-        self.font(.system(size: size, weight: weight, design: .monospaced))
+        self.atlasFont(size: size, weight: weight, design: .monospaced)
     }
 
     /// Convenience mono for inline numerals — SF Mono at body size (13 / regular).
@@ -132,7 +148,7 @@ extension View {
 
     /// SERIF type role (New York) — content titles.
     public func atlasTitleSerif(size: CGFloat) -> some View {
-        self.font(.system(size: size, weight: .semibold, design: .serif))
+        self.atlasFont(size: size, weight: .semibold, design: .serif)
     }
 
     /// Big editorial screen title — 31 serif (New York), −0.03em tracking, ink.
@@ -150,6 +166,12 @@ extension View {
             .tracking(2)                // wide mono tracking (~+0.18em × 11)
             .textCase(.uppercase)
             .foregroundStyle(AtlasTheme.Colors.textSecondary)
+    }
+
+    /// THE font entry point — every text style in the Mac app should render
+    /// through this so it responds to the user's `atlasTextScale` setting.
+    public func atlasFont(size: CGFloat, weight: SwiftUI.Font.Weight = .regular, design: SwiftUI.Font.Design = .rounded) -> some View {
+        modifier(AtlasScaledFont(size: size, weight: weight, design: design))
     }
 
     /// Transparent control with a 1.5 pt ink outline, control radius (14).

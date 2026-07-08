@@ -40,7 +40,7 @@ struct SignInView: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(AtlasTheme.Colors.accentText)
                     }
-                    .font(.system(size: 12, design: .rounded))
+                    .atlasFont(size: 13, design: .rounded)
                     .padding(.top, 2)
                 }
 
@@ -53,7 +53,7 @@ struct SignInView: View {
 
                 Button("Continue without an account") { auth.continueOffline() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, design: .rounded))
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .padding(.top, 4)
             }
@@ -70,11 +70,11 @@ struct SignInView: View {
         VStack(spacing: 10) {
             BrandLogo(size: 76)
             Text("Atlas")
-                .font(.system(size: 30, weight: .heavy, design: .rounded))
+                .atlasFont(size: 33, weight: .heavy, design: .rounded)
                 .tracking(-0.9)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Text(mode == .signIn ? "Your whole life, one place." : "Create your account.")
-                .font(.system(size: 13, design: .rounded))
+                .atlasFont(size: 14, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
     }
@@ -82,14 +82,14 @@ struct SignInView: View {
     /// Editorial field: no fill, no box — an icon + input over a hairline rule.
     private func field(icon: String, placeholder: String, text: Binding<String>, secure: Bool) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon).font(.system(size: 13))
+            Image(systemName: icon).atlasFont(size: 14, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted).frame(width: 18)
             Group {
                 if secure { SecureField(placeholder, text: text) }
                 else { TextField(placeholder, text: text) }
             }
             .textFieldStyle(.plain)
-            .font(.system(size: 15, design: .rounded))
+            .atlasFont(size: 17, design: .rounded)
             .foregroundStyle(AtlasTheme.Colors.textPrimary)
             .tint(AtlasTheme.Colors.accent)   // caret = brand accent, not a fill
         }
@@ -105,7 +105,7 @@ struct SignInView: View {
             }
         } label: {
             Text(mode == .signIn ? "Sign in" : "Create account")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .atlasFont(size: 17, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .frame(maxWidth: .infinity)
                 .atlasOutlineControl()
@@ -128,8 +128,8 @@ struct SignInView: View {
                                 action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: system).font(.system(size: 15))
-                Text(title).font(.system(size: 13, weight: .medium, design: .rounded))
+                Image(systemName: system).atlasFont(size: 17)
+                Text(title).atlasFont(size: 14, weight: .medium, design: .rounded)
             }
             .foregroundStyle(AtlasTheme.Colors.textPrimary)
             .frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -143,13 +143,13 @@ struct SignInView: View {
     private var dividerOr: some View {
         HStack(spacing: 12) {
             Rectangle().fill(AtlasTheme.Colors.hairline).frame(height: 1)
-            Text("or").font(.system(size: 11, design: .rounded)).foregroundStyle(AtlasTheme.Colors.textMuted)
+            Text("or").atlasFont(size: 12, weight: .medium, design: .rounded).foregroundStyle(AtlasTheme.Colors.textMuted)
             Rectangle().fill(AtlasTheme.Colors.hairline).frame(height: 1)
         }
     }
 
     private func message(_ text: String, color: Color) -> some View {
-        Text(text).font(.system(size: 11, design: .rounded)).foregroundStyle(color)
+        Text(text).atlasFont(size: 12, design: .rounded).foregroundStyle(color)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

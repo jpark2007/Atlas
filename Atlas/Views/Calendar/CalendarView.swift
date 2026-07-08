@@ -137,7 +137,7 @@ struct CalendarView: View {
                         .textCase(.uppercase)
                         .foregroundStyle(AtlasTheme.Colors.accentText)
                     Text(titleLabel)
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .atlasFont(size: 26, weight: .bold, design: .rounded)
                         .tracking(-0.4)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 }
@@ -165,17 +165,17 @@ struct CalendarView: View {
     private var searchField: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 11, weight: .medium))
+                .atlasFont(size: 12, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             TextField("Search", text: $searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12, design: .rounded))
+                .atlasFont(size: 13, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .frame(width: 150)
             if !searchText.isEmpty {
                 Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 11))
+                        .atlasFont(size: 12, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
@@ -217,7 +217,7 @@ struct CalendarView: View {
                     .fill(isHidden ? AtlasTheme.Colors.textMuted.opacity(0.4) : space.color)
                     .frame(width: 8, height: 8)
                 Text(space.name)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .atlasFont(size: 12, weight: .semibold, design: .rounded)
                     .foregroundStyle(isHidden ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                     .strikethrough(isHidden, color: AtlasTheme.Colors.textMuted)
             }
@@ -238,9 +238,9 @@ struct CalendarView: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .bold))
+                    .atlasFont(size: 12, weight: .bold)
                 Text("Add event")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .atlasFont(size: 13, weight: .semibold, design: .rounded)
             }
             .foregroundStyle(AtlasTheme.Colors.textPrimary)
             .padding(.horizontal, 12)
@@ -281,7 +281,7 @@ struct CalendarView: View {
             .buttonStyle(.plain)
             .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
-        .font(.system(size: 13, weight: .semibold, design: .rounded))
+        .atlasFont(size: 14, weight: .semibold, design: .rounded)
     }
 
     // MARK: - Grid

@@ -147,11 +147,11 @@ struct CommandPaletteOverlay: View {
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 14))
+                .atlasFont(size: 15, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             TextField(focus.sessionActive ? "Search your notes…" : "Find anything, or create a task…", text: $query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 15, design: .rounded))
+                .atlasFont(size: 17, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .tint(AtlasTheme.Colors.accent)
                 .focused($fieldFocused)
@@ -233,14 +233,14 @@ struct CommandPaletteOverlay: View {
                         .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1)
                 )
             Text(label)
-                .font(.system(size: 11, design: .rounded))
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
 
     private func hint(_ text: String) -> some View {
         Text(text)
-            .font(AtlasTheme.Font.body())
+            .atlasFont(size: 14, weight: .medium)
             .foregroundStyle(AtlasTheme.Colors.textMuted)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
@@ -275,16 +275,16 @@ struct CommandPaletteOverlay: View {
     private func row(_ result: CommandResult, selected: Bool) -> some View {
         HStack(spacing: 11) {
             Image(systemName: icon(result))
-                .font(.system(size: 13))
+                .atlasFont(size: 14)
                 .frame(width: 18)
                 .foregroundStyle(selected ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textMuted)
             VStack(alignment: .leading, spacing: 1) {
                 Text(primary(result))
-                    .font(AtlasTheme.Font.bodyMedium())
+                    .atlasFont(size: 14, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 if let sub = secondary(result) {
                     Text(sub)
-                        .font(AtlasTheme.Font.small())
+                        .atlasFont(size: 12, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 }
             }
