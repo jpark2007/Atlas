@@ -114,6 +114,15 @@ final class AppState: ObservableObject {
         (projectMembers[project.id]?.count ?? 0) > 1
     }
 
+    /// Membership rosters for shared spaces, keyed by space id — mirrors
+    /// `projectMembers` one level up.
+    @Published var spaceMembers: [UUID: [SpaceMemberRow]] = [:]
+
+    /// True once a space has more than just its owner as a member.
+    func isSharedSpace(_ space: Space) -> Bool {
+        (spaceMembers[space.id]?.count ?? 0) > 1
+    }
+
     /// True if `blocks`' most recent `updatedAt` is more than 48h old — the
     /// Team view shows a quiet "as of <day>" annotation instead of pretending
     /// a stale window is current.
@@ -422,6 +431,16 @@ final class AppState: ObservableObject {
         }
         self.projectMembers = membersByProject
 
+        // Per-space membership rosters — mirrors the per-project loop above,
+        // one level up. Spaces themselves live only in `spaces`. Runs
+        // independently of the "shared with me" lookup below, which needs
+        // `myUserId` and may bail early.
+        var membersBySpace: [UUID: [SpaceMemberRow]] = [:]
+        for space in spaces {
+            membersBySpace[space.id] = (try? await db.loadSpaceMembers(spaceId: space.id)) ?? []
+        }
+        self.spaceMembers = membersBySpace
+
         // Projects I'm a member of but don't own land in "Shared with me",
         // not nested under any of my own spaces (they belong to someone else's).
         guard let myUserId = try? await db.currentUserId() else { return }
@@ -443,6 +462,17 @@ final class AppState: ObservableObject {
             try await db.createProjectInvite(projectId: projectId, inviteeEmail: email)
         } catch {
             print("[Collab] failed to send invite: \(error)")
+        }
+    }
+
+    /// Send a space invite. Mirrors `invite(email:toProject:)` (Phase 2) —
+    /// errors are swallowed to a debug log, not thrown into the UI.
+    func inviteToSpace(email: String, spaceId: UUID) async {
+        guard let db else { return }
+        do {
+            try await db.createSpaceInvite(spaceId: spaceId, inviteeEmail: email)
+        } catch {
+            print("[Collab] failed to send space invite: \(error)")
         }
     }
 
