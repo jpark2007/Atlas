@@ -79,6 +79,24 @@ Deno.test("table tab is read-only with a reason and a lossy-but-readable preview
   assertEquals(t.markdown.includes("| a | b |"), true);
 });
 
+Deno.test("positioned (floating) image flags the tab read-only", () => {
+  // Floating images live on paragraph.positionedObjectIds, not in elements[] —
+  // a full-tab rewrite deletes the tethering paragraph and the image with it.
+  const doc = { tabs: [{
+    tabProperties: { tabId: "t.p", title: "Float", index: 0 },
+    documentTab: { body: { content: [
+      { sectionBreak: {} },
+      { paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+          positionedObjectIds: ["kix.float1"],
+          elements: [{ textRun: { content: "text beside a floating image\n", textStyle: {} } }] } },
+    ] }, lists: {} },
+    childTabs: [],
+  }] };
+  const t = readTabs(doc)[0];
+  assertEquals(t.writable, false);
+  assertEquals(t.readonlyReason, "positioned image");
+});
+
 Deno.test("preview concatenation", () => {
   const md = tabsPreviewMarkdown(readTabs(FIXTURE));
   assertEquals(md.startsWith("# Simple\n"), true);

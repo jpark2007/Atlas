@@ -118,6 +118,12 @@ function tabToMarkdown(documentTab: any): { markdown: string; reason: string | n
     const p = el.paragraph;
     const style = p.paragraphStyle?.namedStyleType ?? "NORMAL_TEXT";
     if (!KNOWN_STYLES.has(style)) flag(`style ${style}`);
+    // Floating ("wrap text") images are NOT paragraph elements — they're tethered
+    // to the paragraph via positionedObjectIds. A full-tab rewrite deletes the
+    // tethering paragraph and the image with it, so these tabs must be read-only.
+    if (Array.isArray(p.positionedObjectIds) && p.positionedObjectIds.length) {
+      flag("positioned image");
+    }
 
     let prefix = "";
     if (p.bullet !== undefined) {
