@@ -15,6 +15,9 @@ struct AtlasApp: App {
     /// Focus-session + Pomodoro state. Owned here (not inside FocusView) so the
     /// MenuBarExtra — a separate Scene — can bind to the same live countdown.
     @StateObject private var focus = FocusViewModel()
+    /// User-adjustable global text scale (Settings → General → Appearance).
+    /// 1.0 = default; see `AtlasTextScaleKey` in AtlasCore/Theme.swift.
+    @AppStorage("appearance.textScale") private var textScale: Double = 1.0
 
     var body: some Scene {
         WindowGroup {
@@ -30,6 +33,7 @@ struct AtlasApp: App {
                 // edge-function client, minting a valid Supabase JWT on each save.
                 .environment(\.docNoteWriteBack,
                              GoogleDocWriteBackClient(accessToken: { await auth.validAccessToken() }))
+                .environment(\.atlasTextScale, CGFloat(textScale))
                 .frame(minWidth: 960, minHeight: 600)
                 .preferredColorScheme(.light)
                 .background(GlobalHotkeyInstaller(state: state, auth: auth))
