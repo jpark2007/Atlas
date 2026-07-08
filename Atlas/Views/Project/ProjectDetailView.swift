@@ -92,6 +92,7 @@ struct ProjectDetailView: View {
                     overview
                     if !liveTasks.isEmpty || !completedTasks.isEmpty { liveTasksSection }
                     if !liveEvents.isEmpty || !pastEvents.isEmpty    { liveEventsSection }
+                    if state.isShared(project) { teamSection }
                     if isEmptyProject { starterTemplate }
                     notesSection
                     referencesSection
@@ -745,6 +746,13 @@ struct ProjectDetailView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Team (collab phase 3 — availability)
+
+    private var teamSection: some View {
+        TeamAvailabilityView(project: project)
+            .task { await state.loadTeammateAvailability(forProject: project) }
     }
 
     private var pinned: some View {
