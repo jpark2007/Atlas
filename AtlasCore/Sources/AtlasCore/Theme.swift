@@ -49,8 +49,8 @@ public enum AtlasTheme {
 
         // Text
         public static let textPrimary   = Color(hex: "211d17")
-        public static let textSecondary = Color(hex: "6f6a5e")
-        public static let textMuted      = Color(hex: "9c968a")
+        public static let textSecondary = Color(hex: "565145")
+        public static let textMuted      = Color(hex: "7d7669")
 
         // Brand accent — clay. Graphics only (NOW / live / brand). Never a fill.
         public static let accent     = Color(hex: "d97757")
