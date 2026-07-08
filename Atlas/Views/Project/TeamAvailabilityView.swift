@@ -17,7 +17,10 @@ struct TeamAvailabilityView: View {
     }
 
     private var members: [ProjectMemberRow] {
-        state.projectMembers[project.id] ?? []
+        guard let myUserId = try? state.db?.currentUserId() else {
+            return state.projectMembers[project.id] ?? []
+        }
+        return (state.projectMembers[project.id] ?? []).filter { $0.userId != myUserId }
     }
 
     var body: some View {

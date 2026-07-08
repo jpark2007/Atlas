@@ -204,19 +204,27 @@ final class AppState: ObservableObject {
     }
 
     /// Publishes the next 14 days of anonymized busy intervals derived from
-    /// `events` (already Atlas+Google+Apple merged) — fire-and-forget, never
-    /// throws to the caller. Delete-then-insert on the server keeps this
-    /// self-healing with no per-event diffing.
+    /// `events`, `externalEvents` (Apple/Google), and scheduled task work-blocks
+    /// combined — fire-and-forget, never throws to the caller. Delete-then-insert
+    /// on the server keeps this self-healing with no per-event diffing.
     func publishAvailability() async {
         guard let db, let userId = try? db.currentUserId() else { return }
         let cal = Calendar.current
         let windowStart = cal.startOfDay(for: Date())
         guard let windowEnd = cal.date(byAdding: .day, value: 14, to: windowStart) else { return }
 
-        let relevant = events.filter { $0.start >= windowStart && $0.start < windowEnd }
+        var relevant = (events + externalEvents).filter { $0.start >= windowStart && $0.start < windowEnd }
+        var day = windowStart
+        while day < windowEnd {
+            relevant += scheduledWorkBlocks(on: day)
+            day = cal.date(byAdding: .day, value: 1, to: day) ?? windowEnd
+        }
+
         var blocks = AvailabilityDerivation.busyBlocks(from: relevant, excludingDeadlines: true)
+        let nowISO = ISO8601DateFormatter().string(from: Date())
         for i in blocks.indices {
             blocks[i].userId = userId
+            blocks[i].updatedAt = nowISO
         }
         try? await db.publishAvailability(blocks, windowStart: windowStart, windowEnd: windowEnd)
     }
