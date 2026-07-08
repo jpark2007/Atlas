@@ -408,9 +408,24 @@ struct NoteEditorView: View {
     /// explicit Reload). Always a Doc-note here, so parse the Markdown body.
     private func loadFresh(_ live: Note) {
         draft = live
-        doc = RichDoc.fromMarkdown(live.body)
+        if !docTabs.isEmpty, let ref = docReference {
+            // Per-tab mode: notes.body is the cron-owned concatenated preview —
+            // reload the tab rows and re-seat the current tab instead of parsing
+            // the preview into the buffer.
+            Task {
+                let tabs = await state.loadDocTabs(referenceID: ref.id)
+                guard tabs.count > 1 else { return }
+                docTabs = tabs
+                let current = tabs.first(where: { $0.tabId == selectedTab?.tabId }) ?? tabs[0]
+                selectedTab = current
+                doc = RichDoc.fromMarkdown(current.bodyMD)
+            }
+        } else {
+            doc = RichDoc.fromMarkdown(live.body)
+        }
         baselineUpdatedAt = live.updatedAt
         isDirty = false
+        tabDirty = false
         newerVersionAvailable = false
     }
 
