@@ -104,6 +104,14 @@ final class AppState: ObservableObject {
         (projectMembers[project.id]?.count ?? 0) > 1
     }
 
+    /// True if `blocks`' most recent `updatedAt` is more than 48h old — the
+    /// Team view shows a quiet "as of <day>" annotation instead of pretending
+    /// a stale window is current.
+    func isStale(_ blocks: [AvailabilityBlockRow], now: Date = Date()) -> Bool {
+        guard let mostRecent = blocks.compactMap({ ReferenceRow.date(from: $0.updatedAt) }).max() else { return true }
+        return now.timeIntervalSince(mostRecent) > 48 * 3600
+    }
+
     /// Re-reads the Canvas connection for Settings. Never throws to the caller; on a
     /// read failure the current snapshot is left untouched. Mirrors `refreshGoogleConnection()`.
     func refreshCanvasConnection() async {

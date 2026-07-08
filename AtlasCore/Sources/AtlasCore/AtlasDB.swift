@@ -484,7 +484,7 @@ public struct ReferenceRow: Codable {
 
     /// Parses an ISO-8601 timestamp with or without fractional seconds — mirrors
     /// `GoogleConnectionRow.lastSyncedDate` so server-written (microsecond) times decode.
-    static func date(from s: String?) -> Date? {
+    public static func date(from s: String?) -> Date? {
         guard let s else { return nil }
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

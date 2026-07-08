@@ -22,8 +22,12 @@ struct TeamAvailabilityView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("THE WEEK")
-                .atlasCapsLabel()
+            HStack(spacing: 8) {
+                Text("THE WEEK")
+                    .atlasCapsLabel()
+                Spacer()
+                detailLevelPicker
+            }
 
             ForEach(members, id: \.userId) { member in
                 HStack(spacing: 6) {
@@ -34,6 +38,12 @@ struct TeamAvailabilityView: View {
 
                     ForEach(days, id: \.self) { day in
                         dayCell(for: member, on: day)
+                    }
+
+                    if state.isStale(state.teammateAvailability[member.userId] ?? []) {
+                        Text("stale")
+                            .font(.system(size: 9, design: .rounded))
+                            .foregroundStyle(AtlasTheme.Colors.textMuted.opacity(0.6))
                     }
                 }
             }
@@ -54,5 +64,17 @@ struct TeamAvailabilityView: View {
             .fill(busy ? AtlasTheme.Colors.textMuted.opacity(0.25) : Color.clear)
             .frame(width: 28, height: 16)
             .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(AtlasTheme.Colors.textMuted.opacity(0.15), lineWidth: 0.5))
+    }
+
+    private var detailLevelPicker: some View {
+        Menu("Sharing") {
+            Button("Busy times only") {
+                Task { try? await state.db?.setSharingPref(kind: "project", targetId: project.id, detailLevel: "busy_only") }
+            }
+            Button("Show my event titles") {
+                Task { try? await state.db?.setSharingPref(kind: "project", targetId: project.id, detailLevel: "details") }
+            }
+        }
+        .font(.system(size: 11))
     }
 }
