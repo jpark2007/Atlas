@@ -97,3 +97,42 @@ public struct ReferenceAttachment: Identifiable {
         self.eventID = eventID
     }
 }
+
+// MARK: - Doc tabs (multi-tab Google Doc notes)
+
+/// One tab of a multi-tab Google Doc note. Mirrors `doc_note_tabs`.
+/// `writable == false` ⇒ the tab contains content Atlas can't safely rewrite
+/// (table, image, exotic formatting — `readonlyReason`); the editor shows it
+/// read-only and the server refuses writes to it regardless.
+public struct DocNoteTab: Identifiable, Equatable {
+    public let id: UUID
+    public let referenceID: UUID
+    public let tabId: String
+    public let parentTabId: String?
+    public let title: String
+    public let ord: Int
+    public let bodyMD: String
+    public let writable: Bool
+    public let readonlyReason: String?
+
+    public init(id: UUID, referenceID: UUID, tabId: String, parentTabId: String?,
+                title: String, ord: Int, bodyMD: String, writable: Bool, readonlyReason: String?) {
+        self.id = id
+        self.referenceID = referenceID
+        self.tabId = tabId
+        self.parentTabId = parentTabId
+        self.title = title
+        self.ord = ord
+        self.bodyMD = bodyMD
+        self.writable = writable
+        self.readonlyReason = readonlyReason
+    }
+
+    /// "Parent ▸ Child" for nested tabs, matching the Docs sidebar.
+    public func displayTitle(in tabs: [DocNoteTab]) -> String {
+        guard let parentTabId, let parent = tabs.first(where: { $0.tabId == parentTabId }) else {
+            return title
+        }
+        return "\(parent.title) ▸ \(title)"
+    }
+}
