@@ -164,15 +164,20 @@ Deno.serve(async (req: Request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // ── Resolve the linked Doc: the project_references row that backs this note ──
-  const { data: refRow, error: refErr } = await admin
+  // ── Resolve the linked Doc: a project_references row that backs this note ──
+  // A note may back SEVERAL references (same Doc imported into multiple projects,
+  // v2) — they all point at the same drive_file_id, so take the oldest as canonical
+  // rather than erroring on the multi-row case.
+  const { data: refRows, error: refErr } = await admin
     .from("project_references")
     .select("id, drive_file_id, modified_time, kind, sync_state")
     .eq("user_id", userId)
     .eq("note_id", noteId)
     .eq("kind", "doc_note")
-    .maybeSingle();
+    .order("created_at", { ascending: true })
+    .limit(1);
   if (refErr) return json({ error: "Failed to load reference" }, 500);
+  const refRow = refRows?.[0];
   if (!refRow || !refRow.drive_file_id) {
     return json({ error: "Note is not linked to a Google Doc" }, 404);
   }
