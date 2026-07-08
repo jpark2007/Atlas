@@ -223,7 +223,9 @@ struct NoteEditorView: View {
                 .padding(.vertical, 12)
             }
             .frame(minHeight: 200)
-            .disabled(tabReadOnly || syncPending)
+            // NOTE: editing is locked per-TextField (blockRow), not on this whole
+            // subtree — a container-level .disabled would also swallow link taps
+            // and context menus in read-only tabs.
 
             Divider().overlay(AtlasTheme.Colors.border)
 
@@ -681,6 +683,7 @@ struct NoteEditorView: View {
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .focused($focusedBlock, equals: block.id)
                     .onSubmit { addBlockAfter(index) }
+                    .disabled(tabReadOnly || syncPending)
             }
         }
     }
@@ -747,6 +750,7 @@ struct NoteEditorView: View {
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
             }
             .buttonStyle(.plain)
+            .disabled(tabReadOnly || syncPending)
             Button(action: commit) {
                 Text("Done")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
