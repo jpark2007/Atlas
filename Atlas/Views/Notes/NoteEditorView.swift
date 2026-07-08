@@ -241,6 +241,17 @@ struct NoteEditorView: View {
 
     private var docURL: URL? { docReference?.externalURL }
 
+    /// The Google-Docs deep link the "Edit Link" affordance opens: per-tab
+    /// (`…/edit?tab=<tabId>`, mirroring `readOnlyTabBanner`'s construction) when in
+    /// per-tab mode, else the plain doc URL. Link editing lives in Google Docs only.
+    private var docDeepLinkURL: URL? {
+        guard let ref = docReference, let fileId = ref.driveFileId else { return docURL }
+        if let tabId = activeTabId {
+            return URL(string: "https://docs.google.com/document/d/\(fileId)/edit?tab=\(tabId)")
+        }
+        return docURL
+    }
+
     /// True when the selected multi-tab Doc tab is read-only — locks the style bar and
     /// block editors. `false` for single-tab / flag-OFF (no `selectedTab`).
     private var tabReadOnly: Bool { selectedTab.map { !$0.writable } ?? false }
@@ -628,6 +639,31 @@ struct NoteEditorView: View {
         // the image on save — intentional.
         if let objectId = imagePlaceholderObjectId(block.text) {
             imageBlock(objectId: objectId, placeholder: block.text)
+        } else if (tabReadOnly || focusedBlock != block.id),
+                  let detected = detectLinks(in: block.text) {
+            // Display-tier link rendering: a NON-focused block (or any block in a
+            // read-only tab) with links shows styled, clickable text instead of the raw
+            // `[text](url)`. Focusing the row (tap) swaps back to the TextField showing
+            // the raw markdown — editable tabs only; read-only tabs stay styled. The
+            // underlying block text is never changed (round-trip-safe).
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if block.kind.isList {
+                    Text(listGlyph(for: index, block: block))
+                        .font(AtlasTheme.Font.body())
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .frame(minWidth: 18, alignment: .trailing)
+                }
+                LinkableBlockText(
+                    attributed: detected.attributed,
+                    links: detected.links,
+                    font: font(for: block.kind),
+                    bold: block.uniformMarks.contains(.bold),
+                    italic: block.uniformMarks.contains(.italic),
+                    underline: block.uniformMarks.contains(.underline),
+                    onActivate: { focusedBlock = block.id },
+                    docDeepLink: docDeepLinkURL
+                )
+            }
         } else {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if block.kind.isList {
@@ -672,6 +708,12 @@ struct NoteEditorView: View {
         guard trimmed.hasPrefix(prefix), trimmed.hasSuffix("]") else { return nil }
         let id = trimmed.dropFirst(prefix.count).dropLast()
         return id.isEmpty || id.contains("]") ? nil : String(id)
+    }
+
+    /// Wrapper so `blockRow` reads cleanly; the parsing itself is the file-scope
+    /// `detectMarkdownLinks` (kept free of `self` so it stays trivially testable).
+    private func detectLinks(in raw: String) -> (attributed: AttributedString, links: [DetectedLink])? {
+        detectMarkdownLinks(in: raw)
     }
 
     private func listGlyph(for index: Int, block: RichDoc.Block) -> String {
@@ -879,6 +921,76 @@ struct NoteEditorView: View {
         baselineUpdatedAt = liveNote?.updatedAt ?? updated.updatedAt
         onDone?(updated)
     }
+}
+
+// MARK: - Link detection (display-tier)
+
+/// A single hyperlink found in a block's raw text: the resolved `URL` plus the text
+/// shown for it (the markdown label, or the URL itself for a bare link).
+struct DetectedLink: Identifiable {
+    let id = UUID()
+    let url: URL
+    let displayText: String
+}
+
+/// Scans `raw` for markdown `[text](url)` spans and bare `http(s)://…` URLs, producing
+/// a styled `AttributedString` — link spans get the `.link` attribute (so a tap opens
+/// the browser via `openURL`), accent color, and an underline; the `[…](…)` syntax
+/// collapses to just its label — plus the ordered links for the context menu. Returns
+/// `nil` when the text has no usable links (the caller then keeps the plain TextField).
+/// Display-tier only: the block's underlying text is never modified.
+func detectMarkdownLinks(in raw: String) -> (attributed: AttributedString, links: [DetectedLink])? {
+    let pattern = #"\[([^\]]+)\]\(([^)\s]+)\)|(https?://[^\s]+)"#
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+    let ns = raw as NSString
+    let matches = regex.matches(in: raw, range: NSRange(location: 0, length: ns.length))
+    guard !matches.isEmpty else { return nil }
+
+    var attributed = AttributedString()
+    var links: [DetectedLink] = []
+    var cursor = 0
+    let trailingPunct = Set(".,;:!?)]}".unicodeScalars)
+
+    for match in matches {
+        if match.range.location > cursor {
+            attributed += AttributedString(ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor)))
+        }
+        cursor = match.range.location + match.range.length
+
+        var displayText: String
+        var urlString: String
+        var trailing = ""
+        if match.range(at: 1).location != NSNotFound {            // markdown form
+            displayText = ns.substring(with: match.range(at: 1))
+            urlString = ns.substring(with: match.range(at: 2))
+        } else {                                                  // bare URL
+            urlString = ns.substring(with: match.range(at: 3))
+            // A bare URL commonly absorbs sentence punctuation ("see https://x.com.");
+            // trim it off the link and re-emit it as plain text after the span.
+            while let last = urlString.unicodeScalars.last, trailingPunct.contains(last) {
+                urlString.unicodeScalars.removeLast()
+            }
+            trailing = String(ns.substring(with: match.range).dropFirst(urlString.count))
+            displayText = urlString
+        }
+
+        if let url = URL(string: urlString), url.scheme != nil {
+            var span = AttributedString(displayText)
+            span.link = url
+            span.foregroundColor = AtlasTheme.Colors.accentText
+            span.underlineStyle = .single
+            attributed += span
+            links.append(DetectedLink(url: url, displayText: displayText))
+            if !trailing.isEmpty { attributed += AttributedString(trailing) }
+        } else {
+            // Not a usable URL — emit the literal match unchanged.
+            attributed += AttributedString(ns.substring(with: match.range))
+        }
+    }
+    if cursor < ns.length {
+        attributed += AttributedString(ns.substring(with: NSRange(location: cursor, length: ns.length - cursor)))
+    }
+    return links.isEmpty ? nil : (attributed, links)
 }
 
 // MARK: - Write-back surface (integrate wires a concrete impl)

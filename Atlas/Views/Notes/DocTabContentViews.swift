@@ -69,6 +69,71 @@ struct DocImageBlockView: View {
     }
 }
 
+// MARK: - Linkified block text
+
+/// A non-editing render of a block whose text contains links (see `detectMarkdownLinks`).
+/// Link spans open in the browser via the `.link` attribute + `openURL`; a tap anywhere
+/// else calls `onActivate` (the editor focuses the underlying TextField so the raw
+/// markdown becomes editable again). A right-click menu opens each link and offers the
+/// "edit link in Google Docs" escape hatch — link editing isn't supported in Atlas.
+///
+/// The tap-to-focus catcher sits BEHIND the text: plain runs aren't hit-testable so
+/// taps fall through to it, while the interactive link runs consume their own taps.
+struct LinkableBlockText: View {
+    let attributed: AttributedString
+    let links: [DetectedLink]
+    let font: Font
+    let bold: Bool
+    let italic: Bool
+    let underline: Bool
+    let onActivate: () -> Void
+    /// The Doc deep link for "Edit Link" (per-tab in per-tab mode); nil ⇒ no linked Doc.
+    let docDeepLink: URL?
+
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        styledText
+            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { onActivate() }
+            )
+            .contextMenu { menu }
+    }
+
+    /// The block's uniform marks / level applied to the whole Text (matching the
+    /// TextField it replaces); per-run link color + underline live in `attributed`.
+    private var styledText: Text {
+        var t = Text(attributed).font(font)
+        if bold { t = t.bold() }
+        if italic { t = t.italic() }
+        if underline { t = t.underline() }
+        return t
+    }
+
+    @ViewBuilder
+    private var menu: some View {
+        ForEach(links) { link in
+            Button {
+                openURL(link.url)
+            } label: {
+                Label(links.count == 1 ? "Open Link" : "Open \(link.url.host() ?? link.displayText)…",
+                      systemImage: "safari")
+            }
+        }
+        Divider()
+        Button {
+            if let docDeepLink { openURL(docDeepLink) }
+        } label: {
+            Label("Edit Link — available in Google Docs", systemImage: "pencil")
+        }
+        .disabled(docDeepLink == nil)
+    }
+}
+
 // MARK: - Pipe table
 
 /// Renders a run of `| a | b |` pipe lines as a grid: hairline borders, semibold
