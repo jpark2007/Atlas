@@ -19,18 +19,32 @@ provisioning profile — remaining suspects: the App ID's "Enable as a primary
 App ID" needing an explicit re-save after Drew's ungrouping, an Apple ID
 session refresh (System Settings sign out/in), or plain propagation (up to days).
 
-**Consistency issues found by Drew's mobile test (2026-07-09) — NOT yet built:**
+**Consistency issues found by Drew's mobile test (2026-07-09) — BOTH BUILT same
+night** (spec `docs/specs/2026-07-09-account-parity-and-mobile-colors-design.md`,
+4 commits 24e5391..295b737, per-task + whole-branch reviews all clean):
 
-1. **Account-creation parity.** A new account created on iOS (via Apple sign-in)
-   does NOT get the auto-created spaces structure / starter templates. Account
-   bootstrap must be seamless and IDENTICAL regardless of where the account is
-   created (Mac or iOS). Right seeding direction per Drew's earlier decision:
-   editable templates, not demo data, not blank (see memory/onboarding notes).
-   Likely belongs server-side (signup trigger or edge function) so no client
-   duplicates the logic.
-2. **UI parity pass** — mobile app should visually match the Mac (paper-editorial),
-   including the calendar and school (Canvas) surfaces. Scope/discuss with Drew
-   before building — his standing ask is discuss-first on the mobile reskin.
+1. **Account-creation parity — DONE + LIVE.** Migration 0024 seeds every new
+   account server-side (trigger on `auth.users`) with the editable starter set
+   (School + Personal, "My First Class" / "Getting Started", no demo data) and
+   backfilled existing empty accounts. Applied to prod + verified via PostgREST
+   2026-07-09: Drew's iCloud test account healed; all 3 accounts with real data
+   untouched. The Mac's client-side MockData seeding is deleted (`seedInitial`
+   gone from AtlasCore). NOTE: prod was ALSO missing 0020/0021 (availability,
+   shared spaces — never applied; availability + space-sharing were silently
+   broken since 07-06); Drew approved applying them in the same push.
+2. **UI parity — colors-only pass DONE** (Drew's chosen scope; radii/serif
+   deferred until he sees it). iOS `MobileTheme` + widget mirror remapped to the
+   Mac paper palette; killed the two-reds drift and the Mac's stale window-bg hex.
+
+**Open follow-ups from that work:**
+- **Drew's device checks owed:** fresh-signup starter set on iPhone; paper
+  palette on iOS + widgets; Mac window bg; delete-account red legibility (the
+  unified danger `#ff5c5c` is ~2.6:1 on paper — fails AA; accept or darken the
+  shared token app-wide, Drew's call).
+- **space_members forward gap (pre-existing, separate ticket):** nothing inserts
+  an owner row for spaces created after 0021's one-time backfill (incl. seeded
+  ones) — `createSpaceInvite` requires membership, so sharing any NEW space
+  likely fails. Right fix: forward trigger on `spaces`.
 
 Next mobile steps live in `docs/mobile-backlog.md` ("Next steps 2026-07-09").
 
