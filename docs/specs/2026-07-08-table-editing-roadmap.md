@@ -68,6 +68,19 @@ merged cells, per-cell styling, and column widths don't round-trip a
 recreate, so complex tables would still lock or silently lose formatting.
 Revisit only if cell-text editing (Stage 2) proves insufficient in practice.
 
+## Known cosmetic artifact (pre-existing, surfaced by Stage 1's E2E)
+
+Rewriting an editable gap turns plain EMPTY lines that border a bulleted list
+into empty BULLET lines (Google bulletizes empty paragraphs adjacent to a
+list on rebuild). Stable/idempotent — proven not to compound — and present in
+the whole-tab renderer before islands existed. Fix later if it bugs anyone:
+emit `deleteParagraphBullets` for empty lines in `renderLines`.
+
+Also by contract: a WRITABLE solo image is re-inserted on every save, so
+Google assigns it a fresh objectId each time; the next pull re-harvests ids
+and rows together. Frozen-island images keep their ids forever (never
+re-inserted).
+
 ## Interaction with storage efficiency (capacity audit 2026-07-08)
 
 Stage 1 turns some of today's read-only tabs writable. If/when we downscale
