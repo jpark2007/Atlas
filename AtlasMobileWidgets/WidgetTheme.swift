@@ -4,11 +4,11 @@ import SwiftUI
 /// MobileTheme (which lives in the app target and can't be linked here). Same
 /// palette, same rule: clay is for NOW / live only.
 enum WidgetTheme {
-    static let bg      = Color(hex: "fbfaf7")
-    static let ink     = Color(hex: "1a191d")
-    static let muted   = Color(hex: "6c6a72")
-    static let faint   = Color(hex: "9a98a0")
-    static let hairline = Color.black.opacity(0.08)
+    static let bg      = Color(hex: "f2efe6")
+    static let ink     = Color(hex: "211d17")
+    static let muted   = Color(hex: "565145")
+    static let faint   = Color(hex: "7d7669")
+    static let hairline = Color(hex: "211d17").opacity(0.12)
     static let accent     = Color(hex: "d97757")
     static let accentText = Color(hex: "b04f2f")
 }

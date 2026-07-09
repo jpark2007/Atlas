@@ -10,18 +10,20 @@ import UIKit
 /// separated by rules. Type is SF Pro Rounded everywhere.
 enum MobileTheme {
 
-    // MARK: Colors  (Color(hex:) comes from AtlasCore)
-    static let bg      = Color(hex: "fbfaf7")
-    static let ink     = Color(hex: "1a191d")
-    static let muted   = Color(hex: "6c6a72")
-    static let faint   = Color(hex: "9a98a0")
-    static let hairline = Color.black.opacity(0.08)
+    // MARK: Colors  (Color(hex:) comes from AtlasCore; values match the Mac's
+    // AtlasTheme.Colors paper palette — keep the two in lockstep)
+    static let bg      = Color(hex: "f2efe6")
+    static let ink     = Color(hex: "211d17")
+    static let muted   = Color(hex: "565145")
+    static let faint   = Color(hex: "7d7669")
+    static let hairline = Color(hex: "211d17").opacity(0.12)
     /// Clay accent — graphics only (NOW / live / brand). Never a fill.
     static let accent     = Color(hex: "d97757")
     /// Darkened accent for TEXT on light surfaces (AA).
     static let accentText = Color(hex: "b04f2f")
-    /// Danger red for destructive TEXT (delete account) — darkened for light bg (AA).
-    static let danger     = Color(hex: "c0392b")
+    /// Danger red — same token as AtlasTheme.Colors.danger (several views
+    /// already use the shared value directly; this ends the two-reds drift).
+    static let danger     = Color(hex: "ff5c5c")
 
     // MARK: Radii (continuous corners)
     static let radiusCard: CGFloat    = 24
@@ -78,7 +80,7 @@ extension View {
             .contentShape(RoundedRectangle(cornerRadius: MobileTheme.radiusControl, style: .continuous))
     }
 
-    /// Hairline rule (black 8%) along the bottom edge — the editorial row separator.
+    /// Hairline rule (ink 12%) along the bottom edge — the editorial row separator.
     func edHairlineBelow() -> some View {
         self.overlay(alignment: .bottom) {
             Rectangle()
