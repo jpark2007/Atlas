@@ -269,8 +269,9 @@ final class AppState: ObservableObject {
 
     // MARK: - Supabase Bootstrap
 
-    /// Load all persisted data for the signed-in user. Seeds from MockData on
-    /// first run (empty DB). On any failure keeps the existing in-memory MockData
+    /// Load all persisted data for the signed-in user. Starter content for a
+    /// fresh account is seeded SERVER-SIDE (migration 0024's signup trigger),
+    /// so this only loads. On any failure keeps the existing in-memory MockData
     /// so the UI is never left blank. Stores the `db` reference for write-through.
     /// Keyed on `userID` so signing into a different account re-loads instead of
     /// keeping (and writing into) the previous user's data.
@@ -279,26 +280,7 @@ final class AppState: ObservableObject {
         bootstrappedUser = userID
         self.db = db
         do {
-            var snapshot = try await db.loadAll()
-
-            // First-run detection: no spaces means a fresh account.
-            if snapshot.spaces.isEmpty {
-                // Flatten nested MockData into the AtlasSnapshot shape AtlasDB expects.
-                let flatSpaces = MockData.spaces.map {
-                    Space(id: $0.id, name: $0.name, color: $0.color, projects: [])
-                }
-                let flatProjects = MockData.spaces.flatMap { $0.projects }
-                let seed = AtlasSnapshot(
-                    spaces:   flatSpaces,
-                    projects: flatProjects,
-                    tasks:    MockData.tasks,
-                    events:   MockData.events,
-                    notes:    MockData.notes,
-                    goals:    MockData.goals
-                )
-                try await db.seedInitial(seed)
-                snapshot = try await db.loadAll()
-            }
+            let snapshot = try await db.loadAll()
 
             applySnapshot(snapshot)
 
