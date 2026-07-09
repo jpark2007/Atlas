@@ -198,6 +198,7 @@ export async function pullDocNoteReference(
   ref: DocNoteRef,
   runISO: string,
   dryRun: boolean,
+  opts?: { skipNoOpBaseline?: boolean },
 ): Promise<{ changed: boolean }> {
   const metaRes = await driveFileMeta(accessToken, ref.drive_file_id);
   if (!metaRes.ok) throw new Error(`drive ${metaRes.status}: ${metaRes.message}`);
@@ -208,7 +209,9 @@ export async function pullDocNoteReference(
   const storedMs = ref.modified_time ? new Date(ref.modified_time).getTime() : -Infinity;
   if (!isChanged(driveMs, storedMs)) {
     // Unchanged since last pull — record a successful check (this ref only).
-    if (!dryRun) {
+    // skipNoOpBaseline: google-sync batches these stamps itself (one write per
+    // user-tick instead of one per unchanged reference).
+    if (!dryRun && !opts?.skipNoOpBaseline) {
       await admin.from("project_references")
         .update({ last_synced_at: runISO, sync_state: "synced" })
         .eq("id", ref.id).eq("user_id", userId);

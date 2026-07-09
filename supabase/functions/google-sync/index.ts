@@ -87,8 +87,35 @@ import {
 } from "../_shared/google_pull.ts";
 
 const GCAL_BASE = "https://www.googleapis.com/calendar/v3";
-const BATCH_LIMIT = 20; // connections processed per invocation (oldest first)
+const BATCH_LIMIT = 60; // connections processed per invocation (oldest first)
 const REF_BATCH = 100;  // Drive references pulled per user per tick (least-recently-synced first)
+// Bounded fan-out. Users are independent (per-user leases) and references are
+// deduped per Doc before dispatch, so the only coupling is Google quota — 6×6
+// worst-case in-flight calls stays far under both Drive and Docs per-user caps.
+// This is what lets BATCH_LIMIT be 60 inside the function wall-clock budget:
+// tick duration ≈ slowest user-chain, not the sum of every sequential await.
+const USER_CONCURRENCY = 6;
+const REF_CONCURRENCY = 6;
+
+/** Run `fn` over `items` with at most `limit` in flight; results keep item order.
+ *  Rejections propagate — callers that need per-item isolation catch inside `fn`. */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
 const FULL_WINDOW_BACK_DAYS = 30;
 const FULL_WINDOW_FWD_DAYS = 365;
 const DAY_MS = 86_400_000;
@@ -348,6 +375,9 @@ async function syncUserReferences(
   const errors: { id: string; message: string }[] = [];
   let checked = 0;
   let synced = 0;
+  // References whose meta check found NOTHING changed. The common case by far —
+  // written as ONE batched update at the end instead of a round-trip per ref.
+  const noopIds: string[] = [];
 
   // Drive-backed only ('link' has nothing to pull). Least-recently-synced first, capped
   // per tick so a big pool can't monopolize the batch (calendar's chunking idiom).
@@ -360,16 +390,25 @@ async function syncUserReferences(
     .limit(REF_BATCH);
   if (error) throw new Error(`references select failed: ${error.message}`);
 
-  // Per-tick dedupe: two references to the SAME Doc pull once — the sibling
-  // re-baseline in pullDocNoteReference keeps the skipped duplicate honest.
+  // Per-tick dedupe BEFORE the fan-out: two references to the SAME Doc pull once
+  // (first = least-recently-synced wins) — the sibling re-baseline in
+  // pullDocNoteReference keeps the skipped duplicate honest.
   const seenFiles = new Set<string>();
-
+  const work: RefRow[] = [];
   for (const row of (rows ?? []) as RefRow[]) {
     const driveFileId = row.drive_file_id;
     if (!driveFileId) continue;
     checked++;
     if (seenFiles.has(driveFileId)) continue; // same Doc already handled this tick
     seenFiles.add(driveFileId);
+    work.push(row);
+  }
+
+  // Per-reference isolation preserved: every failure is caught INSIDE the worker,
+  // so one bad file never rejects the pool. Counters/arrays are safe to touch from
+  // concurrent workers (single-threaded event loop).
+  await mapWithConcurrency(work, REF_CONCURRENCY, async (row) => {
+    const driveFileId = row.drive_file_id!;
     try {
       if (row.kind === "doc_note") {
         // The complete doc_note pull (meta check, storm guard, single/multi-tab
@@ -388,8 +427,10 @@ async function syncUserReferences(
           },
           runStartISO,
           dryRun,
+          { skipNoOpBaseline: true }, // batched below
         );
         if (changed) synced++;
+        else noopIds.push(row.id);
       } else {
         // 'file' — metadata refresh only (view-only reference; bytes stay in Drive).
         const metaRes = await driveFileMeta(accessToken, driveFileId);
@@ -402,7 +443,7 @@ async function syncUserReferences(
               .eq("id", row.id).eq("user_id", userId);
           }
           errors.push({ id: row.id, message: `drive ${metaRes.status}: ${metaRes.message}` });
-          continue;
+          return;
         }
         const meta = metaRes.meta;
         if (meta.trashed) {
@@ -412,7 +453,16 @@ async function syncUserReferences(
               .eq("id", row.id).eq("user_id", userId);
           }
           errors.push({ id: row.id, message: "drive file trashed" });
-          continue;
+          return;
+        }
+        // Unchanged metadata is a no-op check — fold into the batched bump instead
+        // of writing identical values back row-by-row every tick.
+        const sameTime = (meta.modifiedTime ?? null) === (row.modified_time ?? null) ||
+          (meta.modifiedTime != null && row.modified_time != null &&
+            new Date(meta.modifiedTime).getTime() === new Date(row.modified_time).getTime());
+        if (sameTime && (meta.mimeType ?? row.mime_type) === row.mime_type) {
+          noopIds.push(row.id);
+          return;
         }
         if (!dryRun) {
           await admin.from("project_references")
@@ -435,6 +485,14 @@ async function syncUserReferences(
           .eq("id", row.id).eq("user_id", userId);
       }
     }
+  });
+
+  // One write for every unchanged reference this tick (the successful-check stamp).
+  if (!dryRun && noopIds.length > 0) {
+    const { error: bErr } = await admin.from("project_references")
+      .update({ last_synced_at: runStartISO, sync_state: "synced" })
+      .in("id", noopIds).eq("user_id", userId);
+    if (bErr) errors.push({ id: "*", message: `noop baseline batch failed: ${bErr.message}` });
   }
   return { checked, synced, errors };
 }
@@ -885,30 +943,36 @@ Deno.serve(async (req: Request) => {
   }
   if (connErr) return json({ error: "Failed to load connections" }, 500);
 
-  const results: UserResult[] = [];
-  for (const conn of (conns ?? []) as Connection[]) {
-    try {
-      results.push(await syncUser(admin, conn, clientId, clientSecret, dryRun));
-    } catch (e) {
-      // Per-user isolation: one failure never blocks the batch. Release the lease
-      // so a transient error retries next tick instead of waiting out claimed_until.
-      const revoked = e instanceof InvalidGrantError;
-      const msg = revoked ? "invalid_grant" : String((e as Error)?.message ?? e).slice(0, 500);
-      if (!dryRun) {
-        await admin
-          .from("google_connections")
-          .update({ status: revoked ? "revoked" : "error", last_error: msg, claimed_until: null })
-          .eq("user_id", conn.user_id);
+  // Users fan out with bounded concurrency — they're fully independent (per-user
+  // lease, per-user token, per-user rows), so the tick's wall-clock is the slowest
+  // user, not the sum. Per-user isolation is preserved INSIDE the worker.
+  const results: UserResult[] = await mapWithConcurrency(
+    (conns ?? []) as Connection[],
+    USER_CONCURRENCY,
+    async (conn) => {
+      try {
+        return await syncUser(admin, conn, clientId, clientSecret, dryRun);
+      } catch (e) {
+        // Per-user isolation: one failure never blocks the batch. Release the lease
+        // so a transient error retries next tick instead of waiting out claimed_until.
+        const revoked = e instanceof InvalidGrantError;
+        const msg = revoked ? "invalid_grant" : String((e as Error)?.message ?? e).slice(0, 500);
+        if (!dryRun) {
+          await admin
+            .from("google_connections")
+            .update({ status: revoked ? "revoked" : "error", last_error: msg, claimed_until: null })
+            .eq("user_id", conn.user_id);
+        }
+        return {
+          userId: conn.user_id,
+          status: revoked ? "revoked" : "error",
+          inserted: 0, updated: 0, deleted: 0, tombstoned: 0, pushedNew: 0, pushedUpdated: 0,
+          referencesChecked: 0, referencesSynced: 0,
+          fullResync: false, error: msg,
+        };
       }
-      results.push({
-        userId: conn.user_id,
-        status: revoked ? "revoked" : "error",
-        inserted: 0, updated: 0, deleted: 0, tombstoned: 0, pushedNew: 0, pushedUpdated: 0,
-        referencesChecked: 0, referencesSynced: 0,
-        fullResync: false, error: msg,
-      });
-    }
-  }
+    },
+  );
 
   return json({ ok: true, dryRun, count: results.length, users: results });
 });
