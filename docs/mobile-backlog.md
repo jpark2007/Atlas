@@ -16,3 +16,10 @@ Small items parked by Drew; pick these up whenever mobile work resumes. (v1 ship
   on smaller devices during the next visual pass.
 - **Canvas-phase items (bigger, already agreed):** search, real project grouping,
   post-commit capture undo — land when Canvas ICS floods task volume.
+- **Delete account (Drew, 2026-07-07):** the Mac now ships a "Delete account" action
+  (Settings → account) backed by the deployed `delete-account` edge function
+  (service-role `auth.admin.deleteUser`; cascade-wipes every user-scoped row + purges
+  Google/Canvas Vault secrets). Mobile needs the same — a delete-account button in iOS
+  settings that POSTs to `/functions/v1/delete-account` with a refresh-aware JWT, then
+  clears the local session. **Backend already exists + is deployed** — this is iOS UI +
+  the client call only, no new server work.
