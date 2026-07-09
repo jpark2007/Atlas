@@ -6,7 +6,7 @@ Canvas (the LMS) feeds assignments + due dates into the unified calendar.
 > token / OAuth held server-side. Both our schools (Rutgers, Princeton) **disable
 > student access tokens**, so that path is dead. Canvas now connects via the read-only
 > **Calendar Feed (ICS)** URL instead. Full design + rationale:
-> [2026-07-01-canvas-ics-sync-design.md](./2026-07-01-canvas-ics-sync-design.md).
+> [2026-07-01-canvas-ics-sync-design.md](../archive/specs/2026-07-01-canvas-ics-sync-design.md).
 
 ## What syncs
 

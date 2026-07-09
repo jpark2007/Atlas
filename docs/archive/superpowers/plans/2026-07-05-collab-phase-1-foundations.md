@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the `space_name` text denormalization with real `space_id` FKs (dual-write, backfilled) and add a `profiles` identity table — the invisible foundation for shared spaces/projects (spec: `docs/superpowers/specs/2026-07-05-collaboration-design.md`, Phase 1).
+**Goal:** Replace the `space_name` text denormalization with real `space_id` FKs (dual-write, backfilled) and add a `profiles` identity table — the invisible foundation for shared spaces/projects (spec: `docs/archive/superpowers/specs/2026-07-05-collaboration-design.md`, Phase 1).
 
 **Architecture:** One SQL migration adds nullable `space_id` columns to `projects`/`tasks`/`events`/`notes`, backfills them by owner+name, and creates `profiles` (auto-populated by an auth trigger). Client DTOs and domain models gain a `spaceID: UUID?` alongside the existing `spaceName` (which stays for display and backward compat until Phase 2 drops it). Re-nesting of projects into spaces moves into a pure, tested AtlasCore function keyed by ID with name fallback.
 

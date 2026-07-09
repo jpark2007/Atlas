@@ -1,6 +1,6 @@
 # Attack-plan run report — 2026-07-06
 
-All three phases of `2026-07-06-dashboard-focus-perf-plan.md` are **implemented, code-reviewed,
+All three phases of `docs/archive/specs/2026-07-06-dashboard-focus-perf-plan.md` are **implemented, code-reviewed,
 and pushed to `origin/main`**. Every commit built green (`xcodebuild`, macOS Debug). Per the
 mid-run instruction, no UI was launched or screenshotted after Wave 0 — **everything visual below
 needs Drew's pass** (§4 is the test list).
@@ -54,7 +54,7 @@ needs Drew's pass** (§4 is the test list).
 
 ## 2. Multi-tab Docs write-back — research only (NO code changed)
 
-Full memo: `docs/specs/2026-07-06-multitab-writeback-research.md`. Short version:
+Full memo: `docs/archive/specs/2026-07-06-multitab-writeback-research.md`. Short version:
 - Today both paths are tab-blind: pull = Markdown export (all tabs flatten to `# H1` sections —
   your live test confirmed all tabs DO export); write-back re-uploads whole-doc Markdown and
   lets Drive reconvert, which is what mangles the tab tree (your tab→sub-tab observation).

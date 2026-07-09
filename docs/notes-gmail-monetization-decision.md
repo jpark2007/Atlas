@@ -182,4 +182,4 @@ Cost estimate (300 heavy inboxes = 100 users × 3 accounts, ~12 actionable email
 - [CASA Tier 2 process — App Defense Alliance](https://appdefensealliance.dev/casa/tier-2/tier2-overview)
 - [CASA providers & pricing](https://www.switchlabs.dev/post/casa-tier-2-tier-3-security-review-providers-pricing-and-the-cheapest-option)
 - [CASA 2025 overview](https://deepstrike.io/blog/google-casa-security-assessment-2025)
-- Prior Atlas docs: `notes-drive-architecture-decision.md`, `google-integration-v2.md`, `specs/08-email-capture.md`
+- Prior Atlas docs: `notes-drive-architecture-decision.md`, `archive/google-integration-v2.md`, `specs/08-email-capture.md`
