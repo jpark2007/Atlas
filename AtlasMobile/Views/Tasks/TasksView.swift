@@ -325,14 +325,21 @@ struct TasksView: View {
     /// already remapped, so every task matches exactly one real space.
     private var spaceGroups: [SpaceGroup] {
         let tasks = openTasks
-        return store.snapshot.spaces.map { space in
+        return store.snapshot.spaces.filter { inFilter($0.name) }.map { space in
             let inSpace = tasks.filter { $0.spaceName.caseInsensitiveCompare(space.name) == .orderedSame }
             let loose = sortedByDue(inSpace.filter { $0.projectName.isEmpty })
             let named = inSpace.filter { !$0.projectName.isEmpty }
             let snapshotProjectNames = store.snapshot.projects
                 .filter { $0.spaceName.caseInsensitiveCompare(space.name) == .orderedSame }
                 .map(\.name)
-            let projectGroups = Array(Set(snapshotProjectNames + named.map(\.projectName)))
+            // De-dupe case-insensitively (a snapshot project and a task's projectName
+            // differing only in case must not produce two rows); snapshot casing wins.
+            var displayNameByKey: [String: String] = [:]
+            for name in snapshotProjectNames { displayNameByKey[name.lowercased()] = name }
+            for name in named.map(\.projectName) where displayNameByKey[name.lowercased()] == nil {
+                displayNameByKey[name.lowercased()] = name
+            }
+            let projectGroups = displayNameByKey.values
                 .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
                 .map { name in (projectName: name, tasks: sortedByDue(named.filter { $0.projectName.caseInsensitiveCompare(name) == .orderedSame })) }
             return SpaceGroup(spaceName: space.name, looseTasks: loose, projectGroups: projectGroups)
