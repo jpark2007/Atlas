@@ -23,3 +23,20 @@ Small items parked by Drew; pick these up whenever mobile work resumes. (v1 ship
   settings that POSTs to `/functions/v1/delete-account` with a refresh-aware JWT, then
   clears the local session. **Backend already exists + is deployed** — this is iOS UI +
   the client call only, no new server work.
+
+## Next steps (2026-07-09, from Drew's device test)
+
+Sign in with Apple on iOS is CONFIRMED WORKING on device; mobile delete-account
+shipped alongside it. What the test surfaced, in Drew's priority order:
+
+1. **Account-creation parity (bug-class, do first):** a new account created on
+   mobile gets NO auto-created spaces structure / starter templates — creating an
+   account must be seamless and exactly the same on both platforms. Direction per
+   Drew's standing onboarding decision: editable templates (not demo seed, not
+   blank). Recommend seeding server-side (signup trigger/edge function) so Mac and
+   iOS can't drift.
+2. **UI matching pass:** bring the mobile app visually in line with the Mac
+   (paper-editorial), including the calendar and school (Canvas) views. DISCUSS
+   SCOPE WITH DREW FIRST — his standing rule for the mobile reskin.
+3. Existing parked items above still stand (placement button, done-rows decision,
+   slot-hold feel, header density, Canvas-phase items).

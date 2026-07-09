@@ -1,13 +1,38 @@
 # Atlas — Handoff / Continue-Here
 
-**Read this first in a new chat to resume.** Current state, how the calendar model
-works, the planned work (broken into subagent-able bites), and the honest caveats.
+**Read this first in a new chat to resume.** For the current system map (targets,
+edge functions, crons, sync pipelines) read `docs/ARCHITECTURE.md`; roadmap order
+lives in `docs/specs/10-roadmap.md`.
 
-_Last updated: 2026-06-28 — v2 + follow-ups are live on `main`. **Google
-Calendar READ sync is working live** (the app mirrors the user's primary Google
-calendar). A round of UI fixes is in flight: the **traffic-lights** (bite I) and
-**drag-to-schedule** (bite A) fixes are now **applied (build-green) and awaiting the
-user's live verification**. Live-testing is happening interactively._
+## ⏩ Continue here (2026-07-09)
+
+Everything below this section is HISTORICAL (last coherent as of 2026-06-28) —
+kept for context, superseded by `docs/ARCHITECTURE.md`.
+
+**State:** doc-tabs v2 + frozen islands live in prod (E2E 8/8 — tables/images
+render locked-in-place, surrounding text editable; roadmap + Stage 2 cell-editing
+spec: `docs/specs/2026-07-08-table-editing-roadmap.md`). google-sync scaled
+(60-user batches, concurrent fan-out). **Sign in with Apple WORKS on iOS**
+(confirmed on device 2026-07-09); mobile also ships delete-account. Mac Apple
+sign-in still fails Apple-side (-7003 "Sign Up Not Completed") after a fresh
+provisioning profile — remaining suspects: the App ID's "Enable as a primary
+App ID" needing an explicit re-save after Drew's ungrouping, an Apple ID
+session refresh (System Settings sign out/in), or plain propagation (up to days).
+
+**Consistency issues found by Drew's mobile test (2026-07-09) — NOT yet built:**
+
+1. **Account-creation parity.** A new account created on iOS (via Apple sign-in)
+   does NOT get the auto-created spaces structure / starter templates. Account
+   bootstrap must be seamless and IDENTICAL regardless of where the account is
+   created (Mac or iOS). Right seeding direction per Drew's earlier decision:
+   editable templates, not demo data, not blank (see memory/onboarding notes).
+   Likely belongs server-side (signup trigger or edge function) so no client
+   duplicates the logic.
+2. **UI parity pass** — mobile app should visually match the Mac (paper-editorial),
+   including the calendar and school (Canvas) surfaces. Scope/discuss with Drew
+   before building — his standing ask is discuss-first on the mobile reskin.
+
+Next mobile steps live in `docs/mobile-backlog.md` ("Next steps 2026-07-09").
 
 ---
 
