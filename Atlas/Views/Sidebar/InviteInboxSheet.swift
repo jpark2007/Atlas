@@ -10,7 +10,7 @@ struct InviteInboxSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Invitations")
-                .font(.system(size: 15, weight: .semibold))
+                .atlasFont(size: 17, weight: .semibold)
                 .padding(16)
 
             if state.pendingInvites.isEmpty {
@@ -22,7 +22,7 @@ struct InviteInboxSheet: View {
             ForEach(state.pendingInvites, id: \.id) { invite in
                 HStack {
                     Text(invite.kind == .space ? "Space invite" : "Project invite")
-                        .font(.system(size: 13))
+                        .atlasFont(size: 14)
                     Spacer()
                     Button("Decline") {
                         Task { await state.respondToInvite(invite, accept: false) }

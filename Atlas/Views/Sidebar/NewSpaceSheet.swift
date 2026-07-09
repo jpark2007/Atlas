@@ -36,22 +36,22 @@ struct NewSpaceSheet: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("New Space")
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .atlasFont(size: 19, weight: .semibold, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Text("A new top-level bucket alongside your other spaces.")
-                    .font(.system(size: 12, design: .rounded))
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
             }
             Spacer()
             Button("Cancel") { dismiss() }
                 .buttonStyle(.plain)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .atlasFont(size: 14, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .keyboardShortcut(.cancelAction)
 
             Button("Create") { save() }
                 .buttonStyle(.plain)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .atlasFont(size: 14, weight: .semibold, design: .rounded)
                 .foregroundStyle(trimmedName.isEmpty ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.accentText)
                 .disabled(trimmedName.isEmpty)
                 .keyboardShortcut(.return, modifiers: .command)
@@ -70,7 +70,7 @@ struct NewSpaceSheet: View {
                 boxedField {
                     TextField("Space name", text: $name)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .atlasFont(size: 15, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)

@@ -13,7 +13,7 @@ struct InviteMemberSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Invite to project")
-                .font(.system(size: 15, weight: .semibold))
+                .atlasFont(size: 17, weight: .semibold)
 
             TextField("Email address", text: $email)
                 .textFieldStyle(.roundedBorder)

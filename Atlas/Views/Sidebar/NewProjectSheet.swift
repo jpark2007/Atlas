@@ -39,27 +39,27 @@ struct NewProjectSheet: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("New Project")
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .atlasFont(size: 19, weight: .semibold, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 HStack(spacing: 6) {
                     Circle()
                         .fill(state.calendarSpaceColor(named: spaceName))
                         .frame(width: 7, height: 7)
                     Text(spaceName)
-                        .font(.system(size: 12, design: .rounded))
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 }
             }
             Spacer()
             Button("Cancel") { dismiss() }
                 .buttonStyle(.plain)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .atlasFont(size: 14, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .keyboardShortcut(.cancelAction)
 
             Button("Create") { save() }
                 .buttonStyle(.plain)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .atlasFont(size: 14, weight: .semibold, design: .rounded)
                 .foregroundStyle(trimmedName.isEmpty ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.accentText)
                 .disabled(trimmedName.isEmpty)
                 .keyboardShortcut(.return, modifiers: .command)
@@ -79,7 +79,7 @@ struct NewProjectSheet: View {
                     boxedField {
                         TextField("Project or class name", text: $name)
                             .textFieldStyle(.plain)
-                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                            .atlasFont(size: 15, weight: .medium, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 10)
@@ -90,7 +90,7 @@ struct NewProjectSheet: View {
                     boxedField {
                         TextField("e.g. CS 201", text: $code)
                             .textFieldStyle(.plain)
-                            .font(.system(size: 14, design: .rounded))
+                            .atlasFont(size: 15, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 10)
@@ -100,10 +100,10 @@ struct NewProjectSheet: View {
                 Toggle(isOn: $isClass) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("This is a class")
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .atlasFont(size: 14, weight: .medium, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         Text("Classes show a dotted marker and class badge.")
-                            .font(.system(size: 11, design: .rounded))
+                            .atlasFont(size: 12, weight: .medium, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                 }
@@ -114,14 +114,14 @@ struct NewProjectSheet: View {
                     ZStack(alignment: .topLeading) {
                         if overview.isEmpty {
                             Text("What is this project about?")
-                                .font(.system(size: 13, design: .rounded))
+                                .atlasFont(size: 14, weight: .medium, design: .rounded)
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 10)
                                 .allowsHitTesting(false)
                         }
                         TextEditor(text: $overview)
-                            .font(.system(size: 13, design: .rounded))
+                            .atlasFont(size: 14, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             .scrollContentBackground(.hidden)
                             .padding(.horizontal, 10)

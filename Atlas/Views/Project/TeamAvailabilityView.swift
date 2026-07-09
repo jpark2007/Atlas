@@ -40,7 +40,7 @@ struct TeamAvailabilityView: View {
             ForEach(members, id: \.userId) { member in
                 HStack(spacing: 6) {
                     Text(member.userId.uuidString.prefix(4))
-                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                        .atlasFont(size: 12, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .frame(width: 40, alignment: .leading)
 
@@ -50,7 +50,7 @@ struct TeamAvailabilityView: View {
 
                     if state.isStale(state.teammateAvailability[member.userId] ?? []) {
                         Text("stale")
-                            .font(.system(size: 9, design: .rounded))
+                            .atlasFont(size: 10, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textMuted.opacity(0.6))
                     }
                 }
@@ -86,6 +86,6 @@ struct TeamAvailabilityView: View {
                 Task { try? await state.db?.setSharingPref(kind: "project", targetId: project.id, detailLevel: "details") }
             }
         }
-        .font(.system(size: 11))
+        .atlasFont(size: 12)
     }
 }

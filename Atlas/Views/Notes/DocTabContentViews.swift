@@ -42,7 +42,7 @@ struct DocImageBlockView: View {
                     .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous))
             } else if failed {
                 Text(placeholder)
-                    .font(AtlasTheme.Font.body())
+                    .atlasFont(size: 13)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             } else {
                 ProgressView()
@@ -151,8 +151,7 @@ struct PipeTableView: View {
                     GridRow {
                         ForEach(0..<columnCount, id: \.self) { col in
                             Text(col < row.count ? row[col] : "")
-                                .font(AtlasTheme.Font.body())
-                                .fontWeight(rowIndex == 0 ? .semibold : .regular)
+                                .atlasFont(size: 13, weight: rowIndex == 0 ? .semibold : .regular)
                                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                                 .padding(.vertical, 6)
                                 .padding(.horizontal, 10)

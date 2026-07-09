@@ -6,6 +6,7 @@ import AtlasCore
 /// presents the chromeless `NoteCardOverlay` corner card instead).
 struct NotesListView: View {
     @EnvironmentObject private var state: AppState
+    @Environment(\.atlasTextScale) private var textScale
     @State private var editingNote: Note?
 
     /// When set (Focus mode), row taps and "New" route the note here instead of the
@@ -20,7 +21,7 @@ struct NotesListView: View {
                     Spacer()
                     Button(action: newNote) {
                         Label("New", systemImage: "plus")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .atlasFont(size: 13, weight: .semibold, design: .rounded)
                             .foregroundStyle(AtlasTheme.Colors.textPrimary)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 7)
@@ -72,15 +73,15 @@ struct NotesListView: View {
         return AtlasCard {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: linkedDoc ? "doc.richtext" : (note.isExternal ? "doc.text.fill" : "note.text"))
-                    .font(.system(size: 14))
+                    .atlasFont(size: 15)
                     .foregroundStyle(linkedDoc ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textMuted)
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(note.title)
                         .atlasTitleSerif(size: 14)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text(Note.highlighted(note.previewText))
-                        .font(AtlasTheme.Font.small())
+                    Text(Note.highlighted(note.previewText, scale: textScale))
+                        .atlasFont(size: 12, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                         .lineLimit(2)
                 }
@@ -89,7 +90,7 @@ struct NotesListView: View {
                     atlasTag(text: "Google Doc", color: AtlasTheme.Colors.accentText)
                 } else if note.isExternal {
                     Text("Open ↗")
-                        .font(AtlasTheme.Font.small())
+                        .atlasFont(size: 12)
                         .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
             }

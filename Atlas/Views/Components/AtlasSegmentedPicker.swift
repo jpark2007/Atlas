@@ -20,7 +20,7 @@ struct AtlasSegmentedPicker<Option: Hashable & Identifiable>: View {
                     }
                 } label: {
                     Text(label(option))
-                        .font(.system(size: 12, weight: selected ? .semibold : .medium, design: .rounded))
+                        .atlasFont(size: 13, weight: selected ? .semibold : .medium, design: .rounded)
                         .foregroundStyle(selected ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 6)

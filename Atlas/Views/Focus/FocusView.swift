@@ -89,9 +89,9 @@ struct FocusView: View {
             Button(action: focus.startSession) {
                 HStack(spacing: 8) {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .atlasFont(size: 13, weight: .semibold, design: .rounded)
                     Text("Start focus")
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .atlasFont(size: 15, weight: .semibold, design: .rounded)
                 }
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .padding(.horizontal, 32)
@@ -105,7 +105,7 @@ struct FocusView: View {
             // Reset — secondary, outlined circular control.
             Button(action: focus.reset) {
                 Image(systemName: "arrow.counterclockwise")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .atlasFont(size: 14, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     .frame(width: 44, height: 44)
                     .overlay(Circle().strokeBorder(AtlasTheme.Colors.borderStrong, lineWidth: AtlasTheme.rule))
@@ -176,7 +176,7 @@ struct FocusView: View {
     private func cornerButton(_ systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())

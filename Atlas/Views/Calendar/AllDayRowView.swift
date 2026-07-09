@@ -67,7 +67,7 @@ struct AllDayRowView: View {
             }
             ForEach(others) { event in
                 Text(event.title)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .atlasFont(size: 11, weight: .semibold, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .lineLimit(1)
                     .padding(.horizontal, 4)
@@ -82,9 +82,9 @@ struct AllDayRowView: View {
     /// Deadline → flag-pill (matches the day-view DUE strip), red when overdue.
     private func deadlinePill(_ event: CalendarEvent) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: "flag.fill").font(.system(size: 7))
+            Image(systemName: "flag.fill").atlasFont(size: 8)
             Text(event.title)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .atlasFont(size: 11, weight: .semibold, design: .rounded)
                 .lineLimit(1)
             if event.hasSpecificTime {
                 Text(event.timeLabel)
@@ -111,11 +111,11 @@ private struct CollapsedDeadlinePill: View {
         let color = deadlines.first?.color ?? AtlasTheme.Colors.danger
         Button { show.toggle() } label: {
             HStack(spacing: 4) {
-                Image(systemName: "flag.fill").font(.system(size: 7))
+                Image(systemName: "flag.fill").atlasFont(size: 8)
                 Text("\(deadlines.count) due")
                     .atlasMono(size: 10, weight: .semibold)
                     .lineLimit(1)
-                Image(systemName: "chevron.right").font(.system(size: 6, weight: .bold))
+                Image(systemName: "chevron.right").atlasFont(size: 7, weight: .bold)
             }
             .foregroundStyle(color)
             .padding(.horizontal, 6)

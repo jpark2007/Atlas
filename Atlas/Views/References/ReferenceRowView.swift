@@ -32,7 +32,7 @@ struct ReferenceRowView: View {
             if reference.kind == .docNote {
                 Button(action: onOpenExternal) {
                     Text("Doc ↗")
-                        .font(.system(size: 10, design: .rounded))
+                        .atlasFont(size: 11, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.accentText)
                         .contentShape(Rectangle())
                 }
@@ -59,7 +59,7 @@ struct ReferenceRowView: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 11))
+                        .atlasFont(size: 12, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
             }
@@ -74,7 +74,7 @@ struct ReferenceRowView: View {
     private var content: some View {
         HStack(spacing: 12) {
             Image(systemName: glyph)
-                .font(.system(size: 14))
+                .atlasFont(size: 15)
                 .foregroundStyle(reference.kind == .docNote
                                  ? AtlasTheme.Colors.accentText
                                  : AtlasTheme.Colors.textMuted)
@@ -82,12 +82,12 @@ struct ReferenceRowView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(reference.title.isEmpty ? "Untitled" : reference.title)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .atlasFont(size: 14, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .lineLimit(1)
                 HStack(spacing: 8) {
                     Text(sourceLabel)
-                        .font(.system(size: 11, design: .rounded))
+                        .atlasFont(size: 12, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .lineLimit(1)
                     if reference.kind != .link { syncDisplay }
@@ -116,7 +116,7 @@ struct ReferenceRowView: View {
             }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 13))
+                .atlasFont(size: 14, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
@@ -167,7 +167,7 @@ struct ReferenceRowView: View {
     private var syncDisplay: some View {
         if reference.syncState == .synced, let d = reference.lastSyncedAt {
             syncedText(d)
-                .font(.system(size: 11, design: .rounded))
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         } else {
             syncChip

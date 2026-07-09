@@ -59,7 +59,7 @@ struct TaskDetailView: View {
                 state.toggleTask(live.id)
             } label: {
                 Image(systemName: live.done ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 22))
+                    .atlasFont(size: 24)
                     .foregroundStyle(live.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
             }
             .buttonStyle(.plain)
@@ -67,7 +67,7 @@ struct TaskDetailView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(live.title)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .atlasFont(size: 29, weight: .bold, design: .rounded)
                     .tracking(-0.4)
                     .strikethrough(live.done)
                     .foregroundStyle(live.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
@@ -79,7 +79,7 @@ struct TaskDetailView: View {
                             .fill(live.spaceColor)
                             .frame(width: 7, height: 7)
                         Text(live.spaceName)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .atlasFont(size: 13, weight: .medium, design: .rounded)
                             .foregroundStyle(live.spaceColor)
                     }
                 }
@@ -107,7 +107,7 @@ struct TaskDetailView: View {
             if !live.spaceName.isEmpty {
                 HStack(spacing: 5) {
                     Circle().fill(live.spaceColor).frame(width: 7, height: 7)
-                    Text(live.spaceName).font(.system(size: 12, weight: .medium, design: .rounded))
+                    Text(live.spaceName).atlasFont(size: 13, weight: .medium, design: .rounded)
                 }
                 .foregroundStyle(live.spaceColor)
             }
@@ -117,7 +117,7 @@ struct TaskDetailView: View {
                 isEditingDueDate = true
             } label: {
                 HStack(spacing: 5) {
-                    Image(systemName: "calendar").font(.system(size: 11))
+                    Image(systemName: "calendar").atlasFont(size: 12)
                     Text(live.dueLabel.isEmpty ? "Set due date" : "Due \(dueChipLabel)")
                         .atlasMono(size: 12, weight: .medium)
                 }
@@ -155,7 +155,7 @@ struct TaskDetailView: View {
                         .frame(width: 12, height: 12)
                     Text("Claim task")
                 }
-                .font(.system(size: 12, design: .rounded))
+                .atlasFont(size: 13, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             .buttonStyle(.plain)
@@ -171,7 +171,7 @@ struct TaskDetailView: View {
     private var dueDateEditor: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Due date")
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .atlasFont(size: 18, weight: .bold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             DatePicker("", selection: Binding(
                 get: { dueDateDraft ?? Date() },
@@ -186,19 +186,19 @@ struct TaskDetailView: View {
                     isEditingDueDate = false
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .atlasFont(size: 13, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.danger)
                 Spacer()
                 Button("Cancel") { isEditingDueDate = false }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 Button("Save") {
                     state.setDueDate(taskId: task.id, date: dueDateDraft)
                     isEditingDueDate = false
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .atlasFont(size: 13, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             }
         }
@@ -210,7 +210,7 @@ struct TaskDetailView: View {
     private func metaChip(icon: String, label: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: icon)
-                .font(.system(size: 11))
+                .atlasFont(size: 12)
             Text(label)
                 .atlasMono(size: 12)
         }
@@ -235,9 +235,9 @@ struct TaskDetailView: View {
                         .fill(live.spaceColor)
                         .frame(width: 8, height: 8)
                     Text(live.spaceName.isEmpty ? "None" : live.spaceName)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .atlasFont(size: 14, weight: .medium, design: .rounded)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
+                        .atlasFont(size: 10, weight: .semibold)
                 }
                 .foregroundStyle(live.spaceName.isEmpty
                                  ? AtlasTheme.Colors.textMuted
@@ -272,11 +272,11 @@ struct TaskDetailView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "folder")
-                        .font(.system(size: 11))
+                        .atlasFont(size: 12)
                     Text(live.projectName.isEmpty ? "None" : live.projectName)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .atlasFont(size: 14, weight: .medium, design: .rounded)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
+                        .atlasFont(size: 10, weight: .semibold)
                 }
                 .foregroundStyle(live.projectName.isEmpty
                                  ? AtlasTheme.Colors.textMuted
@@ -300,7 +300,7 @@ struct TaskDetailView: View {
                         isEditingNotes = true
                     } label: {
                         Image(systemName: "pencil")
-                            .font(.system(size: 11))
+                            .atlasFont(size: 12, weight: .medium)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     .buttonStyle(.plain)
@@ -315,13 +315,13 @@ struct TaskDetailView: View {
                     isEditingNotes = true
                 } label: {
                     Text("Add a description…")
-                        .font(.system(size: 13, design: .rounded))
+                        .atlasFont(size: 14, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
             } else {
                 Text(live.notes)
-                    .font(.system(size: 13, design: .rounded))
+                    .atlasFont(size: 14, design: .rounded)
                     .lineSpacing(4)
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -334,13 +334,13 @@ struct TaskDetailView: View {
             ZStack(alignment: .topLeading) {
                 if notesDraft.isEmpty {
                     Text("Add description, context, links…")
-                        .font(.system(size: 13, design: .rounded))
+                        .atlasFont(size: 14, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .padding(.leading, 5).padding(.top, 1)
                         .allowsHitTesting(false)
                 }
                 TextEditor(text: $notesDraft)
-                    .font(.system(size: 13, design: .rounded))
+                    .atlasFont(size: 14, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .scrollContentBackground(.hidden)
                     .tint(AtlasTheme.Colors.accent)
@@ -356,7 +356,7 @@ struct TaskDetailView: View {
                     isEditingNotes = false
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .atlasFont(size: 13, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .keyboardShortcut(.cancelAction)
 
@@ -365,7 +365,7 @@ struct TaskDetailView: View {
                     isEditingNotes = false
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .atlasFont(size: 13, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .keyboardShortcut(.return, modifiers: .command)
             }
@@ -396,16 +396,16 @@ struct TaskDetailView: View {
                     // Primary click: open the note in the in-app corner-card editor.
                     Button { editingNote = note } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "doc.text").font(.system(size: 11))
+                            Image(systemName: "doc.text").atlasFont(size: 12)
                             Text(note.title.isEmpty ? "Untitled note" : note.title)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .atlasFont(size: 13, weight: .medium, design: .rounded)
                         }
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     }
                     .buttonStyle(.plain)
                     // Secondary: re-tag to a different note.
                     notePickerMenu {
-                        Image(systemName: "chevron.down").font(.system(size: 9))
+                        Image(systemName: "chevron.down").atlasFont(size: 10, weight: .medium)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     // Unlink.
@@ -417,9 +417,9 @@ struct TaskDetailView: View {
                 } else {
                     notePickerMenu {
                         HStack(spacing: 6) {
-                            Image(systemName: "doc.text").font(.system(size: 11))
-                            Text("Tag a note…").font(.system(size: 12, weight: .medium, design: .rounded))
-                            Image(systemName: "chevron.down").font(.system(size: 9))
+                            Image(systemName: "doc.text").atlasFont(size: 12)
+                            Text("Tag a note…").atlasFont(size: 13, weight: .medium, design: .rounded)
+                            Image(systemName: "chevron.down").atlasFont(size: 10)
                         }
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     }
@@ -477,7 +477,7 @@ struct TaskDetailView: View {
                     showRefPicker = true
                 } label: {
                     Label("Add", systemImage: "plus")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .atlasFont(size: 12, weight: .semibold, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 }
                 .buttonStyle(.plain)
@@ -486,7 +486,7 @@ struct TaskDetailView: View {
             let refs = state.references(forTask: live.id)
             if refs.isEmpty {
                 Text("No references attached.")
-                    .font(.system(size: 13, design: .rounded))
+                    .atlasFont(size: 14, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             } else {
                 ForEach(refs) { ref in

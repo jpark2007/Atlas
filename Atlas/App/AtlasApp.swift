@@ -15,6 +15,9 @@ struct AtlasApp: App {
     /// Focus-session + Pomodoro state. Owned here (not inside FocusView) so the
     /// MenuBarExtra — a separate Scene — can bind to the same live countdown.
     @StateObject private var focus = FocusViewModel()
+    /// User-adjustable global text scale (Settings → General → Appearance).
+    /// 1.0 = default; see `AtlasTextScaleKey` in AtlasCore/Theme.swift.
+    @AppStorage("appearance.textScale") private var textScale: Double = 1.0
 
     var body: some Scene {
         WindowGroup {
@@ -33,6 +36,7 @@ struct AtlasApp: App {
                 // On-demand "Sync now" pull for a single linked Doc-note reference.
                 .environment(\.referencePull,
                              ReferencePullClient(accessToken: { await auth.validAccessToken() }))
+                .environment(\.atlasTextScale, CGFloat(textScale))
                 .frame(minWidth: 960, minHeight: 600)
                 .preferredColorScheme(.light)
                 .background(GlobalHotkeyInstaller(state: state, auth: auth))
@@ -116,7 +120,7 @@ struct AtlasMenuBarContent: View {
             Spacer()
             Button(focus.isRunning ? "Pause" : "Resume") { focus.toggle() }
                 .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .atlasFont(size: 12, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.accentText)
             Button("End") {
                 focus.endSession()
@@ -126,7 +130,7 @@ struct AtlasMenuBarContent: View {
                 FocusWindow.setFullScreen(false)
             }
             .buttonStyle(.plain)
-            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .atlasFont(size: 12, weight: .semibold, design: .rounded)
             .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
     }
@@ -164,7 +168,7 @@ struct AtlasMenuBarContent: View {
     private func footerButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
         }
         .buttonStyle(.plain)

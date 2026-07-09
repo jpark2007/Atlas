@@ -22,8 +22,8 @@ final class CommandPaletteTests: XCTestCase {
         TaskItem(title: title, dueLabel: "", done: done, dueDate: due)
     }
 
-    private func note(_ title: String) -> Note {
-        Note(title: title, body: "")
+    private func note(_ title: String, body: String = "") -> Note {
+        Note(title: title, body: body)
     }
 
     private func event(_ title: String, end: Date) -> CalendarEvent {
@@ -167,6 +167,24 @@ final class CommandPaletteTests: XCTestCase {
     func testUnknownPrefixIsLiteralText() {
         let sections = results("x: whatever", tasks: [task("x: whatever kept literal")])
         XCTAssertEqual(sections.map(\.title), ["Tasks", "Create"])
+    }
+
+    // MARK: Note body search
+
+    func testNotesAreSearchableByBodyContent() {
+        let matches = CommandPaletteModel.matchingNotes(
+            query: "eigenvalue",
+            notes: [note("Linear algebra", body: "Review eigenvalue decomposition before the exam."),
+                    note("Unrelated", body: "Grocery list")])
+        XCTAssertEqual(matches.map(\.title), ["Linear algebra"])
+    }
+
+    func testTitleMatchOutranksBodyOnlyMatch() {
+        let matches = CommandPaletteModel.matchingNotes(
+            query: "essay",
+            notes: [note("Grocery list", body: "Don't forget the essay draft is due Friday."),
+                    note("Essay outline", body: "")])
+        XCTAssertEqual(matches.map(\.title), ["Essay outline", "Grocery list"])
     }
 
     // MARK: Focus notes scope

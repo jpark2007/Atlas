@@ -71,7 +71,7 @@ struct NoteCardOverlay: View {
     private func headerButton(_ systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 10, weight: .semibold))
+                .atlasFont(size: 11, weight: .semibold)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
@@ -83,7 +83,7 @@ struct NoteCardOverlay: View {
     /// the window's top-left (negative translation) grows it.
     private var resizeGrip: some View {
         Image(systemName: "line.diagonal")
-            .font(.system(size: 11, weight: .semibold))
+            .atlasFont(size: 12, weight: .semibold)
             .foregroundStyle(AtlasTheme.Colors.textMuted)
             .frame(width: 22, height: 22)
             .contentShape(Rectangle())
