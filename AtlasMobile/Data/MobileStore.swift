@@ -70,6 +70,21 @@ final class MobileStore: ObservableObject {
         await refresh()
     }
 
+    /// Email/password account creation (GoTrue `signup`). If the project
+    /// requires email confirmation, `SupabaseAuth.signUp` returns no session —
+    /// surface a notice through the same muted channel `SignInView` already
+    /// renders for session-expiry, rather than building new UI for it.
+    func signUp(email: String, password: String) async throws {
+        if let s = try await auth.signUp(email: email, password: password) {
+            sessionStore.save(s)
+            session = s
+            authNotice = nil
+            await refresh()
+        } else {
+            authNotice = "Check \(email) to confirm your account, then sign in."
+        }
+    }
+
     /// Native Sign in with Apple: run the ASAuthorization flow, then exchange the
     /// id_token (+ raw nonce) for a Supabase session (GoTrue creates first-time
     /// users during the exchange), landing exactly like a password sign-in.
