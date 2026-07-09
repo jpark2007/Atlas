@@ -54,6 +54,12 @@ struct NoteEditorView: View {
     /// Re-hosted inline images for this note (all tabs), looked up by `objectId` when a
     /// block's text is an `![image:<id>]` placeholder. Empty for notes without images.
     @State private var docImages: [DocNoteImage] = []
+    /// Ids of blocks that are FROZEN ISLANDS — `!>`-marked lines (tables, non-round-trip
+    /// images, positioned-image tethers) the server splices AROUND on save. Captured at
+    /// seed time by `seedDoc` from the RAW source line, never by live text matching, so a
+    /// user who types "!> " into an editable block doesn't freeze their own work. These
+    /// blocks render display-only; everything else stays editable.
+    @State private var frozenBlockIDs: Set<UUID> = []
     /// Per-tab dirty flag — the analogue of `isDirty` for the selected tab's body, so a
     /// save/switch only pushes a tab the user actually edited (incl. style-only edits).
     @State private var tabDirty = false
@@ -106,7 +112,7 @@ struct NoteEditorView: View {
             // cron pull), parse a Markdown body, and set the baseline.
             if let live = liveNote { draft = live }
             if draft.isMarkdownBody || docReference != nil {
-                doc = RichDoc.fromMarkdown(draft.body)
+                seedDoc(draft.body)
             }
             baselineUpdatedAt = liveNote?.updatedAt ?? draft.updatedAt
         }
@@ -123,7 +129,7 @@ struct NoteEditorView: View {
             docTabs = tabs
             let first = tabs[0]
             selectedTab = first
-            doc = RichDoc.fromMarkdown(first.bodyMD)
+            seedDoc(first.bodyMD)
         }
         // Keep an OPEN Doc-note fresh without navigating away: pull the latest from the
         // Atlas cloud on a gentle cadence (the cron writes Google→DB every ~5 min; this
@@ -217,6 +223,8 @@ struct NoteEditorView: View {
                             blockRow(index: index, block: block)
                         case let .table(_, lines):
                             PipeTableView(rows: parsePipeTable(lines: lines))
+                        case let .frozen(_, display):
+                            frozenRow(display: display)
                         }
                     }
                 }
@@ -470,12 +478,13 @@ struct NoteEditorView: View {
     private func switchTab(to tab: DocNoteTab) {
         guard tab.id != selectedTab?.id else { return }
         if tabDirty, let current = selectedTab, current.writable, let ref = docReference {
-            let markdown = doc.markdown
+            // Island-safe: escape any user block that fakes an `!>` marker before the push.
+            let markdown = tabMarkdownForSave
             let service = writeBackService
             Task { _ = try? await service?.writeBack(reference: ref, markdown: markdown, tabId: current.tabId, overwrite: false) }
         }
         selectedTab = tab
-        doc = RichDoc.fromMarkdown(tab.bodyMD)
+        seedDoc(tab.bodyMD)
         tabDirty = false
     }
 
@@ -502,15 +511,47 @@ struct NoteEditorView: View {
                 docTabs = tabs
                 let current = tabs.first(where: { $0.tabId == selectedTab?.tabId }) ?? tabs[0]
                 selectedTab = current
-                doc = RichDoc.fromMarkdown(current.bodyMD)
+                seedDoc(current.bodyMD)
             }
         } else {
-            doc = RichDoc.fromMarkdown(live.body)
+            seedDoc(live.body)
         }
         baselineUpdatedAt = live.updatedAt
         isDirty = false
         tabDirty = false
         newerVersionAvailable = false
+    }
+
+    /// Seed the editor buffer from a tab's RAW Markdown, recording which resulting blocks
+    /// are frozen islands. The RAW line drives the decision: we split with the SAME rule
+    /// `fromMarkdown` uses (empty ⇒ `[""]`, else split on "\n") so `lines[i]` lines up with
+    /// `doc.blocks[i]`, then mark every block whose source line is `"!>"` or begins `"!> "`.
+    /// Tracking identity at seed time (not by re-inspecting live text) is deliberate — a
+    /// user typing "!> " into an editable block must NOT freeze it.
+    private func seedDoc(_ markdown: String) {
+        doc = RichDoc.fromMarkdown(markdown)
+        let lines = markdown.isEmpty ? [""] : markdown.components(separatedBy: "\n")
+        frozenBlockIDs = Set(zip(lines, doc.blocks).compactMap { line, block in
+            (line == "!>" || line.hasPrefix("!> ")) ? block.id : nil
+        })
+    }
+
+    /// The current tab's Markdown, made island-safe for a per-tab save: any block the user
+    /// authored that LOOKS like an island line (`"!>"` / `"!> …"`) but wasn't seeded as one
+    /// is backslash-escaped, mirroring the server's `escapeLeadingMarker`, so user text can
+    /// never fabricate an island the write splice would mis-align on. Genuinely frozen
+    /// blocks pass through untouched (they ARE islands the server matches). Defensive: if a
+    /// block's text somehow spans lines and the counts diverge, fall back to raw Markdown.
+    private var tabMarkdownForSave: String {
+        let markdown = doc.markdown
+        let lines = markdown.components(separatedBy: "\n")
+        guard lines.count == doc.blocks.count else { return markdown }
+        return zip(lines, doc.blocks).map { line, block -> String in
+            if !frozenBlockIDs.contains(block.id), line == "!>" || line.hasPrefix("!> ") {
+                return "\\" + line
+            }
+            return line
+        }.joined(separator: "\n")
     }
 
     // MARK: - Style bar (the only styling Atlas allows)
@@ -589,42 +630,66 @@ struct NoteEditorView: View {
 
     // MARK: - Block row
 
-    /// One item in the render plan: an ordinary block (kept editable, with its real
-    /// index) or a folded pipe-table run (read-only tabs only).
+    /// One item in the render plan: an ordinary editable block (with its real index), a
+    /// folded pipe-table grid, or a frozen island (display-only content the write splices
+    /// around — a non-round-trip image or a positioned-image tether paragraph).
     private enum BlockSegment: Identifiable {
         case block(index: Int, block: RichDoc.Block)
         case table(id: UUID, lines: [String])
+        case frozen(block: RichDoc.Block, display: String)
 
         var id: String {
             switch self {
-            case let .block(_, block): return "b-\(block.id.uuidString)"
-            case let .table(id, _):    return "t-\(id.uuidString)"
+            case let .block(_, block):  return "b-\(block.id.uuidString)"
+            case let .table(id, _):     return "t-\(id.uuidString)"
+            case let .frozen(block, _): return "f-\(block.id.uuidString)"
             }
         }
     }
 
-    /// The block-level render plan. In a READ-ONLY tab a run of consecutive `|`-pipe
-    /// lines folds into one table grid; every other block renders on its own (image
-    /// placeholders become images in `blockRow`, the rest stay editable rows). Editable
-    /// tabs never fold — a table locks the tab, so grid display is a read-only concern.
+    /// The block-level render plan, one walk for editable AND read-only tabs:
+    ///   • A run of consecutive FROZEN blocks whose (marker-stripped) text starts with `|`
+    ///     folds into one read-only table grid — the frozen-island form a table now takes
+    ///     in a WRITABLE tab (the write splices around it).
+    ///   • Legacy: in a read-only tab, UNMARKED consecutive pipe lines (old-format rows
+    ///     still in the DB from before frozen islands) fold the same way.
+    ///   • Any other frozen block is a `.frozen` island — display-only.
+    ///   • Everything else is an editable `.block` carrying its REAL index into
+    ///     `doc.blocks` (indices must stay exact for `textBinding(for:)`).
     private var renderSegments: [BlockSegment] {
         let blocks = doc.blocks
-        guard tabReadOnly else {
-            return blocks.enumerated().map { .block(index: $0.offset, block: $0.element) }
-        }
         var segments: [BlockSegment] = []
         var i = 0
         while i < blocks.count {
-            if isPipeLine(blocks[i].text) {
-                let startID = blocks[i].id
+            let block = blocks[i]
+            if frozenBlockIDs.contains(block.id) {
+                let display = strippedIslandText(block.text)
+                if display.hasPrefix("|") {
+                    // Consecutive frozen pipe lines are one table island: strip each
+                    // marker so the grid renders identically to the read-only path.
+                    let startID = block.id
+                    var lines: [String] = []
+                    while i < blocks.count, frozenBlockIDs.contains(blocks[i].id),
+                          strippedIslandText(blocks[i].text).hasPrefix("|") {
+                        lines.append(strippedIslandText(blocks[i].text))
+                        i += 1
+                    }
+                    segments.append(.table(id: startID, lines: lines))
+                } else {
+                    segments.append(.frozen(block: block, display: display))
+                    i += 1
+                }
+            } else if tabReadOnly, isPipeLine(block.text) {
+                let startID = block.id
                 var lines: [String] = []
-                while i < blocks.count, isPipeLine(blocks[i].text) {
+                while i < blocks.count, !frozenBlockIDs.contains(blocks[i].id),
+                      isPipeLine(blocks[i].text) {
                     lines.append(blocks[i].text)
                     i += 1
                 }
                 segments.append(.table(id: startID, lines: lines))
             } else {
-                segments.append(.block(index: i, block: blocks[i]))
+                segments.append(.block(index: i, block: block))
                 i += 1
             }
         }
@@ -633,6 +698,14 @@ struct NoteEditorView: View {
 
     private func isPipeLine(_ text: String) -> Bool {
         text.trimmingCharacters(in: .whitespaces).hasPrefix("|")
+    }
+
+    /// A frozen-island line's text with its `!> ` marker stripped (bare `!>` ⇒ ""). Non-
+    /// island text is returned unchanged — callers only pass frozen blocks.
+    private func strippedIslandText(_ text: String) -> String {
+        if text == "!>" { return "" }
+        if text.hasPrefix("!> ") { return String(text.dropFirst(3)) }
+        return text
     }
 
     @ViewBuilder
@@ -701,6 +774,25 @@ struct NoteEditorView: View {
             Text(placeholder)
                 .atlasFont(size: 13)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
+        }
+    }
+
+    /// A frozen island: display-only content the write splices around, so it can only be
+    /// changed in Google Docs. Never focusable/editable — no TextField, no onActivate. An
+    /// `![image:id]` island reuses `imageBlock` so a frozen image looks identical to a
+    /// writable one; anything else is static styled text sized to blend in with an
+    /// editable normal block.
+    @ViewBuilder
+    private func frozenRow(display: String) -> some View {
+        if let objectId = imagePlaceholderObjectId(display) {
+            imageBlock(objectId: objectId, placeholder: display)
+                .help("Locked — this content can only be changed in Google Docs")
+        } else {
+            Text(display)
+                .atlasFont(size: 13)
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help("Locked — this content can only be changed in Google Docs")
         }
     }
 
@@ -879,7 +971,10 @@ struct NoteEditorView: View {
     private func push(ref: Reference, service: DocNoteWriteBack, overwrite: Bool) async {
         defer { isPushing = false }
         do {
-            switch try await service.writeBack(reference: ref, markdown: doc.markdown, tabId: activeTabId, overwrite: overwrite) {
+            // Per-tab writes go out island-safe (escape user-faked markers); the legacy
+            // whole-file path (activeTabId == nil) keeps the plain Markdown.
+            let outgoing = activeTabId != nil ? tabMarkdownForSave : doc.markdown
+            switch try await service.writeBack(reference: ref, markdown: outgoing, tabId: activeTabId, overwrite: overwrite) {
             case .written(let modifiedTime):
                 // Sync the in-memory baseline to what the server just re-stored, so a
                 // second save this session doesn't compare against a now-stale time.

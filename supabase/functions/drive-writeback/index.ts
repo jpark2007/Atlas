@@ -41,7 +41,13 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { readTabs, renderRequests, UnmappedImageError } from "../_shared/doc_tabs.ts";
+import {
+  findDocumentTab,
+  IslandMismatchError,
+  readTabs,
+  renderTabRequests,
+  UnmappedImageError,
+} from "../_shared/doc_tabs.ts";
 
 const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const DRIVE_BASE = "https://www.googleapis.com/drive/v3";
@@ -90,23 +96,6 @@ function sameInstant(a: string | null | undefined, b: string | null | undefined)
   const ta = new Date(a).getTime();
   const tb = new Date(b).getTime();
   return Number.isFinite(ta) && Number.isFinite(tb) && ta === tb;
-}
-
-// Max endIndex of one tab's body content, searching the tab tree recursively.
-// deno-lint-ignore no-explicit-any
-function tabEndIndex(doc: any, tabId: string): number | null {
-  const stack: any[] = [...(doc?.tabs ?? [])];
-  while (stack.length) {
-    const t = stack.pop();
-    if (t?.tabProperties?.tabId === tabId) {
-      const content: any[] = t?.documentTab?.body?.content ?? [];
-      let max = 1;
-      for (const el of content) if (typeof el?.endIndex === "number" && el.endIndex > max) max = el.endIndex;
-      return max;
-    }
-    for (const c of t?.childTabs ?? []) stack.push(c);
-  }
-  return null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -252,15 +241,16 @@ Deno.serve(async (req: Request) => {
     const tab = tabs.find((t) => t.tabId === tabId);
     if (!tab) return json({ error: "Tab not found in Doc" }, 404);
     // Re-verify writability against the LIVE structure (defense in depth — the tab
-    // may have gained a table/image in Google since the last pull). Never trust a
-    // client-cached flag; the server re-decides from the actual Doc.
+    // may have gained unsupported content in Google since the last pull; tables/
+    // frozen-image islands do NOT lock — the splice below writes around them).
+    // Never trust a client-cached flag; the server re-decides from the actual Doc.
     if (!tab.writable) {
       return json({ ok: false, error: "tab_readonly", reason: tab.readonlyReason }, 409);
     }
-    // endIndex of the tab's current content, for the clearing delete — recomputed
-    // from the SAME raw JSON already fetched above (no second Docs round-trip).
-    const endIndex = tabEndIndex(docJson, tabId);
-    if (endIndex === null) return json({ error: "Tab not found in Doc" }, 404);
+    // Raw tab node (element indices) for the island splice — from the SAME raw
+    // JSON already fetched above (no second Docs round-trip).
+    const tabNode = findDocumentTab(docJson, tabId);
+    if (tabNode === null) return json({ error: "Tab not found in Doc" }, 404);
 
     // ── Image re-insert: mint a short-lived signed URL per re-hosted image so
     // insertInlineImage can fetch it (Docs COPIES the bytes at insert, so 10 min
@@ -290,24 +280,34 @@ Deno.serve(async (req: Request) => {
 
     let requests: unknown[];
     try {
-      requests = renderRequests(tabId, endIndex, markdown, images);
+      requests = renderTabRequests(tabId, tabNode, markdown, images);
     } catch (e) {
       if (e instanceof UnmappedImageError) {
         return json({ ok: false, error: "tab_readonly", reason: "unmapped image" }, 409);
       }
+      if (e instanceof IslandMismatchError) {
+        // The Doc's table/image layout moved since this markdown was pulled (or
+        // user text fabricated a marker) — splice ranges would land wrong.
+        // Refuse; the next pull re-aligns the tab.
+        return json({ ok: false, error: "tab_readonly", reason: "table/image layout changed — sync again" }, 409);
+      }
       throw e;
     }
-    const buRes = await fetch(
-      `${DOCS_BASE}/documents/${encodeURIComponent(fileId)}:batchUpdate`,
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ requests }),
-      },
-    );
-    if (!buRes.ok) {
-      const text = (await buRes.text()).slice(0, 200);
-      return json({ error: `documents.batchUpdate ${buRes.status}: ${text}` }, 502);
+    // An islands-only tab (nothing editable changed-able) can render to zero
+    // requests — batchUpdate rejects an empty list, and there is nothing to write.
+    if (requests.length > 0) {
+      const buRes = await fetch(
+        `${DOCS_BASE}/documents/${encodeURIComponent(fileId)}:batchUpdate`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ requests }),
+        },
+      );
+      if (!buRes.ok) {
+        const text = (await buRes.text()).slice(0, 200);
+        return json({ error: `documents.batchUpdate ${buRes.status}: ${text}` }, 502);
+      }
     }
     // Fresh modifiedTime for the new baseline (batchUpdate bumped it).
     const mRes = await fetch(

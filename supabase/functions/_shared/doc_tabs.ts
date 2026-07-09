@@ -4,20 +4,35 @@
  * drive-writeback (push). Converts Docs-API JSON ⇄ the RichDocMarkdown
  * dialect PER TAB and classifies each tab writable/read-only.
  *
- * Fidelity contract (2026-07-08 decision): a tab is WRITABLE only when its
- * entire content is expressible in the dialect — paragraphs styled
- * NORMAL_TEXT/HEADING_1/TITLE (→ #) / HEADING_2/SUBTITLE/HEADING_3 (→ ##),
- * flat lists, and runs styled only bold/italic/underline/link. Anything else
- * (tables, images, nested lists, unknown styles, smart chips…) ⇒ read-only,
- * with a lossy-but-readable markdown preview. Link runs are exempt from
- * strictness on underline/foregroundColor (Google auto-styles links).
+ * Fidelity contract (2026-07-08, amended for frozen islands the same day):
+ * a tab is WRITABLE when everything outside its FROZEN ISLANDS is expressible
+ * in the dialect — paragraphs styled NORMAL_TEXT/HEADING_1/TITLE (→ #) /
+ * HEADING_2/SUBTITLE/HEADING_3 (→ ##), flat lists, and runs styled only
+ * bold/italic/underline/link. Link runs are exempt from strictness on
+ * underline/foregroundColor (Google auto-styles links).
+ *
+ * FROZEN ISLANDS: tables and image paragraphs that can't round-trip (cropped/
+ * rotated/adjusted images, an image sharing its paragraph with text or a
+ * heading/list prefix, multiple images on one line, positioned/floating-image
+ * tether paragraphs) no longer lock the tab. They are emitted as `!> `-marked
+ * lines — display-only in the editor — and the write path SPLICES around them
+ * (renderTabRequests): only the editable gaps between islands are ever deleted
+ * and rebuilt, so island content is physically untouched by a save. Anything
+ * else beyond the dialect (nested lists, unknown styles, smart chips, TOC,
+ * mid-doc section breaks, unsupported inline elements…) still locks the whole
+ * tab, with a lossy-but-readable markdown preview.
  *
  * DIALECT SOURCE OF TRUTH: AtlasCore/Sources/AtlasCore/RichDocMarkdown.swift.
  * The emitted markdown is parsed by `RichDoc.fromMarkdown` for editing and
  * re-serialized by `doc.markdown`, so the escaping here mirrors Swift's
  * `escapeInline` (only `\ * <`) and `escapingLeadingMarker` (leading `# ## - N.`
- * on normal blocks). See doc_tabs_test.ts "divergence:" cases.
+ * on normal blocks — plus `!>` on the TS side, escaped by the editor's save
+ * path, so user text never fakes an island). See doc_tabs_test.ts
+ * "divergence:" cases.
  */
+
+/** Line prefix marking a frozen-island line in a tab's markdown. */
+const ISLAND_MARKER = "!> ";
 
 export interface DocImage {
   objectId: string;
@@ -25,6 +40,9 @@ export interface DocImage {
   widthPt: number | null;
   heightPt: number | null;
   cropLocked: boolean;
+  /** True when the image lives inside a frozen island — display-only forever
+   *  (the splice never deletes it, so it is never re-inserted on write). */
+  frozen: boolean;
 }
 
 export interface DocTab {
@@ -65,11 +83,33 @@ export function countTabs(doc: unknown): number {
 }
 
 /** Concatenated read-only preview stored in notes.body for multi-tab Docs.
- *  Display/search only — NEVER parsed back or written to Google. */
+ *  Display/search only — NEVER parsed back or written to Google. Island
+ *  markers are an editor-wire concern, so the preview drops them. */
 export function tabsPreviewMarkdown(tabs: DocTab[]): string {
   return tabs
-    .map((t) => `# ${t.title}\n\n${t.markdown}`.trimEnd())
+    .map((t) => `# ${t.title}\n\n${stripIslandMarkers(t.markdown)}`.trimEnd())
     .join("\n\n") + "\n";
+}
+
+/** `md` with every `!> ` island marker removed (bare `!>` lines become empty). */
+export function stripIslandMarkers(md: string): string {
+  return md
+    .split("\n")
+    .map((l) => (l === "!>" ? "" : l.startsWith(ISLAND_MARKER) ? l.slice(ISLAND_MARKER.length) : l))
+    .join("\n");
+}
+
+/** The raw documentTab node for `tabId`, searching the tab tree — the splice
+ *  renderer needs element indices, which readTabs' DocTab projection drops. */
+export function findDocumentTab(doc: unknown, tabId: string): unknown | null {
+  // deno-lint-ignore no-explicit-any
+  const stack: any[] = [...(((doc as Record<string, unknown>)?.tabs as any[]) ?? [])];
+  while (stack.length) {
+    const t = stack.pop();
+    if (t?.tabProperties?.tabId === tabId) return t?.documentTab ?? null;
+    for (const c of t?.childTabs ?? []) stack.push(c);
+  }
+  return null;
 }
 
 // ── Tab tree walk ───────────────────────────────────────────────────────────
@@ -95,6 +135,37 @@ function walk(tabs: any[], parent: string | null, acc: DocTab[]) {
   }
 }
 
+// ── Island classification (shared by pull markdown + write splice) ──────────
+
+/** True when a paragraph is a frozen island: it tethers a positioned (floating)
+ *  image, or carries inline image(s) that can't round-trip as a solo clean
+ *  `![image:id]` line — image+text on one line, an image under a heading/list
+ *  prefix, several images in one paragraph, or a cropped/rotated/adjusted image.
+ *  MUST stay in lockstep between tabToMarkdown (pull) and segmentTab (write) —
+ *  it is the single decision both sides share.
+ */
+// deno-lint-ignore no-explicit-any
+function paraIsland(p: any, inlineObjects: any): boolean {
+  if (Array.isArray(p.positionedObjectIds) && p.positionedObjectIds.length) return true;
+  let imgs = 0;
+  let hadText = false;
+  let anyCropped = false;
+  for (const e of p.elements ?? []) {
+    if (e.inlineObjectElement !== undefined) {
+      imgs += 1;
+      const objectId = e.inlineObjectElement.inlineObjectId as string;
+      const imgProps = inlineObjects?.[objectId]?.inlineObjectProperties?.embeddedObject?.imageProperties;
+      if (isCropLocked(imgProps)) anyCropped = true;
+    } else if (e.textRun !== undefined) {
+      if (((e.textRun.content as string) ?? "").replace(/\n$/, "") !== "") hadText = true;
+    }
+  }
+  if (imgs === 0) return false;
+  const style = p.paragraphStyle?.namedStyleType ?? "NORMAL_TEXT";
+  const prefixed = p.bullet !== undefined || H1_STYLES.has(style) || H2_STYLES.has(style);
+  return imgs > 1 || hadText || prefixed || anyCropped;
+}
+
 // ── Docs JSON → markdown (one tab) ──────────────────────────────────────────
 
 // deno-lint-ignore no-explicit-any
@@ -116,8 +187,10 @@ function tabToMarkdown(documentTab: any): { markdown: string; reason: string | n
       return;
     }
     if (el.table !== undefined) {
-      flag("table");
-      lines.push(...tablePreview(el.table));
+      // Frozen island: rendered as a read-only grid, never rewritten (the splice
+      // deletes around it) — a table no longer locks the tab.
+      orderedCounter = 0;
+      lines.push(...tablePreview(el.table).map((l) => ISLAND_MARKER + l));
       return;
     }
     if (el.tableOfContents !== undefined) {
@@ -130,18 +203,15 @@ function tabToMarkdown(documentTab: any): { markdown: string; reason: string | n
     }
 
     const p = el.paragraph;
+    // Island paragraphs are frozen whole: their content is display-only and the
+    // write path never touches it, so nothing INSIDE one can flag the tab.
+    const island = paraIsland(p, inlineObjects);
     const style = p.paragraphStyle?.namedStyleType ?? "NORMAL_TEXT";
-    if (!KNOWN_STYLES.has(style)) flag(`style ${style}`);
-    // Floating ("wrap text") images are NOT paragraph elements — they're tethered
-    // to the paragraph via positionedObjectIds. A full-tab rewrite deletes the
-    // tethering paragraph and the image with it, so these tabs must be read-only.
-    if (Array.isArray(p.positionedObjectIds) && p.positionedObjectIds.length) {
-      flag("positioned image");
-    }
+    if (!island && !KNOWN_STYLES.has(style)) flag(`style ${style}`);
 
     let prefix = "";
     if (p.bullet !== undefined) {
-      if ((p.bullet.nestingLevel ?? 0) > 0) flag("nested list");
+      if (!island && (p.bullet.nestingLevel ?? 0) > 0) flag("nested list");
       const glyph = lists[p.bullet.listId]?.listProperties?.nestingLevels?.[0]?.glyphType ?? "";
       if (ORDERED_GLYPHS.has(glyph)) {
         orderedCounter += 1;
@@ -156,49 +226,44 @@ function tabToMarkdown(documentTab: any): { markdown: string; reason: string | n
     }
 
     let line = "";
-    let hadImage = false;
-    let hadText = false;
     for (const e of p.elements ?? []) {
       if (e.textRun !== undefined) {
         const runReason = runToMarkdown(e.textRun);
         line += runReason.md;
-        if (runReason.md !== "") hadText = true;
-        if (runReason.reason) flag(runReason.reason);
+        if (!island && runReason.reason) flag(runReason.reason);
       } else if (e.inlineObjectElement !== undefined) {
-        // Inline image: harvest it (for re-host at pull time + re-insert at write
-        // time) and emit a placeholder token. A cropped/rotated/adjusted image
-        // can't round-trip through the dialect, so it locks the tab.
+        // Inline image: harvest it (re-host at pull time; re-insert at write time
+        // for WRITABLE image lines, display-only for frozen ones) and emit a
+        // placeholder token.
         const objectId = e.inlineObjectElement.inlineObjectId as string;
         const embedded = inlineObjects[objectId]?.inlineObjectProperties?.embeddedObject ?? {};
         const imgProps = embedded.imageProperties ?? {};
         const size = embedded.size ?? {};
-        const cropLocked = isCropLocked(imgProps);
         images.push({
           objectId,
           contentUri: typeof imgProps.contentUri === "string" ? imgProps.contentUri : null,
           widthPt: typeof size.width?.magnitude === "number" ? size.width.magnitude : null,
           heightPt: typeof size.height?.magnitude === "number" ? size.height.magnitude : null,
-          cropLocked,
+          cropLocked: isCropLocked(imgProps),
+          frozen: island,
         });
-        if (cropLocked) flag("cropped image");
-        hadImage = true;
         line += `![image:${objectId}]`;
       } else if (e.person !== undefined || e.richLink !== undefined) {
-        flag("smart chip");
+        if (!island) flag("smart chip");
       } else if (e.pageBreak !== undefined || e.columnBreak !== undefined ||
                  e.footnoteReference !== undefined || e.horizontalRule !== undefined ||
                  e.equation !== undefined) {
-        flag("unsupported inline element");
+        if (!island) flag("unsupported inline element");
       }
     }
-    // The renderer can only re-insert an image that occupies its OWN clean line
-    // (`![image:id]`). An image sharing its paragraph with text — or carrying a
-    // heading/list prefix — can't round-trip, so it locks the tab. A solo plain
-    // image is the editable case (no flag).
-    if (hadImage && (hadText || prefix !== "")) flag("inline image in text");
+    if (island) {
+      lines.push(ISLAND_MARKER + prefix + line);
+      return;
+    }
     // Normal paragraphs (no heading/list prefix) get their leading block marker
     // escaped, mirroring RichDocMarkdown.swift's `escapingLeadingMarker` so
-    // literal "# …"/"- …"/"N. …" text doesn't re-parse as structure.
+    // literal "# …"/"- …"/"N. …" text doesn't re-parse as structure ("!>" is a
+    // TS-side addition — the Mac editor escapes it on save, we escape on pull).
     if (prefix === "") line = escapeLeadingMarker(line);
     lines.push(prefix + line);
   });
@@ -209,7 +274,7 @@ function tabToMarkdown(documentTab: any): { markdown: string; reason: string | n
 
 /** True when an image carries a crop, rotation, or brightness/contrast/
  *  transparency adjustment (any non-zero) — none of which survive a dialect
- *  round-trip, so such an image locks its tab (re-insert would drop them). */
+ *  round-trip, so such an image freezes its paragraph (re-insert would drop them). */
 // deno-lint-ignore no-explicit-any
 function isCropLocked(imgProps: any): boolean {
   if (!imgProps) return false;
@@ -260,10 +325,12 @@ function esc(s: string): string {
 
 /** Backslash-escape a leading block marker on a NORMAL paragraph, mirroring
  *  RichDocMarkdown.swift's `escapingLeadingMarker`, so text beginning `# `/`## `/
- *  `- `/`N. ` isn't re-classified as a heading/list by `RichDoc.fromMarkdown`. */
+ *  `- `/`N. ` isn't re-classified as a heading/list by `RichDoc.fromMarkdown` —
+ *  plus the island marker `!>`, so literal Doc text never fakes a frozen island
+ *  (the Mac editor applies the same escape to user-typed lines on save). */
 function escapeLeadingMarker(line: string): string {
   if (line.startsWith("# ") || line.startsWith("## ") || line.startsWith("- ") ||
-      /^\d+\. /.test(line)) {
+      /^\d+\. /.test(line) || line === "!>" || line.startsWith(ISLAND_MARKER)) {
     return "\\" + line;
   }
   return line;
@@ -314,11 +381,12 @@ export function parseInline(src: string): Span[] {
   return spans;
 }
 
-// ── Markdown → batchUpdate requests (one tab) ───────────────────────────────
+// ── Markdown → batchUpdate requests (one tab, splicing around islands) ──────
 
-/** Thrown by renderRequests when a `![image:id]` placeholder has no entry in the
- *  `images` map (its re-hosted copy is missing). Writeback maps this to a 409
- *  tab_readonly so the tab isn't corrupted by dropping the image. */
+/** Thrown by renderTabRequests when a `![image:id]` placeholder in an EDITABLE
+ *  segment has no entry in the `images` map (its re-hosted copy is missing).
+ *  Writeback maps this to a 409 tab_readonly so the tab isn't corrupted by
+ *  dropping the image. */
 export class UnmappedImageError extends Error {
   objectId: string;
   constructor(objectId: string) {
@@ -328,30 +396,156 @@ export class UnmappedImageError extends Error {
   }
 }
 
-/** Replace the ENTIRE content of tab `tabId` (current body endIndex `endIndex`)
- *  with `markdown`. Mirrors GoogleDocsMapper.batchUpdateBody's request order,
- *  with every location/range scoped by tabId. Indices are UTF-16 (JS .length).
+/** Thrown by renderTabRequests when the client markdown's island sequence no
+ *  longer matches the live Doc's (a table/image was added, removed or moved on
+ *  Google's side, or user text fabricated a marker). The write is refused —
+ *  the splice ranges would land in the wrong places — and the client must
+ *  re-pull. */
+export class IslandMismatchError extends Error {
+  constructor(detail: string) {
+    super(`island mismatch: ${detail}`);
+    this.name = "IslandMismatchError";
+  }
+}
+
+export interface LiveIsland { type: "table" | "para"; startIndex: number; endIndex: number }
+export interface LiveGap { startIndex: number; endIndex: number }
+
+/** Split a live tab into frozen islands and the editable gaps between them.
+ *  gaps.length === islands.length + 1 always; leading/trailing gaps may be
+ *  empty (startIndex === endIndex). MUST agree with tabToMarkdown's island
+ *  decision — both defer to paraIsland. */
+export function segmentTab(documentTab: unknown): { islands: LiveIsland[]; gaps: LiveGap[] } {
+  // deno-lint-ignore no-explicit-any
+  const content: any[] = (documentTab as any)?.body?.content ?? [];
+  // deno-lint-ignore no-explicit-any
+  const inlineObjects: any = (documentTab as any)?.inlineObjects ?? {};
+  const islands: LiveIsland[] = [];
+  const gaps: LiveGap[] = [];
+  let pending: LiveGap | null = null;
+  let cursor = 1; // where an empty gap sits when no paragraph precedes the next island
+  content.forEach((el, i) => {
+    if (el.sectionBreak !== undefined && i === 0) return; // leading sectionBreak sits before index 1
+    const s = typeof el.startIndex === "number" ? el.startIndex : cursor;
+    const e = typeof el.endIndex === "number" ? el.endIndex : cursor;
+    let isle: "table" | "para" | null = null;
+    if (el.table !== undefined) isle = "table";
+    else if (el.paragraph !== undefined) { if (paraIsland(el.paragraph, inlineObjects)) isle = "para"; }
+    else isle = "para"; // TOC / stray break — such a tab is read-only anyway; defensive
+    if (isle) {
+      gaps.push(pending ?? { startIndex: s, endIndex: s });
+      pending = null;
+      islands.push({ type: isle, startIndex: s, endIndex: e });
+    } else {
+      pending = pending ? { startIndex: pending.startIndex, endIndex: e } : { startIndex: s, endIndex: e };
+    }
+    cursor = e;
+  });
+  gaps.push(pending ?? { startIndex: cursor, endIndex: cursor });
+  return { islands, gaps };
+}
+
+/** Split the client's tab markdown into island groups and the text segments
+ *  between them. texts.length === islands.length + 1. A run of consecutive
+ *  `!> |…` lines is ONE table island; every other `!> ` line is its own
+ *  paragraph island. */
+export function parseClientSegments(markdown: string): { texts: string[][]; islands: { type: "table" | "para" }[] } {
+  const lines = markdown.split("\n");
+  if (lines.length && lines[lines.length - 1] === "") lines.pop();
+  const texts: string[][] = [[]];
+  const islands: { type: "table" | "para" }[] = [];
+  const isFrozen = (l: string) => l === "!>" || l.startsWith(ISLAND_MARKER);
+  const stripped = (l: string) => (l === "!>" ? "" : l.slice(ISLAND_MARKER.length));
+  let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (!isFrozen(l)) {
+      texts[texts.length - 1].push(l);
+      i += 1;
+      continue;
+    }
+    if (stripped(l).startsWith("|")) {
+      while (i < lines.length && isFrozen(lines[i]) && stripped(lines[i]).startsWith("|")) i += 1;
+      islands.push({ type: "table" });
+    } else {
+      islands.push({ type: "para" });
+      i += 1;
+    }
+    texts.push([]);
+  }
+  return { texts, islands };
+}
+
+/** Rewrite the EDITABLE gaps of tab `tabId` with the client's markdown, splicing
+ *  around the frozen islands (which are never deleted, so their content is
+ *  physically untouchable by a save). Zero islands degrades to the classic
+ *  whole-tab clear+rebuild. Gaps are processed BOTTOM-UP so every emitted range
+ *  refers to original-document indices. Indices are UTF-16 (JS .length).
  *
  *  `images` maps an image objectId → its re-hosted, publicly-fetchable URI (+
- *  preserved size). A `![image:id]` line re-inserts that image via
- *  insertInlineImage; an id absent from the map throws UnmappedImageError. */
-export function renderRequests(
+ *  preserved size) for WRITABLE `![image:id]` lines in editable gaps; an id
+ *  absent from the map throws UnmappedImageError. */
+export function renderTabRequests(
   tabId: string,
-  endIndex: number,
+  documentTab: unknown,
   markdown: string,
   images?: Record<string, { uri: string; widthPt?: number | null; heightPt?: number | null }>,
 ): unknown[] {
-  const requests: unknown[] = [];
-  if (endIndex > 2) {
-    requests.push({ deleteContentRange: { range: { tabId, startIndex: 1, endIndex: endIndex - 1 } } });
+  const live = segmentTab(documentTab);
+  const client = parseClientSegments(markdown);
+  if (client.islands.length !== live.islands.length) {
+    throw new IslandMismatchError(`client has ${client.islands.length} island(s), Doc has ${live.islands.length}`);
+  }
+  for (let i = 0; i < live.islands.length; i++) {
+    if (client.islands[i].type !== live.islands[i].type) {
+      throw new IslandMismatchError(`island ${i}: client ${client.islands[i].type} vs Doc ${live.islands[i].type}`);
+    }
   }
 
-  // Split into lines; a trailing "\n" yields a spurious last "" — drop it.
-  const lines = markdown.split("\n");
-  if (lines.length && lines[lines.length - 1] === "") lines.pop();
+  const requests: unknown[] = [];
+  for (let g = live.gaps.length - 1; g >= 0; g--) {
+    const gap = live.gaps[g];
+    const linesForGap = client.texts[g] ?? [];
+    if (gap.endIndex <= gap.startIndex) {
+      // Empty live gap: the Doc has NO paragraph here (islands touch). Nothing to
+      // rewrite — unless the client added text, which lands as fresh paragraphs
+      // carved out of the PRECEDING island's final newline.
+      if (!linesForGap.some((l) => l !== "")) continue;
+      if (g === 0) {
+        // A Doc that STARTS with a table has no paragraph to splice text into.
+        throw new IslandMismatchError("text added above a leading table the Doc has no paragraph for");
+      }
+      requests.push(...renderLines(tabId, live.islands[g - 1].endIndex - 1, linesForGap, images, true));
+      continue;
+    }
+    // Delete everything in the gap EXCEPT its final newline — that surviving
+    // paragraph mark terminates the gap's last inserted line (and, for the
+    // tab-final gap, is the tab's mandatory final mark, which cannot be deleted).
+    if (gap.endIndex - 1 > gap.startIndex) {
+      requests.push({ deleteContentRange: { range: { tabId, startIndex: gap.startIndex, endIndex: gap.endIndex - 1 } } });
+    }
+    requests.push(...renderLines(tabId, gap.startIndex, linesForGap, images, false));
+  }
+  return requests;
+}
 
-  let index = 1;
-  let numbered = 0;
+/** Requests for one editable segment's lines starting at `startIndex`. The LAST
+ *  line never appends "\n" — the gap's preserved final newline terminates it
+ *  (the anti-drift rule proven by the live E2E round-trip). `leadingNewline`
+ *  first splits the preceding island's paragraph mark (empty-gap insertion). */
+function renderLines(
+  tabId: string,
+  startIndex: number,
+  lines: string[],
+  images: Record<string, { uri: string; widthPt?: number | null; heightPt?: number | null }> | undefined,
+  leadingNewline: boolean,
+): unknown[] {
+  const requests: unknown[] = [];
+  let index = startIndex;
+  if (leadingNewline) {
+    requests.push({ insertText: { location: { tabId, index }, text: "\n" } });
+    index += 1;
+  }
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];
     const isLast = i === lines.length - 1;
@@ -360,7 +554,6 @@ export function renderRequests(
     // An inline image occupies exactly 1 UTF-16 unit and gets NO paragraph style.
     const imgMatch = /^!\[image:([^\]]+)\]$/.exec(rawLine);
     if (imgMatch) {
-      numbered = 0;
       const objectId = imgMatch[1];
       const img = images?.[objectId];
       if (!img) throw new UnmappedImageError(objectId);
@@ -374,7 +567,7 @@ export function renderRequests(
       requests.push({ insertInlineImage: insert });
       // The image is 1 unit; unless it's the last line, terminate its paragraph
       // with a newline at index+1. Advance 2 (image + "\n"), or 1 when last (the
-      // tab's mandatory final paragraph mark supplies the terminal newline).
+      // gap's preserved final newline supplies the terminator).
       if (!isLast) {
         requests.push({ insertText: { location: { tabId, index: index + 1 }, text: "\n" } });
         index += 2;
@@ -391,29 +584,28 @@ export function renderRequests(
     else if (rawLine.startsWith("## ")) { kind = "h2"; rest = rawLine.slice(3); }
     else if (rawLine.startsWith("- ")) { kind = "bullet"; rest = rawLine.slice(2); }
     else if (num) { kind = "numbered"; rest = rawLine.slice(num[0].length); }
-    numbered = kind === "numbered" ? numbered + 1 : 0;
 
     const spans = parseInline(rest);
     const content = spans.map((s) => s.text).join("");
-    // The tab's mandatory final paragraph mark survives the clearing delete and
-    // supplies the terminal newline — so the LAST line must NOT add its own "\n",
-    // or every write grows the tab by one empty paragraph (cumulative drift,
-    // caught by the live E2E round-trip proof).
     const text = isLast ? content : content + "\n";
     const start = index;
     const end = start + content.length; // style ranges exclude the newline
 
     if (text) requests.push({ insertText: { location: { tabId, index: start }, text } });
-    requests.push({ updateParagraphStyle: {
-      range: { tabId, startIndex: start, endIndex: end },
-      paragraphStyle: { namedStyleType: kind === "h1" ? "HEADING_1" : kind === "h2" ? "HEADING_2" : "NORMAL_TEXT" },
-      fields: "namedStyleType",
-    } });
-    if (kind === "bullet" || kind === "numbered") {
-      requests.push({ createParagraphBullets: {
+    // Empty lines carry no styleable characters — an empty range is invalid in
+    // the Docs API, so style/bullet requests are emitted only for real content.
+    if (content.length > 0) {
+      requests.push({ updateParagraphStyle: {
         range: { tabId, startIndex: start, endIndex: end },
-        bulletPreset: kind === "numbered" ? "NUMBERED_DECIMAL_ALPHA_ROMAN" : "BULLET_DISC_CIRCLE_SQUARE",
+        paragraphStyle: { namedStyleType: kind === "h1" ? "HEADING_1" : kind === "h2" ? "HEADING_2" : "NORMAL_TEXT" },
+        fields: "namedStyleType",
       } });
+      if (kind === "bullet" || kind === "numbered") {
+        requests.push({ createParagraphBullets: {
+          range: { tabId, startIndex: start, endIndex: end },
+          bulletPreset: kind === "numbered" ? "NUMBERED_DECIMAL_ALPHA_ROMAN" : "BULLET_DISC_CIRCLE_SQUARE",
+        } });
+      }
     }
 
     let cursor = start;

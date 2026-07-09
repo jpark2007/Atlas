@@ -1,6 +1,18 @@
 // supabase/functions/_shared/doc_tabs_test.ts
 import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { readTabs, countTabs, tabsPreviewMarkdown, parseInline } from "./doc_tabs.ts";
+import {
+  countTabs,
+  findDocumentTab,
+  IslandMismatchError,
+  parseClientSegments,
+  parseInline,
+  readTabs,
+  renderTabRequests,
+  segmentTab,
+  stripIslandMarkers,
+  tabsPreviewMarkdown,
+  UnmappedImageError,
+} from "./doc_tabs.ts";
 
 // Minimal fixture mirroring the real documents.get?includeTabsContent=true shape
 // (verified live 2026-07-08 against a 6-tab Doc).
@@ -43,6 +55,8 @@ const FIXTURE = {
                 { content: [{ paragraph: { elements: [{ textRun: { content: "d\n" } }] } }] },
               ] },
             ] } },
+            { paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+                elements: [{ textRun: { content: "after the table\n", textStyle: {} } }] } },
           ] }, lists: {} },
           childTabs: [],
         },
@@ -72,16 +86,16 @@ Deno.test("link auto-styling (underline/color on a linked run) does NOT flag rea
   assertEquals(readTabs(FIXTURE)[0].writable, true);
 });
 
-Deno.test("table tab is read-only with a reason and a lossy-but-readable preview", () => {
+Deno.test("table becomes a frozen island: tab stays WRITABLE, grid lines carry the marker", () => {
   const t = readTabs(FIXTURE)[1];
-  assertEquals(t.writable, false);
-  assertEquals(t.readonlyReason, "table");
-  assertEquals(t.markdown.includes("| a | b |"), true);
+  assertEquals(t.writable, true);
+  assertEquals(t.readonlyReason, null);
+  assertEquals(t.markdown, "!> | a | b |\n!> | c | d |\nafter the table\n");
 });
 
-Deno.test("positioned (floating) image flags the tab read-only", () => {
+Deno.test("positioned (floating) image tether becomes a frozen paragraph island", () => {
   // Floating images live on paragraph.positionedObjectIds, not in elements[] —
-  // a full-tab rewrite deletes the tethering paragraph and the image with it.
+  // the splice never deletes the tethering paragraph, so the image survives.
   const doc = { tabs: [{
     tabProperties: { tabId: "t.p", title: "Float", index: 0 },
     documentTab: { body: { content: [
@@ -93,14 +107,37 @@ Deno.test("positioned (floating) image flags the tab read-only", () => {
     childTabs: [],
   }] };
   const t = readTabs(doc)[0];
-  assertEquals(t.writable, false);
-  assertEquals(t.readonlyReason, "positioned image");
+  assertEquals(t.writable, true);
+  assertEquals(t.readonlyReason, null);
+  assertEquals(t.markdown, "!> text beside a floating image\n");
 });
 
-Deno.test("preview concatenation", () => {
+Deno.test("non-island lockers still lock: nested list flags the tab read-only", () => {
+  const doc = { tabs: [{
+    tabProperties: { tabId: "t.n", title: "Nest", index: 0 },
+    documentTab: { body: { content: [
+      { sectionBreak: {} },
+      { paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+          bullet: { listId: "kix.l1", nestingLevel: 1 },
+          elements: [{ textRun: { content: "deep\n", textStyle: {} } }] } },
+    ] }, lists: { "kix.l1": { listProperties: { nestingLevels: [{ glyphType: "GLYPH_TYPE_UNSPECIFIED" }] } } } },
+    childTabs: [],
+  }] };
+  const t = readTabs(doc)[0];
+  assertEquals(t.writable, false);
+  assertEquals(t.readonlyReason, "nested list");
+});
+
+Deno.test("preview concatenation strips island markers (mobile/search surface)", () => {
   const md = tabsPreviewMarkdown(readTabs(FIXTURE));
   assertEquals(md.startsWith("# Simple\n"), true);
   assertEquals(md.includes("# Rich\n"), true);
+  assertEquals(md.includes("| a | b |"), true);
+  assertEquals(md.includes("!> "), false);
+});
+
+Deno.test("stripIslandMarkers: marked lines lose the marker, bare '!>' becomes empty", () => {
+  assertEquals(stripIslandMarkers("a\n!> | x |\n!>\nb"), "a\n| x |\n\nb");
 });
 
 Deno.test("parseInline round-trips the vocabulary", () => {
@@ -141,7 +178,8 @@ Deno.test("divergence: literal '[' is NOT backslash-escaped (Swift escapeInline)
 
 // Divergence 2: a NORMAL paragraph whose text starts with a block marker is
 // backslash-prefixed (Swift escapingLeadingMarker), else Swift re-parses it as a
-// heading/list and the tab gets corrupted on write-back.
+// heading/list and the tab gets corrupted on write-back. `!>` is the TS-side
+// addition: literal Doc text must never fake a frozen island.
 Deno.test("divergence: leading block markers on normal paragraphs are escaped", () => {
   const doc = { tabs: [{
     tabProperties: { tabId: "t.m", title: "M", index: 0 },
@@ -155,12 +193,14 @@ Deno.test("divergence: leading block markers on normal paragraphs are escaped", 
           elements: [{ textRun: { content: "- not a bullet\n", textStyle: {} } }] } },
       { paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
           elements: [{ textRun: { content: "1. not numbered\n", textStyle: {} } }] } },
+      { paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+          elements: [{ textRun: { content: "!> not an island\n", textStyle: {} } }] } },
     ] }, lists: {} },
     childTabs: [],
   }] };
   const t = readTabs(doc)[0];
   assertEquals(t.markdown,
-    "\\# not a heading\n\\## also not\n\\- not a bullet\n\\1. not numbered\n");
+    "\\# not a heading\n\\## also not\n\\- not a bullet\n\\1. not numbered\n\\!> not an island\n");
   assertEquals(t.writable, true);
 });
 
@@ -184,11 +224,25 @@ Deno.test("divergence: empty styled run drops marks (no degenerate '****')", () 
   assertEquals(t.writable, true);
 });
 
-// ── Task 3: renderer (markdown → tabId-scoped batchUpdate requests) ─────────
-import { renderRequests, UnmappedImageError } from "./doc_tabs.ts";
+// ── Renderer (markdown → tabId-scoped batchUpdate requests, island splice) ──
 
-Deno.test("renderRequests: clears the tab then rebuilds line by line", () => {
-  const reqs = renderRequests("t.X", 20, "# Head\nplain **bold**\n- item\n") as any[];
+/** A tab whose whole body is ONE plain editable paragraph spanning [1, endIndex).
+ *  The zero-island degenerate case — renderTabRequests must behave exactly like
+ *  the classic whole-tab clear+rebuild these expectations were written against. */
+function plainTab(endIndex: number) {
+  return {
+    body: { content: [
+      { sectionBreak: {}, startIndex: 0, endIndex: 1 },
+      { startIndex: 1, endIndex, paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+          elements: [{ textRun: { content: "old\n", textStyle: {} } }] } },
+    ] },
+    inlineObjects: {},
+    lists: {},
+  };
+}
+
+Deno.test("renderTabRequests (no islands): clears the tab then rebuilds line by line", () => {
+  const reqs = renderTabRequests("t.X", plainTab(20), "# Head\nplain **bold**\n- item\n") as any[];
   // 1. clear existing content (endIndex 20 → delete [1, 19))
   assertEquals(reqs[0], { deleteContentRange: { range: { tabId: "t.X", startIndex: 1, endIndex: 19 } } });
   // 2. "Head\n" inserted at 1, styled HEADING_1 over [1,5)
@@ -216,13 +270,13 @@ Deno.test("renderRequests: clears the tab then rebuilds line by line", () => {
   assertEquals(reqs.length, 9);
 });
 
-Deno.test("renderRequests: empty tab (endIndex 2) emits no delete", () => {
-  const reqs = renderRequests("t.X", 2, "hi\n") as any[];
+Deno.test("renderTabRequests: empty tab (endIndex 2) emits no delete", () => {
+  const reqs = renderTabRequests("t.X", plainTab(2), "hi\n") as any[];
   assertEquals("insertText" in (reqs[0] as any), true);
 });
 
-Deno.test("renderRequests: links become updateTextStyle link requests", () => {
-  const reqs = renderRequests("t.X", 2, "see [site](https://x.com)\n") as any[];
+Deno.test("renderTabRequests: links become updateTextStyle link requests", () => {
+  const reqs = renderTabRequests("t.X", plainTab(2), "see [site](https://x.com)\n") as any[];
   const linkReq = reqs.find((r: any) => r.updateTextStyle?.textStyle?.link) as any;
   assertEquals(linkReq.updateTextStyle.textStyle.link.url, "https://x.com");
   assertEquals(linkReq.updateTextStyle.fields, "link");
@@ -230,8 +284,8 @@ Deno.test("renderRequests: links become updateTextStyle link requests", () => {
   assertEquals(linkReq.updateTextStyle.range, { tabId: "t.X", startIndex: 5, endIndex: 9 });
 });
 
-Deno.test("renderRequests: numbered list uses the numbered preset", () => {
-  const reqs = renderRequests("t.X", 2, "1. one\n2. two\n") as any[];
+Deno.test("renderTabRequests: numbered list uses the numbered preset", () => {
+  const reqs = renderTabRequests("t.X", plainTab(2), "1. one\n2. two\n") as any[];
   const bullets = reqs.filter((r: any) => r.createParagraphBullets);
   assertEquals(bullets.length, 2);
   assertEquals((bullets[0] as any).createParagraphBullets.bulletPreset, "NUMBERED_DECIMAL_ALPHA_ROMAN");
@@ -242,7 +296,7 @@ Deno.test("round-trip: reader output re-renders to requests that reproduce the t
   // MINUS its final "\n" — the tab's mandatory final paragraph mark supplies that,
   // so content-after-write == md exactly.
   const md = "# Head\nplain **bold** and [site](https://x.com)\n- item\n";
-  const reqs = renderRequests("t.X", 2, md) as any[];
+  const reqs = renderTabRequests("t.X", plainTab(2), md) as any[];
   const inserted = reqs.filter((r: any) => r.insertText).map((r: any) => r.insertText.text).join("");
   assertEquals(inserted, "Head\nplain bold and site\nitem");
 });
@@ -259,15 +313,138 @@ Deno.test("drift regression: inserted text + mandatory newline == canonical md",
     "trailing blank\n\n", // blank FINAL paragraph: no empty insertText emitted
     "\n",                 // empty tab
   ]) {
-    const reqs = renderRequests("t.X", 2, md) as any[];
+    const reqs = renderTabRequests("t.X", plainTab(2), md) as any[];
     const inserts = reqs.filter((r: any) => r.insertText).map((r: any) => r.insertText.text);
     assertEquals(inserts.join("") + "\n", md, `unstable for ${JSON.stringify(md)}`);
     // Docs rejects empty insertText — none may ever be emitted.
     assertEquals(inserts.every((t: string) => t.length > 0), true, `empty insert for ${JSON.stringify(md)}`);
+    // Docs rejects empty ranges — no style/bullet request may span zero chars.
+    const ranges = reqs
+      .map((r: any) => r.updateParagraphStyle?.range ?? r.createParagraphBullets?.range ?? r.updateTextStyle?.range)
+      .filter(Boolean);
+    assertEquals(ranges.every((r: any) => r.endIndex > r.startIndex), true, `empty range for ${JSON.stringify(md)}`);
   }
 });
 
-// ── Task 5: image pipeline (harvest + placeholder + re-insert) ──────────────
+// ── Island splice ────────────────────────────────────────────────────────────
+
+/** intro paragraph [1,7) · table [7,20) · tail paragraph [20,26). */
+const TABLE_TAB = {
+  body: { content: [
+    { sectionBreak: {}, startIndex: 0, endIndex: 1 },
+    { startIndex: 1, endIndex: 7, paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+        elements: [{ textRun: { content: "intro\n", textStyle: {} } }] } },
+    { startIndex: 7, endIndex: 20, table: { tableRows: [
+      { tableCells: [{ content: [{ paragraph: { elements: [{ textRun: { content: "a\n" } }] } }] }] },
+    ] } },
+    { startIndex: 20, endIndex: 26, paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+        elements: [{ textRun: { content: "tail!\n", textStyle: {} } }] } },
+  ] },
+  inlineObjects: {},
+  lists: {},
+};
+
+Deno.test("segmentTab: islands and gaps interleave, gaps.length == islands.length + 1", () => {
+  const { islands, gaps } = segmentTab(TABLE_TAB);
+  assertEquals(islands, [{ type: "table", startIndex: 7, endIndex: 20 }]);
+  assertEquals(gaps, [{ startIndex: 1, endIndex: 7 }, { startIndex: 20, endIndex: 26 }]);
+});
+
+Deno.test("parseClientSegments: marked pipe run is ONE table island; marked non-pipe lines are para islands", () => {
+  const { texts, islands } = parseClientSegments("intro\n!> | a | b |\n!> | c | d |\nmid\n!> ![image:kix.z]\ntail\n");
+  assertEquals(islands, [{ type: "table" }, { type: "para" }]);
+  assertEquals(texts, [["intro"], ["mid"], ["tail"]]);
+});
+
+Deno.test("splice: text around a table rewrites ONLY the gaps, bottom-up, table untouched", () => {
+  const md = "intro2\n!> | a |\ntail2\n";
+  const reqs = renderTabRequests("t.T", TABLE_TAB, md) as any[];
+  assertEquals(reqs, [
+    // tail gap first (bottom-up): delete [20,25) keeping the final mark, insert at 20
+    { deleteContentRange: { range: { tabId: "t.T", startIndex: 20, endIndex: 25 } } },
+    { insertText: { location: { tabId: "t.T", index: 20 }, text: "tail2" } },
+    { updateParagraphStyle: { range: { tabId: "t.T", startIndex: 20, endIndex: 25 },
+        paragraphStyle: { namedStyleType: "NORMAL_TEXT" }, fields: "namedStyleType" } },
+    // intro gap: delete [1,6) keeping ITS final newline, insert at 1
+    { deleteContentRange: { range: { tabId: "t.T", startIndex: 1, endIndex: 6 } } },
+    { insertText: { location: { tabId: "t.T", index: 1 }, text: "intro2" } },
+    { updateParagraphStyle: { range: { tabId: "t.T", startIndex: 1, endIndex: 7 },
+        paragraphStyle: { namedStyleType: "NORMAL_TEXT" }, fields: "namedStyleType" } },
+  ]);
+  // No request range may overlap the table [7,20).
+  for (const r of reqs) {
+    const range = r.deleteContentRange?.range ?? r.updateParagraphStyle?.range;
+    const loc = r.insertText?.location;
+    if (range) assertEquals(range.endIndex <= 7 || range.startIndex >= 20, true);
+    if (loc) assertEquals(loc.index <= 7 || loc.index >= 20, true);
+  }
+});
+
+Deno.test("splice: island count mismatch throws IslandMismatchError", () => {
+  assertThrows(() => renderTabRequests("t.T", TABLE_TAB, "no islands here\n"), IslandMismatchError);
+});
+
+Deno.test("splice: island type mismatch throws IslandMismatchError", () => {
+  assertThrows(() => renderTabRequests("t.T", TABLE_TAB, "a\n!> frozen para\nb\n"), IslandMismatchError);
+});
+
+Deno.test("splice: user-fabricated '!>' island (count too high) throws", () => {
+  assertThrows(
+    () => renderTabRequests("t.T", TABLE_TAB, "a\n!> | a |\nb\n!> fake\n"),
+    IslandMismatchError,
+  );
+});
+
+Deno.test("splice: text added after a TRAILING island splits the island's final newline", () => {
+  // One frozen image para [1,3) as the ONLY (and last) element — trailing gap empty.
+  const tab = {
+    body: { content: [
+      { sectionBreak: {}, startIndex: 0, endIndex: 1 },
+      { startIndex: 1, endIndex: 3, paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+          elements: [
+            { inlineObjectElement: { inlineObjectId: "kix.a" } },
+            { textRun: { content: " beside\n", textStyle: {} } },
+          ] } },
+    ] },
+    inlineObjects: { "kix.a": { inlineObjectProperties: { embeddedObject: {
+      imageProperties: { contentUri: "https://x/i" }, size: {} } } } },
+    lists: {},
+  };
+  const reqs = renderTabRequests("t.I", tab, "!> ![image:kix.a] beside\nnew line\n") as any[];
+  assertEquals(reqs, [
+    { insertText: { location: { tabId: "t.I", index: 2 }, text: "\n" } },
+    { insertText: { location: { tabId: "t.I", index: 3 }, text: "new line" } },
+    { updateParagraphStyle: { range: { tabId: "t.I", startIndex: 3, endIndex: 11 },
+        paragraphStyle: { namedStyleType: "NORMAL_TEXT" }, fields: "namedStyleType" } },
+  ]);
+});
+
+Deno.test("splice: text added ABOVE a leading table (no paragraph exists there) throws", () => {
+  const tab = {
+    body: { content: [
+      { sectionBreak: {}, startIndex: 0, endIndex: 1 },
+      { startIndex: 1, endIndex: 14, table: { tableRows: [
+        { tableCells: [{ content: [{ paragraph: { elements: [{ textRun: { content: "a\n" } }] } }] }] },
+      ] } },
+      { startIndex: 14, endIndex: 15, paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+          elements: [{ textRun: { content: "\n", textStyle: {} } }] } },
+    ] },
+    inlineObjects: {},
+    lists: {},
+  };
+  assertThrows(() => renderTabRequests("t.L", tab, "above\n!> | a |\n\n"), IslandMismatchError);
+  // …but leaving it alone is fine (empty text segment above the leading table).
+  const ok = renderTabRequests("t.L", tab, "!> | a |\n\n") as any[];
+  assertEquals(ok, []);
+});
+
+Deno.test("findDocumentTab returns the raw node (indices intact) or null", () => {
+  const node = findDocumentTab(FIXTURE, "t.child") as any;
+  assertEquals(Array.isArray(node?.body?.content), true);
+  assertEquals(findDocumentTab(FIXTURE, "t.nope"), null);
+});
+
+// ── Image pipeline (harvest + placeholder + re-insert) ──────────────────────
 
 // One tab: an intro paragraph then a solo-paragraph inline image, with the image
 // living in the per-tab inlineObjects map (documents.get?includeTabsContent=true).
@@ -309,10 +486,11 @@ Deno.test("image harvest: solo-paragraph image stays writable + emits id placeho
     widthPt: 200,
     heightPt: 100,
     cropLocked: false,
+    frozen: false,
   });
 });
 
-Deno.test("image harvest: cropped image flags the tab read-only ('cropped image')", () => {
+Deno.test("image harvest: cropped image becomes a frozen island (tab stays writable)", () => {
   const doc = { tabs: [{
     tabProperties: { tabId: "t.crop", title: "Crop", index: 0 },
     documentTab: {
@@ -335,14 +513,15 @@ Deno.test("image harvest: cropped image flags the tab read-only ('cropped image'
     childTabs: [],
   }] };
   const t = readTabs(doc)[0];
-  assertEquals(t.writable, false);
-  assertEquals(t.readonlyReason, "cropped image");
+  assertEquals(t.writable, true);
+  assertEquals(t.readonlyReason, null);
   assertEquals(t.images[0].cropLocked, true);
-  // Placeholder is still emitted so the editor can display the (read-only) image.
-  assertEquals(t.markdown.includes("![image:kix.c]"), true);
+  assertEquals(t.images[0].frozen, true);
+  // Marked placeholder is still emitted so the editor can display the frozen image.
+  assertEquals(t.markdown, "!> ![image:kix.c]\n");
 });
 
-Deno.test("image harvest: image sharing a line with text flags 'inline image in text'", () => {
+Deno.test("image harvest: image sharing a line with text becomes a frozen island", () => {
   const doc = { tabs: [{
     tabProperties: { tabId: "t.mix", title: "Mix", index: 0 },
     documentTab: {
@@ -365,17 +544,19 @@ Deno.test("image harvest: image sharing a line with text flags 'inline image in 
     childTabs: [],
   }] };
   const t = readTabs(doc)[0];
-  assertEquals(t.writable, false);
-  assertEquals(t.readonlyReason, "inline image in text");
+  assertEquals(t.writable, true);
+  assertEquals(t.readonlyReason, null);
+  assertEquals(t.markdown, "!> before ![image:kix.m] after\n");
+  assertEquals(t.images[0].frozen, true);
   // Missing dimensions come through as null (never 0).
   assertEquals(t.images[0].widthPt, null);
   assertEquals(t.images[0].heightPt, null);
 });
 
-Deno.test("renderRequests: known image line emits insertInlineImage + correct index accounting", () => {
+Deno.test("renderTabRequests: known image line emits insertInlineImage + correct index accounting", () => {
   const images = { "kix.a": { uri: "https://signed/a", widthPt: 200, heightPt: 100 } };
   // image (own line, NOT last) then a text line.
-  const reqs = renderRequests("t.X", 2, "![image:kix.a]\nafter\n", images) as any[];
+  const reqs = renderTabRequests("t.X", plainTab(2), "![image:kix.a]\nafter\n", images) as any[];
   // image = 1 UTF-16 unit at index 1, WITH objectSize; no paragraph style.
   assertEquals(reqs[0], { insertInlineImage: {
     location: { tabId: "t.X", index: 1 }, uri: "https://signed/a",
@@ -391,9 +572,9 @@ Deno.test("renderRequests: known image line emits insertInlineImage + correct in
   assertEquals(reqs.length, 4);
 });
 
-Deno.test("renderRequests: image as the LAST line adds no trailing newline (drift-safe)", () => {
+Deno.test("renderTabRequests: image as the LAST line adds no trailing newline (drift-safe)", () => {
   const images = { "kix.a": { uri: "https://signed/a", widthPt: 10, heightPt: 20 } };
-  const reqs = renderRequests("t.X", 2, "text\n![image:kix.a]\n", images) as any[];
+  const reqs = renderTabRequests("t.X", plainTab(2), "text\n![image:kix.a]\n", images) as any[];
   // "text\n" occupies 5 units (indices 1..5) → image inserts at index 6.
   const last = reqs[reqs.length - 1] as any;
   assertEquals(last, { insertInlineImage: {
@@ -405,15 +586,15 @@ Deno.test("renderRequests: image as the LAST line adds no trailing newline (drif
   assertEquals(trailingNewlines.length, 0);
 });
 
-Deno.test("renderRequests: image without dimensions omits objectSize", () => {
-  const reqs = renderRequests("t.X", 2, "![image:kix.a]\n", { "kix.a": { uri: "https://signed/a" } }) as any[];
+Deno.test("renderTabRequests: image without dimensions omits objectSize", () => {
+  const reqs = renderTabRequests("t.X", plainTab(2), "![image:kix.a]\n", { "kix.a": { uri: "https://signed/a" } }) as any[];
   assertEquals(reqs[0], { insertInlineImage: { location: { tabId: "t.X", index: 1 }, uri: "https://signed/a" } });
   assertEquals(reqs.length, 1);
 });
 
-Deno.test("renderRequests: unmapped image id throws UnmappedImageError", () => {
+Deno.test("renderTabRequests: unmapped image id throws UnmappedImageError", () => {
   const err = assertThrows(
-    () => renderRequests("t.X", 2, "![image:kix.zzz]\n"),
+    () => renderTabRequests("t.X", plainTab(2), "![image:kix.zzz]\n"),
     UnmappedImageError,
   ) as UnmappedImageError;
   assertEquals(err.objectId, "kix.zzz");

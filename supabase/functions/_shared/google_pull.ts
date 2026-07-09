@@ -241,25 +241,25 @@ export async function pullDocNoteReference(
     if (!dryRun && ref.note_id) {
       const noteId = ref.note_id;
       // ── Re-host inline images to Storage while contentUri is still fresh ──
-      // Only WRITABLE tabs are ever rewritten, so only their images need re-hosting
-      // (read-only tabs are display-only). A per-image failure or an unsupported
-      // format downgrades just THAT tab to read-only for this pull (its flags are
-      // written by the upsert below); other tabs continue. `harvestedIds` is every
-      // image that still exists in the Doc — the prune set.
+      // Re-host EVERY tab's images — display needs them all. STRICT treatment
+      // applies only to an image the write path would RE-INSERT: a writable
+      // `![image:id]` line in a writable tab. Its failure downgrades that tab to
+      // read-only (never rewrite a tab whose image can't be re-inserted). A
+      // FROZEN-island image (cropped/mixed/tethered — `img.frozen`) is display-
+      // only forever: the splice never deletes it, so a failure just skips its
+      // display. Same for every image in an already read-only tab.
+      // `harvestedIds` is every image that still exists in the Doc — the prune set.
       const harvestedIds = new Set<string>();
       for (const t of tabs) for (const img of t.images) harvestedIds.add(img.objectId);
       let allImagesOk = true;
-      // Re-host EVERY tab's images — read-only tabs need them for display too.
-      // Only writable tabs get the strict treatment (a failed/unsupported image
-      // downgrades the tab so we never rewrite a tab whose image we can't
-      // re-insert); on read-only tabs a failure just skips that image's display.
       for (const t of tabs) {
         for (const img of t.images) {
+          const strict = t.writable && !img.frozen;
           try {
             const { bytes, contentType } = await fetchDocImage(img.contentUri, accessToken);
             const ext = extForContentType(contentType);
             if (!ext) {
-              if (t.writable) {
+              if (strict) {
                 t.writable = false;
                 t.readonlyReason = "unsupported image format";
                 allImagesOk = false;
@@ -283,13 +283,13 @@ export async function pullDocNoteReference(
             }, { onConflict: "note_id,object_id" });
             if (iErr) throw new Error(iErr.message);
           } catch (_e) {
-            if (t.writable) {
+            if (strict) {
               t.writable = false;
               t.readonlyReason = "image fetch failed";
               allImagesOk = false;
               break;
             }
-            // read-only tab: display-only image, skip on failure
+            // frozen-island or read-only-tab image: display-only, skip on failure
           }
         }
       }
