@@ -13,10 +13,6 @@ struct DayGridView: View {
     let tasks: [TaskItem]
     let onOpen: (ItemDetailSheet.Detail) -> Void
     let onToggle: (TaskItem) -> Void
-    /// No longer invoked from within this view — the slot long-press was removed
-    /// (the + button flow covers adding). Kept only because `ScheduleView` still
-    /// passes a handler at its call site; a follow-up task removes that wiring.
-    var onLongPressSlot: (Int) -> Void = { _ in }
 
     // Placement (only active when `placing != nil`). `placeMinutes` is the live
     // start time (minutes-from-midnight, snapped to 15) the chip rides at.
