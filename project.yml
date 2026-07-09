@@ -1,6 +1,6 @@
 name: Atlas
 options:
-  bundleIdPrefix: com.atlas
+  bundleIdPrefix: com.atlaslm
   deploymentTarget:
     macOS: "14.0"
     iOS: "17.0"
@@ -41,7 +41,7 @@ targets:
       - package: AtlasCore
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.atlas.Atlas
+        PRODUCT_BUNDLE_IDENTIFIER: com.atlaslm.Atlas
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: Atlas/Atlas.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

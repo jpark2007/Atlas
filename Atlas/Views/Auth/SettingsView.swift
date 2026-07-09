@@ -53,6 +53,11 @@ struct SettingsView: View {
     /// it isn't actually connected, independent of the local Google-sync toggles.
     @State private var connectionStatus: String? = nil
 
+    // MARK: – Delete-account state
+    @State private var showDeleteAccountConfirm = false
+    @State private var deletingAccount = false
+    @State private var deleteAccountError: String? = nil
+
     private let ekService = EventKitService()
 
     var body: some View {
@@ -149,6 +154,43 @@ struct SettingsView: View {
                         .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.danger)
                 }
             }
+            if auth.state != .offline {
+                HStack(spacing: 10) {
+                    Button { showDeleteAccountConfirm = true } label: {
+                        Text(deletingAccount ? "Deleting account…" : "Delete account…")
+                            .font(.system(size: 12, design: .rounded))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(AtlasTheme.Colors.danger)
+                    .disabled(deletingAccount)
+                    if let err = deleteAccountError {
+                        Text(err).font(.system(size: 11, design: .rounded))
+                            .foregroundStyle(AtlasTheme.Colors.danger)
+                    }
+                }
+            }
+        }
+        .confirmationDialog(
+            "Delete your Atlas account?",
+            isPresented: $showDeleteAccountConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete account", role: .destructive) { performDeleteAccount() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently erases your account and all your Atlas data — spaces, projects, tasks, events and notes. This can't be undone.")
+        }
+    }
+
+    /// Fires the `delete-account` edge function, then either drops to the sign-in
+    /// gate (success) or surfaces an inline error (failure).
+    private func performDeleteAccount() {
+        deleteAccountError = nil
+        deletingAccount = true
+        Task { @MainActor in
+            let error = await auth.deleteAccount()
+            deletingAccount = false
+            deleteAccountError = error
         }
     }
 
@@ -723,7 +765,7 @@ struct SettingsView: View {
     }
 
     private func enableCloudSync() {
-        guard let jwt = auth.session?.accessToken else {
+        guard case .signedIn = auth.state else {
             cloudSyncError = "Sign in to Atlas to enable cloud sync."
             return
         }
@@ -734,6 +776,13 @@ struct SettingsView: View {
         cloudSyncError = nil
         cloudSyncWorking = true
         Task {
+            // Refresh the JWT first — reading `session` directly 401s once the
+            // 1-hour token goes stale (mirrors the Jul-6 fix elsewhere).
+            guard let jwt = await auth.validAccessToken() else {
+                cloudSyncError = "Your session expired — sign in again, then try."
+                cloudSyncWorking = false
+                return
+            }
             do {
                 try await googleAuth.enableServerSync(jwt: jwt)
                 await state.refreshGoogleConnection()   // re-derive server-owned mode
@@ -745,13 +794,18 @@ struct SettingsView: View {
     }
 
     private func disableCloudSync() {
-        guard let jwt = auth.session?.accessToken else {
+        guard case .signedIn = auth.state else {
             cloudSyncError = "Sign in to Atlas to change cloud sync."
             return
         }
         cloudSyncError = nil
         cloudSyncWorking = true
         Task {
+            guard let jwt = await auth.validAccessToken() else {
+                cloudSyncError = "Your session expired — sign in again, then try."
+                cloudSyncWorking = false
+                return
+            }
             do {
                 try await googleAuth.disableServerSync(jwt: jwt)
                 state.serverSyncEnabled = false
