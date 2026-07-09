@@ -49,6 +49,23 @@ struct SignInView: View {
                 .disabled(!canSubmit)
                 .opacity(canSubmit ? 1 : 0.4)
 
+                // Custom-styled per the outlined-control design language (a stock
+                // black SignInWithAppleButton would break the "never a fill" rule).
+                Button(action: signInWithApple) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "applelogo")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("Sign in with Apple")
+                            .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundStyle(MobileTheme.ink)
+                    .frame(maxWidth: .infinity)
+                    .edOutlineControl()
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+                .opacity(busy ? 0.4 : 1)
+
                 Button(action: resetPassword) {
                     Text("Forgot password?").edCapsLabel()
                 }
@@ -110,6 +127,22 @@ struct SignInView: View {
             } catch {
                 self.error = (error as? LocalizedError)?.errorDescription
                     ?? "Couldn't sign in. Check your email and password."
+            }
+            busy = false
+        }
+    }
+
+    private func signInWithApple() {
+        busy = true
+        error = nil
+        Task {
+            do {
+                try await store.signInWithApple()
+            } catch is CancellationError {
+                // User dismissed the Apple sheet — not an error.
+            } catch {
+                self.error = (error as? LocalizedError)?.errorDescription
+                    ?? "Couldn't sign in with Apple."
             }
             busy = false
         }

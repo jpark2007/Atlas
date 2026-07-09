@@ -20,6 +20,8 @@ enum MobileTheme {
     static let accent     = Color(hex: "d97757")
     /// Darkened accent for TEXT on light surfaces (AA).
     static let accentText = Color(hex: "b04f2f")
+    /// Danger red for destructive TEXT (delete account) — darkened for light bg (AA).
+    static let danger     = Color(hex: "c0392b")
 
     // MARK: Radii (continuous corners)
     static let radiusCard: CGFloat    = 24

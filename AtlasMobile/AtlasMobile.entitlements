@@ -6,5 +6,12 @@
 	<array>
 		<string>group.com.atlaslm.mobile</string>
 	</array>
+	<!-- Sign in with Apple. Bundle id com.atlaslm.AtlasMobile — automatic signing
+	     registers the App ID + enables this capability; the same id must be in
+	     Supabase → Auth → Apple → Client IDs for the native id_token flow to verify. -->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
 </dict>
 </plist>

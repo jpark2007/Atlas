@@ -44,6 +44,11 @@ struct SettingsView: View {
     /// gracefully to the snapshot-derived local-sync copy.
     @State private var cloudSynced = false
 
+    // Delete-account state (mirrors the Mac SettingsView pattern).
+    @State private var showDeleteConfirm = false
+    @State private var deletingAccount = false
+    @State private var deleteError: String?
+
     private let leadOptions = [0, 5, 15, 30, 60]
 
     var body: some View {
@@ -69,6 +74,12 @@ struct SettingsView: View {
                 cloudSynced = conn.status == "active"
             }
         }
+        .alert("Delete your Atlas account?", isPresented: $showDeleteConfirm) {
+            Button("Delete account", role: .destructive) { performDeleteAccount() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently erases your account and all your Atlas data — spaces, projects, tasks, events and notes. This can't be undone.")
+        }
     }
 
     // MARK: - Account
@@ -85,7 +96,32 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
             .rowStyle()
+            Button { showDeleteConfirm = true } label: {
+                Text(deletingAccount ? "Deleting account…" : "Delete account")
+                    .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MobileTheme.danger)
+            }
+            .buttonStyle(.plain)
+            .disabled(deletingAccount)
+            .rowStyle()
+            if let deleteError {
+                Text(deleteError)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(MobileTheme.danger)
+                    .rowStyle()
+            }
         } header: { header("Account") }
+    }
+
+    /// Fires the `delete-account` edge function; success clears the session (the
+    /// app drops back to SignInView), failure surfaces an inline error row.
+    private func performDeleteAccount() {
+        deleteError = nil
+        deletingAccount = true
+        Task {
+            deleteError = await store.deleteAccount()
+            deletingAccount = false
+        }
     }
 
     // MARK: - Capture
