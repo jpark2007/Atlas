@@ -69,11 +69,15 @@ struct TasksView: View {
         }
     }
 
-    /// Empty-state body: a spinner while loading, else the calm "all clear" copy.
+    /// Empty-state body: a spinner while loading, else the calm all-clear copy.
+    /// DUE mode gets deadline-specific copy; the no-spaces SPACE fallback keeps
+    /// the generic "all clear" text.
     @ViewBuilder
     private var emptyContent: some View {
         if store.loading {
             ProgressView().tint(MobileTheme.muted)
+        } else if grouping == "due" {
+            Text("No upcoming deadlines").edCapsLabel()
         } else {
             Text("all clear").edCapsLabel()
         }

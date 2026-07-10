@@ -229,7 +229,7 @@ struct ScheduleView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .contentMargins(.bottom, 72, for: .scrollContent)
+            .contentMargins(.bottom, 160, for: .scrollContent)
             .refreshable { await store.refresh() }
             .simultaneousGesture(daySwipe)
         }

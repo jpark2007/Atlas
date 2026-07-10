@@ -83,7 +83,7 @@ struct DayGridView: View {
                 }
                 .frame(height: canvasHeight)
             }
-            .contentMargins(.bottom, 96, for: .scrollContent)
+            .contentMargins(.bottom, 300, for: .scrollContent)
             .onAppear { scrollToStart(proxy) }
         }
     }
