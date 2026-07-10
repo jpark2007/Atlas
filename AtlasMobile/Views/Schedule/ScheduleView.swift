@@ -18,6 +18,8 @@ struct ScheduleView: View {
     @State private var showPlace = false
     @State private var placing: TaskItem?
     @State private var placeMinutes = 9 * 60
+    // A block on the grid is lifted for a drag-move (Task H) — hides the FAB, like `placing`.
+    @State private var blockMoveActive = false
     // Create-here: captured while PlaceTaskSheet is open, presented on its dismiss.
     @State private var pendingPrefill: ManualAddSheet.Prefill?
     @State private var manualPrefill: ManualAddSheet.Prefill?
@@ -29,11 +31,11 @@ struct ScheduleView: View {
             header
             content
                 .overlay(alignment: .bottomTrailing) {
-                    if placing == nil {
+                    if placing == nil && !blockMoveActive {
                         fab
                     }
                 }
-                .animation(MobileTheme.spring, value: placing != nil)
+                .animation(MobileTheme.spring, value: placing != nil || blockMoveActive)
         }
         .background(MobileTheme.bg.ignoresSafeArea())
         .overlay(alignment: .bottom) {
@@ -255,7 +257,10 @@ struct ScheduleView: View {
                     placing: placing,
                     placeMinutes: $placeMinutes,
                     onConfirmPlace: confirmPlace,
-                    onCancelPlace: { withAnimation(MobileTheme.spring) { placing = nil } }
+                    onCancelPlace: { withAnimation(MobileTheme.spring) { placing = nil } },
+                    blockMoveActive: $blockMoveActive,
+                    onMoveTask: moveTask,
+                    onMoveEvent: moveEvent
                 )
             }
             .simultaneousGesture(daySwipe)
@@ -392,6 +397,27 @@ struct ScheduleView: View {
         Task { await store.updateTask(updated) }
         MobileTheme.Haptic.success()
         withAnimation(MobileTheme.spring) { placing = nil }
+    }
+
+    /// Block-move confirm (Task H) — a scheduled task lands at `minute` on the shown
+    /// day. Mirrors `confirmPlace`'s `scheduledAt` write; `workBlockGoogleEventId` and
+    /// every other field are carried through by copying the struct.
+    private func moveTask(_ task: TaskItem, _ minute: Int) {
+        var updated = task
+        updated.scheduledAt = cal.date(bySettingHour: minute / 60,
+                                       minute: minute % 60, second: 0,
+                                       of: cal.startOfDay(for: selectedDay))
+        Task { await store.updateTask(updated) }
+    }
+
+    /// Block-move confirm for an event — shift start AND end by the same `delta`
+    /// (minutes) so the duration is preserved; `googleEventId` and all other fields
+    /// ride along by copying the struct so the Google mirror stays attached.
+    private func moveEvent(_ event: CalendarEvent, _ delta: Int) {
+        var updated = event
+        updated.start = cal.date(byAdding: .minute, value: delta, to: event.start) ?? event.start
+        updated.end = cal.date(byAdding: .minute, value: delta, to: event.end) ?? event.end
+        Task { await store.updateEvent(updated) }
     }
 
     private func consumeFocusToday() {

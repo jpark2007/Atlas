@@ -21,6 +21,14 @@ struct DayGridView: View {
     var onConfirmPlace: () -> Void = {}
     var onCancelPlace: () -> Void = {}
 
+    // Block-move (Task H). `blockMoveActive` mirrors `placing != nil` for the FAB:
+    // it hides the ScheduleView FAB while a block is lifted. The two closures write
+    // the new time through the existing store paths (task: scheduledAt; event: shift
+    // start+end by the same delta, googleEventId preserved).
+    @Binding var blockMoveActive: Bool
+    var onMoveTask: (TaskItem, Int) -> Void = { _, _ in }
+    var onMoveEvent: (CalendarEvent, Int) -> Void = { _, _ in }
+
     private let hourHeight: CGFloat = 56
     private let railWidth: CGFloat = 66
     private let minBlockHeight: CGFloat = 26
@@ -28,6 +36,13 @@ struct DayGridView: View {
     private let cal = Calendar.current
 
     @State private var dragBase: Int?
+
+    // Block-move state: `armedID` is the lifted block (nil = none). `moveMinutes` is
+    // its live start (snapped to 15, clamped like the placement chip); `moveBase`
+    // seeds the drag from the block's original start.
+    @State private var armedID: UUID?
+    @State private var moveMinutes = 0
+    @State private var moveBase: Int?
 
     private var canvasHeight: CGFloat { hourHeight * 24 }
     private var dayStart: Date { cal.startOfDay(for: day) }
@@ -40,6 +55,7 @@ struct DayGridView: View {
         }
         .overlay(alignment: .bottomTrailing) {
             if placing != nil { placementControls }
+            else if armedID != nil { moveControls }
         }
     }
 
@@ -123,15 +139,20 @@ struct DayGridView: View {
 
     // MARK: - Blocks
 
+    @ViewBuilder
     private func blockView(_ blk: Block) -> some View {
-        let y = CGFloat(blk.startMin) * hourHeight / 60
+        let armed = blk.id == armedID
+        // When armed, the block rides `moveMinutes` (like the placement chip);
+        // duration is fixed, so height stays derived from the original interval.
+        let y = CGFloat(armed ? moveMinutes : blk.startMin) * hourHeight / 60
         let h = max(CGFloat(blk.endMin - blk.startMin) * hourHeight / 60, minBlockHeight)
-        return HStack(alignment: .center, spacing: 6) {
+        let base = HStack(alignment: .center, spacing: 6) {
             RoundedRectangle(cornerRadius: 2).fill(blk.color).frame(width: 3, height: max(6, h - 10))
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     if let task = blk.task {
-                        CheckCircle(done: task.done, color: task.spaceColor) { onToggle(task) }
+                        // Suppress the check-off while this block is lifted.
+                        CheckCircle(done: task.done, color: task.spaceColor) { if !armed { onToggle(task) } }
                     }
                     Text(blk.title)
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -140,10 +161,10 @@ struct DayGridView: View {
                         .lineLimit(1)
                 }
                 if h >= 44 {
-                    Text(timeCaps(blk))
+                    Text(armed ? caps(minute: moveMinutes) : timeCaps(blk))
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .tracking(0.7).textCase(.uppercase)
-                        .foregroundStyle(MobileTheme.muted)
+                        .foregroundStyle(armed ? MobileTheme.accentText : MobileTheme.muted)
                         .lineLimit(1)
                 }
             }
@@ -153,9 +174,99 @@ struct DayGridView: View {
         .frame(width: blk.w, height: h, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(blk.color.opacity(0.14)))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .scaleEffect(armed ? 1.03 : 1, anchor: .center)
+        .shadow(color: Color.black.opacity(armed ? 0.18 : 0), radius: armed ? 8 : 0, y: armed ? 3 : 0)
         .contentShape(Rectangle())
-        .onTapGesture { onOpen(blk.detail) }
+        // Tap opens the detail sheet — but not while the block is armed for a move.
+        .onTapGesture { if !armed { onOpen(blk.detail) } }
         .offset(x: blk.x, y: y)
+        .zIndex(armed ? 1 : 0)
+
+        // Gesture wiring is the whole scroll-safety story: only the ARMED block gets a
+        // drag (highPriority, so it wins over the ScrollView); un-armed WRITABLE blocks
+        // carry only a long-press (a moving finger cancels it, so pans still scroll);
+        // read-only blocks get nothing.
+        if armed {
+            base.highPriorityGesture(moveDrag(blk))
+        } else if isWritable(blk) {
+            base.onLongPressGesture(minimumDuration: 0.4) { arm(blk) }
+        } else {
+            base
+        }
+    }
+
+    // MARK: - Block-move (long-press lift → drag → confirm/cancel)
+
+    /// Writability mirrors `ItemDetailSheet.isEditable` verbatim (CLAUDE.md rule 5):
+    /// tasks always; events only when Atlas- or Google-sourced. Read-only events
+    /// (Apple, and any external read-only) never lift.
+    private func isWritable(_ blk: Block) -> Bool {
+        switch blk.detail {
+        case .task:          return true
+        case .event(let e):  return e.source == .atlas || e.source == .google
+        }
+    }
+
+    /// Long-press arms a move: haptic tap + lifted look. Blocked while a placement
+    /// chip is live or another block is already armed (mutual exclusion).
+    private func arm(_ blk: Block) {
+        guard placing == nil, armedID == nil else { return }
+        moveMinutes = blk.startMin
+        moveBase = nil
+        MobileTheme.Haptic.selection()
+        blockMoveActive = true
+        withAnimation(MobileTheme.spring) { armedID = blk.id }
+    }
+
+    /// Chip-style vertical drag for the armed block — same delta→snap-15→clamp math
+    /// as `placementDrag`, seeded from the block's original start.
+    private func moveDrag(_ blk: Block) -> some Gesture {
+        DragGesture()
+            .onChanged { value in
+                let base = moveBase ?? blk.startMin
+                if moveBase == nil { moveBase = base }
+                let delta = Int((value.translation.height / hourHeight) * 60)
+                var m = base + delta
+                m = Int((Double(min(max(m, 0), 1425)) / 15).rounded()) * 15   // snap to 15 min
+                moveMinutes = min(max(m, 0), 1425)                            // clamp 00:00–23:45
+            }
+            .onEnded { _ in
+                moveBase = nil
+                MobileTheme.Haptic.selection()
+            }
+    }
+
+    private var moveControls: some View {
+        HStack(spacing: 14) {
+            Button { cancelMove() } label: { placeCircle("xmark") }
+            Button { confirmMove() } label: { placeCircle("checkmark") }
+        }
+        .padding(.trailing, 24).padding(.bottom, 96)
+    }
+
+    /// Confirm writes the new time through the existing store path: a task gets its
+    /// `scheduledAt` set (mirrors `confirmPlace`); an event shifts start+end by the
+    /// same delta (duration + googleEventId preserved). Both run in ScheduleView.
+    private func confirmMove() {
+        guard let id = armedID, let blk = rawBlocks().first(where: { $0.id == id }) else {
+            cancelMove(); return
+        }
+        if let task = blk.task {
+            onMoveTask(task, moveMinutes)
+        } else if case .event(let e) = blk.detail {
+            onMoveEvent(e, moveMinutes - blk.startMin)
+        }
+        MobileTheme.Haptic.success()
+        blockMoveActive = false
+        withAnimation(MobileTheme.spring) { armedID = nil }
+    }
+
+    /// Cancel restores the original position (armed clears → block renders at its
+    /// stored start again); no write.
+    private func cancelMove() {
+        moveBase = nil
+        blockMoveActive = false
+        withAnimation(MobileTheme.spring) { armedID = nil }
     }
 
     // MARK: - Deadlines (clock-timed due tasks → red line + flag + caps title)
