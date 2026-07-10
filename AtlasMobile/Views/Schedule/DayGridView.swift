@@ -57,6 +57,9 @@ struct DayGridView: View {
             if placing != nil { placementControls }
             else if armedID != nil { moveControls }
         }
+        // Day-swipe while a block is armed would strand the confirm/cancel circles
+        // subject-less on the new day; cancel the move instead.
+        .onChange(of: day) { _, _ in if armedID != nil { cancelMove() } }
     }
 
     // MARK: - All-day chips (pinned above the scroll)
@@ -219,16 +222,14 @@ struct DayGridView: View {
     }
 
     /// Chip-style vertical drag for the armed block — same delta→snap-15→clamp math
-    /// as `placementDrag`, seeded from the block's original start.
+    /// as `placementDrag` (shared via `snappedMinutes`), seeded from the block's
+    /// original start.
     private func moveDrag(_ blk: Block) -> some Gesture {
         DragGesture()
             .onChanged { value in
                 let base = moveBase ?? blk.startMin
                 if moveBase == nil { moveBase = base }
-                let delta = Int((value.translation.height / hourHeight) * 60)
-                var m = base + delta
-                m = Int((Double(min(max(m, 0), 1425)) / 15).rounded()) * 15   // snap to 15 min
-                moveMinutes = min(max(m, 0), 1425)                            // clamp 00:00–23:45
+                moveMinutes = snappedMinutes(base: base, translationHeight: value.translation.height)
             }
             .onEnded { _ in
                 moveBase = nil
@@ -356,10 +357,7 @@ struct DayGridView: View {
             .onChanged { value in
                 let base = dragBase ?? placeMinutes
                 if dragBase == nil { dragBase = base }
-                let delta = Int((value.translation.height / hourHeight) * 60)
-                var m = base + delta
-                m = Int((Double(min(max(m, 0), 1425)) / 15).rounded()) * 15   // snap to 15 min
-                placeMinutes = min(max(m, 0), 1425)                            // clamp 00:00–23:45
+                placeMinutes = snappedMinutes(base: base, translationHeight: value.translation.height)
             }
             .onEnded { _ in
                 dragBase = nil
@@ -484,6 +482,16 @@ struct DayGridView: View {
     }
 
     private func clampMin(_ m: Int) -> Int { min(1440, max(0, m)) }
+
+    /// Shared delta→snap-15→clamp math for both drag gestures (placement chip and
+    /// armed block): convert a vertical drag translation to a minute delta off
+    /// `base`, snap to the nearest 15 min, and clamp to the 00:00–23:45 day range.
+    private func snappedMinutes(base: Int, translationHeight: CGFloat) -> Int {
+        let delta = Int((translationHeight / hourHeight) * 60)
+        var m = base + delta
+        m = Int((Double(min(max(m, 0), 1425)) / 15).rounded()) * 15   // snap to 15 min
+        return min(max(m, 0), 1425)                                    // clamp 00:00–23:45
+    }
 
     private func overlapsDay(_ start: Date, _ end: Date) -> Bool {
         let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
