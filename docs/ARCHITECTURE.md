@@ -110,9 +110,12 @@ is never written to — and an item vanishing from the feed is not treated as a 
 `AppState` (`Atlas/Data/AppState.swift` plus `AppState+Calendar/Canvas/Capture/Notes/
 References.swift` extensions) is the app's single `@MainActor` store — `@Published` arrays
 of spaces, projects, tasks, events, notes, goals, and references. It bootstraps by loading a
-full snapshot through `AtlasDB` (the Supabase REST/PostgREST client layer in AtlasCore); a
-first-run account with no spaces gets seeded from `MockData`'s templates — editable starting
-content, not a permanent demo. `db: AtlasDB?` and `googleAuth: GoogleAuthService?` are
+full snapshot through `AtlasDB` (the Supabase REST/PostgREST client layer in AtlasCore).
+Account seeding is SERVER-SIDE (migration `0024_seed_starter_content.sql`, 2026-07-09): a
+trigger on `auth.users` gives every new account — created on any platform — the editable
+starter set (School + Personal, "My First Class"/"Getting Started", no demo data), and its
+backfill healed pre-existing empty accounts. Clients never seed; `MockData` survives only
+as the in-memory offline fallback. `db: AtlasDB?` and `googleAuth: GoogleAuthService?` are
 attached once available so write-through `Task {}` calls and Google-backed features have
 what they need.
 
@@ -150,7 +153,8 @@ Supabase Auth: email/password, Google OAuth, and Sign in with Apple.
 ## Living docs
 
 - `docs/SETUP.md` — how to configure and run Atlas locally.
-- `docs/HANDOFF.md` — current handoff/status notes.
+- Current status/next steps live in `docs/mobile-backlog.md` (mobile) and
+  `docs/specs/10-roadmap.md` (roadmap order); session history in git log.
 - `docs/atlas-vision.md` — product vision.
 - `docs/specs/10-roadmap.md` — roadmap.
 - `docs/specs/11-mobile-companion.md` — mobile companion design.
