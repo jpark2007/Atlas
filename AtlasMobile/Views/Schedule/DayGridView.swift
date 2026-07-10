@@ -227,7 +227,7 @@ struct DayGridView: View {
     private func moveDrag(_ blk: Block) -> some Gesture {
         DragGesture()
             .onChanged { value in
-                let base = moveBase ?? blk.startMin
+                let base = moveBase ?? moveMinutes
                 if moveBase == nil { moveBase = base }
                 moveMinutes = snappedMinutes(base: base, translationHeight: value.translation.height)
             }

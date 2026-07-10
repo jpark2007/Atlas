@@ -90,6 +90,9 @@ struct ScheduleView: View {
         .onAppear { consumeFocusToday(); consumePlacement() }
         .onChange(of: store.scheduleFocusToday) { _, _ in consumeFocusToday() }
         .onChange(of: store.pendingPlacement?.id) { _, _ in consumePlacement() }
+        .onChange(of: viewMode) { _, new in
+            if new != "grid" { placing = nil; blockMoveActive = false }
+        }
     }
 
     // MARK: - Header
