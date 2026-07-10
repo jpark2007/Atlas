@@ -38,7 +38,12 @@ struct TasksView: View {
                 .padding(.horizontal, 28)
                 .padding(.top, 16)
 
-            if openTasks.isEmpty {
+            if useHierarchy {
+                // SPACE mode always shows the spaces → projects cascade — even with
+                // zero tasks — so a fresh account sees its structure. "all clear" is
+                // kept only for the date-driven DUE mode (and the no-spaces fallback).
+                spaceList
+            } else if openTasks.isEmpty {
                 ScrollView {
                     emptyContent
                         .frame(maxWidth: .infinity)
@@ -46,8 +51,6 @@ struct TasksView: View {
                 }
                 .contentMargins(.bottom, 72, for: .scrollContent)
                 .refreshable { await store.refresh() }
-            } else if useHierarchy {
-                spaceList
             } else {
                 list
             }
@@ -136,8 +139,12 @@ struct TasksView: View {
                         }
                         ForEach(group.projectGroups, id: \.projectName) { pg in
                             projectSubheader(pg.projectName)
-                            ForEach(pg.tasks) { task in
-                                taskRow(task)
+                            if pg.tasks.isEmpty {
+                                emptyProjectHint
+                            } else {
+                                ForEach(pg.tasks) { task in
+                                    taskRow(task)
+                                }
                             }
                         }
                     }
@@ -187,6 +194,16 @@ struct TasksView: View {
             .textCase(.uppercase)
             .foregroundStyle(MobileTheme.faint)
             .listRowInsets(EdgeInsets(top: 10, leading: 28, bottom: 4, trailing: 28))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+
+    /// A muted placeholder shown under a project that has no open tasks yet.
+    private var emptyProjectHint: some View {
+        Text("No tasks yet")
+            .font(.system(size: 14, weight: .regular, design: .rounded))
+            .foregroundStyle(MobileTheme.faint)
+            .listRowInsets(EdgeInsets(top: 2, leading: 28, bottom: 12, trailing: 28))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
     }
@@ -301,18 +318,30 @@ struct TasksView: View {
         let projectGroups: [(projectName: String, tasks: [TaskItem])]
     }
 
-    /// Hierarchical space → project groups, in sidebar order, skipping empty spaces.
-    /// openTasks are already remapped, so every task matches exactly one real space.
+    /// Hierarchical space → project groups, in snapshot (sort) order. ALL spaces
+    /// render — even empty ones — so a fresh account sees its structure. Project rows
+    /// come from the snapshot (so projects with zero tasks still appear), unioned with
+    /// any project name that only exists on a task (never drop one). openTasks are
+    /// already remapped, so every task matches exactly one real space.
     private var spaceGroups: [SpaceGroup] {
         let tasks = openTasks
-        return store.snapshot.spaces.compactMap { space in
+        return store.snapshot.spaces.filter { inFilter($0.name) }.map { space in
             let inSpace = tasks.filter { $0.spaceName.caseInsensitiveCompare(space.name) == .orderedSame }
-            guard !inSpace.isEmpty else { return nil }
             let loose = sortedByDue(inSpace.filter { $0.projectName.isEmpty })
             let named = inSpace.filter { !$0.projectName.isEmpty }
-            let projectGroups = Array(Set(named.map(\.projectName)))
+            let snapshotProjectNames = store.snapshot.projects
+                .filter { $0.spaceName.caseInsensitiveCompare(space.name) == .orderedSame }
+                .map(\.name)
+            // De-dupe case-insensitively (a snapshot project and a task's projectName
+            // differing only in case must not produce two rows); snapshot casing wins.
+            var displayNameByKey: [String: String] = [:]
+            for name in snapshotProjectNames { displayNameByKey[name.lowercased()] = name }
+            for name in named.map(\.projectName) where displayNameByKey[name.lowercased()] == nil {
+                displayNameByKey[name.lowercased()] = name
+            }
+            let projectGroups = displayNameByKey.values
                 .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-                .map { name in (projectName: name, tasks: sortedByDue(named.filter { $0.projectName == name })) }
+                .map { name in (projectName: name, tasks: sortedByDue(named.filter { $0.projectName.caseInsensitiveCompare(name) == .orderedSame })) }
             return SpaceGroup(spaceName: space.name, looseTasks: loose, projectGroups: projectGroups)
         }
     }

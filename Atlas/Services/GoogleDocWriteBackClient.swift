@@ -71,6 +71,8 @@ struct GoogleDocWriteBackClient: DocNoteWriteBack {
                 return .multitabUnsupported(tabCount: payload?["tabCount"] as? Int ?? 0)
             case "tab_readonly":
                 return .tabReadOnly(reason: payload?["reason"] as? String)
+            case "not_synced":
+                return .notSynced
             default:
                 break
             }

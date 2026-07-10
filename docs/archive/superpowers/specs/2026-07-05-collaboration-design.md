@@ -28,7 +28,7 @@ Decisions made during brainstorming:
 - **Architecture:** extend existing tables with membership junctions
   (approach A) — no parallel "shared" tables, no CRDTs.
 - **UI:** minimalist, clean, vintage/editorial — aligned with
-  `docs/specs/2026-07-03-mac-editorial-light-design.md`.
+  `docs/archive/specs/2026-07-03-mac-editorial-light-design.md`.
 
 ## 1. Data model & permissions
 

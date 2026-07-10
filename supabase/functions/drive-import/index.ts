@@ -18,9 +18,12 @@
  *          "files": [{ "id", "name", "mimeType", "modifiedTime" }, …] }
  *        → verifies the Supabase JWT, confirms the project belongs to the caller,
  *          and registers one project_references row per file (deduped by
- *          drive_file_id). A Google Doc also gets a backing `notes` row (empty body —
- *          the pull cron fills it on the next tick); everything else is a view-only
- *          `file` reference.  →  200 { ok, imported, skipped }
+ *          drive_file_id). A Google Doc gets a backing `notes` row — UNLESS the same
+ *          Doc was already imported into another project, in which case the new
+ *          reference just points at that existing note (same Doc = same note). Fresh
+ *          Doc-notes are then pulled inline (best-effort) so they land populated
+ *          instead of waiting for the 5-min cron; everything else is a view-only
+ *          `file` reference.  →  200 { ok, imported, skipped, pulled }
  *
  * drive.file grant note: the Picker grants file access to the Google **Cloud project**
  * (app), keyed by the appId/project-number + the OAuth client. For the pull cron to
@@ -43,6 +46,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { type DocNoteRef, mintAccessToken, pullDocNoteReference } from "../_shared/google_pull.ts";
 
 const GOOGLE_DOC_MIME = "application/vnd.google-apps.document";
 
@@ -272,8 +276,33 @@ Deno.serve(async (req: Request) => {
   if (existErr) return json({ error: "Failed to check existing references" }, 500);
   const already = new Set((existing ?? []).map((r) => r.drive_file_id as string));
 
+  // User-wide doc_note lookup: a Google Doc already imported into ANY project is the
+  // SAME document (Drew's rule) — reuse its note instead of minting a new one. The
+  // new project just gets a pointer with the existing baseline/state copied over.
+  const { data: existingDocs, error: docLookupErr } = await admin
+    .from("project_references")
+    .select("drive_file_id, note_id, modified_time, sync_state")
+    .eq("user_id", userId)
+    .eq("kind", "doc_note")
+    .in("drive_file_id", driveIds);
+  if (docLookupErr) return json({ error: "Failed to check existing doc-notes" }, 500);
+  const existingDocNotes = new Map<
+    string,
+    { note_id: string; modified_time: string | null; sync_state: string }
+  >();
+  for (const r of existingDocs ?? []) {
+    const id = r.drive_file_id as string;
+    if (!r.note_id || existingDocNotes.has(id)) continue; // one pointer per Doc; skip note-less rows
+    existingDocNotes.set(id, {
+      note_id: r.note_id as string,
+      modified_time: (r.modified_time as string | null) ?? null,
+      sync_state: (r.sync_state as string) ?? "pending",
+    });
+  }
+
   const noteRows: Record<string, unknown>[] = [];
   const refRows: Record<string, unknown>[] = [];
+  const newDocNoteRefs: DocNoteRef[] = []; // fresh Doc-notes to pull inline (null baseline)
   let skipped = 0;
   const nowISO = new Date().toISOString();
 
@@ -282,32 +311,59 @@ Deno.serve(async (req: Request) => {
     already.add(f.id); // guard against the same id appearing twice in one payload
 
     if (f.mimeType === GOOGLE_DOC_MIME) {
-      // Editable Doc-note: create the backing note (empty — the cron pulls content),
-      // then a doc_note reference with a null baseline so the first tick pulls it.
-      const noteId = crypto.randomUUID();
-      noteRows.push({
-        id: noteId,
-        user_id: userId,
-        space_name: spaceName,
-        project_id: projectId,
-        title: f.name,
-        body: "",
-        updated_at: nowISO,
-        is_external: true,
-        google_doc_id: f.id,
-      });
-      refRows.push({
-        id: crypto.randomUUID(),
-        user_id: userId,
-        project_id: projectId,
-        kind: "doc_note",
-        title: f.name,
-        drive_file_id: f.id,
-        mime_type: f.mimeType,
-        modified_time: null, // null ⇒ first pull fetches content
-        sync_state: "pending",
-        note_id: noteId,
-      });
+      const existingDoc = existingDocNotes.get(f.id);
+      if (existingDoc) {
+        // Same Doc, already imported elsewhere: create NO new note — the new
+        // reference points at the existing note and copies its baseline + state
+        // (it already has content; no inline pull needed).
+        refRows.push({
+          id: crypto.randomUUID(),
+          user_id: userId,
+          project_id: projectId,
+          kind: "doc_note",
+          title: f.name,
+          drive_file_id: f.id,
+          mime_type: f.mimeType,
+          modified_time: existingDoc.modified_time,
+          sync_state: existingDoc.sync_state,
+          note_id: existingDoc.note_id,
+        });
+      } else {
+        // Fresh Doc-note: create the backing note (empty — the pull fills content),
+        // then a doc_note reference with a null baseline so the first pull fetches it.
+        const noteId = crypto.randomUUID();
+        const refId = crypto.randomUUID();
+        noteRows.push({
+          id: noteId,
+          user_id: userId,
+          space_name: spaceName,
+          project_id: projectId,
+          title: f.name,
+          body: "",
+          updated_at: nowISO,
+          is_external: true,
+          google_doc_id: f.id,
+        });
+        refRows.push({
+          id: refId,
+          user_id: userId,
+          project_id: projectId,
+          kind: "doc_note",
+          title: f.name,
+          drive_file_id: f.id,
+          mime_type: f.mimeType,
+          modified_time: null, // null ⇒ first pull fetches content
+          sync_state: "pending",
+          note_id: noteId,
+        });
+        newDocNoteRefs.push({
+          id: refId,
+          drive_file_id: f.id,
+          note_id: noteId,
+          mime_type: f.mimeType,
+          modified_time: null,
+        });
+      }
     } else {
       // View-only file reference: metadata captured now; cron refreshes it.
       refRows.push({
@@ -336,5 +392,25 @@ Deno.serve(async (req: Request) => {
     if (error) return json({ error: `Failed to register references: ${error.message}` }, 500);
   }
 
-  return json({ ok: true, imported: refRows.length, skipped });
+  // Inline first pull — freshly-imported Doc-notes land populated instead of waiting
+  // for the 5-min cron. Best-effort: on any failure the row stays pending and the
+  // cron picks it up (same shared pull path). Dedupe-attached refs already have
+  // content, so only newDocNoteRefs are pulled.
+  let pulled = 0;
+  try {
+    const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+    const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+    if (clientId && clientSecret && newDocNoteRefs.length > 0) {
+      const accessToken = await mintAccessToken(admin, userId, clientId, clientSecret);
+      const runISO = new Date().toISOString();
+      for (const ref of newDocNoteRefs) {
+        try {
+          await pullDocNoteReference(admin, userId, accessToken, ref, runISO, false);
+          pulled++;
+        } catch (_e) { /* stays pending; cron retries */ }
+      }
+    }
+  } catch (_e) { /* no connection / vault miss: rows stay pending */ }
+
+  return json({ ok: true, imported: refRows.length, skipped, pulled });
 });

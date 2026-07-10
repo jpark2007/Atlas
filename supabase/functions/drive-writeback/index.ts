@@ -41,7 +41,13 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { readTabs, renderRequests } from "../_shared/doc_tabs.ts";
+import {
+  findDocumentTab,
+  IslandMismatchError,
+  readTabs,
+  renderTabRequests,
+  UnmappedImageError,
+} from "../_shared/doc_tabs.ts";
 
 const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const DRIVE_BASE = "https://www.googleapis.com/drive/v3";
@@ -90,23 +96,6 @@ function sameInstant(a: string | null | undefined, b: string | null | undefined)
   const ta = new Date(a).getTime();
   const tb = new Date(b).getTime();
   return Number.isFinite(ta) && Number.isFinite(tb) && ta === tb;
-}
-
-// Max endIndex of one tab's body content, searching the tab tree recursively.
-// deno-lint-ignore no-explicit-any
-function tabEndIndex(doc: any, tabId: string): number | null {
-  const stack: any[] = [...(doc?.tabs ?? [])];
-  while (stack.length) {
-    const t = stack.pop();
-    if (t?.tabProperties?.tabId === tabId) {
-      const content: any[] = t?.documentTab?.body?.content ?? [];
-      let max = 1;
-      for (const el of content) if (typeof el?.endIndex === "number" && el.endIndex > max) max = el.endIndex;
-      return max;
-    }
-    for (const c of t?.childTabs ?? []) stack.push(c);
-  }
-  return null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -164,17 +153,28 @@ Deno.serve(async (req: Request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // ── Resolve the linked Doc: the project_references row that backs this note ──
-  const { data: refRow, error: refErr } = await admin
+  // ── Resolve the linked Doc: a project_references row that backs this note ──
+  // A note may back SEVERAL references (same Doc imported into multiple projects,
+  // v2) — they all point at the same drive_file_id, so take the oldest as canonical
+  // rather than erroring on the multi-row case.
+  const { data: refRows, error: refErr } = await admin
     .from("project_references")
-    .select("id, drive_file_id, modified_time, kind")
+    .select("id, drive_file_id, modified_time, kind, sync_state")
     .eq("user_id", userId)
     .eq("note_id", noteId)
     .eq("kind", "doc_note")
-    .maybeSingle();
+    .order("created_at", { ascending: true })
+    .limit(1);
   if (refErr) return json({ error: "Failed to load reference" }, 500);
+  const refRow = refRows?.[0];
   if (!refRow || !refRow.drive_file_id) {
     return json({ error: "Note is not linked to a Google Doc" }, 404);
+  }
+  // Pending belt: the first pull hasn't landed, so there's no content/baseline to write
+  // against yet. Refuse (unless the user chose to overwrite) — the client locks the
+  // editor while pending, this guards the race + any other caller.
+  if (refRow.sync_state === "pending" && !overwrite) {
+    return json({ ok: false, error: "not_synced" }, 409);
   }
   const fileId = refRow.drive_file_id as string;
   // Prefer the client's baseline; fall back to the server's stored baseline.
@@ -241,28 +241,73 @@ Deno.serve(async (req: Request) => {
     const tab = tabs.find((t) => t.tabId === tabId);
     if (!tab) return json({ error: "Tab not found in Doc" }, 404);
     // Re-verify writability against the LIVE structure (defense in depth — the tab
-    // may have gained a table/image in Google since the last pull). Never trust a
-    // client-cached flag; the server re-decides from the actual Doc.
+    // may have gained unsupported content in Google since the last pull; tables/
+    // frozen-image islands do NOT lock — the splice below writes around them).
+    // Never trust a client-cached flag; the server re-decides from the actual Doc.
     if (!tab.writable) {
       return json({ ok: false, error: "tab_readonly", reason: tab.readonlyReason }, 409);
     }
-    // endIndex of the tab's current content, for the clearing delete — recomputed
-    // from the SAME raw JSON already fetched above (no second Docs round-trip).
-    const endIndex = tabEndIndex(docJson, tabId);
-    if (endIndex === null) return json({ error: "Tab not found in Doc" }, 404);
+    // Raw tab node (element indices) for the island splice — from the SAME raw
+    // JSON already fetched above (no second Docs round-trip).
+    const tabNode = findDocumentTab(docJson, tabId);
+    if (tabNode === null) return json({ error: "Tab not found in Doc" }, 404);
 
-    const requests = renderRequests(tabId, endIndex, markdown);
-    const buRes = await fetch(
-      `${DOCS_BASE}/documents/${encodeURIComponent(fileId)}:batchUpdate`,
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ requests }),
-      },
-    );
-    if (!buRes.ok) {
-      const text = (await buRes.text()).slice(0, 200);
-      return json({ error: `documents.batchUpdate ${buRes.status}: ${text}` }, 502);
+    // ── Image re-insert: mint a short-lived signed URL per re-hosted image so
+    // insertInlineImage can fetch it (Docs COPIES the bytes at insert, so 10 min
+    // is ample). Keyed by the object ids the pull harvested — the same ids the
+    // markdown's `![image:id]` placeholders carry. After the write the Doc assigns
+    // NEW object ids to the re-inserted images; we deliberately do NOT reconcile
+    // them here. The next pull re-harvests ids/URIs, re-upserts doc_note_images,
+    // AND regenerates body_md from the Doc — refreshing placeholders and rows
+    // TOGETHER. Until then the editor's old body_md still maps old ids → the
+    // still-present doc_note_images rows, so we must never delete those rows on
+    // write (the pull prunes stale ones once it re-baselines).
+    const { data: imageRows } = await admin.from("doc_note_images")
+      .select("object_id, storage_path, width_pt, height_pt")
+      .eq("user_id", userId).eq("note_id", noteId).eq("tab_id", tabId);
+    const images: Record<string, { uri: string; widthPt?: number | null; heightPt?: number | null }> = {};
+    for (const row of imageRows ?? []) {
+      const { data: signed } = await admin.storage.from("doc-images")
+        .createSignedUrl(row.storage_path as string, 600);
+      if (signed?.signedUrl) {
+        images[row.object_id as string] = {
+          uri: signed.signedUrl,
+          widthPt: row.width_pt as number | null,
+          heightPt: row.height_pt as number | null,
+        };
+      }
+    }
+
+    let requests: unknown[];
+    try {
+      requests = renderTabRequests(tabId, tabNode, markdown, images);
+    } catch (e) {
+      if (e instanceof UnmappedImageError) {
+        return json({ ok: false, error: "tab_readonly", reason: "unmapped image" }, 409);
+      }
+      if (e instanceof IslandMismatchError) {
+        // The Doc's table/image layout moved since this markdown was pulled (or
+        // user text fabricated a marker) — splice ranges would land wrong.
+        // Refuse; the next pull re-aligns the tab.
+        return json({ ok: false, error: "tab_readonly", reason: "table/image layout changed — sync again" }, 409);
+      }
+      throw e;
+    }
+    // An islands-only tab (nothing editable changed-able) can render to zero
+    // requests — batchUpdate rejects an empty list, and there is nothing to write.
+    if (requests.length > 0) {
+      const buRes = await fetch(
+        `${DOCS_BASE}/documents/${encodeURIComponent(fileId)}:batchUpdate`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ requests }),
+        },
+      );
+      if (!buRes.ok) {
+        const text = (await buRes.text()).slice(0, 200);
+        return json({ error: `documents.batchUpdate ${buRes.status}: ${text}` }, 502);
+      }
     }
     // Fresh modifiedTime for the new baseline (batchUpdate bumped it).
     const mRes = await fetch(
@@ -272,13 +317,16 @@ Deno.serve(async (req: Request) => {
     const newModifiedTime = mRes.ok ? (await mRes.json()).modifiedTime as string : null;
 
     // Persist: tab body + reference baseline (storm guard vs the pull cron).
+    // Tabs are keyed by NOTE (0023) — a save may arrive via any sibling reference,
+    // so filter by note_id, and re-baseline EVERY sibling ref of this Doc (matching
+    // the pull's sibling re-baseline) so no project's ref goes spuriously stale.
     const nowISO = new Date().toISOString();
     await admin.from("doc_note_tabs")
       .update({ body_md: markdown, updated_at: nowISO })
-      .eq("reference_id", refRow.id).eq("tab_id", tabId).eq("user_id", userId);
+      .eq("note_id", noteId).eq("tab_id", tabId).eq("user_id", userId);
     const { error: bErr } = await admin.from("project_references")
       .update({ modified_time: newModifiedTime, last_synced_at: nowISO, sync_state: "synced" })
-      .eq("id", refRow.id).eq("user_id", userId);
+      .eq("drive_file_id", fileId).eq("user_id", userId);
     if (bErr) return json({ ok: true, modifiedTime: newModifiedTime, warning: "baseline not stored" });
     return json({ ok: true, modifiedTime: newModifiedTime });
   }

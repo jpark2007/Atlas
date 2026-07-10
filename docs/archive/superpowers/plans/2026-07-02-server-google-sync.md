@@ -1,6 +1,6 @@
 # Server-Side Google Calendar Sync — Implementation Plan
 
-> Executed via subagent-driven development, Opus implementers. Spec: `docs/superpowers/specs/2026-07-02-server-google-sync-design.md`. Architecture ground truth (file:line map of ALL Mac call sites, token flows, schema): `.superpowers/sdd/sync-architecture-brief.md` — every implementer reads the sections named in its task.
+> Executed via subagent-driven development, Opus implementers. Spec: `docs/archive/superpowers/specs/2026-07-02-server-google-sync-design.md`. Architecture ground truth (file:line map of ALL Mac call sites, token flows, schema): `.superpowers/sdd/sync-architecture-brief.md` — every implementer reads the sections named in its task.
 
 **Goal:** Google ↔ Supabase sync runs server-side on a 5-minute cron for any connected user; the Mac stops talking to Google when server sync is active; no duplicates ever (DB-enforced).
 

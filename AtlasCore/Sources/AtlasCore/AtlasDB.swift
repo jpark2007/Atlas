@@ -556,6 +556,7 @@ public struct ReferenceAttachmentRow: Codable {
 public struct DocNoteTabRow: Codable {
     public var id: UUID
     public var referenceId: UUID
+    public var noteId: UUID
     public var tabId: String
     public var parentTabId: String?
     public var title: String
@@ -567,6 +568,7 @@ public struct DocNoteTabRow: Codable {
     enum CodingKeys: String, CodingKey {
         case id
         case referenceId    = "reference_id"
+        case noteId         = "note_id"
         case tabId          = "tab_id"
         case parentTabId    = "parent_tab_id"
         case title
@@ -580,6 +582,43 @@ public struct DocNoteTabRow: Codable {
         DocNoteTab(id: id, referenceID: referenceId, tabId: tabId, parentTabId: parentTabId,
                    title: title, ord: ord, bodyMD: bodyMd, writable: writable,
                    readonlyReason: readonlyReason)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DocNoteImageRow — one re-hosted inline image of a Doc note
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A row from `doc_note_images` (migration `0023`). One row per inline image the
+/// pull pipeline re-hosted into the private `doc-images` bucket. Clients only read
+/// these; all writes flow through service-role edge functions. `user_id` /
+/// `created_at` are owned by the server and unused here, so they're omitted from
+/// the row rather than decoded (extra JSON keys are ignored), matching `DocNoteTabRow`.
+public struct DocNoteImageRow: Codable {
+    public var id: UUID
+    public var noteId: UUID
+    public var tabId: String
+    public var objectId: String
+    public var storagePath: String
+    public var widthPt: Double?
+    public var heightPt: Double?
+    public var cropLocked: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case noteId       = "note_id"
+        case tabId        = "tab_id"
+        case objectId     = "object_id"
+        case storagePath  = "storage_path"
+        case widthPt      = "width_pt"
+        case heightPt     = "height_pt"
+        case cropLocked   = "crop_locked"
+    }
+
+    public func toDomain() -> DocNoteImage {
+        DocNoteImage(id: id, noteID: noteId, tabId: tabId, objectId: objectId,
+                     storagePath: storagePath, widthPt: widthPt, heightPt: heightPt,
+                     cropLocked: cropLocked)
     }
 }
 
@@ -983,11 +1022,41 @@ public final class AtlasDB {
     }
 
     /// The tabs of a multi-tab Google Doc note, ordered by `ord`. Filters the
-    /// `doc_note_tabs` table (RLS-scoped) down to one reference client-side,
-    /// mirroring `loadProjectMembers`. Single-tab Docs have no rows here.
-    public func fetchDocNoteTabs(referenceID: UUID) async throws -> [DocNoteTab] {
+    /// `doc_note_tabs` table (RLS-scoped) down to one NOTE client-side, mirroring
+    /// `loadProjectMembers`. Keyed by `note_id` (0023) so a Doc imported into several
+    /// projects shares one tab set. Single-tab Docs have no rows here.
+    public func fetchDocNoteTabs(noteID: UUID) async throws -> [DocNoteTab] {
         let rows: [DocNoteTabRow] = try await getAll("doc_note_tabs", order: "ord")
-        return rows.filter { $0.referenceId == referenceID }.map { $0.toDomain() }
+        return rows.filter { $0.noteId == noteID }.map { $0.toDomain() }
+    }
+
+    /// The re-hosted inline images of a Doc note. Filters the `doc_note_images`
+    /// table (RLS-scoped) down to one note client-side, mirroring `fetchDocNoteTabs`.
+    /// Notes with no inline images have no rows here.
+    public func fetchDocNoteImages(noteID: UUID) async throws -> [DocNoteImage] {
+        let rows: [DocNoteImageRow] = try await getAll("doc_note_images")
+        return rows.filter { $0.noteId == noteID }.map { $0.toDomain() }
+    }
+
+    /// Downloads one object's bytes from the private `doc-images` Storage bucket via
+    /// the authenticated-object endpoint. Uses the SAME auth as every PostgREST call —
+    /// `apikey: anonKey` + the user's `Bearer` JWT — so the owner-read policy on
+    /// `storage.objects` (path prefix = user id) scopes the read to the caller's own
+    /// images. `path` is the object key: `<user_id>/<note_id>/<object_id>.<ext>`.
+    public func downloadDocImage(path: String) async throws -> Data {
+        let sess = try await requireSession()
+        let url = SupabaseConfig.url
+            .appendingPathComponent("storage/v1/object/authenticated/doc-images")
+            .appendingPathComponent(path)
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.setValue(SupabaseConfig.anonKey,       forHTTPHeaderField: "apikey")
+        req.setValue("Bearer \(sess.accessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        try validate(response: response, data: data)
+        return data
     }
 
     /// Reads the caller's `google_connections` row (server-owned Google sync state),
@@ -997,6 +1066,27 @@ public final class AtlasDB {
         let rows: [GoogleConnectionRow] = try await getColumns(
             "google_connections",
             columns: "status,last_synced_at,last_error,calendar_id")
+        return rows.first
+    }
+
+    /// The server's bare view of the Google connection: just `status`
+    /// (active | error | revoked) and `last_error`. A lighter cousin of
+    /// `loadGoogleConnection()` for a Settings connection badge — nil ⇒ no
+    /// connection row. RLS (owner-read, migration 0006) scopes it to the caller.
+    public struct GoogleConnectionStatus: Codable {
+        public var status: String
+        public var lastError: String?
+
+        enum CodingKeys: String, CodingKey {
+            case status
+            case lastError = "last_error"
+        }
+    }
+
+    public func fetchGoogleConnectionStatus() async throws -> GoogleConnectionStatus? {
+        let rows: [GoogleConnectionStatus] = try await getColumns(
+            "google_connections",
+            columns: "status,last_error")
         return rows.first
     }
 
@@ -1195,67 +1285,6 @@ public final class AtlasDB {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f.string(from: date)
-    }
-
-    /// Seed all tables from a snapshot (first-run). Upserts each row so it is safe
-    /// to call if some rows already exist. Builds every row up front (stamping
-    /// ownership exactly as the per-row `upsert*` methods do) and POSTs one array
-    /// body per table (PostgREST batch upsert) instead of one request per row.
-    public func seedInitial(_ snapshot: AtlasSnapshot) async throws {
-        let sess = try await requireSession()
-        guard let userId = UUID(uuidString: sess.user.id) else {
-            throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
-        }
-
-        let spaceRows: [SpaceRow] = snapshot.spaces.enumerated().map { index, space in
-            var row = SpaceRow(domain: space, sort: index); row.userId = userId; return row
-        }
-        let projectRows: [ProjectRow] = snapshot.projects.map { project in
-            var row = ProjectRow(domain: project); row.userId = userId; return row
-        }
-        let taskRows: [TaskRow] = snapshot.tasks.map { task in
-            var row = TaskRow(domain: task); row.userId = userId
-            if row.createdBy == nil { row.createdBy = userId }   // mirrors upsertTask
-            return row
-        }
-        let eventRows: [EventRow] = snapshot.events.map { event in
-            var row = EventRow(domain: event); row.userId = userId; return row
-        }
-        let noteRows: [NoteRow] = snapshot.notes.map { note in
-            var row = NoteRow(domain: note); row.userId = userId; return row
-        }
-        let goalRows: [GoalRow] = snapshot.goals.map { goal in
-            var row = GoalRow(domain: goal); row.userId = userId; return row
-        }
-
-        try await seedRows(spaceRows,   into: "spaces",   columns: columnList(SpaceRow.CodingKeys.self),   sess: sess)
-        try await seedRows(projectRows, into: "projects", columns: columnList(ProjectRow.CodingKeys.self), sess: sess)
-        try await seedRows(taskRows,    into: "tasks",    columns: columnList(TaskRow.CodingKeys.self),    sess: sess)
-        try await seedRows(eventRows,   into: "events",   columns: columnList(EventRow.CodingKeys.self),   sess: sess)
-        try await seedRows(noteRows,    into: "notes",    columns: columnList(NoteRow.CodingKeys.self),    sess: sess)
-        try await seedRows(goalRows,    into: "goals",    columns: columnList(GoalRow.CodingKeys.self),    sess: sess)
-    }
-
-    /// The comma-joined wire column names for a seeded row type, taken from its
-    /// `CodingKeys`. Passed as PostgREST's `?columns=` so a batch upsert declares an
-    /// explicit, uniform column set — otherwise PostgREST infers the INSERT columns
-    /// from the FIRST array element (whose synthesized `encodeIfPresent` omits nil
-    /// optionals), which would silently drop or 400 on a column only later rows set.
-    private func columnList<K: CodingKey & CaseIterable>(_ keys: K.Type) -> String {
-        keys.allCases.map(\.stringValue).joined(separator: ",")
-    }
-
-    /// POSTs `rows` as a single PostgREST batch upsert (`on_conflict=id`,
-    /// merge-duplicates) with an explicit `columns` set (see `columnList`). No-op for
-    /// an empty array — matches the old per-row loop, which issued no request for an
-    /// empty table.
-    private func seedRows<Row: Encodable>(_ rows: [Row], into table: String, columns: String,
-                                          sess: SupabaseSession) async throws {
-        guard !rows.isEmpty else { return }
-        let body = try isoEncoder.encode(rows)
-        try await send(method: "POST", table: table,
-                       query: upsertQuery + [URLQueryItem(name: "columns", value: columns)],
-                       extraHeaders: upsertHeaders, body: body, sess: sess)
     }
 
     // MARK: Spaces / Projects

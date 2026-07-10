@@ -79,14 +79,43 @@
  */
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { readTabs, tabsPreviewMarkdown } from "../_shared/doc_tabs.ts";
+import {
+  driveFileMeta,
+  InvalidGrantError,
+  mintAccessToken,
+  pullDocNoteReference,
+} from "../_shared/google_pull.ts";
 
-const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const GCAL_BASE = "https://www.googleapis.com/calendar/v3";
-const DRIVE_BASE = "https://www.googleapis.com/drive/v3";
-const DOCS_BASE = "https://docs.googleapis.com/v1";
-const BATCH_LIMIT = 20; // connections processed per invocation (oldest first)
+const BATCH_LIMIT = 60; // connections processed per invocation (oldest first)
 const REF_BATCH = 100;  // Drive references pulled per user per tick (least-recently-synced first)
+// Bounded fan-out. Users are independent (per-user leases) and references are
+// deduped per Doc before dispatch, so the only coupling is Google quota — 6×6
+// worst-case in-flight calls stays far under both Drive and Docs per-user caps.
+// This is what lets BATCH_LIMIT be 60 inside the function wall-clock budget:
+// tick duration ≈ slowest user-chain, not the sum of every sequential await.
+const USER_CONCURRENCY = 6;
+const REF_CONCURRENCY = 6;
+
+/** Run `fn` over `items` with at most `limit` in flight; results keep item order.
+ *  Rejections propagate — callers that need per-item isolation catch inside `fn`. */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
 const FULL_WINDOW_BACK_DAYS = 30;
 const FULL_WINDOW_FWD_DAYS = 365;
 const DAY_MS = 86_400_000;
@@ -264,32 +293,6 @@ function contentMatches(row: EventRow, u: MappedGoogle): boolean {
     normText(row.notes) === normText(u.notes);
 }
 
-// ── Google token refresh ────────────────────────────────────────
-class InvalidGrantError extends Error {}
-
-async function refreshAccessToken(refreshToken: string, clientId: string, clientSecret: string): Promise<string> {
-  const body = new URLSearchParams({
-    refresh_token: refreshToken,
-    client_id: clientId,
-    client_secret: clientSecret,
-    grant_type: "refresh_token",
-  });
-  const res = await fetch(GOOGLE_TOKEN_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    // Google returns 400 { "error": "invalid_grant" } for a revoked/expired token.
-    if (text.includes("invalid_grant")) throw new InvalidGrantError("invalid_grant");
-    throw new Error(`token refresh ${res.status}: ${text.slice(0, 200)}`);
-  }
-  const parsed = JSON.parse(text);
-  if (!parsed.access_token) throw new Error("token refresh: no access_token");
-  return parsed.access_token as string;
-}
-
 // ── Google events.list (paged; incremental or full window) ──────
 interface ListResult {
   items: GEvent[];
@@ -345,48 +348,6 @@ interface RefRow {
   modified_time: string | null;
   note_id: string | null;
 }
-interface DriveMeta {
-  name?: string;
-  mimeType?: string;
-  modifiedTime?: string;   // RFC3339
-  trashed?: boolean;
-}
-
-/** Drive files.get for the staleness baseline + type. ok:false carries the status so
- *  the caller can mark the one reference 'error' without failing the whole run. */
-async function driveFileMeta(
-  accessToken: string,
-  fileId: string,
-): Promise<{ ok: true; meta: DriveMeta } | { ok: false; status: number; message: string }> {
-  const res = await fetch(
-    `${DRIVE_BASE}/files/${encodeURIComponent(fileId)}?fields=name,mimeType,modifiedTime,trashed&supportsAllDrives=true`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
-  );
-  if (!res.ok) return { ok: false, status: res.status, message: (await res.text()).slice(0, 200) };
-  return { ok: true, meta: (await res.json()) as DriveMeta };
-}
-
-/** Export a Google Doc as Markdown (the wire form stored in notes.body; the Mac
- *  renders it via RichDoc ⇄ Markdown — the server only moves the bytes). */
-async function driveExportMarkdown(accessToken: string, fileId: string): Promise<string> {
-  const res = await fetch(
-    `${DRIVE_BASE}/files/${encodeURIComponent(fileId)}/export?mimeType=${encodeURIComponent("text/markdown")}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
-  );
-  if (!res.ok) throw new Error(`files.export ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return await res.text();
-}
-
-// Docs API read with the full tab tree. Requires the `documents` scope
-// (granted at connect alongside drive.file — GoogleAuthService.scopes).
-async function docsGetWithTabs(accessToken: string, fileId: string): Promise<unknown> {
-  const res = await fetch(
-    `${DOCS_BASE}/documents/${encodeURIComponent(fileId)}?includeTabsContent=true`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
-  );
-  if (!res.ok) throw new Error(`documents.get ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return await res.json();
-}
 
 /**
  * Pull this user's Drive-backed references (design doc §Server-flow 3). Shares the
@@ -414,6 +375,9 @@ async function syncUserReferences(
   const errors: { id: string; message: string }[] = [];
   let checked = 0;
   let synced = 0;
+  // References whose meta check found NOTHING changed. The common case by far —
+  // written as ONE batched update at the end instead of a round-trip per ref.
+  const noopIds: string[] = [];
 
   // Drive-backed only ('link' has nothing to pull). Least-recently-synced first, capped
   // per tick so a big pool can't monopolize the batch (calendar's chunking idiom).
@@ -426,109 +390,80 @@ async function syncUserReferences(
     .limit(REF_BATCH);
   if (error) throw new Error(`references select failed: ${error.message}`);
 
+  // Per-tick dedupe BEFORE the fan-out: two references to the SAME Doc pull once
+  // (first = least-recently-synced wins) — the sibling re-baseline in
+  // pullDocNoteReference keeps the skipped duplicate honest.
+  const seenFiles = new Set<string>();
+  const work: RefRow[] = [];
   for (const row of (rows ?? []) as RefRow[]) {
-    if (!row.drive_file_id) continue;
+    const driveFileId = row.drive_file_id;
+    if (!driveFileId) continue;
     checked++;
-    try {
-      const metaRes = await driveFileMeta(accessToken, row.drive_file_id);
-      if (!metaRes.ok) {
-        // Gone / access lost (404/403) or any non-2xx — mark this one 'error' and move
-        // on. Never auto-delete: removing a reference is a user action.
-        if (!dryRun) {
-          await admin.from("project_references")
-            .update({ sync_state: "error", last_synced_at: runStartISO })
-            .eq("id", row.id).eq("user_id", userId);
-        }
-        errors.push({ id: row.id, message: `drive ${metaRes.status}: ${metaRes.message}` });
-        continue;
-      }
-      const meta = metaRes.meta;
-      if (meta.trashed) {
-        if (!dryRun) {
-          await admin.from("project_references")
-            .update({ sync_state: "error", last_synced_at: runStartISO })
-            .eq("id", row.id).eq("user_id", userId);
-        }
-        errors.push({ id: row.id, message: "drive file trashed" });
-        continue;
-      }
+    if (seenFiles.has(driveFileId)) continue; // same Doc already handled this tick
+    seenFiles.add(driveFileId);
+    work.push(row);
+  }
 
+  // Per-reference isolation preserved: every failure is caught INSIDE the worker,
+  // so one bad file never rejects the pool. Counters/arrays are safe to touch from
+  // concurrent workers (single-threaded event loop).
+  await mapWithConcurrency(work, REF_CONCURRENCY, async (row) => {
+    const driveFileId = row.drive_file_id!;
+    try {
       if (row.kind === "doc_note") {
-        const driveMs = meta.modifiedTime ? new Date(meta.modifiedTime).getTime() : NaN;
-        const storedMs = row.modified_time ? new Date(row.modified_time).getTime() : -Infinity;
-        // Never-baselined (import) OR Drive strictly newer ⇒ pull content.
-        const changed = !Number.isFinite(storedMs) || (Number.isFinite(driveMs) && driveMs > storedMs);
-        if (changed) {
-          const docJson = await docsGetWithTabs(accessToken, row.drive_file_id);
-          const tabs = readTabs(docJson);
-          if (tabs.length <= 1) {
-            // Single-tab Doc: legacy Drive-Markdown pull, unchanged.
-            const markdown = await driveExportMarkdown(accessToken, row.drive_file_id);
-            if (!dryRun) {
-              if (row.note_id) {
-                const { error: nErr } = await admin.from("notes")
-                  .update({ body: markdown, updated_at: runStartISO })
-                  .eq("id", row.note_id).eq("user_id", userId);
-                if (nErr) throw new Error(`note update failed: ${nErr.message}`);
-              }
-              // Doc went from multi-tab to single-tab: clear any stale tab rows.
-              const { error: dErr } = await admin.from("doc_note_tabs")
-                .delete().eq("reference_id", row.id).eq("user_id", userId);
-              if (dErr) throw new Error(`tab cleanup failed: ${dErr.message}`);
-            }
-          } else {
-            // Multi-tab Doc: per-tab storage + concatenated preview in notes.body.
-            if (!dryRun) {
-              const { error: uErr } = await admin.from("doc_note_tabs").upsert(
-                tabs.map((t) => ({
-                  user_id: userId,
-                  reference_id: row.id,
-                  tab_id: t.tabId,
-                  parent_tab_id: t.parentTabId,
-                  title: t.title,
-                  ord: t.ord,
-                  body_md: t.markdown,
-                  writable: t.writable,
-                  readonly_reason: t.readonlyReason,
-                  updated_at: runStartISO,
-                })),
-                { onConflict: "reference_id,tab_id" },
-              );
-              if (uErr) throw new Error(`tab upsert failed: ${uErr.message}`);
-              // Tabs deleted in Google disappear from the tree — drop their rows.
-              const liveIds = tabs.map((t) => t.tabId);
-              const { error: gErr } = await admin.from("doc_note_tabs")
-                .delete().eq("reference_id", row.id).eq("user_id", userId)
-                .not("tab_id", "in", `(${liveIds.map((id) => `"${id}"`).join(",")})`);
-              if (gErr) throw new Error(`tab prune failed: ${gErr.message}`);
-              if (row.note_id) {
-                const { error: nErr } = await admin.from("notes")
-                  .update({ body: tabsPreviewMarkdown(tabs), updated_at: runStartISO })
-                  .eq("id", row.note_id).eq("user_id", userId);
-                if (nErr) throw new Error(`note update failed: ${nErr.message}`);
-              }
-            }
-          }
-          if (!dryRun) {
-            const { error: rErr } = await admin.from("project_references")
-              .update({
-                modified_time: meta.modifiedTime ?? null,
-                mime_type: meta.mimeType ?? row.mime_type,
-                last_synced_at: runStartISO,
-                sync_state: "synced",
-              })
-              .eq("id", row.id).eq("user_id", userId);
-            if (rErr) throw new Error(`reference update failed: ${rErr.message}`);
-          }
-          synced++;
-        } else if (!dryRun) {
-          // Unchanged since last pull — record a successful check.
-          await admin.from("project_references")
-            .update({ last_synced_at: runStartISO, sync_state: "synced" })
-            .eq("id", row.id).eq("user_id", userId);
-        }
+        // The complete doc_note pull (meta check, storm guard, single/multi-tab
+        // fork, tab upsert, re-baseline) lives in the shared module. It fetches its
+        // own meta and THROWS on gone/trashed — the catch below marks 'error'.
+        const { changed } = await pullDocNoteReference(
+          admin,
+          userId,
+          accessToken,
+          {
+            id: row.id,
+            drive_file_id: driveFileId,
+            note_id: row.note_id,
+            mime_type: row.mime_type,
+            modified_time: row.modified_time,
+          },
+          runStartISO,
+          dryRun,
+          { skipNoOpBaseline: true }, // batched below
+        );
+        if (changed) synced++;
+        else noopIds.push(row.id);
       } else {
         // 'file' — metadata refresh only (view-only reference; bytes stay in Drive).
+        const metaRes = await driveFileMeta(accessToken, driveFileId);
+        if (!metaRes.ok) {
+          // Gone / access lost (404/403) or any non-2xx — mark this one 'error' and move
+          // on. Never auto-delete: removing a reference is a user action.
+          if (!dryRun) {
+            await admin.from("project_references")
+              .update({ sync_state: "error", last_synced_at: runStartISO })
+              .eq("id", row.id).eq("user_id", userId);
+          }
+          errors.push({ id: row.id, message: `drive ${metaRes.status}: ${metaRes.message}` });
+          return;
+        }
+        const meta = metaRes.meta;
+        if (meta.trashed) {
+          if (!dryRun) {
+            await admin.from("project_references")
+              .update({ sync_state: "error", last_synced_at: runStartISO })
+              .eq("id", row.id).eq("user_id", userId);
+          }
+          errors.push({ id: row.id, message: "drive file trashed" });
+          return;
+        }
+        // Unchanged metadata is a no-op check — fold into the batched bump instead
+        // of writing identical values back row-by-row every tick.
+        const sameTime = (meta.modifiedTime ?? null) === (row.modified_time ?? null) ||
+          (meta.modifiedTime != null && row.modified_time != null &&
+            new Date(meta.modifiedTime).getTime() === new Date(row.modified_time).getTime());
+        if (sameTime && (meta.mimeType ?? row.mime_type) === row.mime_type) {
+          noopIds.push(row.id);
+          return;
+        }
         if (!dryRun) {
           await admin.from("project_references")
             .update({
@@ -550,6 +485,14 @@ async function syncUserReferences(
           .eq("id", row.id).eq("user_id", userId);
       }
     }
+  });
+
+  // One write for every unchanged reference this tick (the successful-check stamp).
+  if (!dryRun && noopIds.length > 0) {
+    const { error: bErr } = await admin.from("project_references")
+      .update({ last_synced_at: runStartISO, sync_state: "synced" })
+      .in("id", noopIds).eq("user_id", userId);
+    if (bErr) errors.push({ id: "*", message: `noop baseline batch failed: ${bErr.message}` });
   }
   return { checked, synced, errors };
 }
@@ -573,12 +516,8 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     fullResync: false,
   };
 
-  if (!conn.vault_secret_id) throw new Error("connection has no vault_secret_id");
-
   // 1. Decrypt the refresh token (service-role Vault read) and mint an access token.
-  const { data: refreshToken, error: secretErr } = await admin.rpc("read_google_secret", { secret_id: conn.vault_secret_id });
-  if (secretErr || !refreshToken) throw new Error("vault read failed");
-  const accessToken = await refreshAccessToken(refreshToken as string, clientId, clientSecret);
+  const accessToken = await mintAccessToken(admin, userId, clientId, clientSecret);
 
   // I1: gids of this user's Mac-owned work-block mirrors. Work-block mirroring is
   //     Mac-owned and OFF in server mode (v1), but a legacy mirror may still exist
@@ -1004,30 +943,36 @@ Deno.serve(async (req: Request) => {
   }
   if (connErr) return json({ error: "Failed to load connections" }, 500);
 
-  const results: UserResult[] = [];
-  for (const conn of (conns ?? []) as Connection[]) {
-    try {
-      results.push(await syncUser(admin, conn, clientId, clientSecret, dryRun));
-    } catch (e) {
-      // Per-user isolation: one failure never blocks the batch. Release the lease
-      // so a transient error retries next tick instead of waiting out claimed_until.
-      const revoked = e instanceof InvalidGrantError;
-      const msg = revoked ? "invalid_grant" : String((e as Error)?.message ?? e).slice(0, 500);
-      if (!dryRun) {
-        await admin
-          .from("google_connections")
-          .update({ status: revoked ? "revoked" : "error", last_error: msg, claimed_until: null })
-          .eq("user_id", conn.user_id);
+  // Users fan out with bounded concurrency — they're fully independent (per-user
+  // lease, per-user token, per-user rows), so the tick's wall-clock is the slowest
+  // user, not the sum. Per-user isolation is preserved INSIDE the worker.
+  const results: UserResult[] = await mapWithConcurrency(
+    (conns ?? []) as Connection[],
+    USER_CONCURRENCY,
+    async (conn) => {
+      try {
+        return await syncUser(admin, conn, clientId, clientSecret, dryRun);
+      } catch (e) {
+        // Per-user isolation: one failure never blocks the batch. Release the lease
+        // so a transient error retries next tick instead of waiting out claimed_until.
+        const revoked = e instanceof InvalidGrantError;
+        const msg = revoked ? "invalid_grant" : String((e as Error)?.message ?? e).slice(0, 500);
+        if (!dryRun) {
+          await admin
+            .from("google_connections")
+            .update({ status: revoked ? "revoked" : "error", last_error: msg, claimed_until: null })
+            .eq("user_id", conn.user_id);
+        }
+        return {
+          userId: conn.user_id,
+          status: revoked ? "revoked" : "error",
+          inserted: 0, updated: 0, deleted: 0, tombstoned: 0, pushedNew: 0, pushedUpdated: 0,
+          referencesChecked: 0, referencesSynced: 0,
+          fullResync: false, error: msg,
+        };
       }
-      results.push({
-        userId: conn.user_id,
-        status: revoked ? "revoked" : "error",
-        inserted: 0, updated: 0, deleted: 0, tombstoned: 0, pushedNew: 0, pushedUpdated: 0,
-        referencesChecked: 0, referencesSynced: 0,
-        fullResync: false, error: msg,
-      });
-    }
-  }
+    },
+  );
 
   return json({ ok: true, dryRun, count: results.length, users: results });
 });

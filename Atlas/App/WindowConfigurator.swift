@@ -31,7 +31,7 @@ struct WindowConfigurator: NSViewRepresentable {
         // as calendar drag-to-schedule (you'd move the window instead of the event).
         // The transparent title-bar strip at the top still drags the window normally.
         window.isMovableByWindowBackground = false
-        window.backgroundColor = NSColor(srgbRed: 0xfb/255, green: 0xfa/255, blue: 0xf7/255, alpha: 1) // bgBase (cream)
+        window.backgroundColor = NSColor(srgbRed: 0xf2/255, green: 0xef/255, blue: 0xe6/255, alpha: 1) // bgBase (paper #f2efe6)
         // Kill the toolbar NavigationSplitView attaches (the gray bar's source).
         window.toolbar = nil
         // Hide the 1px separator line under the (now transparent) titlebar.

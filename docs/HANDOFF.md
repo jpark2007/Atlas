@@ -1,13 +1,52 @@
 # Atlas — Handoff / Continue-Here
 
-**Read this first in a new chat to resume.** Current state, how the calendar model
-works, the planned work (broken into subagent-able bites), and the honest caveats.
+**Read this first in a new chat to resume.** For the current system map (targets,
+edge functions, crons, sync pipelines) read `docs/ARCHITECTURE.md`; roadmap order
+lives in `docs/specs/10-roadmap.md`.
 
-_Last updated: 2026-06-28 — v2 + follow-ups are live on `main`. **Google
-Calendar READ sync is working live** (the app mirrors the user's primary Google
-calendar). A round of UI fixes is in flight: the **traffic-lights** (bite I) and
-**drag-to-schedule** (bite A) fixes are now **applied (build-green) and awaiting the
-user's live verification**. Live-testing is happening interactively._
+## ⏩ Continue here (2026-07-09)
+
+Everything below this section is HISTORICAL (last coherent as of 2026-06-28) —
+kept for context, superseded by `docs/ARCHITECTURE.md`.
+
+**State:** doc-tabs v2 + frozen islands live in prod (E2E 8/8 — tables/images
+render locked-in-place, surrounding text editable; roadmap + Stage 2 cell-editing
+spec: `docs/specs/2026-07-08-table-editing-roadmap.md`). google-sync scaled
+(60-user batches, concurrent fan-out). **Sign in with Apple WORKS on iOS**
+(confirmed on device 2026-07-09); mobile also ships delete-account. Mac Apple
+sign-in still fails Apple-side (-7003 "Sign Up Not Completed") after a fresh
+provisioning profile — remaining suspects: the App ID's "Enable as a primary
+App ID" needing an explicit re-save after Drew's ungrouping, an Apple ID
+session refresh (System Settings sign out/in), or plain propagation (up to days).
+
+**Consistency issues found by Drew's mobile test (2026-07-09) — BOTH BUILT same
+night** (spec `docs/specs/2026-07-09-account-parity-and-mobile-colors-design.md`,
+4 commits 24e5391..295b737, per-task + whole-branch reviews all clean):
+
+1. **Account-creation parity — DONE + LIVE.** Migration 0024 seeds every new
+   account server-side (trigger on `auth.users`) with the editable starter set
+   (School + Personal, "My First Class" / "Getting Started", no demo data) and
+   backfilled existing empty accounts. Applied to prod + verified via PostgREST
+   2026-07-09: Drew's iCloud test account healed; all 3 accounts with real data
+   untouched. The Mac's client-side MockData seeding is deleted (`seedInitial`
+   gone from AtlasCore). NOTE: prod was ALSO missing 0020/0021 (availability,
+   shared spaces — never applied; availability + space-sharing were silently
+   broken since 07-06); Drew approved applying them in the same push.
+2. **UI parity — colors-only pass DONE** (Drew's chosen scope; radii/serif
+   deferred until he sees it). iOS `MobileTheme` + widget mirror remapped to the
+   Mac paper palette; killed the two-reds drift and the Mac's stale window-bg hex.
+
+**Open follow-ups from that work:**
+- **Drew's device checks owed:** fresh-signup starter set on iPhone; paper
+  palette on iOS + widgets; Mac window bg; delete-account red legibility (the
+  unified danger `#ff5c5c` is ~2.6:1 on paper — fails AA; accept or darken the
+  shared token app-wide, Drew's call).
+- **space_members forward gap (pre-existing, separate ticket):** nothing inserts
+  an owner row for spaces created after 0021's one-time backfill (incl. seeded
+  ones) — `createSpaceInvite` requires membership, so sharing any NEW space
+  likely fails. Right fix: forward trigger on `spaces`.
+
+Next mobile steps live in `docs/mobile-backlog.md` ("Next steps 2026-07-09").
 
 ---
 

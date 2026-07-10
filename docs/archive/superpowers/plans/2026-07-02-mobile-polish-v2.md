@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement the approved Mobile Polish v2 spec (`docs/superpowers/specs/2026-07-02-mobile-polish-v2-design.md`): client freshness, truthful event sources, timezone-correct capture times, space-color system, motion/haptics vocabulary, capture hero redesign (Direction A), jump-to-today.
+**Goal:** Implement the approved Mobile Polish v2 spec (`docs/archive/superpowers/specs/2026-07-02-mobile-polish-v2-design.md`): client freshness, truthful event sources, timezone-correct capture times, space-color system, motion/haptics vocabulary, capture hero redesign (Direction A), jump-to-today.
 
 **Architecture:** Shared logic changes land in the `AtlasCore` Swift package (unit-tested via `swift test`). iOS UI changes land in the `AtlasMobile` target (verified by simulator build; feel/visuals confirmed by Drew on device). The AI prompt fix lands in the Supabase Edge Function `supabase/functions/capture/index.ts` (verified by deploy + curl).
 

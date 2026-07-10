@@ -48,7 +48,6 @@ struct SignInView: View {
 
                 VStack(spacing: 10) {
                     appleButton
-                    googleButton
                 }
 
                 Button("Continue without an account") { auth.continueOffline() }
@@ -109,6 +108,7 @@ struct SignInView: View {
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .frame(maxWidth: .infinity)
                 .atlasOutlineControl()
+                .contentShape(Rectangle())   // whole area clickable, not just the text
         }
         .buttonStyle(.plain)
         .disabled(auth.isWorking)
@@ -117,10 +117,6 @@ struct SignInView: View {
 
     private var appleButton: some View {
         providerButton(title: "Sign in with Apple", system: "apple.logo") { Task { await auth.signInWithApple() } }
-    }
-
-    private var googleButton: some View {
-        providerButton(title: "Continue with Google", system: "g.circle.fill") { Task { await auth.signInWithGoogle() } }
     }
 
     /// Outlined ink control — the editorial system never fills a button.
@@ -135,6 +131,7 @@ struct SignInView: View {
             .frame(maxWidth: .infinity).padding(.vertical, 12)
             .overlay(RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
                 .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule))
+            .contentShape(Rectangle())   // whole area clickable, not just the text
         }
         .buttonStyle(.plain)
         .disabled(auth.isWorking)

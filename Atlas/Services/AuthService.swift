@@ -165,6 +165,38 @@ final class AuthService: ObservableObject {
         state = .signedOut
     }
 
+    // MARK: - Delete account
+
+    /// Permanently deletes the signed-in user via the `delete-account` edge
+    /// function (service-role `auth.admin.deleteUser`, which cascade-wipes every
+    /// user-scoped row). On success the local session is cleared and we drop back
+    /// to the sign-in gate. Returns `nil` on success, or a message to show inline.
+    /// Uses `validAccessToken()` so a >1h-old JWT is refreshed before the call.
+    func deleteAccount() async -> String? {
+        guard let token = await validAccessToken() else {
+            return "Your session expired — sign in again, then delete your account."
+        }
+        let url = SupabaseConfig.functionsBase.appendingPathComponent("delete-account")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(SupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                return "Couldn't delete your account. Please try again in a moment."
+            }
+        } catch {
+            return "Couldn't delete your account. Check your connection and try again."
+        }
+        // The auth user no longer exists — clear the local session (no server
+        // logout to call) and return to the gate.
+        UserDefaults.standard.removeObject(forKey: sessionKey)
+        session = nil
+        state = .signedOut
+        return nil
+    }
+
     // MARK: - Helper
 
     private func run(_ work: () async throws -> Void) async {
@@ -254,6 +286,8 @@ final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate 
     }
 
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
-        continuation?.resume(throwing: SupabaseAuthError(message: "Apple sign-in failed: \(error.localizedDescription)"))
+        let ns = error as NSError
+        continuation?.resume(throwing: SupabaseAuthError(
+            message: "Apple sign-in failed: \(error.localizedDescription) [\(ns.domain) code \(ns.code)]"))
     }
 }

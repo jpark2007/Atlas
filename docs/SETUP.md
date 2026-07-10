@@ -62,7 +62,7 @@ email capture. Done once for the whole app — every account just clicks "Connec
 
 > Our schools (Rutgers, Princeton) **disable student API tokens**, so Atlas uses the
 > read-only **Calendar Feed** instead — no token, no admin needed. See
-> [specs/2026-07-01-canvas-ics-sync-design.md](./specs/2026-07-01-canvas-ics-sync-design.md).
+> [archive/specs/2026-07-01-canvas-ics-sync-design.md](./archive/specs/2026-07-01-canvas-ics-sync-design.md).
 
 1. In your school's Canvas: **Calendar** (left nav) → scroll the right sidebar to
    **"Calendar Feed"** → copy the URL (`https://<school>/feeds/calendars/user_….ics`).

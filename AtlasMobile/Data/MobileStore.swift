@@ -70,6 +70,34 @@ final class MobileStore: ObservableObject {
         await refresh()
     }
 
+    /// Email/password account creation (GoTrue `signup`). If the project
+    /// requires email confirmation, `SupabaseAuth.signUp` returns no session —
+    /// surface a notice through the same muted channel `SignInView` already
+    /// renders for session-expiry, rather than building new UI for it.
+    func signUp(email: String, password: String) async throws {
+        if let s = try await auth.signUp(email: email, password: password) {
+            sessionStore.save(s)
+            session = s
+            authNotice = nil
+            await refresh()
+        } else {
+            authNotice = "Check \(email) to confirm your account, then sign in."
+        }
+    }
+
+    /// Native Sign in with Apple: run the ASAuthorization flow, then exchange the
+    /// id_token (+ raw nonce) for a Supabase session (GoTrue creates first-time
+    /// users during the exchange), landing exactly like a password sign-in.
+    func signInWithApple() async throws {
+        let nonce = AppleNonce.random()
+        let idToken = try await AppleSignInCoordinator().signIn(hashedNonce: AppleNonce.sha256(nonce))
+        let s = try await auth.signInWithIdToken(provider: "apple", idToken: idToken, nonce: nonce)
+        sessionStore.save(s)
+        session = s
+        authNotice = nil
+        await refresh()
+    }
+
     func signOut() {
         if let token = session?.accessToken {
             Task { await auth.signOut(accessToken: token) }
@@ -78,6 +106,36 @@ final class MobileStore: ObservableObject {
         session = nil
         snapshot = MobileStore.emptySnapshot
         spaceFilter = nil
+    }
+
+    /// Permanently deletes the signed-in user via the `delete-account` edge function
+    /// (service-role `auth.admin.deleteUser`, which cascade-wipes every user-scoped
+    /// row). Refreshes an expired JWT first — the function verifies the caller.
+    /// On success the local session is cleared so the user lands back at SignInView.
+    /// Returns `nil` on success, or a message to show inline.
+    func deleteAccount() async -> String? {
+        guard let token = (await sessionStore.refreshIfNeeded())?.accessToken else {
+            return "Your session expired — sign in again, then delete your account."
+        }
+        let url = SupabaseConfig.functionsBase.appendingPathComponent("delete-account")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(SupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                return "Couldn't delete your account. Please try again in a moment."
+            }
+        } catch {
+            return "Couldn't delete your account. Check your connection and try again."
+        }
+        // The auth user no longer exists — clear local state (no server logout to call).
+        sessionStore.clear()
+        session = nil
+        snapshot = MobileStore.emptySnapshot
+        spaceFilter = nil
+        return nil
     }
 
     // MARK: - Data

@@ -18,8 +18,6 @@ struct ScheduleView: View {
     @State private var showPlace = false
     @State private var placing: TaskItem?
     @State private var placeMinutes = 9 * 60
-    // Slot long-press context: the pressed time (nil = header-button path, no slot).
-    @State private var slotMinute: Int?
     // Create-here: captured while PlaceTaskSheet is open, presented on its dismiss.
     @State private var pendingPrefill: ManualAddSheet.Prefill?
     @State private var manualPrefill: ManualAddSheet.Prefill?
@@ -30,6 +28,12 @@ struct ScheduleView: View {
         VStack(spacing: 0) {
             header
             content
+                .overlay(alignment: .bottomTrailing) {
+                    if placing == nil {
+                        fab
+                    }
+                }
+                .animation(MobileTheme.spring, value: placing != nil)
         }
         .background(MobileTheme.bg.ignoresSafeArea())
         .overlay(alignment: .bottom) {
@@ -61,7 +65,6 @@ struct ScheduleView: View {
         }
         .sheet(isPresented: $showPlace, onDismiss: finishPlaceSheet) {
             PlaceTaskSheet(onPick: { beginPlacing($0) },
-                           slotMinute: slotMinute,
                            onNewEvent: { pendingPrefill = prefill(kind: "event") },
                            onNewTask: { pendingPrefill = prefill(kind: "task") })
                 .environmentObject(store)
@@ -112,13 +115,6 @@ struct ScheduleView: View {
                 Spacer()
                 spaceFilterMenu
                 viewToggle
-                // Permanent placement entry — always opens PlaceTaskSheet, even on days
-                // with no "needs a time" tasks (the section header's PLACE can't).
-                Button { showPlace = true } label: {
-                    Image(systemName: "calendar.badge.plus")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(MobileTheme.ink)
-                }
                 Button { showMonth = true } label: {
                     Image(systemName: "calendar")
                         .font(.system(size: 17, weight: .medium))
@@ -190,6 +186,26 @@ struct ScheduleView: View {
         if viewMode == "grid" { gridBody } else { listBody }
     }
 
+    /// Floating place entry — the permanent way to open `PlaceTaskSheet` in either
+    /// view mode, even on days with no "needs a time" tasks (the section header's
+    /// PLACE can't). Sits bottom-trailing, same corner DayGridView's placement
+    /// confirm/cancel circles use — hidden whenever `placing != nil` so they never
+    /// overlap; mirrors `placeCircle`'s look (paper fill, ink stroke, ink glyph).
+    private var fab: some View {
+        Button { showPlace = true } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(MobileTheme.ink)
+                .frame(width: 44, height: 44)
+                .background(Circle().fill(MobileTheme.bg))
+                .overlay(Circle().strokeBorder(MobileTheme.ink, lineWidth: MobileTheme.rule))
+                .shadow(color: Color.black.opacity(0.08), radius: 4, y: 1)
+        }
+        .padding(.trailing, 24)
+        .padding(.bottom, 96)
+        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+    }
+
     private var listBody: some View {
         // TimelineView re-evaluates every minute so the NOW rail advances.
         TimelineView(.everyMinute) { context in
@@ -236,10 +252,6 @@ struct ScheduleView: View {
                     tasks: filteredTasks,
                     onOpen: { detail = $0 },
                     onToggle: toggle,
-                    onLongPressSlot: { minute in
-                        slotMinute = minute
-                        showPlace = true
-                    },
                     placing: placing,
                     placeMinutes: $placeMinutes,
                     onConfirmPlace: confirmPlace,
@@ -339,26 +351,24 @@ struct ScheduleView: View {
 
     // MARK: - Placement
 
-    /// Picked a task in PlaceTaskSheet → flip to grid mode with a floating chip.
-    /// A slot long-press spawns the chip at the pressed time; otherwise the default.
+    /// Picked a task in PlaceTaskSheet → flip to grid mode with a floating chip
+    /// at the default initial time.
     private func beginPlacing(_ task: TaskItem) {
-        placeMinutes = slotMinute ?? initialPlaceMinutes()
+        placeMinutes = initialPlaceMinutes()
         withAnimation(MobileTheme.spring) {
             viewMode = "grid"
             placing = task
         }
     }
 
-    /// Build a ManualAddSheet prefill from the current slot context (day is always
-    /// the shown day; the time comes only from a slot long-press).
+    /// Build a ManualAddSheet prefill for the shown day (kind only — no slot time).
     private func prefill(kind: String) -> ManualAddSheet.Prefill {
-        ManualAddSheet.Prefill(kind: kind, day: selectedDay, minute: slotMinute)
+        ManualAddSheet.Prefill(kind: kind, day: selectedDay, minute: nil)
     }
 
-    /// On PlaceTaskSheet dismiss: clear the slot, and if a create-here row was tapped,
-    /// present ManualAddSheet now (a second sheet can't open until the first is gone).
+    /// On PlaceTaskSheet dismiss: if a create-here row was tapped, present
+    /// ManualAddSheet now (a second sheet can't open until the first is gone).
     private func finishPlaceSheet() {
-        slotMinute = nil
         if let p = pendingPrefill {
             pendingPrefill = nil
             manualPrefill = p

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Publish each member's anonymized free/busy availability, and add a "Team" section to shared projects showing a per-member weekly availability band ("The Week") (spec: `docs/superpowers/specs/2026-07-05-collaboration-design.md`, Phase 3). Phase 2's assignable/claimable task list already serves as "The Ledger" — this phase does not rebuild it.
+**Goal:** Publish each member's anonymized free/busy availability, and add a "Team" section to shared projects showing a per-member weekly availability band ("The Week") (spec: `docs/archive/superpowers/specs/2026-07-05-collaboration-design.md`, Phase 3). Phase 2's assignable/claimable task list already serves as "The Ledger" — this phase does not rebuild it.
 
 **Explicit scope cut:** the design spec also describes proposing a meeting by click-dragging across a shared free gap. That's a real drag-gesture + coordinate-math feature on par with the calendar's existing custom `DragGesture` drag-to-schedule (per this project's CLAUDE.md, native `.draggable`/`.dropDestination` is unreliable here and a custom gesture is required) — it's deferred to a follow-up plan once "The Week" is rendering real data correctly, rather than bundled into this plan's already-substantial scope. This plan delivers the data (availability publishing) and the view (Week band); the interaction is a separate, later increment.
 

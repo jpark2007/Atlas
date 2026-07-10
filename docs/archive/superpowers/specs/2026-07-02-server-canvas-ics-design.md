@@ -1,7 +1,7 @@
 # Server-Side Canvas ICS Sync — Design
 
 **Date:** 2026-07-02 · **Status:** approved to build AFTER Google sync ships (same rails)
-**Ground truth:** `.superpowers/sdd/sync-architecture-brief.md` §6 + `docs/superpowers/specs/2026-07-01-canvas-ics-sync-design.md` (the client-side v1 this supersedes).
+**Ground truth:** `.superpowers/sdd/sync-architecture-brief.md` §6 + `docs/archive/specs/2026-07-01-canvas-ics-sync-design.md` (the client-side v1 this supersedes).
 
 ## Goal
 

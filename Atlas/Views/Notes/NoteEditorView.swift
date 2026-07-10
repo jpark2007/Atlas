@@ -17,6 +17,9 @@ struct NoteEditorView: View {
     /// The two-way Google-Doc write-back surface. Nil until `integrate` injects one
     /// (the concrete impl is a Supabase edge function — see `DocNoteWriteBack`).
     @Environment(\.docNoteWriteBack) private var writeBackService
+    /// On-demand "Sync now" pull. Nil until `integrate` injects one (the concrete impl
+    /// is the `reference-pull` edge function — see `ReferencePullClient`).
+    @Environment(\.referencePull) private var referencePull
     /// Pauses the doc-note freshness poll while the app is backgrounded (see `pollKey`).
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.atlasTextScale) private var textScale
@@ -48,6 +51,15 @@ struct NoteEditorView: View {
     @State private var docTabs: [DocNoteTab] = []
     /// The tab whose `bodyMD` is currently loaded into `doc`.
     @State private var selectedTab: DocNoteTab?
+    /// Re-hosted inline images for this note (all tabs), looked up by `objectId` when a
+    /// block's text is an `![image:<id>]` placeholder. Empty for notes without images.
+    @State private var docImages: [DocNoteImage] = []
+    /// Ids of blocks that are FROZEN ISLANDS — `!>`-marked lines (tables, non-round-trip
+    /// images, positioned-image tethers) the server splices AROUND on save. Captured at
+    /// seed time by `seedDoc` from the RAW source line, never by live text matching, so a
+    /// user who types "!> " into an editable block doesn't freeze their own work. These
+    /// blocks render display-only; everything else stays editable.
+    @State private var frozenBlockIDs: Set<UUID> = []
     /// Per-tab dirty flag — the analogue of `isDirty` for the selected tab's body, so a
     /// save/switch only pushes a tab the user actually edited (incl. style-only edits).
     @State private var tabDirty = false
@@ -55,6 +67,8 @@ struct NoteEditorView: View {
     @State private var showMultitabNotice = false
     /// Per-tab write refused because the tab's live content is beyond the editable vocabulary.
     @State private var showTabReadOnlyNotice = false
+    /// Write refused because the note's first pull hasn't landed yet (server belt).
+    @State private var showNotSyncedNotice = false
 
     private let onDone: ((Note) -> Void)?
     /// Overlay hosts (the corner note card) can't rely on `dismiss` — it only works
@@ -98,7 +112,7 @@ struct NoteEditorView: View {
             // cron pull), parse a Markdown body, and set the baseline.
             if let live = liveNote { draft = live }
             if draft.isMarkdownBody || docReference != nil {
-                doc = RichDoc.fromMarkdown(draft.body)
+                seedDoc(draft.body)
             }
             baselineUpdatedAt = liveNote?.updatedAt ?? draft.updatedAt
         }
@@ -106,13 +120,16 @@ struct NoteEditorView: View {
         // first tab's body. Single-tab Docs and flag OFF fall through untouched — `docTabs`
         // stays empty and every path below behaves exactly as it does today.
         .task {
-            guard perTabSyncEnabled, let ref = docReference else { return }
-            let tabs = await state.loadDocTabs(referenceID: ref.id)
+            guard perTabSyncEnabled, docReference != nil else { return }
+            // Images are keyed by note, so load them even for single-tab Docs (their
+            // placeholders live in `notes.body`). Tabs only re-seat `doc` when >1.
+            docImages = await state.loadDocImages(noteID: draft.id)
+            let tabs = await state.loadDocTabs(noteID: draft.id)
             guard tabs.count > 1 else { return }
             docTabs = tabs
             let first = tabs[0]
             selectedTab = first
-            doc = RichDoc.fromMarkdown(first.bodyMD)
+            seedDoc(first.bodyMD)
         }
         // Keep an OPEN Doc-note fresh without navigating away: pull the latest from the
         // Atlas cloud on a gentle cadence (the cron writes Google→DB every ~5 min; this
@@ -154,6 +171,11 @@ struct NoteEditorView: View {
         } message: {
             Text("This tab's content (table, image, or rich formatting) can only be edited in Google Docs.")
         }
+        .alert("Note not synced yet", isPresented: $showNotSyncedNotice) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("This note hasn't finished its first sync — try again in a moment.")
+        }
     }
 
     private var core: some View {
@@ -180,27 +202,39 @@ struct NoteEditorView: View {
                 )
                 .padding(.horizontal, 18)
                 .padding(.vertical, 6)
-                if let tab = selectedTab, !tab.writable {
-                    readOnlyTabBanner(tab)
-                }
+            }
+            // One banner at most — a pending first-sync lock outranks a read-only tab.
+            if syncPending {
+                pendingSyncBanner
+            } else if let tab = selectedTab, !tab.writable {
+                readOnlyTabBanner(tab)
             }
 
             styleBar
-                .disabled(tabReadOnly)
+                .disabled(tabReadOnly || syncPending)
 
             Divider().overlay(AtlasTheme.Colors.border)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array(doc.blocks.enumerated()), id: \.element.id) { index, block in
-                        blockRow(index: index, block: block)
+                    ForEach(renderSegments) { segment in
+                        switch segment {
+                        case let .block(index, block):
+                            blockRow(index: index, block: block)
+                        case let .table(_, lines):
+                            PipeTableView(rows: parsePipeTable(lines: lines))
+                        case let .frozen(_, display):
+                            frozenRow(display: display)
+                        }
                     }
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 12)
             }
             .frame(minHeight: 200)
-            .disabled(tabReadOnly)
+            // NOTE: editing is locked per-TextField (blockRow), not on this whole
+            // subtree — a container-level .disabled would also swallow link taps
+            // and context menus in read-only tabs.
 
             Divider().overlay(AtlasTheme.Colors.border)
 
@@ -218,9 +252,25 @@ struct NoteEditorView: View {
 
     private var docURL: URL? { docReference?.externalURL }
 
+    /// The Google-Docs deep link the "Edit Link" affordance opens: per-tab
+    /// (`…/edit?tab=<tabId>`, mirroring `readOnlyTabBanner`'s construction) when in
+    /// per-tab mode, else the plain doc URL. Link editing lives in Google Docs only.
+    private var docDeepLinkURL: URL? {
+        guard let ref = docReference, let fileId = ref.driveFileId else { return docURL }
+        if let tabId = activeTabId {
+            return URL(string: "https://docs.google.com/document/d/\(fileId)/edit?tab=\(tabId)")
+        }
+        return docURL
+    }
+
     /// True when the selected multi-tab Doc tab is read-only — locks the style bar and
     /// block editors. `false` for single-tab / flag-OFF (no `selectedTab`).
     private var tabReadOnly: Bool { selectedTab.map { !$0.writable } ?? false }
+
+    /// True while a linked Doc-note's first pull hasn't landed — editing is locked (no
+    /// content to edit yet, and no baseline to write against). Clears once the cron (or
+    /// "Sync now") pulls and flips the reference to `.synced`.
+    private var syncPending: Bool { docReference?.syncState == .pending }
 
     /// The tab a per-tab save targets. `nil` for single-tab / flag-OFF (the legacy
     /// whole-file write-back path); the selected tab's id in per-tab mode.
@@ -307,7 +357,14 @@ struct NoteEditorView: View {
         Button {
             guard !isSyncingNow else { return }
             isSyncingNow = true
-            Task { await state.reloadReferences(); isSyncingNow = false }
+            Task {
+                // Force a real Google pull for this reference first (best-effort); the
+                // reload then surfaces it. Falls back to reload-only when the client is
+                // nil, there's no linked reference, or the pull fails.
+                if let ref = docReference { _ = await referencePull?.pull(referenceID: ref.id) }
+                await state.reloadReferences()
+                isSyncingNow = false
+            }
         } label: {
             Group {
                 if isSyncingNow {
@@ -381,18 +438,53 @@ struct NoteEditorView: View {
         .background(AtlasTheme.Colors.warning.opacity(0.08))
     }
 
+    /// Shown while a linked Doc-note's first pull hasn't landed (`sync_state == pending`):
+    /// editing is locked until the content arrives. Mirrors `readOnlyTabBanner`'s
+    /// warning-tint styling; "Sync now" forces a pull (same path as `syncNowButton`).
+    private var pendingSyncBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "clock")
+                .font(.system(size: 11))
+                .foregroundStyle(AtlasTheme.Colors.accentText)
+            Text("First sync in progress — content loads shortly.")
+                .atlasFont(size: 11)
+                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+            Spacer()
+            Button {
+                guard !isSyncingNow else { return }
+                isSyncingNow = true
+                Task {
+                    if let ref = docReference { _ = await referencePull?.pull(referenceID: ref.id) }
+                    await state.reloadReferences()
+                    isSyncingNow = false
+                }
+            } label: {
+                Text("Sync now")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
+            }
+            .buttonStyle(.plain)
+            .disabled(isSyncingNow)
+            .help("Check for the first synced version")
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 6)
+        .background(AtlasTheme.Colors.warning.opacity(0.08))
+    }
+
     /// Switch the editor to another tab, saving the current tab first if it was edited
     /// (fire-and-forget; the editor stays open regardless of the push outcome). Reloads
     /// the target tab's Markdown into `doc` and clears the per-tab dirty flag.
     private func switchTab(to tab: DocNoteTab) {
         guard tab.id != selectedTab?.id else { return }
         if tabDirty, let current = selectedTab, current.writable, let ref = docReference {
-            let markdown = doc.markdown
+            // Island-safe: escape any user block that fakes an `!>` marker before the push.
+            let markdown = tabMarkdownForSave
             let service = writeBackService
             Task { _ = try? await service?.writeBack(reference: ref, markdown: markdown, tabId: current.tabId, overwrite: false) }
         }
         selectedTab = tab
-        doc = RichDoc.fromMarkdown(tab.bodyMD)
+        seedDoc(tab.bodyMD)
         tabDirty = false
     }
 
@@ -409,25 +501,57 @@ struct NoteEditorView: View {
     /// explicit Reload). Always a Doc-note here, so parse the Markdown body.
     private func loadFresh(_ live: Note) {
         draft = live
-        if !docTabs.isEmpty, let ref = docReference {
+        if !docTabs.isEmpty, docReference != nil {
             // Per-tab mode: notes.body is the cron-owned concatenated preview —
             // reload the tab rows and re-seat the current tab instead of parsing
             // the preview into the buffer.
             Task {
-                let tabs = await state.loadDocTabs(referenceID: ref.id)
+                let tabs = await state.loadDocTabs(noteID: draft.id)
                 guard tabs.count > 1 else { return }
                 docTabs = tabs
                 let current = tabs.first(where: { $0.tabId == selectedTab?.tabId }) ?? tabs[0]
                 selectedTab = current
-                doc = RichDoc.fromMarkdown(current.bodyMD)
+                seedDoc(current.bodyMD)
             }
         } else {
-            doc = RichDoc.fromMarkdown(live.body)
+            seedDoc(live.body)
         }
         baselineUpdatedAt = live.updatedAt
         isDirty = false
         tabDirty = false
         newerVersionAvailable = false
+    }
+
+    /// Seed the editor buffer from a tab's RAW Markdown, recording which resulting blocks
+    /// are frozen islands. The RAW line drives the decision: we split with the SAME rule
+    /// `fromMarkdown` uses (empty ⇒ `[""]`, else split on "\n") so `lines[i]` lines up with
+    /// `doc.blocks[i]`, then mark every block whose source line is `"!>"` or begins `"!> "`.
+    /// Tracking identity at seed time (not by re-inspecting live text) is deliberate — a
+    /// user typing "!> " into an editable block must NOT freeze it.
+    private func seedDoc(_ markdown: String) {
+        doc = RichDoc.fromMarkdown(markdown)
+        let lines = markdown.isEmpty ? [""] : markdown.components(separatedBy: "\n")
+        frozenBlockIDs = Set(zip(lines, doc.blocks).compactMap { line, block in
+            (line == "!>" || line.hasPrefix("!> ")) ? block.id : nil
+        })
+    }
+
+    /// The current tab's Markdown, made island-safe for a per-tab save: any block the user
+    /// authored that LOOKS like an island line (`"!>"` / `"!> …"`) but wasn't seeded as one
+    /// is backslash-escaped, mirroring the server's `escapeLeadingMarker`, so user text can
+    /// never fabricate an island the write splice would mis-align on. Genuinely frozen
+    /// blocks pass through untouched (they ARE islands the server matches). Defensive: if a
+    /// block's text somehow spans lines and the counts diverge, fall back to raw Markdown.
+    private var tabMarkdownForSave: String {
+        let markdown = doc.markdown
+        let lines = markdown.components(separatedBy: "\n")
+        guard lines.count == doc.blocks.count else { return markdown }
+        return zip(lines, doc.blocks).map { line, block -> String in
+            if !frozenBlockIDs.contains(block.id), line == "!>" || line.hasPrefix("!> ") {
+                return "\\" + line
+            }
+            return line
+        }.joined(separator: "\n")
     }
 
     // MARK: - Style bar (the only styling Atlas allows)
@@ -506,25 +630,186 @@ struct NoteEditorView: View {
 
     // MARK: - Block row
 
+    /// One item in the render plan: an ordinary editable block (with its real index), a
+    /// folded pipe-table grid, or a frozen island (display-only content the write splices
+    /// around — a non-round-trip image or a positioned-image tether paragraph).
+    private enum BlockSegment: Identifiable {
+        case block(index: Int, block: RichDoc.Block)
+        case table(id: UUID, lines: [String])
+        case frozen(block: RichDoc.Block, display: String)
+
+        var id: String {
+            switch self {
+            case let .block(_, block):  return "b-\(block.id.uuidString)"
+            case let .table(id, _):     return "t-\(id.uuidString)"
+            case let .frozen(block, _): return "f-\(block.id.uuidString)"
+            }
+        }
+    }
+
+    /// The block-level render plan, one walk for editable AND read-only tabs:
+    ///   • A run of consecutive FROZEN blocks whose (marker-stripped) text starts with `|`
+    ///     folds into one read-only table grid — the frozen-island form a table now takes
+    ///     in a WRITABLE tab (the write splices around it).
+    ///   • Legacy: in a read-only tab, UNMARKED consecutive pipe lines (old-format rows
+    ///     still in the DB from before frozen islands) fold the same way.
+    ///   • Any other frozen block is a `.frozen` island — display-only.
+    ///   • Everything else is an editable `.block` carrying its REAL index into
+    ///     `doc.blocks` (indices must stay exact for `textBinding(for:)`).
+    private var renderSegments: [BlockSegment] {
+        let blocks = doc.blocks
+        var segments: [BlockSegment] = []
+        var i = 0
+        while i < blocks.count {
+            let block = blocks[i]
+            if frozenBlockIDs.contains(block.id) {
+                let display = strippedIslandText(block.text)
+                if display.hasPrefix("|") {
+                    // Consecutive frozen pipe lines are one table island: strip each
+                    // marker so the grid renders identically to the read-only path.
+                    let startID = block.id
+                    var lines: [String] = []
+                    while i < blocks.count, frozenBlockIDs.contains(blocks[i].id),
+                          strippedIslandText(blocks[i].text).hasPrefix("|") {
+                        lines.append(strippedIslandText(blocks[i].text))
+                        i += 1
+                    }
+                    segments.append(.table(id: startID, lines: lines))
+                } else {
+                    segments.append(.frozen(block: block, display: display))
+                    i += 1
+                }
+            } else if tabReadOnly, isPipeLine(block.text) {
+                let startID = block.id
+                var lines: [String] = []
+                while i < blocks.count, !frozenBlockIDs.contains(blocks[i].id),
+                      isPipeLine(blocks[i].text) {
+                    lines.append(blocks[i].text)
+                    i += 1
+                }
+                segments.append(.table(id: startID, lines: lines))
+            } else {
+                segments.append(.block(index: i, block: block))
+                i += 1
+            }
+        }
+        return segments
+    }
+
+    private func isPipeLine(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespaces).hasPrefix("|")
+    }
+
+    /// A frozen-island line's text with its `!> ` marker stripped (bare `!>` ⇒ ""). Non-
+    /// island text is returned unchanged — callers only pass frozen blocks.
+    private func strippedIslandText(_ text: String) -> String {
+        if text == "!>" { return "" }
+        if text.hasPrefix("!> ") { return String(text.dropFirst(3)) }
+        return text
+    }
+
     @ViewBuilder
     private func blockRow(index: Int, block: RichDoc.Block) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            if block.kind.isList {
-                Text(listGlyph(for: index, block: block))
-                    .atlasFont(size: 14, weight: .medium)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    .frame(minWidth: 18, alignment: .trailing)
+        // An `![image:<id>]` block renders as the actual re-hosted image (both editable
+        // and read-only tabs). The block stays in `doc.blocks`, so deleting it removes
+        // the image on save — intentional.
+        if let objectId = imagePlaceholderObjectId(block.text) {
+            imageBlock(objectId: objectId, placeholder: block.text)
+        } else if (tabReadOnly || focusedBlock != block.id),
+                  let detected = detectLinks(in: block.text) {
+            // Display-tier link rendering: a NON-focused block (or any block in a
+            // read-only tab) with links shows styled, clickable text instead of the raw
+            // `[text](url)`. Focusing the row (tap) swaps back to the TextField showing
+            // the raw markdown — editable tabs only; read-only tabs stay styled. The
+            // underlying block text is never changed (round-trip-safe).
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if block.kind.isList {
+                    Text(listGlyph(for: index, block: block))
+                        .atlasFont(size: 14, weight: .medium)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .frame(minWidth: 18, alignment: .trailing)
+                }
+                LinkableBlockText(
+                    attributed: detected.attributed,
+                    links: detected.links,
+                    font: font(for: block.kind),
+                    bold: block.uniformMarks.contains(.bold),
+                    italic: block.uniformMarks.contains(.italic),
+                    underline: block.uniformMarks.contains(.underline),
+                    onActivate: { focusedBlock = block.id },
+                    docDeepLink: docDeepLinkURL
+                )
             }
-            TextField("", text: textBinding(for: index), axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(font(for: block.kind))
-                .bold(block.uniformMarks.contains(.bold))
-                .italic(block.uniformMarks.contains(.italic))
-                .underline(block.uniformMarks.contains(.underline))
-                .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                .focused($focusedBlock, equals: block.id)
-                .onSubmit { addBlockAfter(index) }
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if block.kind.isList {
+                    Text(listGlyph(for: index, block: block))
+                        .atlasFont(size: 14, weight: .medium)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .frame(minWidth: 18, alignment: .trailing)
+                }
+                TextField("", text: textBinding(for: index), axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(font(for: block.kind))
+                    .bold(block.uniformMarks.contains(.bold))
+                    .italic(block.uniformMarks.contains(.italic))
+                    .underline(block.uniformMarks.contains(.underline))
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .focused($focusedBlock, equals: block.id)
+                    .onSubmit { addBlockAfter(index) }
+                    .disabled(tabReadOnly || syncPending)
+            }
         }
+    }
+
+    /// The re-hosted image for an `![image:<objectId>]` placeholder, or the literal
+    /// placeholder text when no image row exists (older pull, or the fetch never landed).
+    @ViewBuilder
+    private func imageBlock(objectId: String, placeholder: String) -> some View {
+        if let image = docImages.first(where: { $0.objectId == objectId }) {
+            DocImageBlockView(image: image,
+                              download: { try await state.downloadDocImage(path: $0) },
+                              placeholder: placeholder)
+        } else {
+            Text(placeholder)
+                .atlasFont(size: 13)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+        }
+    }
+
+    /// A frozen island: display-only content the write splices around, so it can only be
+    /// changed in Google Docs. Never focusable/editable — no TextField, no onActivate. An
+    /// `![image:id]` island reuses `imageBlock` so a frozen image looks identical to a
+    /// writable one; anything else is static styled text sized to blend in with an
+    /// editable normal block.
+    @ViewBuilder
+    private func frozenRow(display: String) -> some View {
+        if let objectId = imagePlaceholderObjectId(display) {
+            imageBlock(objectId: objectId, placeholder: display)
+                .help("Locked — this content can only be changed in Google Docs")
+        } else {
+            Text(display)
+                .atlasFont(size: 13)
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help("Locked — this content can only be changed in Google Docs")
+        }
+    }
+
+    /// The object id in an `![image:<id>]` line (trimmed), else nil. Mirrors the
+    /// edge function's `^!\[image:([^\]]+)\]$` placeholder grammar.
+    private func imagePlaceholderObjectId(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        let prefix = "![image:"
+        guard trimmed.hasPrefix(prefix), trimmed.hasSuffix("]") else { return nil }
+        let id = trimmed.dropFirst(prefix.count).dropLast()
+        return id.isEmpty || id.contains("]") ? nil : String(id)
+    }
+
+    /// Wrapper so `blockRow` reads cleanly; the parsing itself is the file-scope
+    /// `detectMarkdownLinks` (kept free of `self` so it stays trivially testable).
+    private func detectLinks(in raw: String) -> (attributed: AttributedString, links: [DetectedLink])? {
+        detectMarkdownLinks(in: raw)
     }
 
     private func listGlyph(for index: Int, block: RichDoc.Block) -> String {
@@ -558,6 +843,7 @@ struct NoteEditorView: View {
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
             }
             .buttonStyle(.plain)
+            .disabled(tabReadOnly || syncPending)
             Button(action: commit) {
                 Text("Done")
                     .atlasFont(size: 14, weight: .semibold, design: .rounded)
@@ -638,6 +924,8 @@ struct NoteEditorView: View {
     }
 
     private func commit() {
+        // Pending first-sync: editing was locked, so there's nothing to push — just close.
+        if syncPending { closeHost(); return }
         doc.normalize()
         if let ref = docReference {
             commitDocNote(ref)
@@ -683,7 +971,10 @@ struct NoteEditorView: View {
     private func push(ref: Reference, service: DocNoteWriteBack, overwrite: Bool) async {
         defer { isPushing = false }
         do {
-            switch try await service.writeBack(reference: ref, markdown: doc.markdown, tabId: activeTabId, overwrite: overwrite) {
+            // Per-tab writes go out island-safe (escape user-faked markers); the legacy
+            // whole-file path (activeTabId == nil) keeps the plain Markdown.
+            let outgoing = activeTabId != nil ? tabMarkdownForSave : doc.markdown
+            switch try await service.writeBack(reference: ref, markdown: outgoing, tabId: activeTabId, overwrite: overwrite) {
             case .written(let modifiedTime):
                 // Sync the in-memory baseline to what the server just re-stored, so a
                 // second save this session doesn't compare against a now-stale time.
@@ -703,6 +994,11 @@ struct NoteEditorView: View {
                 // Server re-verified this tab as read-only since our pull (it gained rich
                 // content in Google). Don't clobber the preview; surface the notice, stay open.
                 showTabReadOnlyNotice = true
+            case .notSynced:
+                // Server belt: the note's first pull hasn't landed. The editor locks pending
+                // notes, but a race (pending cleared between load and save) can still reach
+                // here — surface the notice, stay open.
+                showNotSyncedNotice = true
             }
         } catch {
             // Never lose the single-tab user's work: keep the local Markdown copy and close;
@@ -727,6 +1023,76 @@ struct NoteEditorView: View {
     }
 }
 
+// MARK: - Link detection (display-tier)
+
+/// A single hyperlink found in a block's raw text: the resolved `URL` plus the text
+/// shown for it (the markdown label, or the URL itself for a bare link).
+struct DetectedLink: Identifiable {
+    let id = UUID()
+    let url: URL
+    let displayText: String
+}
+
+/// Scans `raw` for markdown `[text](url)` spans and bare `http(s)://…` URLs, producing
+/// a styled `AttributedString` — link spans get the `.link` attribute (so a tap opens
+/// the browser via `openURL`), accent color, and an underline; the `[…](…)` syntax
+/// collapses to just its label — plus the ordered links for the context menu. Returns
+/// `nil` when the text has no usable links (the caller then keeps the plain TextField).
+/// Display-tier only: the block's underlying text is never modified.
+func detectMarkdownLinks(in raw: String) -> (attributed: AttributedString, links: [DetectedLink])? {
+    let pattern = #"\[([^\]]+)\]\(([^)\s]+)\)|(https?://[^\s]+)"#
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+    let ns = raw as NSString
+    let matches = regex.matches(in: raw, range: NSRange(location: 0, length: ns.length))
+    guard !matches.isEmpty else { return nil }
+
+    var attributed = AttributedString()
+    var links: [DetectedLink] = []
+    var cursor = 0
+    let trailingPunct = Set(".,;:!?)]}".unicodeScalars)
+
+    for match in matches {
+        if match.range.location > cursor {
+            attributed += AttributedString(ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor)))
+        }
+        cursor = match.range.location + match.range.length
+
+        var displayText: String
+        var urlString: String
+        var trailing = ""
+        if match.range(at: 1).location != NSNotFound {            // markdown form
+            displayText = ns.substring(with: match.range(at: 1))
+            urlString = ns.substring(with: match.range(at: 2))
+        } else {                                                  // bare URL
+            urlString = ns.substring(with: match.range(at: 3))
+            // A bare URL commonly absorbs sentence punctuation ("see https://x.com.");
+            // trim it off the link and re-emit it as plain text after the span.
+            while let last = urlString.unicodeScalars.last, trailingPunct.contains(last) {
+                urlString.unicodeScalars.removeLast()
+            }
+            trailing = String(ns.substring(with: match.range).dropFirst(urlString.count))
+            displayText = urlString
+        }
+
+        if let url = URL(string: urlString), url.scheme != nil {
+            var span = AttributedString(displayText)
+            span.link = url
+            span.foregroundColor = AtlasTheme.Colors.accentText
+            span.underlineStyle = .single
+            attributed += span
+            links.append(DetectedLink(url: url, displayText: displayText))
+            if !trailing.isEmpty { attributed += AttributedString(trailing) }
+        } else {
+            // Not a usable URL — emit the literal match unchanged.
+            attributed += AttributedString(ns.substring(with: match.range))
+        }
+    }
+    if cursor < ns.length {
+        attributed += AttributedString(ns.substring(with: NSRange(location: cursor, length: ns.length - cursor)))
+    }
+    return links.isEmpty ? nil : (attributed, links)
+}
+
 // MARK: - Write-back surface (integrate wires a concrete impl)
 
 /// The outcome of a Google-Doc write-back attempt.
@@ -744,6 +1110,9 @@ enum DocWriteBackOutcome: Equatable {
     /// Per-tab write refused: the tab's live content is beyond the editable
     /// vocabulary (table/image/rich formatting).
     case tabReadOnly(reason: String?)
+    /// Write refused: the note's first pull hasn't landed yet (`sync_state == pending`),
+    /// so there's no content/baseline to write against — retry once it syncs.
+    case notSynced
 }
 
 /// Narrow client surface for the two-way Google-Doc write-back the design doc mandates:
@@ -765,5 +1134,16 @@ extension EnvironmentValues {
     var docNoteWriteBack: DocNoteWriteBack? {
         get { self[DocNoteWriteBackKey.self] }
         set { self[DocNoteWriteBackKey.self] = newValue }
+    }
+}
+
+private struct ReferencePullKey: EnvironmentKey {
+    static let defaultValue: ReferencePullClient? = nil
+}
+
+extension EnvironmentValues {
+    var referencePull: ReferencePullClient? {
+        get { self[ReferencePullKey.self] }
+        set { self[ReferencePullKey.self] = newValue }
     }
 }

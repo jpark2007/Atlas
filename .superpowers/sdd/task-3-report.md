@@ -1,98 +1,57 @@
-# Task 3 Report: AI brain — Edge Function + AtlasAI client + ⌘⇧K auto-sort
+# Task 3 Report: iOS + widget palette remap to Mac paper values
 
-## TDD Evidence (RED → GREEN)
+## What I implemented
 
-### RED (Step 1)
-`AtlasAIDecodeTests.swift` was written first with 4 test cases covering `CaptureResult` decoding for all three kinds:
-- `testDecodeTask` — task with `dueISO`
-- `testDecodeEvent` — event with all optional fields (`projectName`, `startISO`, `durationMin`, `notes`)
-- `testDecodeNote` — note with body in `notes` field
-- `testDecodeMinimalTask` — only required fields
+Applied the two token remaps exactly as specified in the brief:
 
-At this point the tests failed to compile because `CaptureResult` did not exist.
+1. **`AtlasMobile/Theme/MobileTheme.swift`** (lines 13-24 region):
+   - `bg`: `fbfaf7` → `f2efe6`
+   - `ink`: `1a191d` → `211d17`
+   - `muted`: `6c6a72` → `565145`
+   - `faint`: `9a98a0` → `7d7669`
+   - `hairline`: `Color.black.opacity(0.08)` → `Color(hex: "211d17").opacity(0.12)`
+   - `accent` / `accentText`: unchanged (`d97757` / `b04f2f`)
+   - `danger`: `c0392b` → `ff5c5c`
+   - Updated the `// MARK: Colors` comment to note the values now match the Mac's `AtlasTheme.Colors` paper palette
+   - Updated the `danger` doc comment to reflect it's now the same token as `AtlasTheme.Colors.danger`
+   - Fixed the stale comment at (originally) line 81: `Hairline rule (black 8%)` → `Hairline rule (ink 12%)`
 
-### GREEN (Step 2)
-After writing `Atlas/Services/AtlasAI.swift` with `CaptureResult: Codable` and `AtlasAI`:
+2. **`AtlasMobileWidgets/WidgetTheme.swift`** (lines 6-14 region):
+   - Same `bg`/`ink`/`muted`/`faint`/`hairline` remap as above
+   - `accent` / `accentText`: unchanged
+   - No `danger` token added (per brief — WidgetTheme doesn't have one today)
+
+Verified all new hex values against the Mac source of truth at `AtlasCore/Sources/AtlasCore/Theme.swift:35-71` before editing (bgBase `f2efe6`, textPrimary `211d17`, textSecondary `565145`, textMuted `7d7669`, hairline `Color(hex: "211d17").opacity(0.12)`, accent `d97757`, accentText `b04f2f`, danger `ff5c5c`) — all match.
+
+Token names were not changed anywhere; only the right-hand-side values and two comments changed.
+
+## Build command run and result
+
 ```
-Test Suite 'AtlasAIDecodeTests' passed at 2026-06-27 06:29:38.972.
-  testDecodeEvent    passed (0.002s)
-  testDecodeMinimalTask passed (0.000s)
-  testDecodeNote     passed (0.000s)
-  testDecodeTask     passed (0.000s)
-```
-All existing `AtlasDBMappingTests` and `SmokeTests` continued to pass:
-```
-Test Suite 'All tests' passed at 2026-06-27 06:29:52.994.
+xcodebuild -project Atlas.xcodeproj -scheme AtlasMobile -configuration Debug -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO
 ```
 
----
+Result: `** BUILD SUCCEEDED **`
 
-## What Was Built
+The build log shows `AtlasMobileWidgets.appex` was built and embedded into `AtlasMobile.app/PlugIns` as part of this same invocation, confirming the widget extension target (which contains `WidgetTheme.swift`) compiled successfully alongside the app target.
 
-### 1. `supabase/functions/capture/index.ts` (Deno)
-- Handles CORS preflight (OPTIONS → 204) with `Access-Control-Allow-Origin: *`
-- Requires `Authorization: Bearer <JWT>` — returns 401 if missing (presence check, not signature verification, which is sufficient for v1; the OpenRouter key is the secret being guarded)
-- Reads `{ text: string }` from request body
-- Calls OpenRouter `openai/gpt-4o-mini` via `Deno.env.get("OPENROUTER_API_KEY")` — key NEVER hardcoded
-- Strict system prompt instructs the model to return ONLY a JSON object matching the specified schema
-- `response_format: { type: "json_object" }` enforces JSON output
-- Returns parsed model JSON as `application/json`; on any upstream error returns 502 with `{ error, detail }`
+## Files changed
 
-### 2. `Atlas/Services/AtlasAI.swift`
-- `struct CaptureResult: Codable` with all 8 fields (required: `kind, title, spaceName`; optional: `projectName, dueISO, startISO, durationMin, notes`)
-- `enum AtlasAIError: LocalizedError` — `.notAuthenticated`, `.httpError(Int, String)`, `.decodingError(Error)`
-- `final class AtlasAI` with `init(session: @escaping () -> SupabaseSession?)` and `func parse(_ text: String) async throws -> CaptureResult`
-- Mirrors `SupabaseAuth.request(...)` pattern exactly: `apikey` header + `Authorization: Bearer <token>` + `Content-Type: application/json`
-- Throws `AtlasAIError.notAuthenticated` if `session()` returns nil (before any network call)
-- Plain `JSONDecoder()` — no date strategy — ISO strings stay as strings
+- `AtlasMobile/Theme/MobileTheme.swift`
+- `AtlasMobileWidgets/WidgetTheme.swift`
 
-### 3. `AtlasTests/AtlasAIDecodeTests.swift`
-4 test cases covering task/event/note decoding including all optional fields and a minimal-fields case.
+`git log -1 --stat` on the resulting commit (`7c839bc`): 2 files changed, 16 insertions(+), 14 deletions(-). No other files were touched or staged.
 
-### 4. `Atlas/Views/Capture/CaptureOverlay.swift` (modified)
-- `AtlasCaptureOverlayModifier` now requires `@EnvironmentObject var auth: AuthService` (already in the env chain from `AtlasApp`)
-- Constructs `AtlasAI(session: { auth.session })` and passes it to `CaptureCommandBar`
-- `CaptureCommandBar` gains:
-  - `@EnvironmentObject var state: AppState` and `@EnvironmentObject var auth: AuthService`
-  - `let atlasAI: AtlasAI` parameter
-  - `@State private var confirmation: String?` — inline display, no AppState changes
-  - `@State private var isProcessing: Bool` — shows a spinner in place of the sparkle icon while waiting
-  - TextField disabled during processing so no double-submits
-- Submit flow:
-  1. Captures `rawText`, clears field immediately (responsive feel)
-  2. If `auth.session == nil` → plain task fallback immediately (no network call)
-  3. Otherwise: `try await atlasAI.parse(rawText)`
-     - `"task"` → `state.addTask(title: result.title)` → "✓ Added task"
-     - `"event"` → parse `startISO` with `ISO8601DateFormatter` (tries with+without fractional seconds); if unparseable → fallback to task; else `state.addEvent(...)` → "✓ Added event"
-     - `"note"` → `state.addNote(title:body:spaceName:isExternal:)` → "✓ Added note"
-     - any other kind → fallback
-  4. **On ANY thrown error** (network error, HTTP 404/502, JSON parse failure, not-authenticated) → `state.addTask(title: rawText)` + "✓ Saved as task"
-  5. Confirmation shown inline for 1 second, then bar dismisses
-- The `onSubmit` closure was removed; the bar handles all logic internally
+## Self-review findings
 
----
+- Diffed the committed change (`git show 7c839bc`) against the brief's exact before/after code blocks for both Step 1 and Step 2 — byte-for-byte match, including whitespace/alignment.
+- Confirmed `accent` (`d97757`) and `accentText` (`b04f2f`) were left unchanged in both files, as instructed.
+- Confirmed no `danger` token was added to `WidgetTheme.swift`.
+- Confirmed the stale comment fix at `MobileTheme.swift` (hairline black 8% → ink 12%) was applied.
+- Confirmed token names (`bg`, `ink`, `muted`, `faint`, `hairline`, `accent`, `accentText`, `danger`) are unchanged in both files — only values/comments changed, so the 16 call-site view files require zero edits.
+- Ran `git status --porcelain` scoped to the two target files before staging, and again after staging (index column showed `M` for both, working-tree column clean) — confirmed only the two intended files were staged and committed.
+- `git log -1 --stat` on the resulting commit shows exactly 2 files changed, matching the brief's file list precisely.
 
-## Fallback Behavior With No Deployed Function
+## Issues or concerns
 
-Since `supabase functions deploy capture` is a human manual step, the function is not live. Every call to `atlasAI.parse(...)` will throw `AtlasAIError.httpError(404, ...)`. The `catch` block catches this and calls `state.addTask(title: rawText)`, showing "✓ Saved as task". ⌘⇧K is fully functional today.
-
----
-
-## Files Changed / Created
-
-| File | Action |
-|------|--------|
-| `supabase/functions/capture/index.ts` | Created |
-| `Atlas/Services/AtlasAI.swift` | Created |
-| `AtlasTests/AtlasAIDecodeTests.swift` | Created |
-| `Atlas/Views/Capture/CaptureOverlay.swift` | Modified |
-
----
-
-## Concerns / Notes
-
-1. **Deploy step required (human):** `supabase functions deploy capture` must be run after the Edge Function is merged. Also requires `supabase secrets set OPENROUTER_API_KEY=<key>`.
-2. **JWT verification:** For v1, the function only checks for the presence of a `Bearer` token — it does not cryptographically verify the JWT. This is acceptable because: (a) the token is obtained from a real Supabase auth flow, and (b) the real access control is the OpenRouter key, which is server-side only. Full JWT verification can be added in a later iteration via Supabase's `createClient` in Deno.
-3. **spaceName mapping:** The AI is instructed to use one of `"School", "Work", "Personal", "Health", "Finance", "Other"`. If the user's space names differ, `calendarSpaceColor(named:)` will fall back to the accent color — still functional but color may not match. A future improvement would be to pass the user's actual space names in the system prompt.
-4. **No AppState changes:** As required, no new fields were added to AppState or any model.
-5. **Existing tests unaffected:** All `AtlasDBMappingTests` and `SmokeTests` continue to pass.
+None. The remap was mechanical and matched the brief verbatim; the build succeeded on the first attempt with no errors or warnings related to these changes. No index.lock contention was encountered during staging/commit despite the concurrent-agent constraint.

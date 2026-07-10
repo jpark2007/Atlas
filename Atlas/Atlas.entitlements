@@ -5,6 +5,19 @@
 	<!-- Microphone access under the hardened runtime (click-to-talk dictation). -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
+	<!-- Calendar access under the hardened runtime (Apple Calendar / EventKit
+	     import). Like the mic key above, the resource-access entitlement is
+	     required even though the app is not sandboxed. -->
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
+	<!-- Sign in with Apple. Bundle id com.atlaslm.Atlas (team-owned; shared partner
+	     prefix) — automatic signing registers the App ID + enables this capability; the
+	     same id must be in Supabase → Auth → Apple → Client IDs for the native id_token
+	     flow to verify. -->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
 	<!-- NOTE: App Sandbox is intentionally NOT enabled. The Carbon global hotkey
 	     (system-wide ⌘⇧K) requires the sandbox to be off. -->
 </dict>

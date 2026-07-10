@@ -8,6 +8,7 @@ struct SignInView: View {
 
     @State private var email = ""
     @State private var password = ""
+    @State private var mode: Mode = .signIn
     @State private var busy = false
     @State private var error: String?
     @State private var resetNote: String?
@@ -15,8 +16,19 @@ struct SignInView: View {
     /// Stateless GoTrue client for the fire-and-forget password-reset request.
     private let auth = SupabaseAuth()
 
+    private enum Mode { case signIn, signUp }
+
     private var canSubmit: Bool {
         !busy && !email.isEmpty && !password.isEmpty
+    }
+
+    private var submitLabel: String {
+        switch (mode, busy) {
+        case (.signIn, false): return "Sign in"
+        case (.signIn, true):  return "Signing in"
+        case (.signUp, false): return "Create account"
+        case (.signUp, true):  return "Creating account"
+        }
     }
 
     var body: some View {
@@ -38,8 +50,8 @@ struct SignInView: View {
             }
 
             VStack(alignment: .leading, spacing: 16) {
-                Button(action: signIn) {
-                    Text(busy ? "Signing in" : "Sign in")
+                Button(action: submit) {
+                    Text(submitLabel)
                         .font(.system(size: 15.5, weight: .semibold, design: .rounded))
                         .foregroundStyle(MobileTheme.ink)
                         .frame(maxWidth: .infinity)
@@ -48,6 +60,32 @@ struct SignInView: View {
                 .buttonStyle(.plain)
                 .disabled(!canSubmit)
                 .opacity(canSubmit ? 1 : 0.4)
+
+                // Text-button mode switcher — no segmented-control chrome, matches
+                // the "Forgot password?" caps-label treatment already on this screen.
+                Button(action: toggleMode) {
+                    Text(mode == .signIn ? "New to Atlas? Create account" : "Already have an account? Sign in")
+                        .edCapsLabel()
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+
+                // Custom-styled per the outlined-control design language (a stock
+                // black SignInWithAppleButton would break the "never a fill" rule).
+                Button(action: signInWithApple) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "applelogo")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("Sign in with Apple")
+                            .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundStyle(MobileTheme.ink)
+                    .frame(maxWidth: .infinity)
+                    .edOutlineControl()
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+                .opacity(busy ? 0.4 : 1)
 
                 Button(action: resetPassword) {
                     Text("Forgot password?").edCapsLabel()
@@ -101,15 +139,46 @@ struct SignInView: View {
         .edHairlineBelow()
     }
 
-    private func signIn() {
+    private func submit() {
         busy = true
         error = nil
         Task {
             do {
-                try await store.signIn(email: email, password: password)
+                switch mode {
+                case .signIn:
+                    try await store.signIn(email: email, password: password)
+                case .signUp:
+                    try await store.signUp(email: email, password: password)
+                }
             } catch {
                 self.error = (error as? LocalizedError)?.errorDescription
-                    ?? "Couldn't sign in. Check your email and password."
+                    ?? (mode == .signIn
+                        ? "Couldn't sign in. Check your email and password."
+                        : "Couldn't create your account.")
+            }
+            busy = false
+        }
+    }
+
+    /// Flips sign-in ↔ create-account and clears any stale error/notice left
+    /// over from the other mode (mirrors the Mac's mode-switch behavior).
+    private func toggleMode() {
+        mode = mode == .signIn ? .signUp : .signIn
+        error = nil
+        store.authNotice = nil
+    }
+
+    private func signInWithApple() {
+        busy = true
+        error = nil
+        Task {
+            do {
+                try await store.signInWithApple()
+            } catch is CancellationError {
+                // User dismissed the Apple sheet — not an error.
+            } catch {
+                self.error = (error as? LocalizedError)?.errorDescription
+                    ?? "Couldn't sign in with Apple."
             }
             busy = false
         }

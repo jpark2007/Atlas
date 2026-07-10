@@ -46,7 +46,7 @@ This builds on the existing one-way write-back (Atlas → Google), which already
 - Push notifications via `events.watch` webhooks and `syncToken` incremental sync
   (performance optimizations; full-window re-list is fine at this scale).
 - Mirroring deadlines to Google.
-- Gmail / Drive integration (tracked separately in `docs/google-integration-v2.md`).
+- Gmail / Drive integration (tracked separately in `docs/archive/google-integration-v2.md`).
 
 ## The three calendar item types (visual language — approved via mockup)
 

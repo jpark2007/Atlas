@@ -46,3 +46,6 @@ Config/Secrets.xcconfig
 
 # Agent worktrees (isolated, never commit)
 .claude/worktrees/
+
+# Supabase CLI scratch
+supabase/.temp/

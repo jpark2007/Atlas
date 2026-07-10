@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make a single project shareable between Atlas users — email invite, owner/member roles, assignable/claimable shared tasks, a "Shared with me" sidebar section, and realtime updates when a teammate changes shared content (spec: `docs/superpowers/specs/2026-07-05-collaboration-design.md`, Phase 2).
+**Goal:** Make a single project shareable between Atlas users — email invite, owner/member roles, assignable/claimable shared tasks, a "Shared with me" sidebar section, and realtime updates when a teammate changes shared content (spec: `docs/archive/superpowers/specs/2026-07-05-collaboration-design.md`, Phase 2).
 
 **Architecture:** A new migration adds `project_members`, `invites`, and attribution columns (`tasks.assignee_id`, `tasks.created_by`, `events.created_by`) on top of Phase 1's `space_id`/`profiles` foundation (merged to `main`). RLS widens per-table from owner-only to "owner OR member of the row's project" via `security definer` helper functions. The client adds `InviteRow`/`ProjectMemberRow` DTOs and CRUD, an assignee field end-to-end (model → DTO → task detail UI), sidebar surfacing of shared projects and pending invites, and a minimal Supabase Realtime layer (added as a proper SPM dependency — this codebase currently talks to Supabase via hand-rolled PostgREST HTTP calls with **no** existing realtime/websocket code) that triggers a re-fetch of shared data when a `postgres_changes` event arrives, rather than hand-merging individual row deltas.
 
