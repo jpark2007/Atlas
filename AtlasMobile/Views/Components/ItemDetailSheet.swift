@@ -113,14 +113,28 @@ struct ItemDetailSheet: View {
             Text("Syncs with Google Calendar")
                 .edCapsLabel()
                 .padding(.bottom, 8)
+        } else if isCanvasTask {
+            // Canvas owns title + due (re-sync overwrites only those); scheduling,
+            // notes, space and project stay user-editable. Same copy the Mac uses.
+            Text("From Canvas — synced automatically. Schedule it; title and dates update from your feed.")
+                .edCapsLabel()
+                .padding(.bottom, 8)
         }
 
-        field("Title") { titleField }
+        if isCanvasTask {
+            labeledRow("Title", title)
+        } else {
+            field("Title") { titleField }
+        }
         field("Space") { spacePicker }
 
         if isTask {
             field("Project") { projectPicker }
-            dueSection
+            if isCanvasTask {
+                labeledRow("Due date", canvasDueDisplay)
+            } else {
+                dueSection
+            }
         } else {
             startSection
             field("Duration") { durationPicker }
@@ -294,9 +308,16 @@ struct ItemDetailSheet: View {
 
     @ViewBuilder
     private func readOnlyFields(_ e: CalendarEvent) -> some View {
-        Text("From \(e.source.displayName) — read-only")
-            .edCapsLabel()
-            .padding(.bottom, 8)
+        if e.source == .canvas {
+            // Canvas events are fully read-only (like Apple). Verbatim Mac copy.
+            Text("From Canvas — synced automatically. Schedule it; title and dates update from your feed.")
+                .edCapsLabel()
+                .padding(.bottom, 8)
+        } else {
+            Text("From \(e.source.displayName) — read-only")
+                .edCapsLabel()
+                .padding(.bottom, 8)
+        }
         labeledRow("Title", e.title)
         labeledRow("Space", e.spaceName)
         labeledRow("When", e.isAllDay ? "All-day" : startText(e.start))
@@ -372,6 +393,24 @@ struct ItemDetailSheet: View {
         return false
     }
 
+    /// A Canvas-synced task (assignment): title + due are server-owned and lock,
+    /// everything else stays editable (mirrors Mac `TaskDetailView.isCanvasTask`).
+    private var isCanvasTask: Bool {
+        if case .task(let t) = detail { return t.canvasUID != nil }
+        return false
+    }
+
+    /// Locked-due text for a Canvas task — date label plus clock time when the due
+    /// carries one (mirrors Mac `TaskDetailView.dueChipLabel`).
+    private var canvasDueDisplay: String {
+        guard case .task(let t) = detail, let due = t.dueDate else { return "No due date" }
+        let cal = Calendar.current
+        let h = cal.component(.hour, from: due), m = cal.component(.minute, from: due)
+        guard h != 0 || m != 0 else { return t.dueLabel }
+        let f = DateFormatter(); f.dateFormat = m == 0 ? "h a" : "h:mm a"
+        return "\(t.dueLabel) · \(f.string(from: due))"
+    }
+
     /// Atlas and Google events edit the same way — server-side sync PATCHes Atlas
     /// edits back to Google and tombstones propagate deletes. Only Apple stays read-only.
     private var isEditable: Bool {
@@ -388,8 +427,10 @@ struct ItemDetailSheet: View {
         }
     }
 
+    /// External read-only events render the labeled read-only fields. Apple and
+    /// Canvas are both fully read-only (Canvas is server-owned via its ICS feed).
     private var readOnlyEvent: CalendarEvent? {
-        if case .event(let e) = detail, e.source == .apple { return e }
+        if case .event(let e) = detail, e.source == .apple || e.source == .canvas { return e }
         return nil
     }
 

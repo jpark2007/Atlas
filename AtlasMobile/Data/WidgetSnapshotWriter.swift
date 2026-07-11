@@ -87,7 +87,13 @@ enum WidgetSnapshotWriter {
             spaces: snapshot.spaces.map { SpaceRow(domain: $0) },
             projects: snapshot.projects.map { ProjectRow(domain: $0) },
             tasks: snapshot.tasks.map { TaskRow(domain: $0) },
-            events: snapshot.events.map { EventRow(domain: $0) })
+            // Read-only external events (Canvas on mobile) can't round-trip: `CalendarEvent`
+            // carries no canvasUID and `EventRow(domain:)` hardcodes canvas_uid = nil, so a
+            // cached Canvas event would reload as an editable Atlas/Google event — a source
+            // mislabel (CLAUDE.md rule 5) that also makes it wrongly editable/movable. Drop
+            // them from the offline cache; they reload correctly from the server on the next
+            // refresh. Canvas *tasks* keep their canvasUID via TaskRow, so deadlines survive.
+            events: snapshot.events.filter { !$0.isReadOnly }.map { EventRow(domain: $0) })
         // Best-effort: a failed cache write just means no offline snapshot next launch.
         try? JSONEncoder().encode(cache).write(to: url, options: .atomic)
     }

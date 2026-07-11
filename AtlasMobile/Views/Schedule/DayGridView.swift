@@ -200,9 +200,11 @@ struct DayGridView: View {
 
     // MARK: - Block-move (long-press lift → drag → confirm/cancel)
 
-    /// Writability mirrors `ItemDetailSheet.isEditable` verbatim (CLAUDE.md rule 5):
-    /// tasks always; events only when Atlas- or Google-sourced. Read-only events
-    /// (Apple, and any external read-only) never lift.
+    /// Writability mirrors `ItemDetailSheet` (CLAUDE.md rule 5): events lift only when
+    /// Atlas- or Google-sourced; read-only events (Apple, Canvas) never lift. Tasks
+    /// always lift — moving only writes `scheduledAt`, a user-owned field Canvas never
+    /// syncs, so even a Canvas task stays movable (its title/due lock in the detail
+    /// sheet, not here).
     private func isWritable(_ blk: Block) -> Bool {
         switch blk.detail {
         case .task:          return true
