@@ -39,10 +39,20 @@ struct SettingsView: View {
     /// nil = not yet loaded; false = OS-denied (show honest off state); otherwise the app's own prefs UI.
     @State private var osAuthorized: Bool?
 
-    /// True once the server-side cron owns Google sync (`google_connections.status == "active"`).
-    /// Loaded async in `.task`; stays false until known and on any error, so the row degrades
-    /// gracefully to the snapshot-derived local-sync copy.
-    @State private var cloudSynced = false
+    // Connections — the server-owned connection rows, loaded in `.task`. nil ⇒ no
+    // row (or not yet loaded / offline → the honest "not connected" copy).
+    @State private var googleConn: GoogleConnectionRow?
+    @State private var canvasConn: CanvasConnectionRow?
+
+    /// Shared Canvas connect client (AtlasCore, platform-neutral) — full manage from
+    /// the phone: connect / change destination space / disconnect.
+    @StateObject private var canvas = CanvasService()
+    @State private var canvasFeedURL = ""
+    @State private var canvasSpaceName = ""        // connect-form destination space
+    @State private var canvasConnectedSpace = ""   // connected-row picker (PATCHes on change)
+    @State private var canvasWorking = false
+    @State private var canvasError: String?
+    @State private var showCanvasDisconnectConfirm = false
 
     // Delete-account state (mirrors the Mac SettingsView pattern).
     @State private var showDeleteConfirm = false
@@ -67,18 +77,18 @@ struct SettingsView: View {
             let settings = await UNUserNotificationCenter.current().notificationSettings()
             osAuthorized = settings.authorizationStatus != .denied
         }
-        .task {
-            // Server owns Google↔DB sync once a connection is active. On any error
-            // (offline, not signed in, no row) leave cloudSynced false → derived copy.
-            if let conn = try? await store.db.loadGoogleConnection() {
-                cloudSynced = conn.status == "active"
-            }
-        }
+        .task { await loadConnections() }
         .alert("Delete your Atlas account?", isPresented: $showDeleteConfirm) {
             Button("Delete account", role: .destructive) { performDeleteAccount() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This permanently erases your account and all your Atlas data — spaces, projects, tasks, events and notes. This can't be undone.")
+        }
+        .confirmationDialog("Disconnect Canvas?", isPresented: $showCanvasDisconnectConfirm, titleVisibility: .visible) {
+            Button("Disconnect", role: .destructive) { disconnectCanvas() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Atlas will stop importing your Canvas assignments and events. You can reconnect anytime with your feed link.")
         }
         // Synced preferences — push the change (debounced). The pull-triggered echo of
         // either key is recognized as redundant and skipped.
@@ -252,18 +262,284 @@ struct SettingsView: View {
 
     private var connectionsSection: some View {
         Section {
-            // "Synced automatically" once the server-side cron owns the sync; else
-            // derived from the snapshot — Google events appear only once the Mac has
-            // synced them into Supabase. The phone never connects to Google itself.
-            labeledRow("Google Calendar", value: googleStatusText)
+            googleRow
+            canvasRows
         } header: { header("Connections") }
     }
 
-    /// Cloud sync active → "Synced automatically"; otherwise the honest Mac-derived
-    /// syncing / not-syncing copy.
+    /// Load the server-owned connection rows. On any error (offline / not signed in /
+    /// no row) both stay nil → the honest "not connected" copy. Re-run after every
+    /// Canvas connect / disconnect / space change so the status refreshes.
+    private func loadConnections() async {
+        googleConn = try? await store.db.loadGoogleConnection()
+        canvasConn = try? await store.db.loadCanvasConnection()
+    }
+
+    // MARK: Google — read-only status (connect is a Desktop-loopback OAuth, Mac-only)
+
+    private var googleRow: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("Google Calendar").rowLabel()
+            Spacer()
+            Text(googleStatusText)
+                .font(.system(size: 15, weight: .regular, design: .rounded))
+                .foregroundStyle(googleStatusColor)
+                .multilineTextAlignment(.trailing)
+        }
+        .rowStyle()
+    }
+
+    /// active ⇒ "Connected · synced Xm ago"; error/revoked ⇒ reconnect warning;
+    /// no row ⇒ "Not connected — set up on your Mac". The phone never runs the
+    /// Google OAuth (a Desktop-loopback flow, Mac-only today).
     private var googleStatusText: String {
-        if cloudSynced { return "Synced automatically" }
-        return googleConnected ? "Syncs via your Mac" : "Not syncing"
+        switch googleConn?.status {
+        case "active":
+            if let synced = googleConn?.lastSyncedDate {
+                return "Connected · synced \(Self.relativeSync(from: synced))"
+            }
+            return "Connected"
+        case .some:
+            return "Reconnect needed — open Atlas on your Mac"
+        case .none:
+            return "Not connected — set up on your Mac"
+        }
+    }
+
+    private var googleStatusColor: Color {
+        switch googleConn?.status {
+        case "active": return MobileTheme.green
+        case .some:    return MobileTheme.warning
+        case .none:    return MobileTheme.muted
+        }
+    }
+
+    // MARK: Canvas — full manage (connect / change destination space / disconnect)
+
+    @ViewBuilder
+    private var canvasRows: some View {
+        if let conn = canvasConn, conn.isServerOwned {
+            canvasConnectedRows(conn)
+        } else {
+            canvasConnectForm(repaste: canvasConn?.status == "revoked")
+        }
+    }
+
+    @ViewBuilder
+    private func canvasConnectedRows(_ conn: CanvasConnectionRow) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Canvas").rowLabel()
+                Text(canvasStatusText(conn))
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(canvasStatusColor(conn))
+            }
+            Spacer()
+            if canvasWorking {
+                ProgressView().controlSize(.small)
+            } else {
+                Button("Disconnect") { showCanvasDisconnectConfirm = true }
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MobileTheme.danger)
+                    .buttonStyle(.plain)
+            }
+        }
+        .rowStyle()
+
+        // Destination space — editable after connect; changing it PATCHes canvas-connect.
+        if !store.snapshot.spaces.isEmpty {
+            Menu {
+                ForEach(store.snapshot.spaces) { space in
+                    Button(space.name) { canvasConnectedSpace = space.name }
+                }
+            } label: {
+                HStack {
+                    Text("Items land in").rowLabel()
+                    Spacer()
+                    Text(canvasConnectedSpace).rowValue()
+                    chevron
+                }
+            }
+            .rowStyle()
+            .disabled(canvasWorking)
+            // Seed the picker to the live space when the connected row appears (also
+            // re-seeds after a disconnect→reconnect). No PATCH fires: updateCanvasSpace
+            // no-ops when the new value equals the committed one.
+            .onAppear { canvasConnectedSpace = conn.spaceName ?? "" }
+            .onChange(of: canvasConnectedSpace) { old, new in
+                updateCanvasSpace(current: conn.spaceName, from: old, to: new)
+            }
+        }
+
+        if let canvasError {
+            Text(canvasError)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(MobileTheme.danger)
+                .rowStyle()
+        }
+    }
+
+    @ViewBuilder
+    private func canvasConnectForm(repaste: Bool) -> some View {
+        if repaste {
+            Text("Your Canvas feed link expired — paste a fresh one to resume.")
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(MobileTheme.warning)
+                .rowStyle()
+        }
+
+        TextField("Paste Canvas feed URL", text: $canvasFeedURL)
+            .textFieldStyle(.plain)
+            .font(.system(size: 15, weight: .regular, design: .rounded))
+            .foregroundStyle(MobileTheme.ink)
+            .tint(MobileTheme.accent)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+            .keyboardType(.URL)
+            .rowStyle()
+
+        if !store.snapshot.spaces.isEmpty {
+            Menu {
+                ForEach(store.snapshot.spaces) { space in
+                    Button(space.name) { canvasSpaceName = space.name }
+                }
+            } label: {
+                HStack {
+                    Text("Items land in").rowLabel()
+                    Spacer()
+                    Text(canvasSpaceName).rowValue()
+                    chevron
+                }
+            }
+            .rowStyle()
+            .onAppear {
+                // Seed to "School" (spec default) if present, else the first space.
+                if !store.snapshot.spaces.contains(where: { $0.name == canvasSpaceName }) {
+                    canvasSpaceName = store.snapshot.spaces.contains(where: { $0.name == "School" })
+                        ? "School"
+                        : (store.snapshot.spaces.first?.name ?? "School")
+                }
+            }
+        }
+
+        if let canvasError {
+            Text(canvasError)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(MobileTheme.danger)
+                .rowStyle()
+        }
+
+        Button { connectCanvas() } label: {
+            Text(canvasWorking ? "Connecting…" : "Connect Canvas")
+                .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(MobileTheme.ink)
+                .frame(maxWidth: .infinity)
+                .edOutlineControl()
+        }
+        .buttonStyle(.plain)
+        .disabled(canvasWorking)
+        .rowStyle()
+
+        Text("Canvas → Calendar → Calendar Feed (copy the .ics link)")
+            .font(.system(size: 13, weight: .medium, design: .rounded))
+            .foregroundStyle(MobileTheme.faint)
+            .rowStyle()
+    }
+
+    private func canvasStatusText(_ conn: CanvasConnectionRow) -> String {
+        if conn.status == "error" {
+            return "Sync paused — Atlas will retry automatically."
+        }
+        if let synced = conn.lastSyncedDate {
+            return "Last synced \(Self.relativeSync(from: synced))."
+        }
+        return "Connected — first sync runs shortly."
+    }
+
+    private func canvasStatusColor(_ conn: CanvasConnectionRow) -> Color {
+        conn.status == "error" ? MobileTheme.warning : MobileTheme.green
+    }
+
+    // MARK: Canvas actions (shared AtlasCore CanvasService; refresh status on success)
+
+    private func connectCanvas() {
+        let feed = canvasFeedURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard CanvasService.isValidFeedURL(feed) else {
+            canvasError = "That doesn't look like a Canvas feed link. Copy it from Canvas → Calendar → Calendar Feed."
+            return
+        }
+        canvasError = nil
+        canvasWorking = true
+        Task {
+            guard let jwt = await store.validAccessToken() else {
+                canvasError = "Sign in to Atlas to connect Canvas."
+                canvasWorking = false
+                return
+            }
+            do {
+                try await canvas.connect(feedUrl: feed, spaceName: canvasSpaceName, jwt: jwt)
+                await loadConnections()
+                canvasFeedURL = ""   // don't retain the capability URL in the field
+            } catch {
+                canvasError = "Couldn't connect Canvas. Check the link and your connection, then try again."
+            }
+            canvasWorking = false
+        }
+    }
+
+    /// Changes where unmatched Canvas items land (PATCH canvas-connect). `current` is
+    /// the committed space, so the initial seed and the failure-revert are no-ops
+    /// (both re-select `current`). On failure the picker reverts to `oldValue`.
+    private func updateCanvasSpace(current: String?, from oldValue: String, to newValue: String) {
+        guard newValue != (current ?? ""), !newValue.isEmpty else { return }
+        canvasError = nil
+        canvasWorking = true
+        Task {
+            guard let jwt = await store.validAccessToken() else {
+                canvasError = "Sign in to Atlas to change the Canvas space."
+                canvasConnectedSpace = oldValue
+                canvasWorking = false
+                return
+            }
+            do {
+                try await canvas.updateSpace(spaceName: newValue, jwt: jwt)
+                await loadConnections()
+            } catch {
+                canvasError = "Couldn't change the Canvas space. Check your connection and try again."
+                canvasConnectedSpace = oldValue   // revert the picker to the committed space
+            }
+            canvasWorking = false
+        }
+    }
+
+    private func disconnectCanvas() {
+        canvasError = nil
+        canvasWorking = true
+        Task {
+            guard let jwt = await store.validAccessToken() else {
+                canvasError = "Sign in to Atlas to change Canvas sync."
+                canvasWorking = false
+                return
+            }
+            do {
+                try await canvas.disconnect(jwt: jwt)
+                canvasConn = nil   // clean disconnect: back to the paste form
+            } catch {
+                canvasError = "Couldn't disconnect Canvas. Check your connection and try again."
+            }
+            canvasWorking = false
+        }
+    }
+
+    /// Short relative label for "synced Xm ago" (mirrors the Mac SettingsView helper).
+    private static func relativeSync(from date: Date) -> String {
+        let secs = max(0, Int(Date().timeIntervalSince(date)))
+        if secs < 60 { return "just now" }
+        let mins = secs / 60
+        if mins < 60 { return "\(mins)m ago" }
+        let hrs = mins / 60
+        if hrs < 24 { return "\(hrs)h ago" }
+        return "\(hrs / 24)d ago"
     }
 
     // MARK: - Bindings & helpers
@@ -298,10 +574,6 @@ struct SettingsView: View {
 
     private func leadLabel(_ minutes: Int) -> String {
         minutes == 0 ? "At time" : "\(minutes) min"
-    }
-
-    private var googleConnected: Bool {
-        store.snapshot.events.contains { $0.source == .google }
     }
 
     private var voiceReady: Bool {

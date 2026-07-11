@@ -123,6 +123,13 @@ final class MobileStore: ObservableObject {
         await pullSyncedSettings()   // fresh sign-in pulls preferences (best-effort)
     }
 
+    /// A fresh Supabase access token for an authenticated edge-function call
+    /// (Canvas connect/disconnect/space). Refreshes an expired JWT first — mirrors
+    /// the `deleteAccount` path. nil ⇒ no session or the refresh token was rejected.
+    func validAccessToken() async -> String? {
+        await sessionStore.refreshIfNeeded()?.accessToken
+    }
+
     func signOut() {
         if let token = session?.accessToken {
             Task { await auth.signOut(accessToken: token) }

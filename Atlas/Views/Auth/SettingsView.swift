@@ -375,7 +375,7 @@ struct SettingsView: View {
 
     private func connectCanvas() {
         let feed = canvasFeedURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard validCanvasFeedURL(feed) else {
+        guard AtlasCore.CanvasService.isValidFeedURL(feed) else {
             canvasError = "That doesn't look like a Canvas feed link. Copy it from Canvas → Calendar → Calendar Feed."
             return
         }
@@ -437,16 +437,6 @@ struct SettingsView: View {
             }
             canvasWorking = false
         }
-    }
-
-    /// Client-side shape check: https + a Canvas ICS feed path. A calm gate before we
-    /// bother the server (which re-validates and Vaults the URL).
-    private func validCanvasFeedURL(_ raw: String) -> Bool {
-        guard let url = URL(string: raw),
-              url.scheme?.lowercased() == "https",
-              !(url.host ?? "").isEmpty else { return false }
-        let path = url.path.lowercased()
-        return path.hasSuffix(".ics") || path.contains("/feeds/calendars")
     }
 
     private var integrations: some View {

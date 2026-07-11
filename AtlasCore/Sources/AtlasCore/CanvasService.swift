@@ -46,6 +46,19 @@ public final class CanvasService: ObservableObject {
         try await call(method: "DELETE", jwt: jwt, body: nil)
     }
 
+    /// Client-side shape check for a Canvas Calendar Feed URL: https + a host + a
+    /// Canvas ICS feed path (`.ics` suffix or a `/feeds/calendars` segment). A calm
+    /// gate before we bother the server (which re-validates and Vaults the URL).
+    /// Shared by the Mac and iOS paste fields. `nonisolated` — a pure function, so
+    /// callers (views, tests) invoke it synchronously off the main actor.
+    public nonisolated static func isValidFeedURL(_ raw: String) -> Bool {
+        guard let url = URL(string: raw),
+              url.scheme?.lowercased() == "https",
+              !(url.host ?? "").isEmpty else { return false }
+        let path = url.path.lowercased()
+        return path.hasSuffix(".ics") || path.contains("/feeds/calendars")
+    }
+
     private func call(method: String, jwt: String, body: Data?) async throws {
         let url = SupabaseConfig.functionsBase.appendingPathComponent("canvas-connect")
         var request = URLRequest(url: url)

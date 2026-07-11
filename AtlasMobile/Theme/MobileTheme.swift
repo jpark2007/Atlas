@@ -24,6 +24,10 @@ enum MobileTheme {
     /// Danger red — same token as AtlasTheme.Colors.danger (several views
     /// already use the shared value directly; this ends the two-reds drift).
     static let danger     = Color(hex: "ff5c5c")
+    /// Status green — mirrors AtlasTheme.Colors.green (connected/active states).
+    static let green      = Color(hex: "5fb98e")
+    /// Warm amber warning — mirrors AtlasTheme.Colors.warning (reconnect needed).
+    static let warning    = Color(hex: "febc2e")
 
     // MARK: Radii (continuous corners)
     static let radiusCard: CGFloat    = 24
