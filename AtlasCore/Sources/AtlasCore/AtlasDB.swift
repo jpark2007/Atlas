@@ -131,6 +131,150 @@ public struct SpaceRow: Codable {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// UserSettingsRow — synced per-user preferences (0025), a singleton row keyed by
+// user_id. `notification_prefs` is jsonb server-side but travels as an opaque
+// compact JSON *string* client-side (`notificationPrefsJSON`); PostgREST returns
+// jsonb as a nested object, so that one field is bridged through `JSONValue`
+// (decode: object → compact string; encode: string → raw object, not a quoted
+// string). All other columns round-trip straight.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A fully-general JSON value used only to bridge the `notification_prefs` jsonb
+/// column to/from the compact string Atlas carries. Kept private to AtlasDB.
+private enum JSONValue: Codable {
+    case null
+    case bool(Bool)
+    case number(Double)
+    case string(String)
+    case array([JSONValue])
+    case object([String: JSONValue])
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() {                             self = .null }
+        else if let b = try? c.decode(Bool.self) {     self = .bool(b) }
+        else if let n = try? c.decode(Double.self) {   self = .number(n) }
+        else if let s = try? c.decode(String.self) {   self = .string(s) }
+        else if let a = try? c.decode([JSONValue].self) { self = .array(a) }
+        else if let o = try? c.decode([String: JSONValue].self) { self = .object(o) }
+        else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: decoder.codingPath,
+                debugDescription: "Unsupported JSON value in notification_prefs"))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .null:          try c.encodeNil()
+        case .bool(let b):   try c.encode(b)
+        case .number(let n): try c.encode(n)
+        case .string(let s): try c.encode(s)
+        case .array(let a):  try c.encode(a)
+        case .object(let o): try c.encode(o)
+        }
+    }
+}
+
+/// Compact, key-sorted encoder so the derived `notificationPrefsJSON` string is
+/// byte-stable (deterministic across launches and testable for equality).
+private let compactJSONEncoder: JSONEncoder = {
+    let e = JSONEncoder()
+    e.outputFormatting = .sortedKeys
+    return e
+}()
+
+public struct UserSettingsRow: Codable, Equatable {
+    public var userId: UUID
+    public var defaultSpaceName: String?
+    public var appleCalendarDefaultSpace: String?
+    public var googleTwoWaySync: Bool?
+    public var textScale: Double?
+    public var sidebarMode: String?
+    public var tasksGrouping: String?
+    public var perTabDocsSync: Bool?
+    /// Opaque compact JSON blob (same shape `NotificationPrefs` encodes); stored
+    /// in the jsonb `notification_prefs` column. nil ⇒ column absent/NULL.
+    public var notificationPrefsJSON: String?
+    public var updatedAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case userId                    = "user_id"
+        case defaultSpaceName          = "default_space_name"
+        case appleCalendarDefaultSpace = "apple_calendar_default_space"
+        case googleTwoWaySync          = "google_two_way_sync"
+        case textScale                 = "text_scale"
+        case sidebarMode               = "sidebar_mode"
+        case tasksGrouping             = "tasks_grouping"
+        case perTabDocsSync            = "per_tab_docs_sync"
+        case notificationPrefs         = "notification_prefs"
+        case updatedAt                 = "updated_at"
+    }
+
+    public init(userId: UUID,
+                defaultSpaceName: String? = nil,
+                appleCalendarDefaultSpace: String? = nil,
+                googleTwoWaySync: Bool? = nil,
+                textScale: Double? = nil,
+                sidebarMode: String? = nil,
+                tasksGrouping: String? = nil,
+                perTabDocsSync: Bool? = nil,
+                notificationPrefsJSON: String? = nil,
+                updatedAt: Date? = nil) {
+        self.userId                    = userId
+        self.defaultSpaceName          = defaultSpaceName
+        self.appleCalendarDefaultSpace = appleCalendarDefaultSpace
+        self.googleTwoWaySync          = googleTwoWaySync
+        self.textScale                 = textScale
+        self.sidebarMode               = sidebarMode
+        self.tasksGrouping             = tasksGrouping
+        self.perTabDocsSync            = perTabDocsSync
+        self.notificationPrefsJSON     = notificationPrefsJSON
+        self.updatedAt                 = updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        userId                    = try c.decode(UUID.self, forKey: .userId)
+        defaultSpaceName          = try c.decodeIfPresent(String.self, forKey: .defaultSpaceName)
+        appleCalendarDefaultSpace = try c.decodeIfPresent(String.self, forKey: .appleCalendarDefaultSpace)
+        googleTwoWaySync          = try c.decodeIfPresent(Bool.self,   forKey: .googleTwoWaySync)
+        textScale                 = try c.decodeIfPresent(Double.self, forKey: .textScale)
+        sidebarMode               = try c.decodeIfPresent(String.self, forKey: .sidebarMode)
+        tasksGrouping             = try c.decodeIfPresent(String.self, forKey: .tasksGrouping)
+        perTabDocsSync            = try c.decodeIfPresent(Bool.self,   forKey: .perTabDocsSync)
+        updatedAt                 = try c.decodeIfPresent(Date.self,   forKey: .updatedAt)
+        // jsonb object → compact string (nil when the column is absent or NULL).
+        if let value = try c.decodeIfPresent(JSONValue.self, forKey: .notificationPrefs) {
+            let data = try compactJSONEncoder.encode(value)
+            notificationPrefsJSON = String(data: data, encoding: .utf8)
+        } else {
+            notificationPrefsJSON = nil
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(userId, forKey: .userId)
+        try c.encodeIfPresent(defaultSpaceName,          forKey: .defaultSpaceName)
+        try c.encodeIfPresent(appleCalendarDefaultSpace, forKey: .appleCalendarDefaultSpace)
+        try c.encodeIfPresent(googleTwoWaySync,          forKey: .googleTwoWaySync)
+        try c.encodeIfPresent(textScale,                 forKey: .textScale)
+        try c.encodeIfPresent(sidebarMode,               forKey: .sidebarMode)
+        try c.encodeIfPresent(tasksGrouping,             forKey: .tasksGrouping)
+        try c.encodeIfPresent(perTabDocsSync,            forKey: .perTabDocsSync)
+        try c.encodeIfPresent(updatedAt,                 forKey: .updatedAt)
+        // compact string → raw JSON object (parse the blob back into a fragment
+        // so it lands in the jsonb column as an object, not a quoted string).
+        if let json = notificationPrefsJSON, let data = json.data(using: .utf8) {
+            let value = try JSONDecoder().decode(JSONValue.self, from: data)
+            try c.encode(value, forKey: .notificationPrefs)
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ProjectRow
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1105,6 +1249,24 @@ public final class AtlasDB {
     public func loadProfile() async throws -> ProfileRow? {
         let rows: [ProfileRow] = (try? await getAll("profiles", order: "user_id")) ?? []
         return rows.first
+    }
+
+    /// The caller's synced settings row (0025), or nil when none has been written
+    /// yet. RLS scopes the singleton to the signed-in user, so `first` is the row.
+    public func loadUserSettings() async throws -> UserSettingsRow? {
+        let rows: [UserSettingsRow] = try await getAll("user_settings")
+        return rows.first
+    }
+
+    /// Upserts the caller's synced settings row on the `user_id` primary key.
+    /// The row's `userId` must be the signed-in user (RLS `with check` enforces it).
+    public func upsertUserSettings(_ s: UserSettingsRow) async throws {
+        let sess = try await requireSession()
+        let body = try isoEncoder.encode(s)
+        try await send(method: "POST", table: "user_settings",
+                       query: [URLQueryItem(name: "on_conflict", value: "user_id")],
+                       extraHeaders: upsertHeaders,
+                       body: body, sess: sess)
     }
 
     // MARK: Shared projects (collab phase 2) — members / invites

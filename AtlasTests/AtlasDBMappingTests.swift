@@ -292,4 +292,71 @@ final class AtlasDBMappingTests: XCTestCase {
         XCTAssertEqual(decoded.toDomain().id, event.id,
                        "CalendarEvent UUID must survive the round-trip (var id, not let)")
     }
+
+    // MARK: - UserSettingsRow (0025)
+
+    func testUserSettingsRowRoundTrip() throws {
+        let uid = UUID()
+        let row = UserSettingsRow(
+            userId: uid,
+            defaultSpaceName: "School",
+            appleCalendarDefaultSpace: "Personal",
+            googleTwoWaySync: true,
+            textScale: 1.25,
+            sidebarMode: "hover",
+            tasksGrouping: "space",
+            perTabDocsSync: false,
+            // keys pre-sorted so the compact re-serialization is byte-stable
+            notificationPrefsJSON: "{\"morningDigest\":true,\"quietHours\":\"22:00-07:00\"}",
+            updatedAt: refDate
+        )
+        let data = try encoder.encode(row)
+        let decoded = try decoder.decode(UserSettingsRow.self, from: data)
+        XCTAssertEqual(decoded, row, "every UserSettingsRow field must survive encode/decode")
+        XCTAssertEqual(decoded.notificationPrefsJSON,
+                       "{\"morningDigest\":true,\"quietHours\":\"22:00-07:00\"}")
+    }
+
+    /// The jsonb column must land in the wire body as a RAW JSON object, never a
+    /// quoted JSON string — otherwise PostgREST stores `"{...}"` instead of `{...}`.
+    func testUserSettingsRowNotificationPrefsEncodesAsRawObject() throws {
+        let row = UserSettingsRow(userId: UUID(),
+                                  notificationPrefsJSON: "{\"morningDigest\":true}")
+        let json = String(data: try encoder.encode(row), encoding: .utf8)!
+        XCTAssertTrue(json.contains("\"notification_prefs\":{"),
+                      "notification_prefs must serialize as a raw JSON object")
+        XCTAssertFalse(json.contains("\"notification_prefs\":\"{"),
+                       "notification_prefs must NOT be a quoted JSON string")
+    }
+
+    /// PostgREST returns jsonb as a nested JSON object; decoding must collapse it
+    /// into the opaque compact string the client carries.
+    func testUserSettingsRowDecodesServerJsonbObject() throws {
+        let uid = UUID()
+        let serverJSON = """
+        {"user_id":"\(uid.uuidString)","default_space_name":"School",\
+        "google_two_way_sync":true,"notification_prefs":{"morningDigest":true}}
+        """
+        let decoded = try decoder.decode(UserSettingsRow.self, from: Data(serverJSON.utf8))
+        XCTAssertEqual(decoded.userId, uid)
+        XCTAssertEqual(decoded.defaultSpaceName, "School")
+        XCTAssertEqual(decoded.googleTwoWaySync, true)
+        XCTAssertEqual(decoded.notificationPrefsJSON, "{\"morningDigest\":true}")
+    }
+
+    func testUserSettingsRowNilsDecodeFromMinimalJSON() throws {
+        let uid = UUID()
+        let minimal = "{\"user_id\":\"\(uid.uuidString)\"}"
+        let decoded = try decoder.decode(UserSettingsRow.self, from: Data(minimal.utf8))
+        XCTAssertEqual(decoded.userId, uid)
+        XCTAssertNil(decoded.defaultSpaceName)
+        XCTAssertNil(decoded.appleCalendarDefaultSpace)
+        XCTAssertNil(decoded.googleTwoWaySync)
+        XCTAssertNil(decoded.textScale)
+        XCTAssertNil(decoded.sidebarMode)
+        XCTAssertNil(decoded.tasksGrouping)
+        XCTAssertNil(decoded.perTabDocsSync)
+        XCTAssertNil(decoded.notificationPrefsJSON)
+        XCTAssertNil(decoded.updatedAt)
+    }
 }
