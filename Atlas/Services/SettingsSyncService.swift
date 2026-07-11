@@ -82,7 +82,7 @@ final class SettingsSyncService: ObservableObject {
         // keys' `.onChange` handlers and schedules a push that isn't user-initiated.
         // Skip when the row carries nothing new (also swallows `.onAppear` heals
         // that re-write the already-synced value).
-        guard !Self.isRedundantPush(row, lastPulled: lastPulledRow) else { return }
+        guard !UserSettingsMerge.isRedundantPush(row, lastPulled: lastPulledRow) else { return }
         do {
             try await db.upsertUserSettings(row)
             lastPulledRow = row   // keep the cache coherent with what we just wrote
@@ -154,30 +154,22 @@ final class SettingsSyncService: ObservableObject {
     }
 
     /// The row to push: start from `base` (last-pulled — preserves phone-owned
-    /// columns), overlay each present local value, stamp the user id.
+    /// columns), overlay each present local value, stamp the user id. Maps the Mac
+    /// `LocalSnapshot` onto a `UserSettingsRow` (phone-owned `tasksGrouping` has no
+    /// Mac source, so it stays nil and survives from `base`) and delegates the actual
+    /// overlay to the shared `UserSettingsMerge` core.
     nonisolated static func mergedRow(base: UserSettingsRow?, local: LocalSnapshot, userId: UUID) -> UserSettingsRow {
-        UserSettingsRow(
+        let localRow = UserSettingsRow(
             userId: userId,
-            defaultSpaceName:          local.defaultSpaceName          ?? base?.defaultSpaceName,
-            appleCalendarDefaultSpace: local.appleCalendarDefaultSpace ?? base?.appleCalendarDefaultSpace,
-            googleTwoWaySync:          local.googleTwoWaySync          ?? base?.googleTwoWaySync,
-            textScale:                 local.textScale                 ?? base?.textScale,
-            sidebarMode:               local.sidebarMode               ?? base?.sidebarMode,
-            tasksGrouping:             base?.tasksGrouping,   // phone-owned; no local source
-            perTabDocsSync:            local.perTabDocsSync            ?? base?.perTabDocsSync,
-            notificationPrefsJSON:     local.notificationPrefsJSON     ?? base?.notificationPrefsJSON,
-            updatedAt:                 nil   // server stamps updated_at; never sent from the client
+            defaultSpaceName:          local.defaultSpaceName,
+            appleCalendarDefaultSpace: local.appleCalendarDefaultSpace,
+            googleTwoWaySync:          local.googleTwoWaySync,
+            textScale:                 local.textScale,
+            sidebarMode:               local.sidebarMode,
+            tasksGrouping:             nil,   // phone-owned; no Mac local source
+            perTabDocsSync:            local.perTabDocsSync,
+            notificationPrefsJSON:     local.notificationPrefsJSON
         )
-    }
-
-    /// True when `row` carries nothing the server doesn't already have — the case
-    /// after a pull writes server values into UserDefaults and the `@AppStorage`
-    /// `.onChange` handlers schedule a (non-user-initiated) push. Value-based, so
-    /// it's immune to the async gap between the defaults write and the onChange
-    /// tick; `updated_at` (server-stamped, never pushed) is ignored.
-    nonisolated static func isRedundantPush(_ row: UserSettingsRow, lastPulled: UserSettingsRow?) -> Bool {
-        guard var baseline = lastPulled else { return false }
-        baseline.updatedAt = nil
-        return row == baseline
+        return UserSettingsMerge.overlay(base: base, local: localRow, userId: userId)
     }
 }

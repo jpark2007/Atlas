@@ -80,6 +80,10 @@ struct SettingsView: View {
         } message: {
             Text("This permanently erases your account and all your Atlas data — spaces, projects, tasks, events and notes. This can't be undone.")
         }
+        // Synced preferences — push the change (debounced). The pull-triggered echo of
+        // either key is recognized as redundant and skipped.
+        .onChange(of: defaultSpaceName) { _, _ in store.pushSyncedSettings() }
+        .onChange(of: prefs)            { _, _ in store.pushSyncedSettings() }
     }
 
     // MARK: - Account

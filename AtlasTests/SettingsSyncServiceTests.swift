@@ -150,19 +150,8 @@ final class SettingsSyncServiceTests: XCTestCase {
 
         let merged = SettingsSyncService.mergedRow(
             base: server, local: SettingsSyncService.readLocal(from: d), userId: uid)
-        XCTAssertTrue(SettingsSyncService.isRedundantPush(merged, lastPulled: server))
-    }
-
-    func testIsRedundantPushFalseWhenAFieldDiffers() {
-        let pulled = UserSettingsRow(userId: uid, sidebarMode: "hover", tasksGrouping: "project")
-        var changed = pulled
-        changed.sidebarMode = "always"   // a real user change
-        XCTAssertFalse(SettingsSyncService.isRedundantPush(changed, lastPulled: pulled))
-    }
-
-    func testIsRedundantPushFalseWithoutAPulledBaseline() {
-        let row = UserSettingsRow(userId: uid, sidebarMode: "hover")
-        XCTAssertFalse(SettingsSyncService.isRedundantPush(row, lastPulled: nil),
-                       "No baseline ⇒ can't prove redundancy ⇒ push")
+        // The redundancy guard now lives in the shared AtlasCore core; the Mac
+        // apply → readLocal → mergedRow round-trip must still feed it a redundant row.
+        XCTAssertTrue(UserSettingsMerge.isRedundantPush(merged, lastPulled: server))
     }
 }

@@ -43,6 +43,24 @@ final class MobileStore: ObservableObject {
     lazy var db  = AtlasDB(session: { @MainActor [weak self] in self?.session })
     lazy var ai  = AtlasAI(session: { [weak self] in self?.session })
 
+    /// Cross-device preference sync (user_settings, 0025). Mirrors the Mac: bootstrap
+    /// + foreground pull is server-wins; a user-initiated change of a synced setting
+    /// pushes (debounced). Owned here so the pull and every push share one
+    /// `lastPulledRow` cache — the push overlays local changes onto it.
+    let settingsSync = SettingsSyncService()
+
+    /// Pull cross-device preferences (server wins). Best-effort — no-ops until the
+    /// `user_settings` table is deployed.
+    func pullSyncedSettings() async {
+        await settingsSync.pullAndApply(db: db)
+    }
+
+    /// Debounced push after a user-initiated change of a synced setting — the one
+    /// entry point the Settings/Tasks `.onChange` handlers call.
+    func pushSyncedSettings() {
+        Task { await settingsSync.push(db: db) }
+    }
+
     private static let emptySnapshot = AtlasSnapshot(
         spaces: [], projects: [], tasks: [], events: [], notes: [], goals: [])
 
@@ -58,6 +76,8 @@ final class MobileStore: ObservableObject {
     private func bootstrap() async {
         session = await sessionStore.refreshIfNeeded()
         await refresh()
+        // Pull cross-device preferences (server wins) once data is loaded.
+        await pullSyncedSettings()
     }
 
     // MARK: - Auth

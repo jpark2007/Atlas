@@ -67,6 +67,9 @@ struct TasksView: View {
         .sheet(isPresented: $showSettings) {
             SettingsSheet().environmentObject(store)
         }
+        // Tasks grouping is a synced preference — push the change (debounced). A
+        // pull-triggered echo of the value is recognized as redundant and skipped.
+        .onChange(of: grouping) { _, _ in store.pushSyncedSettings() }
     }
 
     /// Empty-state body: a spinner while loading, else the calm all-clear copy.
