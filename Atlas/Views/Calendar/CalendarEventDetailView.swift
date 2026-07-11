@@ -31,6 +31,11 @@ struct CalendarEventDetailView: View {
 
     private var isWorkBlock: Bool { item.isWorkBlock || state.tasks.contains { $0.id == item.id } }
     private var isReadOnly: Bool { item.isReadOnly }
+    /// Work-block whose backing task is a Canvas assignment — Canvas owns the title
+    /// (re-sync overwrites it), so the title locks while scheduling stays fully editable.
+    private var isCanvasBackedBlock: Bool {
+        isWorkBlock && state.tasks.first(where: { $0.id == item.id })?.canvasUID != nil
+    }
     /// Note-linking has a durable home only for Atlas events + work-blocks (external events
     /// are rebuilt every sync and never persisted).
     private var canLinkNote: Bool { !isReadOnly && (isWorkBlock || item.source == .atlas) }
@@ -43,7 +48,7 @@ struct CalendarEventDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header
-                if isReadOnly { lockBanner }
+                if isReadOnly || isCanvasBackedBlock { lockBanner }
                 fields
                 if canLinkNote { linkedNoteSection }
                 if canAttachReferences { referencesSection }
@@ -80,7 +85,7 @@ struct CalendarEventDetailView: View {
                 Spacer()
                 sourceBadge
             }
-            if isReadOnly {
+            if isReadOnly || isCanvasBackedBlock {
                 Text(title)
                     .atlasFont(size: 29, weight: .bold, design: .rounded)
                     .tracking(-0.4)
@@ -112,7 +117,7 @@ struct CalendarEventDetailView: View {
 
     private var lockBanner: some View {
         let msg: String
-        if item.source == .canvas {
+        if item.source == .canvas || isCanvasBackedBlock {
             msg = "From Canvas — synced automatically. Schedule it; title and dates update from your feed."
         } else if item.isRecurring {
             msg = "Recurring event — edit the series in \(item.source.displayName)."

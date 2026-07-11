@@ -859,7 +859,8 @@ final class AppState: ObservableObject {
     func updateScheduledTask(id: UUID, title: String, start: Date, durationMin: Int,
                              notes: String?, noteID: UUID?) {
         guard let i = tasks.firstIndex(where: { $0.id == id }) else { return }
-        tasks[i].title = title
+        // Canvas owns the title (re-sync overwrites it) — never rename a Canvas task here.
+        if tasks[i].canvasUID == nil { tasks[i].title = title }
         tasks[i].scheduledAt = start
         tasks[i].durationMin = durationMin
         tasks[i].notes = notes ?? ""

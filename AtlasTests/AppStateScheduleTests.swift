@@ -81,6 +81,26 @@ final class AppStateScheduleTests: XCTestCase {
         XCTAssertFalse(state.unscheduledTasks.contains { $0.id == t.id })
     }
 
+    // MARK: updateScheduledTask — Canvas title guard
+
+    /// The work-block edit path must never rename a Canvas assignment (Canvas owns the
+    /// title; re-sync overwrites it) while still applying the user-owned scheduling fields.
+    func testUpdateScheduledTaskKeepsCanvasTitle() {
+        let state = AppState()
+        let t = state.addTask(title: "Canvas HW 4", durationMin: 60)
+        let i = state.tasks.firstIndex { $0.id == t.id }!
+        state.tasks[i].canvasUID = "canvas-assign-1"
+
+        state.updateScheduledTask(id: t.id, title: "Renamed", start: at(10),
+                                  durationMin: 30, notes: "my plan", noteID: nil)
+
+        let updated = state.tasks.first { $0.id == t.id }!
+        XCTAssertEqual(updated.title, "Canvas HW 4", "Canvas owns the title — rename must be ignored")
+        XCTAssertEqual(updated.scheduledAt, at(10), "scheduling stays user-owned")
+        XCTAssertEqual(updated.durationMin, 30)
+        XCTAssertEqual(updated.notes, "my plan")
+    }
+
     func testCompletedTaskNeverResurfaces() {
         let state = AppState()
         let base = at(9)
