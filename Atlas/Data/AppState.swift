@@ -57,6 +57,11 @@ final class AppState: ObservableObject {
     /// Wire the Google account in so event write-back can reach it.
     func attachGoogle(_ auth: GoogleAuthService) { googleAuth = auth }
 
+    /// EventKit access for Apple Calendar write-back (editing Apple-origin events + the
+    /// optional Atlas→Apple mirror). EventKit identifiers are stable across `EKEventStore`
+    /// instances on the same device, so this owns its own store independent of the read path.
+    let eventKit = EventKitService()
+
     /// Cross-device preference sync (user_settings, 0025). Owned here so the
     /// bootstrap/foreground pull and the Settings/RootView push share one cache
     /// (`lastPulledRow`) — the push overlays local changes onto it.
@@ -931,6 +936,7 @@ final class AppState: ObservableObject {
             }
         }
         pushNewEventToGoogle(event)
+        pushNewEventToApple(event)
         schedulePublish()
     }
 
@@ -946,11 +952,23 @@ final class AppState: ObservableObject {
             pushExternalGoogleEdit(event, googleEventID: gid)
             return
         }
+        // Writable Apple-origin events also live in `externalEvents`. Patch the EKEvent and
+        // reflect optimistically — Apple events stay unpersisted (never touch Supabase) and
+        // keep their `.apple` source.
+        if event.source == .apple, let aid = event.appleEventId,
+           !events.contains(where: { $0.id == event.id }) {
+            if let i = externalEvents.firstIndex(where: { $0.id == event.id }) {
+                externalEvents[i] = event
+            }
+            pushExternalAppleEdit(event, appleEventID: aid)
+            return
+        }
         if let i = events.firstIndex(where: { $0.id == event.id }) {
             events[i] = event
         }
         Task { try? await self.db?.upsertEvent(event) }
         pushUpdatedEventToGoogle(event)
+        pushUpdatedEventToApple(event)
         schedulePublish()
     }
 
@@ -963,10 +981,21 @@ final class AppState: ObservableObject {
             deleteGoogleEvent(googleEventID: gid)
             return
         }
+        // Writable Apple-origin event in the external pool — delete it on Apple and drop the
+        // optimistic copy; never touch the Atlas DB.
+        if let ext = externalEvents.first(where: { $0.id == id }),
+           ext.source == .apple, let aid = ext.appleEventId {
+            externalEvents.removeAll { $0.id == id }
+            deleteAppleEvent(appleEventID: aid)
+            return
+        }
         let removed = events.first { $0.id == id }
         events.removeAll { $0.id == id }
         Task { try? await self.db?.deleteEvent(id: id) }
-        if let removed { pushDeletedEventToGoogle(removed) }
+        if let removed {
+            pushDeletedEventToGoogle(removed)
+            pushDeletedEventToApple(removed)
+        }
         schedulePublish()
     }
 
@@ -986,6 +1015,32 @@ final class AppState: ObservableObject {
         guard !serverSyncEnabled, let auth = googleAuth, auth.isConnected else { return }
         let service = GoogleCalendarService(auth: auth)
         Task { try? await service.deleteEvent(googleEventID: gid) }
+    }
+
+    /// Patches an edited writable Apple-origin event back to Apple Calendar. Unlike the
+    /// Google external edit (which swallows), an EventKit failure is surfaced on the shared
+    /// calendar error channel so the user knows the on-device write didn't take — the local
+    /// optimistic edit already succeeded and is never blocked.
+    private func pushExternalAppleEdit(_ event: CalendarEvent, appleEventID aid: String) {
+        Task {
+            do { try await eventKit.updateEvent(appleEventID: aid, with: event) }
+            catch { surfaceAppleWriteError(error) }
+        }
+    }
+
+    /// Deletes a writable Apple-origin event on Apple Calendar (when deleted in Atlas).
+    private func deleteAppleEvent(appleEventID aid: String) {
+        Task {
+            do { try await eventKit.deleteEvent(appleEventID: aid) }
+            catch { surfaceAppleWriteError(error) }
+        }
+    }
+
+    /// Surfaces an EventKit write failure on the shared calendar status channel, preferring
+    /// the `LocalizedError` description (EventKitWriteError conforms) over the raw message.
+    private func surfaceAppleWriteError(_ error: Error) {
+        lastCalendarSyncError = (error as? LocalizedError)?.errorDescription
+            ?? error.localizedDescription
     }
 
     /// Removes events locally (memory + DB) **without** echoing a delete to Google — used
@@ -1064,6 +1119,77 @@ final class AppState: ObservableObject {
               let gid = event.googleEventId, !gid.isEmpty else { return }
         let service = GoogleCalendarService(auth: auth)
         Task { try? await service.deleteEvent(googleEventID: gid) }
+    }
+
+    // MARK: - Apple Calendar write-back (Atlas → Apple, device-local mirror)
+    //
+    // Optional mirror of user-created Atlas events into a chosen Apple calendar, gated by
+    // the DEVICE-LOCAL `calendar.apple.writeback` toggle (EventKit is per-device, so it is
+    // never synced across devices). Mirrors the Google trio: new / update / delete push the
+    // event and stamp the returned `eventIdentifier` into `appleEventId`, which — unlike the
+    // Google id — is persisted via `db.upsertEvent` (migration 0026) so later edits patch the
+    // same EKEvent and the read-back de-dupes it (CalendarSync.excludingOwnMirrors) instead of
+    // double-displaying. Failures are swallowed: the local edit already succeeded.
+
+    /// The chosen destination calendar for mirrored events; `nil` (unset / empty) falls back
+    /// to Apple's default calendar for new events inside `EventKitService.createEvent`.
+    private var appleWritebackCalendarId: String? {
+        let id = UserDefaults.standard.string(forKey: "calendar.apple.writeback.calendarId")
+        return (id?.isEmpty ?? true) ? nil : id
+    }
+
+    /// True only for user-created Atlas events while the mirror is on and access is granted.
+    private func shouldWriteBackApple(_ event: CalendarEvent) -> Bool {
+        CalendarSync.shouldWriteBackApple(
+            enabled: UserDefaults.standard.bool(forKey: "calendar.apple.writeback"),
+            authorized: eventKit.authorizationStatus() == .fullAccess,
+            event: event)
+    }
+
+    /// Pushes existing Atlas-origin events that were never mirrored (no `appleEventId`) to
+    /// Apple — fired when the mirror toggle flips on so it backfills, not just new events.
+    /// Safe to call repeatedly: events that already gained an id are skipped.
+    func backfillEventsToApple() {
+        for event in events where event.source == .atlas && event.appleEventId == nil {
+            pushNewEventToApple(event)
+        }
+    }
+
+    private func pushNewEventToApple(_ event: CalendarEvent) {
+        guard shouldWriteBackApple(event), event.appleEventId == nil else { return }
+        Task { @MainActor in
+            guard let aid = try? await eventKit.createEvent(event, calendarId: appleWritebackCalendarId),
+                  !aid.isEmpty else { return }
+            self.stampAppleEventId(aid, on: event.id)
+        }
+    }
+
+    private func pushUpdatedEventToApple(_ event: CalendarEvent) {
+        guard shouldWriteBackApple(event) else { return }
+        Task { @MainActor in
+            if let aid = event.appleEventId, !aid.isEmpty {
+                try? await eventKit.updateEvent(appleEventID: aid, with: event)
+            } else {
+                // On before the event existed (or backfilled) — create now.
+                guard let aid = try? await eventKit.createEvent(event, calendarId: appleWritebackCalendarId),
+                      !aid.isEmpty else { return }
+                self.stampAppleEventId(aid, on: event.id)
+            }
+        }
+    }
+
+    private func pushDeletedEventToApple(_ event: CalendarEvent) {
+        guard shouldWriteBackApple(event), let aid = event.appleEventId, !aid.isEmpty else { return }
+        Task { try? await eventKit.deleteEvent(appleEventID: aid) }
+    }
+
+    /// Records the freshly-created Apple id in memory AND persists it (0026) so the id
+    /// survives relaunch — without this the column stays NULL and the mirror duplicates.
+    private func stampAppleEventId(_ aid: String, on eventID: UUID) {
+        guard let i = events.firstIndex(where: { $0.id == eventID }) else { return }
+        events[i].appleEventId = aid
+        let persisted = events[i]
+        Task { try? await self.db?.upsertEvent(persisted) }
     }
 
     // MARK: - Goal CRUD (in-memory; DB write-through layered in Task 2)

@@ -43,6 +43,11 @@ struct SettingsView: View {
     // MARK: – Calendar sync state
     @AppStorage("calendar.apple.enabled") private var appleCalendarEnabled: Bool = false
     @AppStorage("calendar.apple.defaultSpace") private var appleDefaultSpace: String = ""
+    // Atlas→Apple mirror. DEVICE-LOCAL (never synced — EventKit ids are per-device), so
+    // these keys are intentionally NOT wired into `pushSyncedSettings()`.
+    @AppStorage("calendar.apple.writeback") private var appleWritebackEnabled: Bool = false
+    @AppStorage("calendar.apple.writeback.calendarId") private var appleWritebackCalendarId: String = ""
+    @State private var appleWritableCalendars: [(id: String, title: String)] = []
     @State private var appleAccessGranted: Bool = false
     @State private var appleAccessChecked: Bool = false
 
@@ -620,6 +625,62 @@ struct SettingsView: View {
             .padding(.vertical, 8)
             .atlasHairlineBelow()
 
+            // ── Mirror Atlas events to Apple (device-local) ─────────────
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Mirror Atlas events to Apple")
+                        .atlasFont(size: 14, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text(appleWritebackEnabled
+                         ? "New Atlas events are copied into Apple Calendar on this Mac."
+                         : "Off — Atlas events stay in Atlas. Applies to this Mac only.")
+                        .atlasFont(size: 12, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                Spacer()
+                Toggle("", isOn: $appleWritebackEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(AtlasTheme.Colors.textPrimary)
+                    .disabled(!appleAccessGranted)
+                    .onChange(of: appleWritebackEnabled) { _, on in
+                        if on {
+                            refreshAppleWritableCalendars()
+                            state.backfillEventsToApple()
+                        }
+                    }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .atlasHairlineBelow()
+
+            // Destination calendar — only when the mirror is on and access is granted.
+            if appleWritebackEnabled && !appleWritableCalendars.isEmpty {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Mirror into calendar")
+                            .atlasFont(size: 14, design: .rounded)
+                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        Text("Where mirrored Atlas events are created")
+                            .atlasFont(size: 12, weight: .medium, design: .rounded)
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    }
+                    Spacer()
+                    Picker("Mirror into calendar", selection: $appleWritebackCalendarId) {
+                        ForEach(appleWritableCalendars, id: \.id) { cal in
+                            Text(cal.title).tag(cal.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 140)
+                    .tint(AtlasTheme.Colors.accent)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .atlasHairlineBelow()
+            }
+
             // ── Sync in the cloud (server-owned) ────────────────────────
             // Only when Google is connected locally: hands the refresh token to
             // the server so sync runs with every Atlas client closed.
@@ -899,6 +960,19 @@ struct SettingsView: View {
         appleAccessGranted = (status == .fullAccess)
         if !appleAccessGranted && appleCalendarEnabled {
             appleCalendarEnabled = false
+        }
+        // Populate the mirror's destination picker if it's already on when Settings opens.
+        if appleAccessGranted && appleWritebackEnabled {
+            refreshAppleWritableCalendars()
+        }
+    }
+
+    /// Loads the pickable Apple destination calendars, seeding the selection to the first
+    /// writable calendar so the Picker isn't blank (empty falls back to Apple's default).
+    private func refreshAppleWritableCalendars() {
+        appleWritableCalendars = ekService.writableCalendars()
+        if appleWritebackCalendarId.isEmpty, let first = appleWritableCalendars.first {
+            appleWritebackCalendarId = first.id
         }
     }
 

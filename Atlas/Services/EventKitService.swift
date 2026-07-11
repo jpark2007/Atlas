@@ -4,17 +4,25 @@ import SwiftUI
 
 /// Errors thrown by `EventKitService`'s write surface. Reads never throw (they degrade
 /// to `[]`); writes must surface failure so a mirror attempt isn't silently lost.
-enum EventKitWriteError: Error {
+enum EventKitWriteError: LocalizedError {
     /// Full calendar access hasn't been granted — no write is possible.
     case noAccess
     /// The `eventIdentifier` no longer resolves to an EKEvent (deleted on-device, or the
     /// id came from a different device — EventKit ids are per-device).
     case notFound
+
+    var errorDescription: String? {
+        switch self {
+        case .noAccess: return "Calendar access isn't granted — enable it in System Settings → Privacy."
+        case .notFound: return "That event no longer exists in Apple Calendar."
+        }
+    }
 }
 
-/// Thin wrapper around EventKit that provides read-only access to Apple Calendar
-/// events. All results are returned as `[CalendarEvent]` with `isReadOnly: true`
-/// so the rest of the app can display them without risk of accidental mutation.
+/// Thin wrapper around EventKit for reading and writing Apple Calendar events.
+/// Fetched events are tagged `source: .apple`; `isReadOnly` reflects whether the
+/// backing calendar allows edits and the event isn't recurring, so writable one-off
+/// events can be edited in Atlas while subscribed / recurring events stay read-only.
 ///
 /// Access semantics
 /// ─────────────────
@@ -76,7 +84,8 @@ final class EventKitService {
     // MARK: - Fetch
 
     /// Fetches Apple Calendar events in the given date range and maps them to
-    /// `[CalendarEvent]` tagged `isReadOnly: true`.
+    /// `[CalendarEvent]` tagged `source: .apple`, with `isReadOnly` and `isRecurring`
+    /// derived from the backing calendar and the event's recurrence rules.
     ///
     /// - Parameters:
     ///   - start: Range start.
@@ -92,7 +101,13 @@ final class EventKitService {
         let ekEvents = store.events(matching: predicate)
 
         return ekEvents.map { ekEvent in
-            CalendarEvent(
+            // Editable in Atlas only when the backing calendar allows edits AND the event
+            // isn't recurring (series editing is out of scope until Task 12). Subscribed /
+            // recurring events stay read-only. `isRecurring` is carried so recurring Apple
+            // events are labeled (they previously showed unlabeled — the Apple labeling gap).
+            let recurring = ekEvent.hasRecurrenceRules
+            let editable = (ekEvent.calendar?.allowsContentModifications ?? false) && !recurring
+            return CalendarEvent(
                 id: stableUUID(from: ekEvent.eventIdentifier ?? UUID().uuidString),
                 title: ekEvent.title ?? "Untitled",
                 subtitle: ekEvent.calendar?.title ?? "",
@@ -100,9 +115,14 @@ final class EventKitService {
                 end: ekEvent.endDate ?? ekEvent.startDate.addingTimeInterval(3600),
                 color: AtlasTheme.Colors.textSecondary,
                 spaceName: defaultSpaceName,
+                // Carry existing notes so an in-Atlas edit round-trips them instead of
+                // blanking the EKEvent's notes on save-back.
+                notes: ekEvent.notes,
                 isAllDay: ekEvent.isAllDay,
-                isReadOnly: true,
-                source: .apple
+                isReadOnly: !editable,
+                source: .apple,
+                appleEventId: ekEvent.eventIdentifier,
+                isRecurring: recurring
             )
         }
     }

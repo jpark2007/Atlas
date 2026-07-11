@@ -511,15 +511,17 @@ struct CalendarView: View {
                 }
             }
             await MainActor.run {
-                // Drop any external (Google) event that is actually one of our own
-                // Atlas events / scheduled work-blocks we already pushed — otherwise it
-                // shows twice (once native, once as a read-only Google copy).
+                // Drop any external event that is actually one of our own events we already
+                // mirrored — a Google event / scheduled work-block we pushed, or an Apple
+                // event mirrored via the Atlas→Apple toggle (EventKit re-reads it next tick).
+                // Otherwise it shows twice: once native, once as its read-only external copy.
                 let ownGoogleIDs = Set(state.events.compactMap(\.googleEventId))
                     .union(state.tasks.compactMap(\.workBlockGoogleEventId))
-                state.externalEvents = combined.filter { ev in
-                    guard let gid = ev.googleEventId else { return true }
-                    return !ownGoogleIDs.contains(gid)
-                }
+                let ownAppleIDs = Set(state.events.compactMap(\.appleEventId))
+                state.externalEvents = CalendarSync.excludingOwnMirrors(
+                    external: combined,
+                    ownGoogleIDs: ownGoogleIDs,
+                    ownAppleIDs: ownAppleIDs)
                 // Reflect Google-side deletions: reap our mirrors that vanished from a
                 // SUCCESSFUL listing for this window. Safety rules live in CalendarSync.
                 if wantGoogle && googleFetchOK {
