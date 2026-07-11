@@ -2,6 +2,16 @@ import EventKit
 import AtlasCore
 import SwiftUI
 
+/// Errors thrown by `EventKitService`'s write surface. Reads never throw (they degrade
+/// to `[]`); writes must surface failure so a mirror attempt isn't silently lost.
+enum EventKitWriteError: Error {
+    /// Full calendar access hasn't been granted — no write is possible.
+    case noAccess
+    /// The `eventIdentifier` no longer resolves to an EKEvent (deleted on-device, or the
+    /// id came from a different device — EventKit ids are per-device).
+    case notFound
+}
+
 /// Thin wrapper around EventKit that provides read-only access to Apple Calendar
 /// events. All results are returned as `[CalendarEvent]` with `isReadOnly: true`
 /// so the rest of the app can display them without risk of accidental mutation.
@@ -95,5 +105,69 @@ final class EventKitService {
                 source: .apple
             )
         }
+    }
+
+    // MARK: - Write (Track C mirror)
+    //
+    // These four methods are the write plumbing for mirroring Atlas events/work-blocks
+    // into Apple Calendar. They are NOT unit-testable: EKEventStore hits the live on-device
+    // store and requires granted calendar permission, so there is no seam to mock without
+    // inventing a protocol the app doesn't otherwise need. The testable slice — the
+    // `apple_event_id` row round-trip — is covered in AtlasDBMappingTests instead. Behavior
+    // here is verified live on-device (Task 11 wires these into the UI).
+
+    /// Creates a new EKEvent from `event` and saves it. Resolves `calendarId` via
+    /// `store.calendar(withIdentifier:)`, falling back to `defaultCalendarForNewEvents`.
+    /// - Returns: the saved event's `eventIdentifier` (persist it as `appleEventId`).
+    func createEvent(_ event: CalendarEvent, calendarId: String?) async throws -> String {
+        guard authorizationStatus() == .fullAccess else { throw EventKitWriteError.noAccess }
+
+        let ekEvent = EKEvent(eventStore: store)
+        apply(event, to: ekEvent)
+        ekEvent.calendar = calendarId.flatMap { store.calendar(withIdentifier: $0) }
+            ?? store.defaultCalendarForNewEvents
+
+        try store.save(ekEvent, span: .thisEvent)
+        return ekEvent.eventIdentifier
+    }
+
+    /// Patches the EKEvent identified by `appleEventID` with `event`'s fields.
+    /// - Throws: `.notFound` when the identifier no longer resolves to an event.
+    func updateEvent(appleEventID: String, with event: CalendarEvent) async throws {
+        guard authorizationStatus() == .fullAccess else { throw EventKitWriteError.noAccess }
+        guard let ekEvent = store.event(withIdentifier: appleEventID) else {
+            throw EventKitWriteError.notFound
+        }
+        apply(event, to: ekEvent)
+        try store.save(ekEvent, span: .thisEvent)
+    }
+
+    /// Removes the EKEvent identified by `appleEventID`.
+    /// - Throws: `.notFound` when the identifier no longer resolves to an event.
+    func deleteEvent(appleEventID: String) async throws {
+        guard authorizationStatus() == .fullAccess else { throw EventKitWriteError.noAccess }
+        guard let ekEvent = store.event(withIdentifier: appleEventID) else {
+            throw EventKitWriteError.notFound
+        }
+        try store.remove(ekEvent, span: .thisEvent)
+    }
+
+    /// The calendars the user can write to — the pickable destinations for a mirrored
+    /// event. Empty when access is denied.
+    func writableCalendars() -> [(id: String, title: String)] {
+        guard authorizationStatus() == .fullAccess else { return [] }
+        return store.calendars(for: .event)
+            .filter { $0.allowsContentModifications }
+            .map { (id: $0.calendarIdentifier, title: $0.title) }
+    }
+
+    /// Maps the writable fields of a `CalendarEvent` onto an `EKEvent`. Shared by
+    /// create + update so both stay in lockstep.
+    private func apply(_ event: CalendarEvent, to ekEvent: EKEvent) {
+        ekEvent.title = event.title
+        ekEvent.startDate = event.start
+        ekEvent.endDate = event.end
+        ekEvent.notes = event.notes
+        ekEvent.isAllDay = event.isAllDay
     }
 }

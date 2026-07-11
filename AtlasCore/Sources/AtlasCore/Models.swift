@@ -102,6 +102,13 @@ public struct CalendarEvent: Identifiable {
     /// relaunch patch the same event instead of duplicating it.
     public var googleEventId: String? = nil
 
+    /// The backing Apple Calendar `eventIdentifier`, set after this event is mirrored to
+    /// Apple Calendar (Track C write-back) so later edits/deletes target the same EKEvent.
+    /// Persisted via migration 0026 (`events.apple_event_id`). Best-effort continuity only:
+    /// EventKit identifiers are per-device and the Mac is the sole EventKit device, so this
+    /// mirror id is meaningful only there. `nil` until the event is written to Apple.
+    public var appleEventId: String? = nil
+
     /// True for an expanded instance of a recurring Google event. Recurring instances stay
     /// read-only in Atlas until series editing lands (Phase 3); one-off events edit two-way.
     public var isRecurring: Bool = false
@@ -142,7 +149,7 @@ public struct CalendarEvent: Identifiable {
         return "\(m)m"
     }
 
-    public init(id: UUID = UUID(), title: String, subtitle: String, start: Date, end: Date, color: Color, spaceName: String, notes: String? = nil, isAllDay: Bool = false, projectID: UUID? = nil, noteID: UUID? = nil, isReadOnly: Bool = false, source: EventSource = .atlas, googleEventId: String? = nil, isRecurring: Bool = false, isWorkBlock: Bool = false, isDeadline: Bool = false, spaceID: UUID? = nil) {
+    public init(id: UUID = UUID(), title: String, subtitle: String, start: Date, end: Date, color: Color, spaceName: String, notes: String? = nil, isAllDay: Bool = false, projectID: UUID? = nil, noteID: UUID? = nil, isReadOnly: Bool = false, source: EventSource = .atlas, googleEventId: String? = nil, appleEventId: String? = nil, isRecurring: Bool = false, isWorkBlock: Bool = false, isDeadline: Bool = false, spaceID: UUID? = nil) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
@@ -157,6 +164,7 @@ public struct CalendarEvent: Identifiable {
         self.isReadOnly = isReadOnly
         self.source = source
         self.googleEventId = googleEventId
+        self.appleEventId = appleEventId
         self.isRecurring = isRecurring
         self.isWorkBlock = isWorkBlock
         self.isDeadline = isDeadline
@@ -184,6 +192,11 @@ public struct TaskItem: Identifiable {
     /// Google so a reschedule patches the same event. In-memory this build (no TaskRow
     /// column yet) — a relaunch re-creates rather than patches.
     public var workBlockGoogleEventId: String? = nil
+    /// Apple Calendar `eventIdentifier` backing this task's scheduled work-block, set after
+    /// it mirrors to Apple (Track C) so a reschedule patches the same EKEvent. Persisted via
+    /// migration 0026 (`tasks.apple_event_id`). Best-effort continuity only: EventKit ids are
+    /// per-device and the Mac is the sole EventKit device. `nil` until the block is mirrored.
+    public var appleEventId: String? = nil
     public var spaceColor: Color = AtlasTheme.Colors.accent
     public var spaceName: String = ""
     public var projectName: String = ""
@@ -202,7 +215,7 @@ public struct TaskItem: Identifiable {
     /// through `TaskRow` so a client edit never nulls the column. `nil` for Atlas-native.
     public var canvasUID: String? = nil
 
-    public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, completedAt: Date? = nil, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectName: String = "", notes: String = "", spaceID: UUID? = nil, assigneeID: UUID? = nil, createdByID: UUID? = nil, canvasUID: String? = nil) {
+    public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, completedAt: Date? = nil, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, appleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectName: String = "", notes: String = "", spaceID: UUID? = nil, assigneeID: UUID? = nil, createdByID: UUID? = nil, canvasUID: String? = nil) {
         self.id = id
         self.title = title
         self.dueLabel = dueLabel
@@ -214,6 +227,7 @@ public struct TaskItem: Identifiable {
         self.durationMin = durationMin
         self.noteID = noteID
         self.workBlockGoogleEventId = workBlockGoogleEventId
+        self.appleEventId = appleEventId
         self.spaceColor = spaceColor
         self.spaceName = spaceName
         self.projectName = projectName

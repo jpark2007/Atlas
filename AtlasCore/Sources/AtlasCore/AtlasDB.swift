@@ -350,6 +350,9 @@ public struct TaskRow: Codable {
     public var noteId: UUID?
     public var durationMin: Int?
     public var workBlockGoogleEventId: String?
+    /// Apple Calendar mirror id for this task's work-block (migration 0026). Round-tripped
+    /// so a client edit never nulls the linkage. Best-effort — Mac is the only EventKit device.
+    public var appleEventId: String?
     public var spaceId: UUID?
     public var assigneeId: UUID?
     public var createdBy: UUID?
@@ -372,6 +375,7 @@ public struct TaskRow: Codable {
         case noteId      = "note_id"
         case durationMin = "duration_min"
         case workBlockGoogleEventId = "work_block_google_event_id"
+        case appleEventId = "apple_event_id"
         case spaceId     = "space_id"
         case assigneeId  = "assignee_id"
         case createdBy   = "created_by"
@@ -392,6 +396,7 @@ public struct TaskRow: Codable {
         self.noteId      = t.noteID
         self.durationMin = t.durationMin
         self.workBlockGoogleEventId = t.workBlockGoogleEventId
+        self.appleEventId = t.appleEventId
         self.spaceId     = t.spaceID
         self.assigneeId  = t.assigneeID
         self.createdBy   = t.createdByID
@@ -410,6 +415,7 @@ public struct TaskRow: Codable {
                  durationMin: durationMin,
                  noteID: noteId,
                  workBlockGoogleEventId: workBlockGoogleEventId,
+                 appleEventId: appleEventId,
                  spaceName: spaceName,
                  notes: notes ?? "")
         task.spaceID = spaceId
@@ -458,6 +464,10 @@ public struct EventRow: Codable {
     public var isAllDay: Bool
     public var projectId: UUID?
     public var googleEventId: String?
+    /// Apple Calendar mirror id (migration 0026). Round-tripped so a client upsert never
+    /// nulls the Apple linkage; does NOT affect source derivation (Apple-mirrored events
+    /// stay `.atlas`). Best-effort continuity — the Mac is the only EventKit device.
+    public var appleEventId: String?
     public var noteId: UUID?
     public var spaceId: UUID?
     /// Canvas event id (migration 0012). Drives `.canvas` source + read-only at load.
@@ -477,6 +487,7 @@ public struct EventRow: Codable {
         case isAllDay  = "is_all_day"
         case projectId = "project_id"
         case googleEventId = "google_event_id"
+        case appleEventId = "apple_event_id"
         case noteId    = "note_id"
         case spaceId   = "space_id"
         case canvasUid = "canvas_uid"
@@ -493,6 +504,7 @@ public struct EventRow: Codable {
         self.isAllDay  = e.isAllDay
         self.projectId = e.projectID
         self.googleEventId = e.googleEventId
+        self.appleEventId = e.appleEventId
         self.noteId    = e.noteID
         self.spaceId   = e.spaceID
         // CalendarEvent carries no Canvas id (Canvas events are read-only and never
@@ -528,7 +540,8 @@ public struct EventRow: Codable {
                       // for that edge, the fail-safe direction.)
                       isReadOnly: canvasUid != nil,
                       source: derivedSource,
-                      googleEventId: googleEventId)
+                      googleEventId: googleEventId,
+                      appleEventId: appleEventId)
         event.spaceID = spaceId
         return event
     }

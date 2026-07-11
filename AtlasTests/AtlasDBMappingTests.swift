@@ -185,6 +185,68 @@ final class AtlasDBMappingTests: XCTestCase {
         XCTAssertTrue(ev.isReadOnly, "Canvas events are server-owned → read-only")
     }
 
+    // MARK: - Apple event id (Track C mirror) — Task 10 (migration 0026)
+
+    /// An event mirrored to Apple Calendar carries its Apple `eventIdentifier` so a
+    /// later edit/delete targets the same EKEvent — the column must round-trip (a
+    /// client upsert must never null it), mirroring how google_event_id flows.
+    func testEventRowAppleEventIdRoundTrip() throws {
+        var event = CalendarEvent(title: "Standup", subtitle: "", start: refDate,
+                                  end: refDate.addingTimeInterval(1800),
+                                  color: AtlasTheme.Colors.accent, spaceName: "Work")
+        event.appleEventId = "apple-evt-ABC-123"
+        let row = EventRow(domain: event)
+        XCTAssertEqual(row.appleEventId, "apple-evt-ABC-123")
+        let decoded = try decoder.decode(EventRow.self, from: try encoder.encode(row))
+        XCTAssertEqual(decoded.appleEventId, "apple-evt-ABC-123", "apple_event_id must survive encode/decode")
+        XCTAssertEqual(decoded.toDomain().appleEventId, "apple-evt-ABC-123", "toDomain must restore appleEventId")
+    }
+
+    /// PostgREST returns apple_event_id as a plain string column; decoding must surface it.
+    func testEventRowDecodesAppleEventIdFromServerJSON() throws {
+        let id = UUID()
+        let serverJSON = """
+        {"id":"\(id.uuidString)","space_name":"Work","title":"1:1","subtitle":"",\
+        "start_at":"2026-07-11T17:00:00Z","end_at":"2026-07-11T18:00:00Z","is_all_day":false,\
+        "apple_event_id":"apple-evt-XYZ-9"}
+        """
+        let decoded = try decoder.decode(EventRow.self, from: Data(serverJSON.utf8))
+        XCTAssertEqual(decoded.appleEventId, "apple-evt-XYZ-9")
+        XCTAssertEqual(decoded.toDomain().appleEventId, "apple-evt-XYZ-9")
+    }
+
+    /// A task whose scheduled work-block was mirrored to Apple carries the block's
+    /// Apple `eventIdentifier`; the column must round-trip so a reschedule patches
+    /// the same EKEvent (0005's work_block_google_event_id precedent, for Apple).
+    func testTaskRowAppleEventIdRoundTrip() throws {
+        var task = TaskItem(title: "Write essay", dueLabel: "Fri", spaceName: "School")
+        task.appleEventId = "apple-block-777"
+        let row = TaskRow(domain: task)
+        XCTAssertEqual(row.appleEventId, "apple-block-777")
+        let decoded = try decoder.decode(TaskRow.self, from: try encoder.encode(row))
+        XCTAssertEqual(decoded.appleEventId, "apple-block-777", "apple_event_id must survive encode/decode")
+        XCTAssertEqual(decoded.toDomain().appleEventId, "apple-block-777", "toDomain must restore appleEventId")
+    }
+
+    /// PostgREST returns apple_event_id as a plain string column; decoding must surface it.
+    func testTaskRowDecodesAppleEventIdFromServerJSON() throws {
+        let id = UUID()
+        let serverJSON = """
+        {"id":"\(id.uuidString)","space_name":"School","title":"Lab 3","status":"open","done":false,"apple_event_id":"a-42"}
+        """
+        let decoded = try decoder.decode(TaskRow.self, from: Data(serverJSON.utf8))
+        XCTAssertEqual(decoded.appleEventId, "a-42")
+        XCTAssertEqual(decoded.toDomain().appleEventId, "a-42")
+    }
+
+    /// A task never mirrored to Apple has a nil appleEventId (no silent default corruption).
+    func testTaskRowNilAppleEventId() throws {
+        let task = TaskItem(title: "Personal errand", dueLabel: "")
+        let decoded = try decoder.decode(TaskRow.self, from: try encoder.encode(TaskRow(domain: task)))
+        XCTAssertNil(decoded.appleEventId)
+        XCTAssertNil(decoded.toDomain().appleEventId)
+    }
+
     // MARK: - NoteRow
 
     func testNoteRowRoundTrip() throws {
