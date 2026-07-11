@@ -88,6 +88,9 @@ final class MobileStore: ObservableObject {
         session = s
         authNotice = nil
         await refresh()
+        // Fresh sign-in must pull cross-device preferences too (best-effort) — no
+        // scene transition fires here, so the foreground pull won't cover it.
+        await pullSyncedSettings()
     }
 
     /// Email/password account creation (GoTrue `signup`). If the project
@@ -100,6 +103,7 @@ final class MobileStore: ObservableObject {
             session = s
             authNotice = nil
             await refresh()
+            await pullSyncedSettings()   // fresh sign-in pulls preferences (best-effort)
         } else {
             authNotice = "Check \(email) to confirm your account, then sign in."
         }
@@ -116,6 +120,7 @@ final class MobileStore: ObservableObject {
         session = s
         authNotice = nil
         await refresh()
+        await pullSyncedSettings()   // fresh sign-in pulls preferences (best-effort)
     }
 
     func signOut() {
