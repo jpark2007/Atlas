@@ -87,13 +87,20 @@ enum WidgetSnapshotWriter {
             spaces: snapshot.spaces.map { SpaceRow(domain: $0) },
             projects: snapshot.projects.map { ProjectRow(domain: $0) },
             tasks: snapshot.tasks.map { TaskRow(domain: $0) },
-            // Read-only external events (Canvas on mobile) can't round-trip: `CalendarEvent`
-            // carries no canvasUID and `EventRow(domain:)` hardcodes canvas_uid = nil, so a
-            // cached Canvas event would reload as an editable Atlas/Google event — a source
-            // mislabel (CLAUDE.md rule 5) that also makes it wrongly editable/movable. Drop
-            // them from the offline cache; they reload correctly from the server on the next
-            // refresh. Canvas *tasks* keep their canvasUID via TaskRow, so deadlines survive.
-            events: snapshot.events.filter { !$0.isReadOnly }.map { EventRow(domain: $0) })
+            // `CalendarEvent` carries no canvasUID and `EventRow(domain:)` hardcodes
+            // canvas_uid = nil (correct for the DB-upsert path), so a cached Canvas event
+            // would otherwise reload as an editable Atlas/Google event — a source mislabel
+            // (CLAUDE.md rule 5) with an offline write window. Stamp a cache-local sentinel
+            // instead: `toDomain()` derives `.canvas` + read-only from canvas_uid != nil, so
+            // Canvas events survive the offline round-trip correctly labeled (today's classes
+            // ARE the offline first frame). The sentinel never reaches the server — this file
+            // is app-private, Canvas events have no write path in the UI, and any upsert
+            // re-maps through EventRow(domain:) which nulls canvas_uid anyway.
+            events: snapshot.events.map { e in
+                var row = EventRow(domain: e)
+                if e.source == .canvas { row.canvasUid = "cached-canvas" }
+                return row
+            })
         // Best-effort: a failed cache write just means no offline snapshot next launch.
         try? JSONEncoder().encode(cache).write(to: url, options: .atomic)
     }

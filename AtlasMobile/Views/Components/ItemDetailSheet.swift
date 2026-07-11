@@ -412,7 +412,8 @@ struct ItemDetailSheet: View {
     }
 
     /// Atlas and Google events edit the same way — server-side sync PATCHes Atlas
-    /// edits back to Google and tombstones propagate deletes. Only Apple stays read-only.
+    /// edits back to Google and tombstones propagate deletes. Apple and Canvas
+    /// events stay read-only.
     private var isEditable: Bool {
         switch detail {
         case .task:          return true
