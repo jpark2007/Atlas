@@ -11,7 +11,9 @@ import AtlasCore
 ///     launch, so a fresh device's defaults can't clobber the server). The pushed
 ///     row starts from the last-pulled row and overlays the present local values,
 ///     so phone-owned columns Atlas-for-Mac has no UI for (`tasks_grouping`,
-///     `notification_prefs`) are never nulled out.
+///     `notification_prefs`) are never nulled out. A push whose row matches the
+///     last-pulled row is skipped — pull-applied values echo through the synced
+///     keys' `.onChange` handlers, and those echoes must not upsert.
 ///
 /// Best-effort throughout: the `user_settings` table deploys in a later gated
 /// migration, so `loadUserSettings()` / `upsertUserSettings()` can fail today.
@@ -39,10 +41,11 @@ final class SettingsSyncService: ObservableObject {
         static let textScale                 = "appearance.textScale"            // text_scale
         static let sidebarMode               = "sidebar.mode"                    // sidebar_mode
         static let perTabDocsSync            = "notes.perTabDocsSync.enabled"    // per_tab_docs_sync
-        // Phone-owned — no Mac UI yet. Pull still applies them (harmless on Mac;
-        // Task 15 consumes `notificationPrefs`); push preserves whatever's local.
-        static let tasksGrouping             = "tasksGrouping"                    // tasks_grouping
+        // Phone-owned but applied locally on pull BY DESIGN — the later Mac
+        // notifications task consumes this UserDefaults key.
         static let notificationPrefs         = "notificationPrefs"               // notification_prefs
+        // `tasks_grouping` has NO local mapping (no Mac consumer): never applied,
+        // never read; it survives Mac pushes via `mergedRow`'s base overlay.
     }
 
     // MARK: - Pull (server wins)
@@ -75,6 +78,11 @@ final class SettingsSyncService: ObservableObject {
         guard let userId = try? await db.currentUserId() else { return }
         let local = Self.readLocal(from: Self.syncedDefaults)
         let row = Self.mergedRow(base: lastPulledRow, local: local, userId: userId)
+        // A pull writes server values into UserDefaults, which fires the synced
+        // keys' `.onChange` handlers and schedules a push that isn't user-initiated.
+        // Skip when the row carries nothing new (also swallows `.onAppear` heals
+        // that re-write the already-synced value).
+        guard !Self.isRedundantPush(row, lastPulled: lastPulledRow) else { return }
         do {
             try await db.upsertUserSettings(row)
             lastPulledRow = row   // keep the cache coherent with what we just wrote
@@ -95,7 +103,6 @@ final class SettingsSyncService: ObservableObject {
         var textScale: Double? = nil
         var sidebarMode: String? = nil
         var perTabDocsSync: Bool? = nil
-        var tasksGrouping: String? = nil
         var notificationPrefsJSON: String? = nil
     }
 
@@ -128,7 +135,6 @@ final class SettingsSyncService: ObservableObject {
         if let v = row.textScale                 { writes.append(.init(key: Key.textScale,                 value: .double(v))) }
         if let v = row.sidebarMode               { writes.append(.init(key: Key.sidebarMode,               value: .string(v))) }
         if let v = row.perTabDocsSync            { writes.append(.init(key: Key.perTabDocsSync,            value: .bool(v)))   }
-        if let v = row.tasksGrouping             { writes.append(.init(key: Key.tasksGrouping,             value: .string(v))) }
         if let v = row.notificationPrefsJSON     { writes.append(.init(key: Key.notificationPrefs,         value: .string(v))) }
         return writes
     }
@@ -143,7 +149,6 @@ final class SettingsSyncService: ObservableObject {
             textScale:                 defaults.object(forKey: Key.textScale) == nil ? nil : defaults.double(forKey: Key.textScale),
             sidebarMode:               defaults.string(forKey: Key.sidebarMode),
             perTabDocsSync:            defaults.object(forKey: Key.perTabDocsSync) == nil ? nil : defaults.bool(forKey: Key.perTabDocsSync),
-            tasksGrouping:             defaults.string(forKey: Key.tasksGrouping),
             notificationPrefsJSON:     defaults.string(forKey: Key.notificationPrefs)
         )
     }
@@ -158,10 +163,21 @@ final class SettingsSyncService: ObservableObject {
             googleTwoWaySync:          local.googleTwoWaySync          ?? base?.googleTwoWaySync,
             textScale:                 local.textScale                 ?? base?.textScale,
             sidebarMode:               local.sidebarMode               ?? base?.sidebarMode,
-            tasksGrouping:             local.tasksGrouping             ?? base?.tasksGrouping,
+            tasksGrouping:             base?.tasksGrouping,   // phone-owned; no local source
             perTabDocsSync:            local.perTabDocsSync            ?? base?.perTabDocsSync,
             notificationPrefsJSON:     local.notificationPrefsJSON     ?? base?.notificationPrefsJSON,
             updatedAt:                 nil   // server stamps updated_at; never sent from the client
         )
+    }
+
+    /// True when `row` carries nothing the server doesn't already have — the case
+    /// after a pull writes server values into UserDefaults and the `@AppStorage`
+    /// `.onChange` handlers schedule a (non-user-initiated) push. Value-based, so
+    /// it's immune to the async gap between the defaults write and the onChange
+    /// tick; `updated_at` (server-stamped, never pushed) is ignored.
+    nonisolated static func isRedundantPush(_ row: UserSettingsRow, lastPulled: UserSettingsRow?) -> Bool {
+        guard var baseline = lastPulled else { return false }
+        baseline.updatedAt = nil
+        return row == baseline
     }
 }

@@ -27,7 +27,7 @@ final class SettingsSyncServiceTests: XCTestCase {
             googleTwoWaySync: true,
             textScale: 1.15,
             sidebarMode: "hover",
-            tasksGrouping: "dueDate",
+            tasksGrouping: "dueDate",   // phone-owned: must NOT map to a local key
             perTabDocsSync: true,
             notificationPrefsJSON: "{\"a\":1}"
         )
@@ -40,9 +40,10 @@ final class SettingsSyncServiceTests: XCTestCase {
         XCTAssertEqual(byKey["appearance.textScale"], .double(1.15))
         XCTAssertEqual(byKey["sidebar.mode"], .string("hover"))
         XCTAssertEqual(byKey["notes.perTabDocsSync.enabled"], .bool(true))
-        XCTAssertEqual(byKey["tasksGrouping"], .string("dueDate"))
-        XCTAssertEqual(byKey["notificationPrefs"], .string("{\"a\":1}"))
-        XCTAssertEqual(byKey.count, 8)
+        XCTAssertEqual(byKey["notificationPrefs"], .string("{\"a\":1}"),
+                       "notificationPrefs IS applied locally — the Mac-notifications task consumes it")
+        XCTAssertNil(byKey["tasksGrouping"], "tasksGrouping has no Mac consumer — no local mapping")
+        XCTAssertEqual(byKey.count, 7)
     }
 
     func testAppliesSkipsNilColumns() {
@@ -66,7 +67,6 @@ final class SettingsSyncServiceTests: XCTestCase {
         XCTAssertNil(snap.textScale)                        // absent, NOT 0.0
         XCTAssertNil(snap.perTabDocsSync)                   // absent, NOT false
         XCTAssertNil(snap.sidebarMode)
-        XCTAssertNil(snap.tasksGrouping)
         XCTAssertNil(snap.notificationPrefsJSON)
     }
 
@@ -128,5 +128,41 @@ final class SettingsSyncServiceTests: XCTestCase {
         let snap = SettingsSyncService.readLocal(from: d)
         let back = SettingsSyncService.mergedRow(base: server, local: snap, userId: uid)
         XCTAssertEqual(back, server)
+    }
+
+    // MARK: - isRedundantPush — pull-triggered pushes must be skipped
+
+    /// The pull-triggered-push scenario end to end: a pull applies server values to
+    /// defaults, `.onChange` fires and schedules a push — the row that push would
+    /// send must be recognized as redundant and skipped.
+    func testPullTriggeredPushIsRedundant() {
+        let d = makeDefaults()
+        var server = UserSettingsRow(
+            userId: uid,
+            defaultSpaceName: "Work",
+            googleTwoWaySync: true,
+            textScale: 1.15,
+            sidebarMode: "hover",
+            tasksGrouping: "project"    // phone-owned; survives via mergedRow's base
+        )
+        server.updatedAt = Date()       // server rows carry updated_at; must not defeat the skip
+        for w in SettingsSyncService.applies(from: server) { w.apply(to: d) }
+
+        let merged = SettingsSyncService.mergedRow(
+            base: server, local: SettingsSyncService.readLocal(from: d), userId: uid)
+        XCTAssertTrue(SettingsSyncService.isRedundantPush(merged, lastPulled: server))
+    }
+
+    func testIsRedundantPushFalseWhenAFieldDiffers() {
+        let pulled = UserSettingsRow(userId: uid, sidebarMode: "hover", tasksGrouping: "project")
+        var changed = pulled
+        changed.sidebarMode = "always"   // a real user change
+        XCTAssertFalse(SettingsSyncService.isRedundantPush(changed, lastPulled: pulled))
+    }
+
+    func testIsRedundantPushFalseWithoutAPulledBaseline() {
+        let row = UserSettingsRow(userId: uid, sidebarMode: "hover")
+        XCTAssertFalse(SettingsSyncService.isRedundantPush(row, lastPulled: nil),
+                       "No baseline ⇒ can't prove redundancy ⇒ push")
     }
 }

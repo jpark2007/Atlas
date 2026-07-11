@@ -62,6 +62,13 @@ final class AppState: ObservableObject {
     /// (`lastPulledRow`) — the push overlays local changes onto it.
     let settingsSync = SettingsSyncService()
 
+    /// Debounced push of the synced preferences after a user-initiated change —
+    /// the one entry point SettingsView/RootView `.onChange` handlers call.
+    func pushSyncedSettings() {
+        guard let db else { return }
+        Task { await settingsSync.push(db: db) }
+    }
+
     // MARK: - Server-owned Google sync (cloud sync)
 
     private static let serverSyncKey = "calendar.sync.serverOwned"
