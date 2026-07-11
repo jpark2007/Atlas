@@ -24,6 +24,7 @@ struct TaskDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                if isCanvasTask { canvasBanner }
                 header
                 metaRow
                 spacePicker
@@ -49,6 +50,26 @@ struct TaskDetailView: View {
             }
         }
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: editingNote?.id)
+    }
+
+    // MARK: Canvas gating
+
+    /// A Canvas-synced assignment: its title and due date are server-owned (re-sync
+    /// overwrites only those two fields), so we lock them while leaving notes,
+    /// scheduling, done/complete, and space/project fully user-editable.
+    private var isCanvasTask: Bool { live.canvasUID != nil }
+
+    /// Same lock-banner style as `CalendarEventDetailView`, above the title.
+    private var canvasBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "lock.fill").atlasFont(size: 12)
+            Text("From Canvas — synced automatically. Schedule it; title and dates update from your feed.")
+                .atlasFont(size: 13, design: .rounded)
+        }
+        .foregroundStyle(AtlasTheme.Colors.textMuted)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .atlasHairlineBelow()
     }
 
     // MARK: Header
@@ -130,6 +151,7 @@ struct TaskDetailView: View {
             }
             .buttonStyle(.plain)
             .onHover { dueHover = $0 }
+            .disabled(isCanvasTask)
             if let at = live.scheduledAt {
                 metaChip(icon: "clock", label: "Scheduled \(shortDate(at))")
             }

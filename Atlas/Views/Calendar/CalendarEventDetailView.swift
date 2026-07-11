@@ -111,9 +111,14 @@ struct CalendarEventDetailView: View {
     }
 
     private var lockBanner: some View {
-        let msg = item.isRecurring
-            ? "Recurring event — edit the series in \(item.source.displayName)."
-            : "Read-only — from \(item.source.displayName)."
+        let msg: String
+        if item.source == .canvas {
+            msg = "From Canvas — synced automatically. Schedule it; title and dates update from your feed."
+        } else if item.isRecurring {
+            msg = "Recurring event — edit the series in \(item.source.displayName)."
+        } else {
+            msg = "Read-only — from \(item.source.displayName)."
+        }
         return HStack(spacing: 8) {
             Image(systemName: "lock.fill").atlasFont(size: 12)
             Text(msg).atlasFont(size: 13, design: .rounded)
