@@ -184,6 +184,7 @@ struct DayTimelineView: View {
         case .atlas:  return "Atlas"
         case .apple:  return "Apple"
         case .google: return "Google"
+        case .canvas: return "Canvas"
         }
     }
 

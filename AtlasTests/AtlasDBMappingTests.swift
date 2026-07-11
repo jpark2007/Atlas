@@ -136,6 +136,55 @@ final class AtlasDBMappingTests: XCTestCase {
         XCTAssertEqual(result.projectID, pid)
     }
 
+    // MARK: - Canvas source (rule 5) — Task 4
+
+    /// A task carrying a canvas_uid must round-trip the column so a client edit
+    /// (complete / schedule) never nulls the Canvas linkage.
+    func testTaskRowCanvasUIDRoundTrip() throws {
+        var task = TaskItem(title: "Read chapter 4", dueLabel: "Fri", spaceName: "School")
+        task.canvasUID = "canvas-assign-4321"
+        let row = TaskRow(domain: task)
+        XCTAssertEqual(row.canvasUid, "canvas-assign-4321")
+        let decoded = try decoder.decode(TaskRow.self, from: try encoder.encode(row))
+        XCTAssertEqual(decoded.canvasUid, "canvas-assign-4321", "canvas_uid must survive encode/decode")
+        XCTAssertEqual(decoded.toDomain().canvasUID, "canvas-assign-4321", "toDomain must restore canvasUID")
+    }
+
+    /// PostgREST returns canvas_uid as a plain string column; decoding must surface it.
+    func testTaskRowDecodesCanvasUidFromServerJSON() throws {
+        let id = UUID()
+        let serverJSON = """
+        {"id":"\(id.uuidString)","space_name":"School","title":"Lab 2","status":"open","done":false,"canvas_uid":"c-99"}
+        """
+        let decoded = try decoder.decode(TaskRow.self, from: Data(serverJSON.utf8))
+        XCTAssertEqual(decoded.canvasUid, "c-99")
+        XCTAssertEqual(decoded.toDomain().canvasUID, "c-99")
+    }
+
+    /// A non-Canvas task has a nil canvasUID (no silent default corruption).
+    func testTaskRowNilCanvasUID() throws {
+        let task = TaskItem(title: "Personal errand", dueLabel: "")
+        let decoded = try decoder.decode(TaskRow.self, from: try encoder.encode(TaskRow(domain: task)))
+        XCTAssertNil(decoded.canvasUid)
+        XCTAssertNil(decoded.toDomain().canvasUID)
+    }
+
+    /// An events row carrying canvas_uid decodes to source .canvas + read-only, and
+    /// canvas takes precedence over a google id (canvas-sync stamps both).
+    func testEventRowCanvasUidServerJSON() throws {
+        let id = UUID()
+        let serverJSON = """
+        {"id":"\(id.uuidString)","space_name":"School","title":"Midterm","subtitle":"",\
+        "start_at":"2026-07-11T17:00:00Z","end_at":"2026-07-11T18:00:00Z","is_all_day":false,\
+        "canvas_uid":"c-mid","google_event_id":"g-xyz","google_origin":true}
+        """
+        let row = try decoder.decode(EventRow.self, from: Data(serverJSON.utf8))
+        XCTAssertEqual(row.canvasUid, "c-mid")
+        let ev = row.toDomain()
+        XCTAssertEqual(ev.source, .canvas, "canvas_uid must win over google_event_id")
+        XCTAssertTrue(ev.isReadOnly, "Canvas events are server-owned → read-only")
+    }
+
     // MARK: - NoteRow
 
     func testNoteRowRoundTrip() throws {

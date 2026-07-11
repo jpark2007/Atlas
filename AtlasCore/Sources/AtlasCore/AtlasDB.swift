@@ -353,6 +353,9 @@ public struct TaskRow: Codable {
     public var spaceId: UUID?
     public var assigneeId: UUID?
     public var createdBy: UUID?
+    /// Canvas assignment id (migration 0012). Round-tripped so a client edit of a
+    /// Canvas task never nulls the origin column.
+    public var canvasUid: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
@@ -372,6 +375,7 @@ public struct TaskRow: Codable {
         case spaceId     = "space_id"
         case assigneeId  = "assignee_id"
         case createdBy   = "created_by"
+        case canvasUid   = "canvas_uid"
     }
 
     public init(domain t: TaskItem) {
@@ -391,6 +395,7 @@ public struct TaskRow: Codable {
         self.spaceId     = t.spaceID
         self.assigneeId  = t.assigneeID
         self.createdBy   = t.createdByID
+        self.canvasUid   = t.canvasUID
     }
 
     public func toDomain() -> TaskItem {
@@ -410,6 +415,7 @@ public struct TaskRow: Codable {
         task.spaceID = spaceId
         task.assigneeID = assigneeId
         task.createdByID = createdBy
+        task.canvasUID = canvasUid
         return task
     }
 
@@ -454,6 +460,10 @@ public struct EventRow: Codable {
     public var googleEventId: String?
     public var noteId: UUID?
     public var spaceId: UUID?
+    /// Canvas event id (migration 0012). Drives `.canvas` source + read-only at load.
+    /// Decode-only: Canvas events are read-only, so the client never upserts one back —
+    /// `init(domain:)` has no Canvas value to carry and sets nil (never nulls a live row).
+    public var canvasUid: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
@@ -469,6 +479,7 @@ public struct EventRow: Codable {
         case googleEventId = "google_event_id"
         case noteId    = "note_id"
         case spaceId   = "space_id"
+        case canvasUid = "canvas_uid"
     }
 
     public init(domain e: CalendarEvent) {
@@ -484,9 +495,19 @@ public struct EventRow: Codable {
         self.googleEventId = e.googleEventId
         self.noteId    = e.noteID
         self.spaceId   = e.spaceID
+        // CalendarEvent carries no Canvas id (Canvas events are read-only and never
+        // upserted by the client), so nothing to round-trip from the domain here.
+        self.canvasUid = nil
     }
 
     public func toDomain() -> CalendarEvent {
+        // Source is derived at ingest, never guessed: a canvas_uid means the row came
+        // from a Canvas ICS feed; canvas-sync also stamps those rows google_origin (a
+        // google id), so canvas MUST take precedence over google. Everything else is
+        // google (a google id) or Atlas-native.
+        let derivedSource: EventSource =
+            canvasUid != nil ? .canvas :
+            (googleEventId != nil ? .google : .atlas)
         // CalendarEvent has `var id: UUID = UUID()` — memberwise init exposes `id`
         // as an overridable parameter, so the DB UUID IS preserved here.
         var event = CalendarEvent(id: id,
@@ -500,11 +521,13 @@ public struct EventRow: Codable {
                       isAllDay: isAllDay,
                       projectID: projectId,
                       noteID: noteId,
-                      // A row carrying a Google id came from Google — derive, never default.
-                      // Caveat: an Atlas-origin event mirrored TO Google also carries a
-                      // googleEventId, so it loads as .google (accepted trade-off; only
-                      // affects Mac reap eligibility for that edge, the fail-safe direction).
-                      source: googleEventId != nil ? .google : .atlas,
+                      // Canvas rows are server-owned: sync stomps title/start/end each
+                      // tick, so they're read-only in Atlas. (An Atlas-origin event
+                      // mirrored TO Google also carries a googleEventId, so it loads as
+                      // .google — accepted trade-off; only affects Mac reap eligibility
+                      // for that edge, the fail-safe direction.)
+                      isReadOnly: canvasUid != nil,
+                      source: derivedSource,
                       googleEventId: googleEventId)
         event.spaceID = spaceId
         return event

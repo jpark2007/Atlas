@@ -63,6 +63,7 @@ public enum EventSource {
     case atlas      // app-owned, writable
     case apple      // Apple Calendar (EventKit)
     case google     // Google Calendar
+    case canvas     // Canvas LMS (ICS feed) — server-owned, read-only in Atlas
 
     /// Human label for the source (e.g. the read-only menu row).
     public var displayName: String {
@@ -70,6 +71,7 @@ public enum EventSource {
         case .atlas:  return "Atlas"
         case .apple:  return "Apple Calendar"
         case .google: return "Google Calendar"
+        case .canvas: return "Canvas"
         }
     }
 }
@@ -193,8 +195,14 @@ public struct TaskItem: Identifiable {
     public var assigneeID: UUID? = nil
     /// Who created this task — set once at creation, never changed.
     public var createdByID: UUID? = nil
+    /// The Canvas assignment id backing this task, stamped at ingest for tasks that
+    /// came from a Canvas ICS feed (migration 0012 `tasks.canvas_uid`). Non-nil ⇒ a
+    /// Canvas assignment: its title + due date are Canvas-owned (sync overwrites them
+    /// each tick), though the task stays locally completable/schedulable. Round-trips
+    /// through `TaskRow` so a client edit never nulls the column. `nil` for Atlas-native.
+    public var canvasUID: String? = nil
 
-    public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, completedAt: Date? = nil, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectName: String = "", notes: String = "", spaceID: UUID? = nil, assigneeID: UUID? = nil, createdByID: UUID? = nil) {
+    public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, completedAt: Date? = nil, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectName: String = "", notes: String = "", spaceID: UUID? = nil, assigneeID: UUID? = nil, createdByID: UUID? = nil, canvasUID: String? = nil) {
         self.id = id
         self.title = title
         self.dueLabel = dueLabel
@@ -213,6 +221,7 @@ public struct TaskItem: Identifiable {
         self.spaceID = spaceID
         self.assigneeID = assigneeID
         self.createdByID = createdByID
+        self.canvasUID = canvasUID
     }
 }
 
