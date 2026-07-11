@@ -87,4 +87,18 @@ final class UserSettingsMergeTests: XCTestCase {
         XCTAssertFalse(UserSettingsMerge.isRedundantPush(row, lastPulled: nil),
                        "No baseline ⇒ can't prove redundancy ⇒ push")
     }
+
+    // MARK: - wire shape — nil columns are OMITTED, never explicit nulls
+
+    /// The overlay's cross-device safety rests on this: a pushed row's nil columns
+    /// (the other platform's) must be ABSENT from the upsert body — PostgREST's
+    /// merge-duplicates leaves a column untouched only when its key is missing;
+    /// an explicit `"col": null` would null it on the server.
+    func testEncodingOmitsNilColumnsEntirely() throws {
+        let row = UserSettingsRow(userId: uid, tasksGrouping: "project")
+        let data = try JSONEncoder().encode(row)
+        let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(Set(obj.keys), ["user_id", "tasks_grouping"],
+                       "nil columns must be omitted from the JSON, not encoded as null")
+    }
 }

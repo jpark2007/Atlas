@@ -31,6 +31,15 @@ final class SettingsSyncService {
     /// overlays local values onto THIS so Mac-owned columns survive.
     private var lastPulledRow: UserSettingsRow?
 
+    /// True once a pull attempt has completed successfully this session — including
+    /// the "no row exists yet" result, so a brand-new account's first push can still
+    /// create the row. Pushes are skipped while false: the phone shows cached UI
+    /// immediately at launch, so a user can change a synced setting while the first
+    /// pull is still in flight — with no baseline the overlay would resolve every
+    /// Mac-owned column to nil, and their survival would rest solely on the encoder
+    /// omitting nil keys. Only a thrown load leaves it false.
+    private var hasPulledThisSession = false
+
     /// In-flight debounce for push — cancelled and replaced on every change so a burst
     /// of settings changes collapses into a single upsert.
     private var pushTask: Task<Void, Never>?
@@ -45,15 +54,38 @@ final class SettingsSyncService {
     // MARK: - Pull (server wins)
 
     /// Loads the server row and applies each non-nil synced column to UserDefaults.
-    /// Silently no-ops on any error (table not yet deployed) or when no row exists.
+    /// Silently no-ops on any error (table not yet deployed).
     func pullAndApply(db: AtlasDB) async {
-        // `try?` flattens the throwing Optional: nil ⇒ error (table absent) OR no row.
-        guard let row = try? await db.loadUserSettings() else { return }
-        lastPulledRow = row
-        let d = Self.syncedDefaults
-        if let v = row.defaultSpaceName      { d.set(v, forKey: Key.defaultSpaceName) }
-        if let v = row.tasksGrouping         { d.set(v, forKey: Key.tasksGrouping) }
-        if let v = row.notificationPrefsJSON { d.set(v, forKey: Key.notificationPrefs) }
+        do {
+            let row = try await db.loadUserSettings()
+            // A successful load opens the push gate even when NO row exists yet —
+            // a brand-new account's first push must be able to create the row.
+            hasPulledThisSession = true
+            guard let row else { return }
+            lastPulledRow = row
+            let d = Self.syncedDefaults
+            if let v = row.defaultSpaceName      { d.set(v, forKey: Key.defaultSpaceName) }
+            if let v = row.tasksGrouping         { d.set(v, forKey: Key.tasksGrouping) }
+            if let v = row.notificationPrefsJSON { d.set(v, forKey: Key.notificationPrefs) }
+        } catch {
+            // Table not yet deployed / offline — swallow; pushes stay gated.
+        }
+    }
+
+    // MARK: - Reset (sign-out / account deletion)
+
+    /// Drops the session cache, closes the push gate, and removes the three synced
+    /// keys so a next sign-in on a shared device starts clean (its pull repopulates
+    /// them). The removals fire the synced keys' `.onChange` handlers, but the
+    /// closed gate swallows the resulting push.
+    func reset() {
+        pushTask?.cancel()
+        pushTask = nil
+        lastPulledRow = nil
+        hasPulledThisSession = false
+        for key in [Key.defaultSpaceName, Key.tasksGrouping, Key.notificationPrefs] {
+            Self.syncedDefaults.removeObject(forKey: key)
+        }
     }
 
     // MARK: - Push (user-initiated, debounced)
@@ -70,6 +102,9 @@ final class SettingsSyncService {
     }
 
     private func performPush(db: AtlasDB) async {
+        // Never push before this session's first successful pull — a change made
+        // while the pull is still in flight would otherwise ship a baseline-less row.
+        guard hasPulledThisSession else { return }
         guard let userId = try? await db.currentUserId() else { return }
         let d = Self.syncedDefaults
         // Local overlay row: the three phone-owned columns from UserDefaults (an absent

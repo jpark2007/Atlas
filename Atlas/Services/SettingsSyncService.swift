@@ -28,6 +28,13 @@ final class SettingsSyncService: ObservableObject {
     /// push overlays local values onto THIS so phone-owned columns survive.
     private var lastPulledRow: UserSettingsRow?
 
+    /// True once a pull attempt has completed successfully this session — including
+    /// the "no row exists yet" result, so a brand-new account's first push can still
+    /// create the row. Pushes are skipped while false: with no baseline the overlay
+    /// resolves every other-device column to nil, and their survival would rest
+    /// solely on the encoder omitting nil keys. Only a thrown load leaves it false.
+    private var hasPulledThisSession = false
+
     /// In-flight debounce for push — cancelled and replaced on every change so a
     /// settings-screen drag collapses into a single upsert.
     private var pushTask: Task<Void, Never>?
@@ -51,13 +58,20 @@ final class SettingsSyncService: ObservableObject {
     // MARK: - Pull (server wins)
 
     /// Loads the server row and applies each non-nil column to UserDefaults.
-    /// Silently no-ops on any error (table not yet deployed) or when no row exists.
+    /// Silently no-ops on any error (table not yet deployed).
     func pullAndApply(db: AtlasDB) async {
-        // `try?` flattens the throwing Optional: nil ⇒ error (table absent) OR no row.
-        guard let row = try? await db.loadUserSettings() else { return }
-        lastPulledRow = row
-        for write in Self.applies(from: row) {
-            write.apply(to: Self.syncedDefaults)
+        do {
+            let row = try await db.loadUserSettings()
+            // A successful load opens the push gate even when NO row exists yet —
+            // a brand-new account's first push must be able to create the row.
+            hasPulledThisSession = true
+            guard let row else { return }
+            lastPulledRow = row
+            for write in Self.applies(from: row) {
+                write.apply(to: Self.syncedDefaults)
+            }
+        } catch {
+            // Table not yet deployed / offline — swallow; pushes stay gated.
         }
     }
 
@@ -74,7 +88,27 @@ final class SettingsSyncService: ObservableObject {
         }
     }
 
+    // MARK: - Reset (sign-out / account deletion)
+
+    /// Drops the session cache, closes the push gate, and removes every synced key
+    /// so a next sign-in on a shared device starts clean (its pull repopulates them).
+    /// The removals fire the synced keys' `.onChange` handlers, but the closed gate
+    /// swallows the resulting push.
+    func reset() {
+        pushTask?.cancel()
+        pushTask = nil
+        lastPulledRow = nil
+        hasPulledThisSession = false
+        for key in [Key.defaultSpaceName, Key.appleCalendarDefaultSpace, Key.googleTwoWaySync,
+                    Key.textScale, Key.sidebarMode, Key.perTabDocsSync, Key.notificationPrefs] {
+            Self.syncedDefaults.removeObject(forKey: key)
+        }
+    }
+
     private func performPush(db: AtlasDB) async {
+        // Never push before this session's first successful pull — a change made
+        // while the pull is still in flight would otherwise ship a baseline-less row.
+        guard hasPulledThisSession else { return }
         guard let userId = try? await db.currentUserId() else { return }
         let local = Self.readLocal(from: Self.syncedDefaults)
         let row = Self.mergedRow(base: lastPulledRow, local: local, userId: userId)

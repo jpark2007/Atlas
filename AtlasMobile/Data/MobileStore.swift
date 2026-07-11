@@ -131,6 +131,9 @@ final class MobileStore: ObservableObject {
         session = nil
         snapshot = MobileStore.emptySnapshot
         spaceFilter = nil
+        // Clear the settings-sync cache + synced keys so a next sign-in on a
+        // shared device starts clean (its pull repopulates them).
+        settingsSync.reset()
     }
 
     /// Permanently deletes the signed-in user via the `delete-account` edge function
@@ -160,6 +163,7 @@ final class MobileStore: ObservableObject {
         session = nil
         snapshot = MobileStore.emptySnapshot
         spaceFilter = nil
+        settingsSync.reset()   // same clean-slate as signOut
         return nil
     }
 

@@ -159,8 +159,13 @@ struct SettingsView: View {
                     Button("Sign in") { auth.signOut() } // returns to gate
                         .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.accentText)
                 } else {
-                    Button("Sign out") { auth.signOut() }
-                        .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.danger)
+                    Button("Sign out") {
+                        // Clear the settings-sync cache + synced keys so a next
+                        // sign-in on a shared device starts clean.
+                        state.settingsSync.reset()
+                        auth.signOut()
+                    }
+                    .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.danger)
                 }
             }
             if auth.state != .offline {
@@ -200,6 +205,7 @@ struct SettingsView: View {
             let error = await auth.deleteAccount()
             deletingAccount = false
             deleteAccountError = error
+            if error == nil { state.settingsSync.reset() }   // same clean-slate as sign-out
         }
     }
 
