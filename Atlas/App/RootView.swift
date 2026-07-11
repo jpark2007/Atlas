@@ -105,6 +105,8 @@ struct RootView: View {
         .onChange(of: sidebarMode) { _, _ in
             applyColumnVisibility()
             hoverSidebarVisible = false
+            // Sidebar mode is a synced preference — push the change (debounced).
+            if let db = state.db { Task { await state.settingsSync.push(db: db) } }
         }
         // Navigating from the overlay sidebar retracts it — the destination is
         // what you asked for; the panel shouldn't keep covering it.

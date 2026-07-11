@@ -92,6 +92,21 @@ struct SettingsView: View {
         .background(AtlasTheme.Colors.bgBase)
         .onAppear { refreshAppleAccessStatus() }
         .onDisappear { stopRecording() }
+        // Push each synced preference (debounced) when the user changes it. Only
+        // user-initiated changes push — never launch — so a fresh device can't
+        // clobber the server. (sidebar.mode is pushed from RootView, which observes
+        // the same key, so it isn't repeated here.)
+        .onChange(of: defaultTaskSpace)      { _, _ in pushSyncedSettings() }
+        .onChange(of: appleDefaultSpace)     { _, _ in pushSyncedSettings() }
+        .onChange(of: googleCalendarEnabled) { _, _ in pushSyncedSettings() }
+        .onChange(of: textScale)             { _, _ in pushSyncedSettings() }
+        .onChange(of: perTabSyncEnabled)     { _, _ in pushSyncedSettings() }
+    }
+
+    /// Debounced push of the current local synced-preference values to the server.
+    private func pushSyncedSettings() {
+        guard let db = state.db else { return }
+        Task { await state.settingsSync.push(db: db) }
     }
 
     /// Body for the selected settings section. Metrics renders the full `MetricsView`

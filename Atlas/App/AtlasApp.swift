@@ -237,6 +237,13 @@ struct AppGate: View {
                             await state.syncCanvas(using: canvas)
                         }
                     }
+                    // Re-pull cross-device preferences whenever Atlas comes to the
+                    // foreground (server wins). `state.db` is set by bootstrap; nil
+                    // before it lands, in which case this no-ops.
+                    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                        guard let db = state.db else { return }
+                        Task { await state.settingsSync.pullAndApply(db: db) }
+                    }
             case .offline:
                 RootView()
                     .onAppear { state.userName = auth.displayName }

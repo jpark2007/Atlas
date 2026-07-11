@@ -57,6 +57,11 @@ final class AppState: ObservableObject {
     /// Wire the Google account in so event write-back can reach it.
     func attachGoogle(_ auth: GoogleAuthService) { googleAuth = auth }
 
+    /// Cross-device preference sync (user_settings, 0025). Owned here so the
+    /// bootstrap/foreground pull and the Settings/RootView push share one cache
+    /// (`lastPulledRow`) — the push overlays local changes onto it.
+    let settingsSync = SettingsSyncService()
+
     // MARK: - Server-owned Google sync (cloud sync)
 
     private static let serverSyncKey = "calendar.sync.serverOwned"
@@ -311,6 +316,11 @@ final class AppState: ObservableObject {
         await startRealtimeSync(supabaseURL: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey)
         await googleDone
         await canvasDone
+
+        // Pull cross-device preferences (server wins). Best-effort: no-ops until the
+        // user_settings table is deployed. Runs after googleDone so the pulled
+        // `calendar.google.enabled` value reflects the freshly derived connection.
+        await settingsSync.pullAndApply(db: db)
 
         // Collab phase 3: publish this device's derived availability, then keep it
         // fresh on an hourly timer (local edits also trigger a debounced publish).
