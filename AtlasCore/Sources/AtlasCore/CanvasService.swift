@@ -29,6 +29,17 @@ public final class CanvasService: ObservableObject {
         try await call(method: "POST", jwt: jwt, body: body)
     }
 
+    /// PATCH the destination space (`canvas-connect`) → updates only where unmatched
+    /// Canvas items land; the feed secret and conditional-GET cache are untouched, so a
+    /// space change never resets sync. `jwt` is the caller's Supabase access token
+    /// (verified server-side). Throws on any non-2xx so the caller can revert the picker.
+    public func updateSpace(spaceName: String, jwt: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "spaceName": spaceName,
+        ])
+        try await call(method: "PATCH", jwt: jwt, body: body)
+    }
+
     /// DELETE the connection (`canvas-connect`) → the row is marked revoked and the Vault
     /// secret removed. The client returns to the paste form.
     public func disconnect(jwt: String) async throws {

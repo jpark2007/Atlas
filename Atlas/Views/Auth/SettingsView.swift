@@ -29,6 +29,9 @@ struct SettingsView: View {
     // MARK: – Canvas server-sync state
     @State private var canvasFeedURL = ""
     @State private var canvasSpaceName = "School"
+    /// Destination-space picker on the *connected* row. Seeded from the live
+    /// connection; changing it PATCHes `canvas-connect`.
+    @State private var canvasConnectedSpace = ""
     @State private var canvasWorking = false
     @State private var canvasError: String? = nil
 
@@ -255,6 +258,31 @@ struct SettingsView: View {
                         .foregroundStyle(AtlasTheme.Colors.danger)
                 }
             }
+
+            // Destination space is now editable after connect — same picker as the
+            // connect form; changing it PATCHes canvas-connect (see updateCanvasSpace).
+            if !state.spaces.isEmpty {
+                HStack {
+                    Text("Items land in")
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                    Spacer()
+                    Picker("Canvas space", selection: $canvasConnectedSpace) {
+                        ForEach(state.spaces) { space in
+                            Text(space.name).tag(space.name)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 140)
+                    .tint(AtlasTheme.Colors.accent)
+                    .disabled(canvasWorking)
+                    .onChange(of: canvasConnectedSpace) { old, new in
+                        updateCanvasSpace(current: conn.spaceName, from: old, to: new)
+                    }
+                }
+            }
+
             if let err = canvasError {
                 Text(err).atlasFont(size: 12, design: .rounded).foregroundStyle(AtlasTheme.Colors.danger)
             }
@@ -262,6 +290,11 @@ struct SettingsView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .atlasHairlineBelow()
+        // Seed the picker to the live space when the connected row appears (also
+        // re-seeds after a disconnect→reconnect to a different space). No PATCH
+        // fires: onAppear only runs on view insertion, and updateCanvasSpace no-ops
+        // when the new value equals the committed one.
+        .onAppear { canvasConnectedSpace = conn.spaceName ?? "" }
     }
 
     @ViewBuilder
@@ -329,11 +362,11 @@ struct SettingsView: View {
         if conn.status == "error" {
             return "Sync paused — Atlas will retry automatically."
         }
-        let dest = conn.spaceName.map { " → \($0)" } ?? ""
+        // The destination space now shows in the picker below, so it's dropped here.
         if let synced = conn.lastSyncedDate {
-            return "Last synced \(Self.relativeSync(from: synced))\(dest)."
+            return "Last synced \(Self.relativeSync(from: synced))."
         }
-        return "Connected — first sync runs shortly\(dest)."
+        return "Connected — first sync runs shortly."
     }
 
     private func canvasStatusColor(_ conn: CanvasConnectionRow) -> Color {
@@ -359,6 +392,30 @@ struct SettingsView: View {
                 canvasFeedURL = ""   // don't retain the capability URL in the field
             } catch {
                 canvasError = "Couldn't connect Canvas. Check the link and your connection, then try again."
+            }
+            canvasWorking = false
+        }
+    }
+
+    /// Changes where unmatched Canvas items land (PATCH canvas-connect). `current` is the
+    /// connection's committed space, so the initial seed and the failure-revert below are
+    /// no-ops (both re-select `current`). On failure the picker reverts to `oldValue`.
+    private func updateCanvasSpace(current: String?, from oldValue: String, to newValue: String) {
+        guard newValue != (current ?? ""), !newValue.isEmpty else { return }
+        guard let jwt = auth.session?.accessToken else {
+            canvasError = "Sign in to Atlas to change the Canvas space."
+            canvasConnectedSpace = oldValue
+            return
+        }
+        canvasError = nil
+        canvasWorking = true
+        Task {
+            do {
+                try await canvas.updateSpace(spaceName: newValue, jwt: jwt)
+                await state.refreshCanvasConnection()
+            } catch {
+                canvasError = "Couldn't change the Canvas space. Check your connection and try again."
+                canvasConnectedSpace = oldValue   // revert the picker to the committed space
             }
             canvasWorking = false
         }

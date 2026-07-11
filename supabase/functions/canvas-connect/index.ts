@@ -14,6 +14,12 @@
  *          not presence-only), stashes the feed URL in Vault, and upserts
  *          canvas_connections(status='active', space_name).  →  200 { ok: true, status: "active" }
  *
+ * PATCH  /functions/v1/canvas-connect   { "spaceName": "Personal" }
+ *        → verifies the JWT, updates ONLY canvas_connections.space_name (where
+ *          unmatched feed items land). The Vault secret, etag/last_modified
+ *          conditional-GET cache and status are untouched — a space change never
+ *          resets sync.  →  200 { ok: true, status: <unchanged> }  (404 if no row)
+ *
  * DELETE /functions/v1/canvas-connect
  *        → verifies the JWT, deletes the Vault secret, sets status='revoked'
  *          (the row survives so the client can show the paste form again).
@@ -29,11 +35,12 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizeSpaceName } from "../_shared/canvas_space.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Methods": "POST, PATCH, DELETE, OPTIONS",
 };
 
 function json(body: unknown, status = 200): Response {
@@ -47,7 +54,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
-  if (req.method !== "POST" && req.method !== "DELETE") {
+  if (req.method !== "POST" && req.method !== "PATCH" && req.method !== "DELETE") {
     return json({ error: "Method not allowed" }, 405);
   }
 
@@ -100,6 +107,37 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true, status: "revoked" });
   }
 
+  // ── CHANGE DESTINATION SPACE (PATCH) ────────────────────────
+  if (req.method === "PATCH") {
+    let spaceName: string | null;
+    try {
+      const body = await req.json();
+      spaceName = normalizeSpaceName(body?.spaceName);
+    } catch {
+      return json({ error: "Invalid JSON body" }, 400);
+    }
+    if (!spaceName) {
+      return json({ error: "Body must contain a non-empty `spaceName` string" }, 400);
+    }
+
+    // Update ONLY the routing space. vault_secret_id, etag/last_modified (the
+    // conditional-GET cache) and status are deliberately left alone so changing
+    // where items land never resets sync or forces a re-fetch. `.select` lets us
+    // 404 when the caller has no connection row to update.
+    const { data: updated, error: updErr } = await admin
+      .from("canvas_connections")
+      .update({ space_name: spaceName })
+      .eq("user_id", userId)
+      .select("status");
+    if (updErr) {
+      return json({ error: "Failed to update connection" }, 500);
+    }
+    if (!updated || updated.length === 0) {
+      return json({ error: "No Canvas connection to update" }, 404);
+    }
+    return json({ ok: true, status: updated[0].status });
+  }
+
   // ── CONNECT (POST) ──────────────────────────────────────────
   let feedUrl: string;
   let spaceName: string;
@@ -113,10 +151,7 @@ Deno.serve(async (req: Request) => {
       return json({ error: "`feedUrl` must be an https Canvas feed link" }, 400);
     }
     // space_name is optional; default matches canvas_connections' 'School' default.
-    spaceName =
-      typeof body?.spaceName === "string" && body.spaceName.trim()
-        ? body.spaceName.trim()
-        : "School";
+    spaceName = normalizeSpaceName(body?.spaceName) ?? "School";
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
   }
