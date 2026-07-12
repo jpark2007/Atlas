@@ -24,6 +24,33 @@ Small items parked by Drew; pick these up whenever mobile work resumes. (v1 ship
   clears the local session. **Backend already exists + is deployed** — this is iOS UI +
   the client call only, no new server work.
 
+## Where we're at (2026-07-12)
+
+**Shipped + pushed (main @ 9ac58d6), migrations 0025 + 0026 applied to prod:**
+- **Settings sync (0025 `user_settings`):** default space, tasks grouping,
+  notification prefs sync Mac↔iOS (pull-on-launch/foreground, push-on-change;
+  pushes gated on first successful pull; reset on sign-out).
+- **Canvas as a first-class source (closes open ticket 2 below):**
+  `EventSource.canvas` decoded from `canvas_uid`; events read-only + task title
+  locked on BOTH platforms (incl. offline cache and the Mac work-block rename
+  path); per-source labels; destination space editable after connect (PATCH
+  canvas-connect + Mac picker); full Canvas manage + Google status from the phone.
+- **Apple Calendar write-back (Mac, 0026 `apple_event_id`):** Apple events now
+  editable in Atlas (subscribed/recurring stay read-only; notes round-trip);
+  optional device-local Atlas→Apple mirror toggle (default off, never synced)
+  with destination-calendar picker; own-mirror de-dupe on read-back.
+
+**Awaiting Drew's device pass:** Apple event edit reflects in Apple Calendar
+(notes not blanked); recurring/subscribed still read-only; mirror toggle
+create/edit/delete follows with no duplicates and no double-display; settings
+sync Mac↔iPhone; Canvas labels/read-only + destination-space change from phone.
+
+**Jonah status (checked 2026-07-12):** all four collab worktree branches fully
+merged into main; no new pushes since 2026-07-08.
+
+**Roadmap tail (scope freeze 2026-07-10):** polish batch → Canvas E2E + full
+test doc → publish (no CASA).
+
 ## Where we're at (2026-07-09, end of night — three batches shipped same day)
 
 **Shipped + live:**
@@ -57,10 +84,9 @@ cascade in Tasks; auth-mode toggle; paper palette; delete-account red legibility
    is created for new spaces since 0021's one-time backfill → sharing any new
    space (incl. server-seeded ones) likely fails at `createSpaceInvite`. Fix:
    forward trigger on `spaces` (the seed function then inherits it for free).
-2. **Canvas source flag (pre-existing, rule-5 class):** Canvas-origin items are
-   indistinguishable from Atlas items on iOS (no source field; `EventSource` has
-   no `.canvas`) — the edit sheet AND drag-to-move treat them as freely editable,
-   and a server sync could clobber local edits. Needs a source flag at ingest.
+2. **Canvas source flag — DONE 2026-07-11:** `EventSource.canvas` at ingest,
+   read-only events + locked task fields on both platforms (see 2026-07-12
+   status above).
 3. **Danger red decision (Drew):** unified `#ff5c5c` fails AA (~2.6:1) on paper
    as delete-account TEXT — accept or darken `AtlasTheme.Colors.danger` app-wide.
 4. **UI parity beyond colors** (radii, serif titles, calendar/school view
