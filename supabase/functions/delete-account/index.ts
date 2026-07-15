@@ -71,32 +71,36 @@ Deno.serve(async (req: Request) => {
   });
 
   // Vault secrets are pointed at by *_connections.vault_secret_id but are NOT
-  // FKs to auth.users, so the cascade won't remove them — purge them first
-  // (best-effort; a leftover secret must never block the account deletion).
+  // FKs to auth.users, so the cascade won't remove them. Capture the ids now,
+  // but purge only AFTER the user delete succeeds — purging first destroyed a
+  // live account's Google sync when deleteUser failed (2026-07-15).
   const { data: g } = await admin
     .from("google_connections")
     .select("vault_secret_id")
     .eq("user_id", userId)
     .maybeSingle();
-  if (g?.vault_secret_id) {
-    await admin.rpc("delete_google_secret", { secret_id: g.vault_secret_id });
-  }
-
   const { data: c } = await admin
     .from("canvas_connections")
     .select("vault_secret_id")
     .eq("user_id", userId)
     .maybeSingle();
-  if (c?.vault_secret_id) {
-    await admin.rpc("delete_canvas_secret", { secret_id: c.vault_secret_id });
-  }
 
   // Delete the auth user (hard delete). Every user-scoped table cascades off
   // auth.users, so this wipes spaces/projects/tasks/events/notes/connections
   // in one shot.
   const { error: delErr } = await admin.auth.admin.deleteUser(userId);
   if (delErr) {
+    console.error("delete-account: deleteUser failed", userId, delErr);
     return json({ error: "Failed to delete account" }, 500);
+  }
+
+  // Account is gone — now purge the orphaned Vault secrets (best-effort; a
+  // leftover secret points at nothing and must never fail the response).
+  if (g?.vault_secret_id) {
+    await admin.rpc("delete_google_secret", { secret_id: g.vault_secret_id });
+  }
+  if (c?.vault_secret_id) {
+    await admin.rpc("delete_canvas_secret", { secret_id: c.vault_secret_id });
   }
 
   return json({ ok: true });

@@ -501,10 +501,23 @@ final class LoopbackRedirectListener {
         let message = ok
             ? "You can close this tab and return to Atlas."
             : "Something went wrong. Return to Atlas and try again."
+        let mark = ok ? "✓" : "✕"
+        let markColor = ok ? "#b04f2f" : "#a03535"
+        // Editorial-light paper style — mirrors the hosted Drive picker page.
         let html = """
-        <html><head><meta charset="utf-8"><title>\(title)</title></head>\
-        <body style="font-family:-apple-system,system-ui;background:#1a1714;color:#f0e9df;\
-        text-align:center;padding-top:80px"><h2>\(title)</h2><p>\(message)</p></body></html>
+        <!DOCTYPE html>
+        <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\
+        <title>\(title)</title><style>
+        body { font-family: -apple-system, system-ui; background: #f4efe6; color: #2b2622;
+               max-width: 560px; margin: 0 auto; padding: 96px 20px 0; text-align: center; }
+        .mark { font-size: 34px; color: \(markColor); border: 1.5px solid \(markColor);
+                border-radius: 50%; width: 64px; height: 64px; line-height: 64px;
+                display: inline-block; margin-bottom: 24px; }
+        h2 { font-weight: 600; margin: 0 0 10px; }
+        p { color: #6b6258; font-size: 14px; margin: 0; }
+        .rule { border-top: 1px solid #d9d1c2; width: 72px; margin: 28px auto 0; }
+        </style></head>
+        <body><div class="mark">\(mark)</div><h2>\(title)</h2><p>\(message)</p><div class="rule"></div></body></html>
         """
         let bodyData = Data(html.utf8)
         let header = "HTTP/1.1 200 OK\r\n" +
