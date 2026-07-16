@@ -1,0 +1,3 @@
+supabase-staging/
+*.md
+.gitignore

@@ -25,6 +25,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!form) return;
 
   const input = form.querySelector('input[type="email"]');
+  const honeypot = form.querySelector('input[name="referral_code"]');
   const button = form.querySelector('button[type="submit"]');
   const status = form.querySelector("[data-status]");
   const idleLabel = (button && button.textContent.trim()) || COPY.idle;
@@ -61,7 +62,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       const res = await fetch(WAITLIST_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, referral_code: (honeypot && honeypot.value) || "" }),
       });
 
       if (!res.ok) throw new Error("Request failed: " + res.status);
