@@ -207,7 +207,7 @@ struct ScheduleView: View {
                 .shadow(color: Color.black.opacity(0.08), radius: 4, y: 1)
         }
         .padding(.trailing, 24)
-        .padding(.bottom, 96)
+        .padding(.bottom, 68)   // sits closer to the tab bar (comfortable margin, no overlap)
         .transition(.opacity.combined(with: .scale(scale: 0.8)))
     }
 

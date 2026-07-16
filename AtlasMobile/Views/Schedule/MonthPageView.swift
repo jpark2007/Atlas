@@ -1,9 +1,10 @@
 import SwiftUI
 import AtlasCore
 
-/// A month grid for jumping the Schedule to a day. Pure navigation — reuses the
-/// shared `MonthGrid` date math; tapping a day calls `onPick` (the caller pops
-/// back to Schedule on that day).
+/// A month grid for jumping the Schedule to a day. Tapping a day previews that
+/// day's items below the grid (it does not navigate); "Visit this day" commits the
+/// jump via `onPick`. Reuses the shared `MonthGrid` date math. Default preview =
+/// the day the Schedule is currently showing.
 struct MonthPageView: View {
     let selected: Date
     let onPick: (Date) -> Void
@@ -11,6 +12,9 @@ struct MonthPageView: View {
     @EnvironmentObject private var store: MobileStore
     @Environment(\.dismiss) private var dismiss
     @State private var month: Date
+    /// The day being previewed below the grid — tapping a cell moves it, and only
+    /// "Visit this day" navigates. Seeded to the Schedule's current day.
+    @State private var pickedDay: Date
 
     private let cal = Calendar.current
     private let weekdaySymbols = Calendar.current.veryShortStandaloneWeekdaySymbols
@@ -19,38 +23,165 @@ struct MonthPageView: View {
         self.selected = selected
         self.onPick = onPick
         _month = State(initialValue: selected)
+        _pickedDay = State(initialValue: Calendar.current.startOfDay(for: selected))
     }
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                Text(monthTitle).edScreenTitle()
-                Spacer()
-                stepper
-            }
-
-            LazyVGrid(columns: columns, spacing: 0) {
-                ForEach(orderedWeekdays, id: \.self) { symbol in
-                    Text(symbol)
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundStyle(MobileTheme.faint)
-                        .frame(maxWidth: .infinity)
-                        .padding(.bottom, 8)
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    Text(monthTitle).edScreenTitle()
+                    Spacer()
+                    stepper
                 }
-                ForEach(MonthGrid.cells(for: month, calendar: cal), id: \.self) { day in
-                    dayCell(day)
+
+                LazyVGrid(columns: columns, spacing: 0) {
+                    ForEach(orderedWeekdays, id: \.self) { symbol in
+                        Text(symbol)
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(MobileTheme.faint)
+                            .frame(maxWidth: .infinity)
+                            .padding(.bottom, 8)
+                    }
+                    ForEach(MonthGrid.cells(for: month, calendar: cal), id: \.self) { day in
+                        dayCell(day)
+                    }
                 }
             }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
 
-            Spacer()
+            dayPreview
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(MobileTheme.bg.ignoresSafeArea())
     }
+
+    // MARK: - Day preview (the tapped day's items + "Visit this day")
+
+    private var dayPreview: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Rectangle().fill(MobileTheme.hairline).frame(height: 1)
+                .padding(.top, 16)
+
+            Text(previewTitle)
+                .edCapsLabel().textCase(nil)
+                .padding(.horizontal, 24).padding(.top, 16).padding(.bottom, 10)
+
+            let items = previewItems
+            if items.isEmpty {
+                Text("Nothing scheduled.")
+                    .font(.system(size: 14, weight: .regular, design: .rounded))
+                    .foregroundStyle(MobileTheme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 24)
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        ForEach(items) { item in
+                            previewRow(item)
+                        }
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                MobileTheme.Haptic.selection()
+                onPick(pickedDay)
+                dismiss()
+            } label: {
+                Text("Visit this day")
+                    .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MobileTheme.ink)
+                    .frame(maxWidth: .infinity)
+                    .edOutlineControl()
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 24)
+            .padding(.top, 12)
+            .padding(.bottom, 20)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func previewRow(_ item: DayItem) -> some View {
+        HStack(spacing: 12) {
+            Text(item.time)
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(MobileTheme.muted)
+                .frame(width: 62, alignment: .trailing)
+            RoundedRectangle(cornerRadius: 2).fill(item.color).frame(width: 3, height: 18)
+            Text(item.title)
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundStyle(MobileTheme.ink)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 24).padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(MobileTheme.hairline).frame(height: 1).padding(.horizontal, 24)
+        }
+    }
+
+    // MARK: - Preview data
+
+    private struct DayItem: Identifiable {
+        let id: UUID
+        let sortMinute: Int
+        let time: String
+        let title: String
+        let color: Color
+    }
+
+    /// The picked day's events (by start) + open tasks (scheduled or due), sorted by
+    /// time. All-day events sort first; date-only due tasks sort last as "Due".
+    /// Colored per space like the month dots.
+    private var previewItems: [DayItem] {
+        var items: [DayItem] = []
+        for ev in store.snapshot.events where cal.isDate(ev.start, inSameDayAs: pickedDay) {
+            items.append(DayItem(id: ev.id,
+                                 sortMinute: ev.isAllDay ? -1 : minutesOf(ev.start),
+                                 time: ev.isAllDay ? "All day" : timeLabel(ev.start),
+                                 title: ev.title, color: ev.color))
+        }
+        for t in store.snapshot.tasks where !t.done {
+            if let at = t.scheduledAt, cal.isDate(at, inSameDayAs: pickedDay) {
+                items.append(DayItem(id: t.id, sortMinute: minutesOf(at),
+                                     time: timeLabel(at), title: t.title, color: t.spaceColor))
+            } else if let due = t.dueDate, cal.isDate(due, inSameDayAs: pickedDay) {
+                let timed = hasClockTime(due)
+                items.append(DayItem(id: t.id, sortMinute: timed ? minutesOf(due) : 2000,
+                                     time: timed ? timeLabel(due) : "Due",
+                                     title: t.title, color: t.spaceColor))
+            }
+        }
+        return items.sorted { $0.sortMinute < $1.sortMinute }
+    }
+
+    private func minutesOf(_ date: Date) -> Int {
+        let c = cal.dateComponents([.hour, .minute], from: date)
+        return (c.hour ?? 0) * 60 + (c.minute ?? 0)
+    }
+
+    private func hasClockTime(_ date: Date) -> Bool {
+        let c = cal.dateComponents([.hour, .minute], from: date)
+        return (c.hour ?? 0) != 0 || (c.minute ?? 0) != 0
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "h:mm a"; return f
+    }()
+    private func timeLabel(_ date: Date) -> String { Self.timeFormatter.string(from: date) }
+
+    private static let previewTitleFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEEE, MMM d"; return f
+    }()
+    private var previewTitle: String { Self.previewTitleFormatter.string(from: pickedDay) }
 
     private var stepper: some View {
         HStack(spacing: 22) {
@@ -74,9 +205,12 @@ struct MonthPageView: View {
 
     private func dayCell(_ day: Date) -> some View {
         let inMonth = MonthGrid.isInMonth(day, of: month, calendar: cal)
-        let isSelected = cal.isDate(day, inSameDayAs: selected)
+        let isSelected = cal.isDate(day, inSameDayAs: pickedDay)
         let isToday = cal.isDateInToday(day)
-        return Button { onPick(cal.startOfDay(for: day)); dismiss() } label: {
+        return Button {
+            MobileTheme.Haptic.selection()
+            pickedDay = cal.startOfDay(for: day)
+        } label: {
             VStack(spacing: 2) {
                 Text("\(cal.component(.day, from: day))")
                     .font(.system(size: 16, weight: isToday ? .heavy : .regular, design: .rounded))

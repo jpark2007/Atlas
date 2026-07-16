@@ -71,6 +71,7 @@ struct SettingsView: View {
             voiceSection
             integrationsSection
             calendarsSection
+            helpSection
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -306,6 +307,39 @@ struct SettingsView: View {
         guard let docs = docsConn else { return MobileTheme.muted }
         return docs.status == "active" ? MobileTheme.green : MobileTheme.warning
     }
+
+    // MARK: - Help & Tips (static — short practical pointers, no links)
+
+    private var helpSection: some View {
+        Section {
+            ForEach(helpTips, id: \.title) { tip in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(tip.title).rowLabel()
+                    Text(tip.body)
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .foregroundStyle(MobileTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .rowStyle()
+            }
+        } header: { header("Help & Tips") }
+    }
+
+    private let helpTips: [(title: String, body: String)] = [
+        ("Quick capture",
+         "Tap + to jot a task or event by voice or text. Atlas files it into the right space — or your Default space when it can’t tell."),
+        ("Spaces vs. projects",
+         "Spaces are the big areas of your life; projects and classes live inside them. Capture picks a space — organize the rest on Mac or web."),
+        ("Schedule views",
+         "Switch between the list and the hour grid. On the grid, long-press a block and drag to move it to a new time."),
+        ("Canvas sync",
+         "Canvas assignments come in read-only. Connect or change where they land here; manage the feed on Mac or web."),
+        ("Google Calendar",
+         "Connected Google calendars are read-only on your phone. Add or manage accounts in Atlas on your Mac — they sync here."),
+        ("Notifications",
+         "Choose what nudges you — events, tasks due, a daily digest, overdue reminders — under Notifications above."),
+    ]
 
     // MARK: - Calendars (Google Calendar accounts — read-only, managed on the Mac)
 
@@ -657,16 +691,25 @@ struct SettingsView: View {
             .foregroundStyle(MobileTheme.faint)
     }
 
+    // Headers and footers are section accessory rows, not `.rowStyle()` content rows,
+    // so they need their own clear list-row background — without it a plain List draws
+    // them on the default system (white) fill, which broke the paper bg behind every
+    // caption. Zeroed insets align the internal 28 pt padding with the content rows.
     private func header(_ title: String) -> some View {
         Text(title).edCapsLabel().textCase(nil)
-            .padding(.horizontal, 28).padding(.top, 8)
+            .padding(.horizontal, 28).padding(.top, 10).padding(.bottom, 2)
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
     }
 
     private func footer(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 13, weight: .medium, design: .rounded))
+            .font(.system(size: 12.5, weight: .medium, design: .rounded))
             .foregroundStyle(MobileTheme.faint)
-            .padding(.horizontal, 28).padding(.top, 4)
+            .lineSpacing(1.5)
+            .padding(.horizontal, 28).padding(.top, 6).padding(.bottom, 2)
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
     }
 }
 
