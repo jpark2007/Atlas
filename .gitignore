@@ -11,6 +11,8 @@ AtlasMobile/Info.plist
 AtlasMobileWidgets/Info.plist
 build/
 DerivedData/
+# Release pipeline output (archive, exported .app, DMG) — never commit binaries
+dist/
 *.xcuserstate
 *.xcuserdatad/
 xcuserdata/
