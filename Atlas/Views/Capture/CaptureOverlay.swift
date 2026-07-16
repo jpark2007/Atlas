@@ -141,7 +141,14 @@ struct CaptureCommandBar: View {
                     .foregroundStyle(AtlasTheme.Colors.accent)
             }
 
-            TextField("Capture anything — a task, a thought…", text: $text)
+            // When adding from a project page, show which project it lands in.
+            if let ctx = state.captureContext {
+                atlasTag(text: ctx.projectName, color: AtlasTheme.Colors.accentText)
+            }
+
+            TextField(state.captureContext == nil
+                      ? "Capture anything — a task, a thought…"
+                      : "Add a task…", text: $text)
                 .textFieldStyle(.plain)
                 .atlasFont(size: 19, weight: .regular, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
@@ -280,6 +287,19 @@ struct CaptureCommandBar: View {
         text = ""
         isProcessing = true
 
+        // From a project's "Add Task": force-tag the task to that project/space and
+        // skip AI routing entirely, so it always lands where the user asked.
+        if let ctx = state.captureContext {
+            state.addTask(title: rawText,
+                          spaceName: ctx.spaceName,
+                          projectName: ctx.projectName)
+            Task { @MainActor in
+                defer { isProcessing = false }
+                await showConfirmation(CaptureOutcome.task(hasDate: false).confirmation)
+            }
+            return
+        }
+
         Task { @MainActor in
             defer { isProcessing = false }
 
@@ -326,6 +346,7 @@ struct CaptureCommandBar: View {
     private func dismiss() {
         speech.stop()
         fieldFocused = false
+        state.captureContext = nil
         withAnimation(.spring(response: 0.32, dampingFraction: 0.88)) {
             isPresented = false
         }

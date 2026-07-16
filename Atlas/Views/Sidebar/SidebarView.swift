@@ -333,9 +333,17 @@ struct SidebarView: View {
             state.route = projectRoute
         } label: {
             HStack(spacing: 9) {
-                Image(systemName: project.isClass ? "circle.dotted" : "circle")
-                    .atlasFont(size: 8)
-                    .foregroundStyle(selected ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textMuted)
+                // A project with its own color wears it as a filled dot (mirrors the
+                // space dot); one that inherits the space color keeps the hollow glyph.
+                if let token = project.colorToken {
+                    Circle()
+                        .fill(ColorToken.color(for: token))
+                        .frame(width: 8, height: 8)
+                } else {
+                    Image(systemName: project.isClass ? "circle.dotted" : "circle")
+                        .atlasFont(size: 8)
+                        .foregroundStyle(selected ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textMuted)
+                }
                 Text(project.name)
                     .atlasFont(size: 14, weight: selected ? .semibold : .regular, design: .rounded)
                     .foregroundStyle(selected ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
