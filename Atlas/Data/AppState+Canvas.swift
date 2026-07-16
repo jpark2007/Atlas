@@ -89,4 +89,49 @@ extension AppState {
         item.projectName = project.name
         return item
     }
+
+    // MARK: - Course ↔ class linking (0032)
+
+    /// Distinct Canvas course labels present in the synced feed — the bracket labels
+    /// stamped on Canvas tasks/events at ingest. The class-link picker lists these.
+    var canvasCoursesInFeed: [String] {
+        let labels = tasks.compactMap(\.canvasCourse) + events.compactMap(\.canvasCourse)
+        return Array(Set(labels)).sorted()
+    }
+
+    /// Links a class (project) to a Canvas course (or clears it with `nil`), then files
+    /// that course's ALREADY-imported items under the class. Persisting the link routes
+    /// FUTURE items server-side (canvas-sync reads `projects.canvas_course`); the local
+    /// arrays + DB PATCH handle the retroactive move. Chosen over remapping inside the
+    /// sync runner so the runner's per-tick updates stay user-data-safe — only this
+    /// deliberate link ever overrides where a Canvas item is filed.
+    func linkProjectToCanvasCourse(projectID: UUID, course: String?) {
+        for si in spaces.indices {
+            guard let pi = spaces[si].projects.firstIndex(where: { $0.id == projectID }) else { continue }
+            spaces[si].projects[pi].canvasCourse = course
+            let project = spaces[si].projects[pi]
+            Task { try? await self.db?.upsertProject(project) }
+
+            // Unlink only clears the link (future items floor to the space); already-filed
+            // items stay put so the user's manual filing survives.
+            guard let course else { return }
+
+            let spaceName = project.spaceName
+            let color = calendarSpaceColor(named: spaceName)
+            for i in events.indices where events[i].canvasCourse == course {
+                events[i].projectID = project.id
+                events[i].spaceName = spaceName
+                events[i].spaceID   = project.spaceID
+                events[i].color     = color
+            }
+            for i in tasks.indices where tasks[i].canvasCourse == course {
+                tasks[i].projectName = project.name
+                tasks[i].spaceName   = spaceName
+                tasks[i].spaceID     = project.spaceID
+                tasks[i].spaceColor  = color
+            }
+            Task { try? await self.db?.remapCanvasCourse(course, toProject: project.id, spaceName: spaceName) }
+            return
+        }
+    }
 }
