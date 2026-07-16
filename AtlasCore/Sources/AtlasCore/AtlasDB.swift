@@ -619,7 +619,7 @@ public struct NoteRow: Codable {
 ///
 /// `modifiedTime` / `lastSyncedAt` are decoded as `String` (not `Date`) because the
 /// sync cron writes them from Drive / `now()` with fractional-second precision the
-/// shared `.iso8601` decoder can't parse — same reason `GoogleConnectionRow` keeps
+/// shared `.iso8601` decoder can't parse — same reason `GoogleConnection` keeps
 /// `lastSyncedAt` as a String. `toDomain()` parses them leniently.
 public struct ReferenceRow: Codable {
     public var id: UUID
@@ -679,7 +679,7 @@ public struct ReferenceRow: Codable {
     }
 
     /// Parses an ISO-8601 timestamp with or without fractional seconds — mirrors
-    /// `GoogleConnectionRow.lastSyncedDate` so server-written (microsecond) times decode.
+    /// `GoogleConnection.lastSyncedDate` so server-written (microsecond) times decode.
     public static func date(from s: String?) -> Date? {
         guard let s else { return nil }
         let f = ISO8601DateFormatter()
@@ -840,60 +840,17 @@ public struct GoalRow: Codable {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GoogleConnectionRow — server-owned Google sync state (read-only for the client)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// A row from `google_connections` (migration `0006`). Present only when the user
-/// has enabled cloud sync. The client may read only the owner-granted columns —
-/// `vault_secret_id` is intentionally NOT granted, so a `select=*` would 403;
-/// `loadGoogleConnection()` selects explicit columns instead.
-///
-/// `lastSyncedAt` is decoded as a String because the server writes it with `now()`
-/// (microsecond precision) which the app's plain `.iso8601` decoder can't parse;
-/// `lastSyncedDate` parses it leniently for the UI.
-public struct GoogleConnectionRow: Codable {
-    public var status: String            // active | error | revoked
-    public var lastSyncedAt: String?
-    public var lastError: String?
-    public var calendarId: String?
-
-    enum CodingKeys: String, CodingKey {
-        case status
-        case lastSyncedAt = "last_synced_at"
-        case lastError    = "last_error"
-        case calendarId   = "calendar_id"
-    }
-
-    /// The server owns Google↔DB sync whenever a connection exists and hasn't been
-    /// revoked. `error` still counts as server-owned: the server holds the credential
-    /// and keeps retrying, so the Mac must stay stood down (single-owner invariant).
-    /// Only `revoked` (deliberate disconnect or `invalid_grant`) hands Google back to
-    /// the Mac's local sync.
-    public var isServerOwned: Bool { status != "revoked" }
-
-    /// `lastSyncedAt` parsed leniently (with or without fractional seconds).
-    public var lastSyncedDate: Date? {
-        guard let s = lastSyncedAt else { return nil }
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = f.date(from: s) { return d }
-        f.formatOptions = [.withInternetDateTime]
-        return f.date(from: s)
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // GoogleConnection — one row of the multi-account `google_connections` table (0028)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// One connected Google account (migration 0028): a user-named login routed to a
-/// destination space. Unlike the legacy singleton `GoogleConnectionRow`, a user can
-/// have N of these. The client reads only owner-granted columns (`vault_secret_id`
-/// is hidden by RLS), so `loadGoogleConnections()` selects an explicit list.
+/// destination space. A user can have N of these. The client reads only owner-granted
+/// columns (`vault_secret_id` is hidden by RLS), so `loadGoogleConnections()` selects
+/// an explicit list.
 ///
-/// `lastSyncedAt` stays a String for the same reason as `GoogleConnectionRow` — the
-/// server writes it with microsecond precision the plain `.iso8601` decoder rejects;
-/// `lastSyncedDate` parses it leniently for the UI.
+/// `lastSyncedAt` stays a String because the server writes it with microsecond
+/// precision the plain `.iso8601` decoder rejects; `lastSyncedDate` parses it
+/// leniently for the UI.
 public struct GoogleConnection: Codable, Identifiable, Equatable {
     public var id: UUID
     public var name: String
@@ -928,9 +885,9 @@ public struct GoogleConnection: Codable, Identifiable, Equatable {
 /// `vault_secret_id` (the feed-URL pointer) is intentionally NOT granted, so a
 /// `select=*` would 403; `loadCanvasConnection()` selects explicit columns instead.
 ///
-/// Mirrors `GoogleConnectionRow`. `lastSyncedAt` is a String because the server writes
-/// it with microsecond precision the plain `.iso8601` decoder can't parse;
-/// `lastSyncedDate` parses it leniently for the UI.
+/// `lastSyncedAt` is a String because the server writes it with microsecond precision
+/// the plain `.iso8601` decoder can't parse; `lastSyncedDate` parses it leniently for
+/// the UI.
 public struct CanvasConnectionRow: Codable {
     public var status: String            // active | error | revoked
     public var lastSyncedAt: String?
@@ -947,7 +904,7 @@ public struct CanvasConnectionRow: Codable {
     /// The server owns Canvas→DB sync whenever a connection exists and hasn't been
     /// revoked. `error` still counts as server-owned (the server keeps retrying); only
     /// `revoked` (a reset feed URL needing a re-paste) hands nothing back — the client
-    /// shows the paste form again. Mirrors `GoogleConnectionRow.isServerOwned`.
+    /// shows the paste form again.
     public var isServerOwned: Bool { status != "revoked" }
 
     /// `lastSyncedAt` parsed leniently (with or without fractional seconds).
@@ -1282,16 +1239,6 @@ public final class AtlasDB {
         return data
     }
 
-    /// Reads the caller's `google_connections` row (server-owned Google sync state),
-    /// or nil when the user has no cloud connection. Selects only the owner-granted
-    /// columns; RLS scopes the query to the signed-in user.
-    public func loadGoogleConnection() async throws -> GoogleConnectionRow? {
-        let rows: [GoogleConnectionRow] = try await getColumns(
-            "google_connections",
-            columns: "status,last_synced_at,last_error,calendar_id")
-        return rows.first
-    }
-
     /// Reads ALL of the caller's `google_connections` rows (multi-account, 0028).
     /// Selects only the owner-granted columns; RLS scopes the query to the signed-in
     /// user. Sorted by id for a list order that's stable across launches.
@@ -1328,7 +1275,7 @@ public final class AtlasDB {
 
     /// Reads the caller's `canvas_connections` row (server-owned Canvas sync state),
     /// or nil when the user has no Canvas connection. Selects only the owner-granted
-    /// columns; RLS scopes the query to the signed-in user. Mirrors `loadGoogleConnection()`.
+    /// columns; RLS scopes the query to the signed-in user.
     public func loadCanvasConnection() async throws -> CanvasConnectionRow? {
         let rows: [CanvasConnectionRow] = try await getColumns(
             "canvas_connections",

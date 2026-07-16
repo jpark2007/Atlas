@@ -351,6 +351,61 @@ final class MobileStore: ObservableObject {
     }
 }
 
+// MARK: - Per-project day-grid colors (mirrors the Mac's AppState+Calendar `gridColored`)
+
+extension MobileStore {
+
+    /// The color a DAY-GRID tile should wear: the tile's project color when that project
+    /// set its own `colorToken`, else the space color already on the event. Applied ONLY
+    /// to grid tiles — agenda dots, month dots, filters and widgets keep the space color
+    /// (Option B). An event with no project link, or whose project inherits the space
+    /// color, is returned unchanged.
+    func gridColored(_ events: [CalendarEvent]) -> [CalendarEvent] {
+        events.map { ev in
+            guard let token = projectColorToken(for: ev) else { return ev }
+            var e = ev
+            e.color = ColorToken.color(for: token)
+            return e
+        }
+    }
+
+    /// Work-block tiles (scheduled tasks) wear their project's color on the day grid.
+    /// The task's `spaceColor` is swapped so `DayGridView`'s task blocks pick it up; the
+    /// agenda's check-circles read the untouched space-colored tasks and stay unchanged.
+    func gridColored(tasks: [TaskItem]) -> [TaskItem] {
+        tasks.map { t in
+            guard let token = projectColorToken(spaceName: t.spaceName, projectName: t.projectName) else { return t }
+            var x = t
+            x.spaceColor = ColorToken.color(for: token)
+            return x
+        }
+    }
+
+    /// The custom color token of the project a grid tile belongs to, or `nil` when the
+    /// tile has no project link / the project inherits the space color. Work-blocks
+    /// (id == task.id) resolve through the backing task's project; other events resolve
+    /// through `projectID`.
+    private func projectColorToken(for event: CalendarEvent) -> String? {
+        if event.isWorkBlock, let task = snapshot.tasks.first(where: { $0.id == event.id }) {
+            return projectColorToken(spaceName: task.spaceName, projectName: task.projectName)
+        }
+        if let pid = event.projectID,
+           let project = snapshot.projects.first(where: { $0.id == pid }) {
+            return project.colorToken
+        }
+        return nil
+    }
+
+    /// The custom color token of the project matching `projectName` inside `spaceName`
+    /// (empty name ⇒ no project). `nil` when nothing matches or the project inherits.
+    private func projectColorToken(spaceName: String, projectName: String) -> String? {
+        guard !projectName.isEmpty else { return nil }
+        return snapshot.projects
+            .first { $0.name == projectName && $0.spaceName == spaceName }?
+            .colorToken
+    }
+}
+
 /// A parsed `atlas://` deep link. Tasks 5/9 flesh out the per-link behavior; Task 1
 /// parses the URL and switches the tab.
 enum DeepLink: Equatable {

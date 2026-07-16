@@ -253,8 +253,8 @@ struct ScheduleView: View {
                 DayGridView(
                     day: selectedDay,
                     now: context.date,
-                    events: filteredEvents,
-                    tasks: filteredTasks,
+                    events: store.gridColored(filteredEvents),
+                    tasks: store.gridColored(tasks: filteredTasks),
                     onOpen: { detail = $0 },
                     onToggle: toggle,
                     placing: placing,

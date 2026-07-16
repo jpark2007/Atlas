@@ -39,9 +39,11 @@ struct SettingsView: View {
     /// nil = not yet loaded; false = OS-denied (show honest off state); otherwise the app's own prefs UI.
     @State private var osAuthorized: Bool?
 
-    // Connections — the server-owned connection rows, loaded in `.task`. nil ⇒ no
-    // row (or not yet loaded / offline → the honest "not connected" copy).
-    @State private var googleConn: GoogleConnectionRow?
+    // Connections — the server-owned connection rows, loaded in `.task`. Empty/nil ⇒
+    // no row (or not yet loaded / offline → the honest "not connected" copy). Google is
+    // read-only here (accounts are managed on the Mac); Canvas is fully manageable.
+    @State private var googleConns: [GoogleConnection] = []
+    @State private var docsConn: AtlasDB.GoogleDocsConnection?
     @State private var canvasConn: CanvasConnectionRow?
 
     /// Shared Canvas connect client (AtlasCore, platform-neutral) — full manage from
@@ -67,7 +69,8 @@ struct SettingsView: View {
             captureSection
             notificationsSection
             voiceSection
-            connectionsSection
+            integrationsSection
+            calendarsSection
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -258,60 +261,108 @@ struct SettingsView: View {
         } header: { header("Voice") }
     }
 
-    // MARK: - Connections
+    // MARK: - Integrations (Notes & Docs status + Canvas manage)
 
-    private var connectionsSection: some View {
+    private var integrationsSection: some View {
         Section {
-            googleRow
+            notesDocsRow
             canvasRows
-        } header: { header("Connections") }
+        } header: { header("Integrations") }
     }
 
     /// Load the server-owned connection rows. On any error (offline / not signed in /
-    /// no row) both stay nil → the honest "not connected" copy. Re-run after every
+    /// no row) they stay empty/nil → the honest "not connected" copy. Re-run after every
     /// Canvas connect / disconnect / space change so the status refreshes.
     private func loadConnections() async {
-        googleConn = try? await store.db.loadGoogleConnection()
-        canvasConn = try? await store.db.loadCanvasConnection()
+        googleConns = (try? await store.db.loadGoogleConnections()) ?? []
+        docsConn    = try? await store.db.loadGoogleDocsConnection()
+        canvasConn  = try? await store.db.loadCanvasConnection()
     }
 
-    // MARK: Google — read-only status (connect is a Desktop-loopback OAuth, Mac-only)
+    // MARK: Notes & Docs — read-only status (the dedicated Drive/Docs Google login)
 
-    private var googleRow: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text("Google Calendar").rowLabel()
-            Spacer()
-            Text(googleStatusText)
-                .font(.system(size: 15, weight: .regular, design: .rounded))
-                .foregroundStyle(googleStatusColor)
-                .multilineTextAlignment(.trailing)
+    private var notesDocsRow: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Notes & Docs").rowLabel()
+            Text(notesDocsStatusText)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(notesDocsStatusColor)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .rowStyle()
     }
 
-    /// active ⇒ "Connected · synced Xm ago"; error/revoked ⇒ reconnect warning;
-    /// no row ⇒ "Not connected — set up on your Mac". The phone never runs the
-    /// Google OAuth (a Desktop-loopback flow, Mac-only today).
-    private var googleStatusText: String {
-        switch googleConn?.status {
-        case "active":
-            if let synced = googleConn?.lastSyncedDate {
-                return "Connected · synced \(Self.relativeSync(from: synced))"
+    /// active ⇒ "Connected · email"; any other status ⇒ reconnect warning; no row ⇒
+    /// "Not connected". The phone never runs the Google OAuth (a Desktop-loopback flow,
+    /// Mac-only today), so this is informational.
+    private var notesDocsStatusText: String {
+        guard let docs = docsConn else { return "Not connected — set up on your Mac" }
+        return docs.status == "active"
+            ? "Connected · \(docs.googleEmail)"
+            : (docs.lastError ?? "Reconnect needed — open Atlas on your Mac")
+    }
+
+    private var notesDocsStatusColor: Color {
+        guard let docs = docsConn else { return MobileTheme.muted }
+        return docs.status == "active" ? MobileTheme.green : MobileTheme.warning
+    }
+
+    // MARK: - Calendars (Google Calendar accounts — read-only, managed on the Mac)
+
+    private var calendarsSection: some View {
+        Section {
+            if googleConns.isEmpty {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Google Calendar").rowLabel()
+                    Spacer()
+                    Text("Not connected — set up on your Mac")
+                        .font(.system(size: 15, weight: .regular, design: .rounded))
+                        .foregroundStyle(MobileTheme.muted)
+                        .multilineTextAlignment(.trailing)
+                }
+                .rowStyle()
+            } else {
+                ForEach(googleConns) { conn in
+                    googleAccountRow(conn)
+                }
             }
-            return "Connected"
-        case .some:
-            return "Reconnect needed — open Atlas on your Mac"
-        case .none:
-            return "Not connected — set up on your Mac"
+        } header: { header("Calendars") } footer: {
+            footer("Add or manage Google accounts in Atlas on your Mac — they sync here automatically.")
         }
     }
 
-    private var googleStatusColor: Color {
-        switch googleConn?.status {
-        case "active": return MobileTheme.green
-        case .some:    return MobileTheme.warning
-        case .none:    return MobileTheme.muted
+    /// One connected Google account: name, muted email, and a per-account status line
+    /// (incl. the reconnect-needed warning). Read-only — no tap target, no manage flow.
+    private func googleAccountRow(_ conn: GoogleConnection) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(conn.name).rowLabel()
+            Text(conn.googleEmail)
+                .font(.system(size: 13, weight: .regular, design: .rounded))
+                .foregroundStyle(MobileTheme.muted)
+            Text(googleAccountStatus(conn))
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(googleAccountStatusColor(conn))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .rowStyle()
+    }
+
+    /// Per-account status, mirroring the Mac's `googleConnectionStatus`.
+    private func googleAccountStatus(_ conn: GoogleConnection) -> String {
+        switch conn.status {
+        case "error", "revoked":
+            return "Reconnect needed — open Atlas on your Mac"
+        default:
+            if conn.spaceId == nil { return "Connected — read-in only" }
+            if let synced = conn.lastSyncedDate {
+                return "Connected · synced \(Self.relativeSync(from: synced))"
+            }
+            return "Connected — first sync runs shortly"
+        }
+    }
+
+    private func googleAccountStatusColor(_ conn: GoogleConnection) -> Color {
+        conn.status == "active" ? MobileTheme.green : MobileTheme.warning
     }
 
     // MARK: Canvas — full manage (connect / change destination space / disconnect)
