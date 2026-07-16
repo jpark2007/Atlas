@@ -102,7 +102,10 @@ struct DayGridView: View {
                 }
                 .frame(height: canvasHeight)
             }
-            .contentMargins(.bottom, 300, for: .scrollContent)
+            // A small comfortable tail past the 11 PM line — enough to lift the last
+            // hour clear of the FAB/confirm circles and give drag ergonomics room,
+            // without the screenful of blank that 300 pt left below the grid.
+            .contentMargins(.bottom, 120, for: .scrollContent)
             .onAppear { scrollToStart(proxy) }
         }
     }
