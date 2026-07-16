@@ -23,6 +23,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkRateLimit, tooManyRequests } from "../_shared/rate_limit.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -69,6 +70,11 @@ Deno.serve(async (req: Request) => {
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+
+  // Destructive + irreversible: a real user deletes once. 3/day tolerates a
+  // retry after a transient failure while blocking scripted abuse.
+  const rl = await checkRateLimit(admin, userId, "delete-account", 3, 86400);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfter, CORS_HEADERS);
 
   // Vault secrets are pointed at by *_connections.vault_secret_id but are NOT
   // FKs to auth.users, so the cascade won't remove them. Capture the ids now,

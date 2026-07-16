@@ -55,6 +55,12 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 
 const BATCH_LIMIT = 20; // connections processed per invocation (oldest first)
 
+// Bounds on ONE Canvas feed per tick so a pathological/hostile feed can't blow the
+// function's memory or time budget. A real student's semester feed is well under
+// both: a few hundred KB, a few hundred events.
+const MAX_FEED_BYTES = 5 * 1024 * 1024; // 5 MB of ICS text
+const MAX_ICS_EVENTS = 2000;            // events parsed/written per feed per tick
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type",
@@ -370,7 +376,27 @@ async function syncUser(admin: SupabaseClient, conn: Connection, dryRun: boolean
 
   const newEtag = res.headers.get("etag");
   const newLastModified = res.headers.get("last-modified");
-  const vevents = parseICS(await res.text());
+
+  // Cap the feed body — refuse an absurdly large ICS rather than buffering it all.
+  const declaredLen = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declaredLen) && declaredLen > MAX_FEED_BYTES) {
+    await res.body?.cancel();
+    throw new Error(`feed too large: ${declaredLen} bytes`);
+  }
+  const feedText = await res.text();
+  if (feedText.length > MAX_FEED_BYTES) {
+    throw new Error(`feed too large: ${feedText.length} bytes`);
+  }
+
+  // Cap events processed per tick. This is a safety ceiling well above any real
+  // Canvas feed; beyond it the extras are dropped for this run and the count is
+  // reported in the connection's last_error (a >2000-item feed is anomalous).
+  let vevents = parseICS(feedText);
+  let eventsOverCap = 0;
+  if (vevents.length > MAX_ICS_EVENTS) {
+    eventsOverCap = vevents.length - MAX_ICS_EVENTS;
+    vevents = vevents.slice(0, MAX_ICS_EVENTS);
+  }
 
   // 3. Load the user's projects once for course routing.
   const { data: projRows, error: projErr } = await admin
@@ -404,6 +430,9 @@ async function syncUser(admin: SupabaseClient, conn: Connection, dryRun: boolean
 
   // Per-item isolation: one bad row is recorded and skipped, never failing the run.
   const itemErrors: string[] = [];
+  if (eventsOverCap > 0) {
+    itemErrors.push(`${eventsOverCap} feed item(s) over the ${MAX_ICS_EVENTS}/tick cap were skipped`);
+  }
 
   // 5a. TASKS — split new UIDs (full insert) vs existing (feed-owned fields only).
   const taskUids = [...taskByUid.keys()];

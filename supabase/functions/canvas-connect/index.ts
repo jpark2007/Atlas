@@ -36,6 +36,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeSpaceName } from "../_shared/canvas_space.ts";
+import { checkRateLimit, tooManyRequests } from "../_shared/rate_limit.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -82,6 +83,11 @@ Deno.serve(async (req: Request) => {
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+
+  // Connect/rotate/disconnect are occasional credential operations. 20/hour is
+  // generous for a human yet blocks a feed-URL-storing loop.
+  const rl = await checkRateLimit(admin, userId, "canvas-connect", 20, 3600);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfter, CORS_HEADERS);
 
   // ── DISCONNECT ──────────────────────────────────────────────
   if (req.method === "DELETE") {

@@ -47,8 +47,15 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { type DocNoteRef, mintAccessToken, pullDocNoteReference } from "../_shared/google_pull.ts";
+import { checkRateLimit, tooManyRequests } from "../_shared/rate_limit.ts";
 
 const GOOGLE_DOC_MIME = "application/vnd.google-apps.document";
+
+// Hard cap on files registered per import. A real "pick some Docs for this
+// project" is a handful; 50 covers a heavy import while stopping a payload that
+// would register (and inline-pull) thousands of references in one shot. Files
+// beyond the cap are reported as skippedOverCap, not silently dropped.
+const MAX_IMPORT_FILES = 50;
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -177,6 +184,9 @@ async function onPicked(data) {
     const body = await resp.json();
     if (!resp.ok || !body.ok) { log("Import failed: " + (body.error || resp.status)); return; }
     log("Imported " + body.imported + ", skipped " + body.skipped + " (already in project).");
+    if (body.skippedOverCap > 0) {
+      log(body.skippedOverCap + " file(s) over the 50-per-import limit were not added — import them in a second batch.");
+    }
     log("Done — you can close this tab and return to Atlas.");
   } catch (e) {
     log("Import request failed: " + e);
@@ -247,11 +257,23 @@ Deno.serve(async (req: Request) => {
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
   }
-  if (files.length === 0) return json({ ok: true, imported: 0, skipped: 0 });
+  if (files.length === 0) return json({ ok: true, imported: 0, skipped: 0, skippedOverCap: 0 });
+
+  // Truncate to the per-import cap and report the remainder rather than failing.
+  let skippedOverCap = 0;
+  if (files.length > MAX_IMPORT_FILES) {
+    skippedOverCap = files.length - MAX_IMPORT_FILES;
+    files = files.slice(0, MAX_IMPORT_FILES);
+  }
 
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+
+  // Registering picked files is an occasional, heavier operation (may inline-pull
+  // up to MAX_IMPORT_FILES Docs). 20/hour is far above normal use, blocks abuse.
+  const rl = await checkRateLimit(admin, userId, "drive-import", 20, 3600);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfter, CORS_HEADERS);
 
   // Confirm the project belongs to the caller and fetch its space (notes.space_name).
   const { data: project, error: projErr } = await admin
@@ -412,5 +434,5 @@ Deno.serve(async (req: Request) => {
     }
   } catch (_e) { /* no connection / vault miss: rows stay pending */ }
 
-  return json({ ok: true, imported: refRows.length, skipped, pulled });
+  return json({ ok: true, imported: refRows.length, skipped, pulled, skippedOverCap });
 });

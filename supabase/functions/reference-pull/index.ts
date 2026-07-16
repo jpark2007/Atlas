@@ -29,7 +29,8 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { type DocNoteRef, InvalidGrantError, mintAccessToken, pullDocNoteReference } from "../_shared/google_pull.ts";
+import { type DocNoteRef, DocTooLargeError, InvalidGrantError, mintAccessToken, pullDocNoteReference } from "../_shared/google_pull.ts";
+import { checkRateLimit, tooManyRequests } from "../_shared/rate_limit.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -84,6 +85,11 @@ Deno.serve(async (req: Request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  // "Sync now" hits Google Drive/Docs on every call — 10/min lets a user mash the
+  // button across a few docs while stopping a tight retry loop.
+  const rl = await checkRateLimit(admin, userId, "reference-pull", 10, 60);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfter, CORS_HEADERS);
+
   // ── Load the caller's doc_note reference ──
   const { data: refRow, error: refErr } = await admin
     .from("project_references")
@@ -118,6 +124,9 @@ Deno.serve(async (req: Request) => {
     const { changed } = await pullDocNoteReference(admin, userId, accessToken, ref, new Date().toISOString(), false);
     return json({ ok: true, changed });
   } catch (e) {
+    if (e instanceof DocTooLargeError) {
+      return json({ error: "This Google Doc is too large to sync (over 10 MB)." }, 413);
+    }
     const message = String((e as Error)?.message ?? e);
     if (message.includes("trashed")) return json({ error: "trashed" }, 409);
     return json({ error: message.slice(0, 200) }, 502);

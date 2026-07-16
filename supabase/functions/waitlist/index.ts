@@ -8,6 +8,7 @@
 // =====================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkRateLimit, clientIp, tooManyRequests } from "../_shared/rate_limit.ts";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -49,6 +50,11 @@ Deno.serve(async (req: Request) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+
+  // Public endpoint — keyed by IP so a script can't flood the table. 5/hour is
+  // plenty for a human signing up (and re-trying a typo).
+  const rl = await checkRateLimit(supabase, clientIp(req), "waitlist", 5, 3600);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfter, corsHeaders);
 
   const { error } = await supabase
     .from("waitlist")
