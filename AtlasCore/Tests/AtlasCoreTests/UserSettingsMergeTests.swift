@@ -36,11 +36,11 @@ final class UserSettingsMergeTests: XCTestCase {
     }
 
     func testOverlayLocalWinsOverBase() {
-        let base = UserSettingsRow(userId: uid, googleTwoWaySync: false, textScale: 1.0)
-        let local = UserSettingsRow(userId: uid, googleTwoWaySync: true, textScale: 1.3)
+        let base = UserSettingsRow(userId: uid, textScale: 1.0, perTabDocsSync: false)
+        let local = UserSettingsRow(userId: uid, textScale: 1.3, perTabDocsSync: true)
         let out = UserSettingsMerge.overlay(base: base, local: local, userId: uid)
         XCTAssertEqual(out.textScale, 1.3)
-        XCTAssertEqual(out.googleTwoWaySync, true)
+        XCTAssertEqual(out.perTabDocsSync, true)
     }
 
     func testOverlayWithNilBaseUsesOnlyLocal() {
@@ -62,7 +62,6 @@ final class UserSettingsMergeTests: XCTestCase {
         var pulled = UserSettingsRow(
             userId: uid,
             defaultSpaceName: "Work",
-            googleTwoWaySync: true,
             sidebarMode: "hover",
             tasksGrouping: "project"
         )

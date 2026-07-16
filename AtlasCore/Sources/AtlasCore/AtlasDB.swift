@@ -189,7 +189,6 @@ public struct UserSettingsRow: Codable, Equatable {
     public var userId: UUID
     public var defaultSpaceName: String?
     public var appleCalendarDefaultSpace: String?
-    public var googleTwoWaySync: Bool?
     public var textScale: Double?
     public var sidebarMode: String?
     public var tasksGrouping: String?
@@ -203,7 +202,6 @@ public struct UserSettingsRow: Codable, Equatable {
         case userId                    = "user_id"
         case defaultSpaceName          = "default_space_name"
         case appleCalendarDefaultSpace = "apple_calendar_default_space"
-        case googleTwoWaySync          = "google_two_way_sync"
         case textScale                 = "text_scale"
         case sidebarMode               = "sidebar_mode"
         case tasksGrouping             = "tasks_grouping"
@@ -215,7 +213,6 @@ public struct UserSettingsRow: Codable, Equatable {
     public init(userId: UUID,
                 defaultSpaceName: String? = nil,
                 appleCalendarDefaultSpace: String? = nil,
-                googleTwoWaySync: Bool? = nil,
                 textScale: Double? = nil,
                 sidebarMode: String? = nil,
                 tasksGrouping: String? = nil,
@@ -225,7 +222,6 @@ public struct UserSettingsRow: Codable, Equatable {
         self.userId                    = userId
         self.defaultSpaceName          = defaultSpaceName
         self.appleCalendarDefaultSpace = appleCalendarDefaultSpace
-        self.googleTwoWaySync          = googleTwoWaySync
         self.textScale                 = textScale
         self.sidebarMode               = sidebarMode
         self.tasksGrouping             = tasksGrouping
@@ -239,7 +235,6 @@ public struct UserSettingsRow: Codable, Equatable {
         userId                    = try c.decode(UUID.self, forKey: .userId)
         defaultSpaceName          = try c.decodeIfPresent(String.self, forKey: .defaultSpaceName)
         appleCalendarDefaultSpace = try c.decodeIfPresent(String.self, forKey: .appleCalendarDefaultSpace)
-        googleTwoWaySync          = try c.decodeIfPresent(Bool.self,   forKey: .googleTwoWaySync)
         textScale                 = try c.decodeIfPresent(Double.self, forKey: .textScale)
         sidebarMode               = try c.decodeIfPresent(String.self, forKey: .sidebarMode)
         tasksGrouping             = try c.decodeIfPresent(String.self, forKey: .tasksGrouping)
@@ -259,7 +254,6 @@ public struct UserSettingsRow: Codable, Equatable {
         try c.encode(userId, forKey: .userId)
         try c.encodeIfPresent(defaultSpaceName,          forKey: .defaultSpaceName)
         try c.encodeIfPresent(appleCalendarDefaultSpace, forKey: .appleCalendarDefaultSpace)
-        try c.encodeIfPresent(googleTwoWaySync,          forKey: .googleTwoWaySync)
         try c.encodeIfPresent(textScale,                 forKey: .textScale)
         try c.encodeIfPresent(sidebarMode,               forKey: .sidebarMode)
         try c.encodeIfPresent(tasksGrouping,             forKey: .tasksGrouping)
@@ -1306,27 +1300,6 @@ public final class AtlasDB {
             "google_connections",
             columns: "id,name,google_email,calendar_id,space_id,status,last_error,last_synced_at")
         return rows.sorted { $0.id.uuidString < $1.id.uuidString }
-    }
-
-    /// The server's bare view of the Google connection: just `status`
-    /// (active | error | revoked) and `last_error`. A lighter cousin of
-    /// `loadGoogleConnection()` for a Settings connection badge — nil ⇒ no
-    /// connection row. RLS (owner-read, migration 0006) scopes it to the caller.
-    public struct GoogleConnectionStatus: Codable {
-        public var status: String
-        public var lastError: String?
-
-        enum CodingKeys: String, CodingKey {
-            case status
-            case lastError = "last_error"
-        }
-    }
-
-    public func fetchGoogleConnectionStatus() async throws -> GoogleConnectionStatus? {
-        let rows: [GoogleConnectionStatus] = try await getColumns(
-            "google_connections",
-            columns: "status,last_error")
-        return rows.first
     }
 
     /// The dedicated Google login powering Drive/Docs background work (import /

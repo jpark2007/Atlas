@@ -346,8 +346,7 @@ final class AppState: ObservableObject {
         await canvasDone
 
         // Pull cross-device preferences (server wins). Best-effort: no-ops until the
-        // user_settings table is deployed. Runs after googleDone so the pulled
-        // `calendar.google.enabled` value reflects the freshly derived connection.
+        // user_settings table is deployed.
         await settingsSync.pullAndApply(db: db)
 
         // Collab phase 3: publish this device's derived availability, then keep it

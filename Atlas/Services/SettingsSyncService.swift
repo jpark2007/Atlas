@@ -44,7 +44,6 @@ final class SettingsSyncService: ObservableObject {
     enum Key {
         static let defaultSpaceName          = "tasks.defaultSpaceName"          // default_space_name
         static let appleCalendarDefaultSpace = "calendar.apple.defaultSpace"     // apple_calendar_default_space
-        static let googleTwoWaySync          = "calendar.google.enabled"         // google_two_way_sync
         static let textScale                 = "appearance.textScale"            // text_scale
         static let sidebarMode               = "sidebar.mode"                    // sidebar_mode
         static let perTabDocsSync            = "notes.perTabDocsSync.enabled"    // per_tab_docs_sync
@@ -99,7 +98,7 @@ final class SettingsSyncService: ObservableObject {
         pushTask = nil
         lastPulledRow = nil
         hasPulledThisSession = false
-        for key in [Key.defaultSpaceName, Key.appleCalendarDefaultSpace, Key.googleTwoWaySync,
+        for key in [Key.defaultSpaceName, Key.appleCalendarDefaultSpace,
                     Key.textScale, Key.sidebarMode, Key.perTabDocsSync, Key.notificationPrefs] {
             Self.syncedDefaults.removeObject(forKey: key)
         }
@@ -133,7 +132,6 @@ final class SettingsSyncService: ObservableObject {
     struct LocalSnapshot: Equatable {
         var defaultSpaceName: String? = nil
         var appleCalendarDefaultSpace: String? = nil
-        var googleTwoWaySync: Bool? = nil
         var textScale: Double? = nil
         var sidebarMode: String? = nil
         var perTabDocsSync: Bool? = nil
@@ -165,7 +163,6 @@ final class SettingsSyncService: ObservableObject {
         var writes: [DefaultsWrite] = []
         if let v = row.defaultSpaceName          { writes.append(.init(key: Key.defaultSpaceName,          value: .string(v))) }
         if let v = row.appleCalendarDefaultSpace { writes.append(.init(key: Key.appleCalendarDefaultSpace, value: .string(v))) }
-        if let v = row.googleTwoWaySync          { writes.append(.init(key: Key.googleTwoWaySync,          value: .bool(v)))   }
         if let v = row.textScale                 { writes.append(.init(key: Key.textScale,                 value: .double(v))) }
         if let v = row.sidebarMode               { writes.append(.init(key: Key.sidebarMode,               value: .string(v))) }
         if let v = row.perTabDocsSync            { writes.append(.init(key: Key.perTabDocsSync,            value: .bool(v)))   }
@@ -179,7 +176,6 @@ final class SettingsSyncService: ObservableObject {
         LocalSnapshot(
             defaultSpaceName:          defaults.string(forKey: Key.defaultSpaceName),
             appleCalendarDefaultSpace: defaults.string(forKey: Key.appleCalendarDefaultSpace),
-            googleTwoWaySync:          defaults.object(forKey: Key.googleTwoWaySync) == nil ? nil : defaults.bool(forKey: Key.googleTwoWaySync),
             textScale:                 defaults.object(forKey: Key.textScale) == nil ? nil : defaults.double(forKey: Key.textScale),
             sidebarMode:               defaults.string(forKey: Key.sidebarMode),
             perTabDocsSync:            defaults.object(forKey: Key.perTabDocsSync) == nil ? nil : defaults.bool(forKey: Key.perTabDocsSync),
@@ -197,7 +193,6 @@ final class SettingsSyncService: ObservableObject {
             userId: userId,
             defaultSpaceName:          local.defaultSpaceName,
             appleCalendarDefaultSpace: local.appleCalendarDefaultSpace,
-            googleTwoWaySync:          local.googleTwoWaySync,
             textScale:                 local.textScale,
             sidebarMode:               local.sidebarMode,
             tasksGrouping:             nil,   // phone-owned; no Mac local source

@@ -13,7 +13,7 @@ import AtlasCore
 ///   • **Push** is debounced (500 ms, cancel-previous) and fires ONLY on a
 ///     user-initiated change. It overlays the present local values onto the
 ///     last-pulled row, so the Mac-owned columns the phone has no UI for
-///     (`apple_calendar_default_space`, `google_two_way_sync`, `text_scale`,
+///     (`apple_calendar_default_space`, `text_scale`,
 ///     `sidebar_mode`, `per_tab_docs_sync`) are never nulled. A row matching the
 ///     last pull is skipped — a pull's writes echo through the synced keys'
 ///     `.onChange` handlers, and those echoes must not upsert.

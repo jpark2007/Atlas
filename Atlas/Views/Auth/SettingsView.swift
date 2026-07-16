@@ -68,12 +68,6 @@ struct SettingsView: View {
     @State private var docsWorking = false
     @State private var docsError: String? = nil
 
-    // MARK: – Google connection badge state
-    /// Raw `google_connections.status` (active | error | revoked), nil when there's
-    /// no connection row. Loaded from the server on `.task` — the app must say when
-    /// it isn't actually connected, independent of the local Google-sync toggles.
-    @State private var connectionStatus: String? = nil
-
     // MARK: – Delete-account state
     @State private var showDeleteAccountConfirm = false
     @State private var deletingAccount = false
@@ -180,9 +174,11 @@ struct SettingsView: View {
                         .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.accentText)
                 } else {
                     Button("Sign out") {
-                        // Clear the settings-sync cache + synced keys so a next
-                        // sign-in on a shared device starts clean.
+                        // Clear the settings-sync cache + synced keys AND every Google
+                        // credential (singleton + per-connection keychain slots) so a next
+                        // sign-in on a shared device starts clean — no cross-account leak.
                         state.settingsSync.reset()
+                        googleAuth.disconnect()
                         auth.signOut()
                     }
                     .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.danger)
@@ -225,7 +221,10 @@ struct SettingsView: View {
             let error = await auth.deleteAccount()
             deletingAccount = false
             deleteAccountError = error
-            if error == nil { state.settingsSync.reset() }   // same clean-slate as sign-out
+            if error == nil {
+                state.settingsSync.reset()   // same clean-slate as sign-out
+                googleAuth.disconnect()      // clear all Google keychain credentials
+            }
         }
     }
 
@@ -459,8 +458,8 @@ struct SettingsView: View {
     private var integrations: some View {
         VStack(alignment: .leading, spacing: 10) {
             label("INTEGRATIONS")
-            row(icon: "calendar", tint: AtlasTheme.Colors.school, title: "Google Calendar / Drive / Gmail",
-                subtitle: "Sign in with Google to enable")
+            row(icon: "calendar", tint: AtlasTheme.Colors.school, title: "Google Calendar / Drive",
+                subtitle: "Manage accounts in Calendars; Drive & Docs in Notes & Docs")
             googleConnectionBadge
             row(icon: "applelogo", tint: AtlasTheme.Colors.textSecondary, title: "Sign in with Apple",
                 subtitle: "Enable signing in Xcode to use on device")
@@ -488,10 +487,7 @@ struct SettingsView: View {
             .padding(.vertical, 8)
             .atlasHairlineBelow()
         }
-        // The server's view of the Google connection — direct db read (AppState owns
-        // the AtlasDB handle); nil db (offline/mock) leaves the badge as "Not connected".
         .task {
-            connectionStatus = try? await state.db?.fetchGoogleConnectionStatus()?.status
             await loadDocsConnection()
         }
     }
@@ -620,20 +616,19 @@ struct SettingsView: View {
         }
     }
 
-    /// Live server-side Google connection status, aligned under the Google row.
-    /// active ⇒ "Connected"; revoked/error (any non-active) ⇒ reconnect warning;
-    /// no connection row ⇒ "Not connected".
+    /// Aggregate Google connection status, aligned under the Google row. Derived from
+    /// all of the user's `google_connections` (multi-account): no connection ⇒ "Not
+    /// connected"; any non-active (revoked/error) ⇒ reconnect warning; else "Connected".
     @ViewBuilder
     private var googleConnectionBadge: some View {
         Group {
-            switch connectionStatus {
-            case "active":
-                Text("Connected").foregroundStyle(AtlasTheme.Colors.textMuted)
-            case .some:
+            if state.googleConnections.isEmpty {
+                Text("Not connected").foregroundStyle(AtlasTheme.Colors.textMuted)
+            } else if state.googleConnections.contains(where: { $0.status != "active" }) {
                 Text("⚠ Reconnect needed — sync is stopped")
                     .foregroundStyle(AtlasTheme.Colors.warning)
-            case .none:
-                Text("Not connected").foregroundStyle(AtlasTheme.Colors.textMuted)
+            } else {
+                Text("Connected").foregroundStyle(AtlasTheme.Colors.textMuted)
             }
         }
         .font(.system(size: 11, design: .rounded))

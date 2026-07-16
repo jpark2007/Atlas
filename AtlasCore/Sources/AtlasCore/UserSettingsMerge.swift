@@ -19,7 +19,6 @@ public enum UserSettingsMerge {
             userId: userId,
             defaultSpaceName:          local.defaultSpaceName          ?? base?.defaultSpaceName,
             appleCalendarDefaultSpace: local.appleCalendarDefaultSpace ?? base?.appleCalendarDefaultSpace,
-            googleTwoWaySync:          local.googleTwoWaySync          ?? base?.googleTwoWaySync,
             textScale:                 local.textScale                 ?? base?.textScale,
             sidebarMode:               local.sidebarMode               ?? base?.sidebarMode,
             tasksGrouping:             local.tasksGrouping             ?? base?.tasksGrouping,
