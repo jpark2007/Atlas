@@ -11,8 +11,6 @@ struct SettingsView: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var googleAuth: GoogleAuthService
 
-    @AppStorage("calendar.google.enabled") private var googleCalendarEnabled: Bool = false
-
     /// Space new / quick-captured tasks fall into when none is inferred.
     @AppStorage("tasks.defaultSpaceName") private var defaultTaskSpace: String = "Personal"
 
@@ -121,7 +119,6 @@ struct SettingsView: View {
         // the same key, so it isn't repeated here.)
         .onChange(of: defaultTaskSpace)      { _, _ in state.pushSyncedSettings() }
         .onChange(of: appleDefaultSpace)     { _, _ in state.pushSyncedSettings() }
-        .onChange(of: googleCalendarEnabled) { _, _ in state.pushSyncedSettings() }
         .onChange(of: textScale)             { _, _ in state.pushSyncedSettings() }
         .onChange(of: perTabSyncEnabled)     { _, _ in state.pushSyncedSettings() }
     }

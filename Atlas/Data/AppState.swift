@@ -863,38 +863,7 @@ final class AppState: ObservableObject {
             tasks[i].scheduledAt = date
             let updated = tasks[i]
             Task { try? await self.db?.upsertTask(updated) }
-            pushWorkBlockToGoogle(taskID: taskId)
             schedulePublish()
-        }
-    }
-
-    /// Mirrors a scheduled task's work-block (its planned work time) to Google — create on
-    /// first schedule, patch on reschedule — storing the returned id on the task. Gated by
-    /// the sync toggle. The task's *deadline* is never pushed (deadlines stay Atlas-native).
-    private func pushWorkBlockToGoogle(taskID: UUID) {
-        guard !serverSyncEnabled,  // work-block mirroring is Mac-owned and OFF in server mode (v1)
-              UserDefaults.standard.bool(forKey: "calendar.google.enabled"),
-              let auth = googleAuth, auth.isConnected,
-              let i = tasks.firstIndex(where: { $0.id == taskID }),
-              let at = tasks[i].scheduledAt else { return }
-        let task = tasks[i]
-        let end = Calendar.current.date(byAdding: .minute, value: task.durationMin ?? 60, to: at) ?? at
-        let block = CalendarEvent(title: task.title, subtitle: "", start: at, end: end,
-                                  color: task.spaceColor, spaceName: task.spaceName)
-        let service = GoogleCalendarService(auth: auth)
-        Task { @MainActor in
-            if let gid = task.workBlockGoogleEventId, !gid.isEmpty {
-                try? await service.updateEvent(googleEventID: gid, block)
-            } else {
-                guard let gid = try? await service.createEvent(block), !gid.isEmpty else { return }
-                if let j = self.tasks.firstIndex(where: { $0.id == taskID }) {
-                    self.tasks[j].workBlockGoogleEventId = gid
-                    // Persist the freshly-created Google id so the read-back de-dupe survives
-                    // relaunch — without this the column stays NULL and the block duplicates.
-                    let persisted = self.tasks[j]
-                    try? await self.db?.upsertTask(persisted)
-                }
-            }
         }
     }
 
@@ -912,7 +881,6 @@ final class AppState: ObservableObject {
         tasks[i].noteID = noteID
         let updated = tasks[i]
         Task { try? await self.db?.upsertTask(updated) }
-        pushWorkBlockToGoogle(taskID: id)
         schedulePublish()
     }
 
@@ -979,7 +947,6 @@ final class AppState: ObservableObject {
                 try? await self.db?.upsertReferenceAttachment(attachment)
             }
         }
-        pushNewEventToGoogle(event)
         pushNewEventToApple(event)
         schedulePublish()
     }
@@ -1022,7 +989,6 @@ final class AppState: ObservableObject {
             events[i] = event
         }
         Task { try? await self.db?.upsertEvent(event) }
-        pushUpdatedEventToGoogle(event)
         pushUpdatedEventToApple(event)
         schedulePublish()
     }
@@ -1048,7 +1014,6 @@ final class AppState: ObservableObject {
         events.removeAll { $0.id == id }
         Task { try? await self.db?.deleteEvent(id: id) }
         if let removed {
-            pushDeletedEventToGoogle(removed)
             pushDeletedEventToApple(removed)
         }
         schedulePublish()
@@ -1106,62 +1071,6 @@ final class AppState: ObservableObject {
         events.removeAll { idset.contains($0.id) }
         for id in ids { Task { try? await self.db?.deleteEvent(id: id) } }
         schedulePublish()
-    }
-
-    // MARK: - Google Calendar write-back (Atlas → Google)
-    //
-    // Only user-created Atlas events are mirrored — never external/read-only
-    // events (Apple/Google reads live in `externalEvents`, not `events`). All
-    // calls no-op until the account is connected. The Google event id is held in
-    // memory on the `CalendarEvent`; durable persistence (an events-table column
-    // + migration) is deferred to the live-Google session, so after a relaunch an
-    // edit re-creates rather than patches. Failures are swallowed: write-back must
-    // never block the local edit, which already succeeded.
-
-    /// True only for user-created events while the account is connected.
-    private func shouldWriteBack(_ event: CalendarEvent) -> Bool {
-        // Single-owner invariant: when the server owns Google↔DB sync, the Mac never
-        // writes to Google. Gates the new / update / delete push paths below.
-        guard !serverSyncEnabled else { return false }
-        guard let auth = googleAuth, auth.isConnected else { return false }
-        // Gated by the single "Sync calendar with Google" toggle (calendar.google.enabled).
-        guard UserDefaults.standard.bool(forKey: "calendar.google.enabled") else { return false }
-        return !event.isReadOnly
-    }
-
-    private func pushNewEventToGoogle(_ event: CalendarEvent) {
-        guard shouldWriteBack(event), event.googleEventId == nil, let auth = googleAuth else { return }
-        let service = GoogleCalendarService(auth: auth)
-        Task { @MainActor in
-            guard let gid = try? await service.createEvent(event), !gid.isEmpty else { return }
-            // Remember the Google id so later edits patch instead of duplicating.
-            if let i = self.events.firstIndex(where: { $0.id == event.id }) {
-                self.events[i].googleEventId = gid
-            }
-        }
-    }
-
-    private func pushUpdatedEventToGoogle(_ event: CalendarEvent) {
-        guard shouldWriteBack(event), let auth = googleAuth else { return }
-        let service = GoogleCalendarService(auth: auth)
-        Task { @MainActor in
-            if let gid = event.googleEventId, !gid.isEmpty {
-                try? await service.updateEvent(googleEventID: gid, event)
-            } else {
-                // Connected but never pushed (e.g. created before connecting) — create now.
-                guard let gid = try? await service.createEvent(event), !gid.isEmpty else { return }
-                if let i = self.events.firstIndex(where: { $0.id == event.id }) {
-                    self.events[i].googleEventId = gid
-                }
-            }
-        }
-    }
-
-    private func pushDeletedEventToGoogle(_ event: CalendarEvent) {
-        guard shouldWriteBack(event), let auth = googleAuth,
-              let gid = event.googleEventId, !gid.isEmpty else { return }
-        let service = GoogleCalendarService(auth: auth)
-        Task { try? await service.deleteEvent(googleEventID: gid) }
     }
 
     // MARK: - Apple Calendar write-back (Atlas → Apple, device-local mirror)
