@@ -1205,10 +1205,11 @@ public final class AtlasDB {
         // References + attachments are best-effort: if the notes-import migration
         // (0013) isn't deployed yet, these tables 404 — degrade to [] rather than
         // failing the whole load (which would blank everything back to MockData).
-        let refRows: [ReferenceRow] =
-            (try? await getAll("project_references", order: "created_at.desc")) ?? []
-        let attachRows: [ReferenceAttachmentRow] =
-            (try? await getAll("reference_attachments", order: "created_at.desc")) ?? []
+        // Independent tables, so overlap the two round-trips.
+        async let refRowsAsync:    [ReferenceRow]           = getAll("project_references",  order: "created_at.desc")
+        async let attachRowsAsync: [ReferenceAttachmentRow] = getAll("reference_attachments", order: "created_at.desc")
+        let refRows:    [ReferenceRow]           = (try? await refRowsAsync)    ?? []
+        let attachRows: [ReferenceAttachmentRow] = (try? await attachRowsAsync) ?? []
 
         return AtlasSnapshot(
             spaces:   sr.map { $0.toDomain() },

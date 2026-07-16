@@ -74,6 +74,12 @@ struct CommandPaletteOverlay: View {
 
     @State private var query = ""
     @State private var selection = 0
+    /// Cached result sections. Recomputed ONLY when the query changes or the
+    /// palette opens — never on hover/arrow/scroll. `selection` is `@State` and
+    /// changes on every row hover, so a computed `sections` would re-run the full
+    /// note-body search each time the mouse passed over a row; caching pins the
+    /// search to actual query edits.
+    @State private var sections: [PaletteSection] = []
     /// True only when the selection just moved via the arrow keys — the list
     /// auto-scrolls to keep it visible ONLY then. Hover also moves the selection,
     /// and auto-scrolling on hover fights the user's own scroll wheel (rows pass
@@ -108,6 +114,7 @@ struct CommandPaletteOverlay: View {
             if presented {
                 query = ""
                 selection = 0
+                sections = computeSections()
                 DispatchQueue.main.async { fieldFocused = true }
             }
         }
@@ -156,7 +163,7 @@ struct CommandPaletteOverlay: View {
                 .tint(AtlasTheme.Colors.accent)
                 .focused($fieldFocused)
                 .onSubmit { activate() }
-                .onChange(of: query) { selection = 0 }
+                .onChange(of: query) { selection = 0; sections = computeSections() }
                 // Focus from the field's OWN lifecycle so the `.focused` binding is live
                 // when we set it — driving it from the persistent parent's onChange while
                 // the field animates in often fails to land, so typing did nothing.
@@ -341,8 +348,9 @@ struct CommandPaletteOverlay: View {
     }
 
     /// Ordered result sections, decided by the pure `CommandPaletteModel`. Inside a
-    /// focus session the palette narrows to notes scope.
-    private var sections: [PaletteSection] {
+    /// focus session the palette narrows to notes scope. Called only from the query/
+    /// open handlers (result cached in `sections`), never during a plain re-render.
+    private func computeSections() -> [PaletteSection] {
         CommandPaletteModel.results(
             query: query,
             projects: state.spaces.flatMap(\.projects),
