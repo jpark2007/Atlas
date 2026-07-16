@@ -618,7 +618,19 @@ h1, h2, .display {
   font-size: 9.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--clay-text);
 }
-.teasers__caption { margin-top: 1.1rem; font-size: 0.9rem; color: var(--muted); }
+/* Live Mac download — site primary button treatment (ink on paper). */
+.app-btn--primary {
+  background: var(--ink);
+  border-color: transparent;
+  color: var(--paper);
+  text-decoration: none;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.app-btn--primary .app-btn__label { color: var(--paper); opacity: 1; }
+.app-btn--primary:hover { transform: translateY(-1px); background: #000; }
+.app-btn--primary:active { transform: translateY(0); }
+.teasers__note { margin-top: 0.85rem; font-size: 0.82rem; color: var(--muted); }
+.teasers__caption { margin-top: 0.6rem; font-size: 0.9rem; color: var(--muted); }
 
 /* =====================================================================
    Footer

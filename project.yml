@@ -17,7 +17,7 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "0.9.0"
     CURRENT_PROJECT_VERSION: "1"
     GENERATE_INFOPLIST_FILE: YES
     INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
@@ -49,6 +49,15 @@ targets:
         # INFOPLIST_KEY_* mechanism — that only handles Apple's known keys. So we generate
         # the plist explicitly below; $(...) values still resolve from Secrets.xcconfig.
         GENERATE_INFOPLIST_FILE: NO
+      configs:
+        # Direct-download beta ships a Developer ID signed + notarized build.
+        # Debug keeps Automatic signing (and CODE_SIGNING_ALLOWED=NO still works);
+        # only Release switches to the manual Developer ID identity.
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Developer ID Application"
+          DEVELOPMENT_TEAM: 2WA54D67Y8
+          PROVISIONING_PROFILE_SPECIFIER: ""
     info:
       path: Atlas/Info.plist
       properties:
