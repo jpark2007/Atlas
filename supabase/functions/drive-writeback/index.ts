@@ -48,6 +48,7 @@ import {
   renderTabRequests,
   UnmappedImageError,
 } from "../_shared/doc_tabs.ts";
+import { checkRateLimit, tooManyRequests } from "../_shared/rate_limit.ts";
 
 const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const DRIVE_BASE = "https://www.googleapis.com/drive/v3";
@@ -152,6 +153,11 @@ Deno.serve(async (req: Request) => {
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+
+  // Note→Doc write-back fires on save; the client debounces autosave, so 30/min is
+  // generous for real editing while capping a runaway save loop pushing to Docs.
+  const rl = await checkRateLimit(admin, userId, "drive-writeback", 30, 60);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfter, CORS_HEADERS);
 
   // ── Resolve the linked Doc: a project_references row that backs this note ──
   // A note may back SEVERAL references (same Doc imported into multiple projects,

@@ -22,6 +22,9 @@
  * Secrets: supabase secrets set OPENROUTER_API_KEY=<key>
  */
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkRateLimit, clientIp, jwtSubject, tooManyRequests } from "../_shared/rate_limit.ts";
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type",
@@ -205,6 +208,20 @@ Deno.serve(async (req: Request) => {
       JSON.stringify({ error: "Missing or invalid Authorization header" }),
       { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
     );
+  }
+
+  // Rate limit BEFORE the (paid) OpenRouter call. This endpoint is presence-only,
+  // so key on the JWT `sub` (decoded, not verified — fine for keying), falling back
+  // to IP. 30/min is well above a human capturing notes and caps LLM-cost abuse.
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (supabaseUrl && serviceKey) {
+    const admin = createClient(supabaseUrl, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const key = jwtSubject(authHeader.slice(7)) ?? `ip:${clientIp(req)}`;
+    const rl = await checkRateLimit(admin, key, "capture", 30, 60);
+    if (!rl.allowed) return tooManyRequests(rl.retryAfter, CORS_HEADERS);
   }
 
   // Parse request body

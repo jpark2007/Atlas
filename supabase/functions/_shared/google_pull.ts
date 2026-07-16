@@ -35,8 +35,34 @@ const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const DRIVE_BASE = "https://www.googleapis.com/drive/v3";
 const DOCS_BASE = "https://docs.googleapis.com/v1";
 
+// Hard ceiling on a single Doc's pulled content (exported Markdown, or the Docs
+// API JSON for a tabbed Doc). A Doc this large is pathological — hundreds of
+// pages — and a truncated body would corrupt the write-back round-trip, so we
+// REFUSE rather than truncate: the caller marks the one reference 'error' and
+// every other doc keeps syncing. 10 MB of Markdown is ~thousands of pages.
+const MAX_DOC_BYTES = 10 * 1024 * 1024;
+
 // ── Google token refresh ────────────────────────────────────────
 export class InvalidGrantError extends Error {}
+
+/** A Doc whose content exceeds MAX_DOC_BYTES. Caller may surface a friendly 413. */
+export class DocTooLargeError extends Error {}
+
+/** Read a fetch Response body as text, refusing once it exceeds MAX_DOC_BYTES.
+ *  Checks the declared Content-Length first (cheap), then guards the actual
+ *  bytes (a Doc export sends no length). Throws DocTooLargeError when over. */
+async function readCappedText(res: Response, what: string): Promise<string> {
+  const declared = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_DOC_BYTES) {
+    await res.body?.cancel();
+    throw new DocTooLargeError(`${what} exceeds ${MAX_DOC_BYTES} bytes`);
+  }
+  const text = await res.text();
+  if (text.length > MAX_DOC_BYTES) {
+    throw new DocTooLargeError(`${what} exceeds ${MAX_DOC_BYTES} bytes`);
+  }
+  return text;
+}
 
 async function refreshAccessToken(refreshToken: string, clientId: string, clientSecret: string): Promise<string> {
   const body = new URLSearchParams({
@@ -138,7 +164,7 @@ async function driveExportMarkdown(accessToken: string, fileId: string): Promise
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   if (!res.ok) throw new Error(`files.export ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return await res.text();
+  return await readCappedText(res, "Doc export");
 }
 
 // Docs API read with the full tab tree. Requires the `documents` scope
@@ -149,7 +175,7 @@ async function docsGetWithTabs(accessToken: string, fileId: string): Promise<unk
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   if (!res.ok) throw new Error(`documents.get ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return await res.json();
+  return JSON.parse(await readCappedText(res, "Doc content"));
 }
 
 // ── Image re-host helpers ────────────────────────────────────────

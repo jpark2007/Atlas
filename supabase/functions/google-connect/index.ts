@@ -38,6 +38,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkRateLimit, tooManyRequests } from "../_shared/rate_limit.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -92,6 +93,12 @@ Deno.serve(async (req: Request) => {
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+
+  // Connect/rename/disconnect are OAuth-credential operations — occasional by
+  // nature. 20/hour is generous (add several accounts + a few space re-maps in a
+  // sitting) yet blocks a token-storing loop.
+  const rl = await checkRateLimit(admin, userId, "google-connect", 20, 3600);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfter, CORS_HEADERS);
 
   // ── DISCONNECT (DELETE) ─────────────────────────────────────
   if (req.method === "DELETE") {
