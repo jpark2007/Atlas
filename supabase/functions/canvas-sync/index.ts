@@ -269,6 +269,7 @@ interface Project {
   space_name: string;
   name: string;
   code: string | null;
+  canvas_course: string | null; // explicit course link (0032); overrides code/name match
 }
 
 /** normalize a course code the way the client matcher did: strip whitespace, uppercase. */
@@ -283,9 +284,16 @@ function extractCourse(summary: string): { title: string; code: string | null } 
   return { title: summary.slice(0, m.index).trim(), code: m[1].trim() };
 }
 
-/** Match a bracket course label to a project — code first (normalized), then exact name. */
+/** Match a bracket course label to a project. An explicit user link (0032:
+ *  projects.canvas_course, set from this same feed label in the Mac class picker)
+ *  wins outright; otherwise the auto match — code first (normalized), then exact
+ *  name. The explicit link is how a course whose bracket matches no code/name still
+ *  files under the right class. */
 function matchProject(label: string | null, projects: Project[]): Project | null {
   if (!label) return null;
+  for (const p of projects) {
+    if (p.canvas_course && p.canvas_course === label) return p; // explicit user link
+  }
   const nc = normalizeCode(label);
   const nn = label.toLowerCase().trim();
   for (const p of projects) {
@@ -367,14 +375,14 @@ async function syncUser(admin: SupabaseClient, conn: Connection, dryRun: boolean
   // 3. Load the user's projects once for course routing.
   const { data: projRows, error: projErr } = await admin
     .from("projects")
-    .select("id, space_name, name, code")
+    .select("id, space_name, name, code, canvas_course")
     .eq("user_id", userId);
   if (projErr) throw new Error(`projects select failed: ${projErr.message}`);
   const projects = (projRows ?? []) as Project[];
 
   // 4. Map feed → per-table payloads keyed by canvas_uid. Assignment-style UIDs → tasks.
-  interface TaskPayload { title: string; due_date: string; space_name: string; project_id: string | null; allDay: boolean }
-  interface EventPayload { title: string; start_at: string; end_at: string; is_all_day: boolean; space_name: string; project_id: string | null }
+  interface TaskPayload { title: string; due_date: string; space_name: string; project_id: string | null; canvas_course: string | null; allDay: boolean }
+  interface EventPayload { title: string; start_at: string; end_at: string; is_all_day: boolean; space_name: string; project_id: string | null; canvas_course: string | null }
   const taskByUid = new Map<string, TaskPayload>();
   const eventByUid = new Map<string, EventPayload>();
 
@@ -387,10 +395,10 @@ async function syncUser(admin: SupabaseClient, conn: Connection, dryRun: boolean
     const cleanTitle = title || "Untitled";
 
     if (/assignment/i.test(ve.uid)) {
-      taskByUid.set(ve.uid, { title: cleanTitle, due_date: ve.dtstart.iso, space_name: spaceName, project_id: projectId, allDay: ve.dtstart.allDay });
+      taskByUid.set(ve.uid, { title: cleanTitle, due_date: ve.dtstart.iso, space_name: spaceName, project_id: projectId, canvas_course: code, allDay: ve.dtstart.allDay });
     } else {
       const endISO = ve.dtend?.iso ?? ve.dtstart.iso; // no DTEND → zero-length at start
-      eventByUid.set(ve.uid, { title: cleanTitle, start_at: ve.dtstart.iso, end_at: endISO, is_all_day: ve.dtstart.allDay, space_name: spaceName, project_id: projectId });
+      eventByUid.set(ve.uid, { title: cleanTitle, start_at: ve.dtstart.iso, end_at: endISO, is_all_day: ve.dtstart.allDay, space_name: spaceName, project_id: projectId, canvas_course: code });
     }
   }
 
@@ -412,13 +420,15 @@ async function syncUser(admin: SupabaseClient, conn: Connection, dryRun: boolean
     const taskInserts: Record<string, unknown>[] = [];
     for (const [uid, t] of taskByUid) {
       if (existingTaskUids.has(uid)) {
-        // USER-DATA-SAFE: update ONLY title + due_date. space_name/project_id/done/
-        // status/notes/scheduled_at are user territory and are never touched.
+        // USER-DATA-SAFE: update ONLY feed-owned fields — title, due_date, and
+        // canvas_course (the course label; deterministic from the feed, backfills
+        // pre-0032 rows so the picker/remap can see them). space_name/project_id/
+        // done/status/notes/scheduled_at are user territory and are never touched.
         result.tasksUpdated++;
         if (!dryRun) {
           const { error: uErr } = await admin
             .from("tasks")
-            .update({ title: t.title, due_date: t.due_date })
+            .update({ title: t.title, due_date: t.due_date, canvas_course: t.canvas_course })
             .eq("user_id", userId)
             .eq("canvas_uid", uid);
           if (uErr) itemErrors.push(`task ${uid}: ${uErr.message}`.slice(0, 160));
@@ -432,6 +442,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, dryRun: boolean
           title: t.title,
           due_date: t.due_date,
           canvas_uid: uid,
+          canvas_course: t.canvas_course,
         });
       }
     }
@@ -459,12 +470,13 @@ async function syncUser(admin: SupabaseClient, conn: Connection, dryRun: boolean
     const eventInserts: Record<string, unknown>[] = [];
     for (const [uid, e] of eventByUid) {
       if (existingEventUids.has(uid)) {
-        // USER-DATA-SAFE: update ONLY title + start/end. is_all_day/space/project/notes untouched.
+        // USER-DATA-SAFE: update ONLY feed-owned fields — title, start/end, and
+        // canvas_course (backfills pre-0032 rows). is_all_day/space/project/notes untouched.
         result.eventsUpdated++;
         if (!dryRun) {
           const { error: uErr } = await admin
             .from("events")
-            .update({ title: e.title, start_at: e.start_at, end_at: e.end_at })
+            .update({ title: e.title, start_at: e.start_at, end_at: e.end_at, canvas_course: e.canvas_course })
             .eq("user_id", userId)
             .eq("canvas_uid", uid);
           if (uErr) itemErrors.push(`event ${uid}: ${uErr.message}`.slice(0, 160));
@@ -481,6 +493,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, dryRun: boolean
           end_at: e.end_at,
           is_all_day: e.is_all_day,
           canvas_uid: uid,
+          canvas_course: e.canvas_course,
           google_origin: true, // guard: google-sync must never push a Canvas event to Google
         });
       }

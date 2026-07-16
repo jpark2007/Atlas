@@ -32,6 +32,11 @@ public struct Project: Identifiable {
     /// (the default). Only DAY-GRID event/work blocks wear it; month dots,
     /// chips, sidebar and routing keep the space color. Persisted via 0031.
     public var colorToken: String? = nil
+    /// The Canvas course this class is explicitly linked to (migration 0032). When set,
+    /// canvas-sync files that course's future items under this project, and the client
+    /// remaps already-imported items here at link time. `nil` = not linked; routing then
+    /// falls back to the auto code/name match. The label matches `TaskItem.canvasCourse`.
+    public var canvasCourse: String? = nil
     public var assignments: [TaskItem] = []
     public var notes: [NoteRef] = []
     public var pinned: [PinnedResource] = []
@@ -39,7 +44,7 @@ public struct Project: Identifiable {
     /// The parent space's id — authoritative once set; the name remains for display.
     public var spaceID: UUID? = nil
 
-    public init(id: UUID = UUID(), name: String, code: String? = nil, isClass: Bool, spaceName: String, spaceColor: Color, meetingInfo: String? = nil, instructor: String? = nil, canvasSynced: Bool = false, overview: String = "", colorToken: String? = nil, assignments: [TaskItem] = [], notes: [NoteRef] = [], pinned: [PinnedResource] = [], backlinks: [Backlink] = [], spaceID: UUID? = nil) {
+    public init(id: UUID = UUID(), name: String, code: String? = nil, isClass: Bool, spaceName: String, spaceColor: Color, meetingInfo: String? = nil, instructor: String? = nil, canvasSynced: Bool = false, overview: String = "", colorToken: String? = nil, canvasCourse: String? = nil, assignments: [TaskItem] = [], notes: [NoteRef] = [], pinned: [PinnedResource] = [], backlinks: [Backlink] = [], spaceID: UUID? = nil) {
         self.id = id
         self.name = name
         self.code = code
@@ -51,6 +56,7 @@ public struct Project: Identifiable {
         self.canvasSynced = canvasSynced
         self.overview = overview
         self.colorToken = colorToken
+        self.canvasCourse = canvasCourse
         self.assignments = assignments
         self.notes = notes
         self.pinned = pinned
@@ -161,6 +167,19 @@ public struct CalendarEvent: Identifiable {
         return "\(m)m"
     }
 
+    /// True when this read-only tile should render in the neutral external-grey used
+    /// for Apple/Google calendar items that carry no Atlas identity of their own.
+    /// Canvas items are read-only too, but they belong to a real Atlas space (and,
+    /// when mapped to a class, a project), so they keep their space/project color —
+    /// a Canvas tile must never masquerade as a neutral external event (rule 5).
+    public var rendersNeutral: Bool { isReadOnly && source != .canvas }
+
+    /// The Canvas course label this item came from (migration 0032) — the SUMMARY's
+    /// trailing "[…]" bracket parsed at ingest, `nil` for non-Canvas events. Read-only
+    /// on the client (Canvas events are never upserted back); drives the class-link
+    /// picker and the retroactive course→class remap.
+    public var canvasCourse: String? = nil
+
     public init(id: UUID = UUID(), title: String, subtitle: String, start: Date, end: Date, color: Color, spaceName: String, notes: String? = nil, isAllDay: Bool = false, projectID: UUID? = nil, noteID: UUID? = nil, isReadOnly: Bool = false, source: EventSource = .atlas, googleEventId: String? = nil, appleEventId: String? = nil, isRecurring: Bool = false, isWorkBlock: Bool = false, isDeadline: Bool = false, spaceID: UUID? = nil, googleConnectionId: UUID? = nil) {
         self.id = id
         self.title = title
@@ -227,6 +246,11 @@ public struct TaskItem: Identifiable {
     /// each tick), though the task stays locally completable/schedulable. Round-trips
     /// through `TaskRow` so a client edit never nulls the column. `nil` for Atlas-native.
     public var canvasUID: String? = nil
+    /// The Canvas course label this assignment came from (migration 0032) — the
+    /// SUMMARY's trailing "[…]" bracket parsed at ingest, `nil` for non-Canvas tasks.
+    /// Drives the class-link picker and the course→class remap. Round-trips through
+    /// `TaskRow` so a client edit never nulls it.
+    public var canvasCourse: String? = nil
 
     public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, completedAt: Date? = nil, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, appleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectName: String = "", notes: String = "", spaceID: UUID? = nil, assigneeID: UUID? = nil, createdByID: UUID? = nil, canvasUID: String? = nil) {
         self.id = id

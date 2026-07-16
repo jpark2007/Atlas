@@ -96,6 +96,7 @@ struct ProjectDetailView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     badges
                     titleBlock
+                    if project.isClass { CanvasCoursePicker(project: project) }
                     overview
                     if !liveTasks.isEmpty || !completedTasks.isEmpty { liveTasksSection }
                     if !liveEvents.isEmpty || !pastEvents.isEmpty    { liveEventsSection }

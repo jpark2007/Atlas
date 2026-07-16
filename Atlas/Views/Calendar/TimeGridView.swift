@@ -292,7 +292,7 @@ struct EventTile: View {
     }
 
     private var tileAccentColor: Color {
-        event.isReadOnly ? AtlasTheme.Colors.textSecondary : event.color
+        event.rendersNeutral ? AtlasTheme.Colors.textSecondary : event.color
     }
 
     /// Work-blocks read as provisional (fainter fill, dashed border); fixed events are solid.
@@ -302,7 +302,7 @@ struct EventTile: View {
     }
 
     private var titleColor: Color {
-        event.isReadOnly ? AtlasTheme.Colors.textSecondary : AtlasTheme.Colors.textPrimary
+        event.rendersNeutral ? AtlasTheme.Colors.textSecondary : AtlasTheme.Colors.textPrimary
     }
 }
 

@@ -118,7 +118,7 @@ struct MonthGridView: View {
     private func chip(_ event: CalendarEvent) -> some View {
         HStack(spacing: 4) {
             Circle()
-                .fill(event.isReadOnly ? AtlasTheme.Colors.textSecondary : event.color)
+                .fill(event.rendersNeutral ? AtlasTheme.Colors.textSecondary : event.color)
                 .frame(width: 5, height: 5)
             Text(event.title)
                 .atlasFont(size: 10, weight: .semibold, design: .rounded)
@@ -129,7 +129,7 @@ struct MonthGridView: View {
         .padding(.horizontal, 4)
         .padding(.vertical, 2)
         .background(
-            AtlasTheme.wash(event.isReadOnly ? AtlasTheme.Colors.textSecondary : event.color),
+            AtlasTheme.wash(event.rendersNeutral ? AtlasTheme.Colors.textSecondary : event.color),
             in: RoundedRectangle(cornerRadius: 4, style: .continuous)
         )
     }

@@ -286,6 +286,8 @@ public struct ProjectRow: Codable {
     public var spaceId: UUID?
     /// This project's own color token (0031); nil ⇒ inherit the space color.
     public var colorToken: String?
+    /// The Canvas course this class is explicitly linked to (0032); nil ⇒ unlinked.
+    public var canvasCourse: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
@@ -300,6 +302,7 @@ public struct ProjectRow: Codable {
         case overview
         case spaceId      = "space_id"
         case colorToken   = "color_token"
+        case canvasCourse = "canvas_course"
     }
 
     public init(domain p: Project) {
@@ -314,6 +317,7 @@ public struct ProjectRow: Codable {
         self.overview     = p.overview
         self.spaceId      = p.spaceID
         self.colorToken   = p.colorToken
+        self.canvasCourse = p.canvasCourse
     }
 
     public func toDomain() -> Project {
@@ -324,7 +328,7 @@ public struct ProjectRow: Codable {
                 spaceColor: AtlasTheme.Colors.accent, // Task 2 re-derives from spaceName
                 meetingInfo: meetingInfo, instructor: instructor,
                 canvasSynced: canvasSynced, overview: overview,
-                colorToken: colorToken)
+                colorToken: colorToken, canvasCourse: canvasCourse)
         project.spaceID = spaceId
         return project
     }
@@ -358,6 +362,9 @@ public struct TaskRow: Codable {
     /// Canvas assignment id (migration 0012). Round-tripped so a client edit of a
     /// Canvas task never nulls the origin column.
     public var canvasUid: String?
+    /// Canvas course label (migration 0032) — the SUMMARY bracket this assignment came
+    /// from. Round-tripped so a client edit never nulls it; decode drives the class picker.
+    public var canvasCourse: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
@@ -379,6 +386,7 @@ public struct TaskRow: Codable {
         case assigneeId  = "assignee_id"
         case createdBy   = "created_by"
         case canvasUid   = "canvas_uid"
+        case canvasCourse = "canvas_course"
     }
 
     public init(domain t: TaskItem) {
@@ -400,6 +408,7 @@ public struct TaskRow: Codable {
         self.assigneeId  = t.assigneeID
         self.createdBy   = t.createdByID
         self.canvasUid   = t.canvasUID
+        self.canvasCourse = t.canvasCourse
     }
 
     public func toDomain() -> TaskItem {
@@ -421,6 +430,7 @@ public struct TaskRow: Codable {
         task.assigneeID = assigneeId
         task.createdByID = createdBy
         task.canvasUID = canvasUid
+        task.canvasCourse = canvasCourse
         return task
     }
 
@@ -473,6 +483,10 @@ public struct EventRow: Codable {
     /// Decode-only: Canvas events are read-only, so the client never upserts one back —
     /// `init(domain:)` has no Canvas value to carry and sets nil (never nulls a live row).
     public var canvasUid: String?
+    /// Canvas course label (migration 0032) — the SUMMARY bracket this event came from.
+    /// Decode-only, like `canvasUid`: Canvas events are read-only so the client never
+    /// upserts one back (`init(domain:)` sets nil). Drives the class picker + remap.
+    public var canvasCourse: String?
     /// Which Google account (connection) this event routes OUT to (migration 0028).
     /// Stamped from the event's space at write time; nil ⇒ the space is linked to no
     /// account, so the event stays in Atlas. The server's per-connection push reads it.
@@ -494,6 +508,7 @@ public struct EventRow: Codable {
         case noteId    = "note_id"
         case spaceId   = "space_id"
         case canvasUid = "canvas_uid"
+        case canvasCourse = "canvas_course"
         case googleConnectionId = "google_connection_id"
     }
 
@@ -514,6 +529,7 @@ public struct EventRow: Codable {
         // CalendarEvent carries no Canvas id (Canvas events are read-only and never
         // upserted by the client), so nothing to round-trip from the domain here.
         self.canvasUid = nil
+        self.canvasCourse = nil
         self.googleConnectionId = e.googleConnectionId
     }
 
@@ -548,6 +564,7 @@ public struct EventRow: Codable {
                       googleEventId: googleEventId,
                       appleEventId: appleEventId)
         event.spaceID = spaceId
+        event.canvasCourse = canvasCourse
         event.googleConnectionId = googleConnectionId
         return event
     }
@@ -1575,6 +1592,22 @@ public final class AtlasDB {
         try await send(method: "PATCH", table: "tasks",
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
                        body: body, sess: sess)
+    }
+
+    /// Retroactively files every already-imported Canvas item of `course` under a
+    /// class: a scoped PATCH of `project_id` + `space_name` on both tables, filtered
+    /// to `canvas_course = course` (RLS scopes it to the caller's rows). Runs ONLY at
+    /// the user's explicit link action in the class picker — the sync runner never
+    /// auto-moves items (its updates stay user-data-safe), so a user's own re-filing
+    /// is only ever overridden by this deliberate link. Feed-owned `canvas_course`
+    /// itself is untouched, so a later re-sync still recognizes the course.
+    public func remapCanvasCourse(_ course: String, toProject projectId: UUID, spaceName: String) async throws {
+        let sess = try await requireSession()
+        let payload: [String: Any] = ["project_id": projectId.uuidString, "space_name": spaceName]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let filter = [URLQueryItem(name: "canvas_course", value: "eq.\(course)")]
+        try await send(method: "PATCH", table: "tasks",  query: filter, body: body, sess: sess)
+        try await send(method: "PATCH", table: "events", query: filter, body: body, sess: sess)
     }
 
     // MARK: Events
