@@ -126,6 +126,12 @@ public struct CalendarEvent: Identifiable {
     /// The parent space's id — authoritative once set; the name remains for display.
     public var spaceID: UUID? = nil
 
+    /// Which Google account (connection) this event routes OUT to, resolved from its
+    /// space at write time (multi-account, migration 0028). Nil ⇒ the event's space is
+    /// linked to no Google account, so it stays in Atlas. The server's per-connection
+    /// push reads this to know which account to mirror to. Round-tripped via `EventRow`.
+    public var googleConnectionId: UUID? = nil
+
     /// "9 AM" / "6:30 PM" — start time formatted for compact rows.
     public var timeLabel: String {
         let f = DateFormatter()
@@ -149,7 +155,7 @@ public struct CalendarEvent: Identifiable {
         return "\(m)m"
     }
 
-    public init(id: UUID = UUID(), title: String, subtitle: String, start: Date, end: Date, color: Color, spaceName: String, notes: String? = nil, isAllDay: Bool = false, projectID: UUID? = nil, noteID: UUID? = nil, isReadOnly: Bool = false, source: EventSource = .atlas, googleEventId: String? = nil, appleEventId: String? = nil, isRecurring: Bool = false, isWorkBlock: Bool = false, isDeadline: Bool = false, spaceID: UUID? = nil) {
+    public init(id: UUID = UUID(), title: String, subtitle: String, start: Date, end: Date, color: Color, spaceName: String, notes: String? = nil, isAllDay: Bool = false, projectID: UUID? = nil, noteID: UUID? = nil, isReadOnly: Bool = false, source: EventSource = .atlas, googleEventId: String? = nil, appleEventId: String? = nil, isRecurring: Bool = false, isWorkBlock: Bool = false, isDeadline: Bool = false, spaceID: UUID? = nil, googleConnectionId: UUID? = nil) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
@@ -169,6 +175,7 @@ public struct CalendarEvent: Identifiable {
         self.isWorkBlock = isWorkBlock
         self.isDeadline = isDeadline
         self.spaceID = spaceID
+        self.googleConnectionId = googleConnectionId
     }
 }
 

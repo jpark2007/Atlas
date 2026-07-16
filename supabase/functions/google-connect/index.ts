@@ -1,21 +1,32 @@
 /**
  * Atlas — google-connect Edge Function (Deno)
  *
- * Stores / rotates / removes a user's Google Calendar refresh token so the
- * server-side google-sync cron can run while every Atlas client is closed.
- * The refresh token lives in Supabase Vault (service-role only); the user's
- * google_connections row points at it by vault_secret_id — the token value
+ * Manages a user's Google Calendar CONNECTIONS (multi-account, design 2026-07-15).
+ * Each connection is a google_connections row: (google login, calendar_id 'primary',
+ * user's name, destination space). The refresh token lives in Supabase Vault
+ * (service-role only); the row points at it by vault_secret_id — the token value
  * never returns to any client.
  *
- * POST   /functions/v1/google-connect   { "refreshToken": "<google refresh token>" }
- *        → verifies the caller's Supabase JWT (auth.getUser — REAL verification,
- *          not presence-only), stashes the token in Vault, and upserts
- *          google_connections(status='active').  →  200 { ok: true, status: "active" }
+ * POST   /functions/v1/google-connect
+ *        { "refreshToken": "<google refresh token>", "name": "School",
+ *          "googleEmail": "me@school.edu", "spaceId": "<uuid>"? }
+ *        → verifies the caller's Supabase JWT (auth.getUser — REAL verification),
+ *          stashes the token in Vault, and INSERTS a connection row. Re-POST for an
+ *          existing (user, email, calendar) = reconnect: replace the Vault secret,
+ *          reset status='active', clear last_error. A different-email duplicate is
+ *          simply a new row. →  200 { ok: true, id, status: "active" }
+ *          409 when spaceId is already linked to another connection.
  *
- * DELETE /functions/v1/google-connect
- *        → verifies the JWT, deletes the Vault secret, sets status='revoked'
- *          (the row survives so the client can show "Reconnect").
- *          →  200 { ok: true, status: "revoked" }
+ * PATCH  /functions/v1/google-connect   { "connectionId": "<uuid>", "name"?, "spaceId"? }
+ *        → verifies the JWT, renames / re-maps ONE connection (mirrors
+ *          canvas-connect's destination PATCH). The Vault secret, sync_token and
+ *          status are untouched — a rename/re-map never resets sync.
+ *          →  200 { ok: true, status: <unchanged> }  (404 if no such row,
+ *          409 if spaceId is already linked to another connection).
+ *
+ * DELETE /functions/v1/google-connect   { "connectionId": "<uuid>" }
+ *        → verifies the JWT, deletes the connection row + its Vault secret. Other
+ *          connections are untouched. →  200 { ok: true }  (404 if no such row).
  *
  * Auth:  Authorization: Bearer <Supabase user JWT>  (verified — this handles a
  *        live Google credential, so presence-only like `capture` is not enough).
@@ -31,7 +42,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Methods": "POST, PATCH, DELETE, OPTIONS",
 };
 
 function json(body: unknown, status = 200): Response {
@@ -41,11 +52,19 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+// Postgres unique-violation SQLSTATE. Two unique constraints exist on
+// google_connections: unique(space_id) and unique(user_id, google_email,
+// calendar_id). `spaceConflict` distinguishes the former from its error detail.
+const UNIQUE_VIOLATION = "23505";
+function spaceConflict(err: { code?: string; message?: string } | null): boolean {
+  return err?.code === UNIQUE_VIOLATION && !!err.message?.includes("space_id");
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
-  if (req.method !== "POST" && req.method !== "DELETE") {
+  if (req.method !== "POST" && req.method !== "PATCH" && req.method !== "DELETE") {
     return json({ error: "Method not allowed" }, 405);
   }
 
@@ -74,47 +93,146 @@ Deno.serve(async (req: Request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // ── DISCONNECT ──────────────────────────────────────────────
+  // ── DISCONNECT (DELETE) ─────────────────────────────────────
   if (req.method === "DELETE") {
+    let connectionId: string;
+    try {
+      const body = await req.json();
+      if (typeof body?.connectionId !== "string" || !body.connectionId.trim()) {
+        return json({ error: "Body must contain a non-empty `connectionId` string" }, 400);
+      }
+      connectionId = body.connectionId.trim();
+    } catch {
+      return json({ error: "Invalid JSON body" }, 400);
+    }
+
+    // Grab the row (scoped to the caller) so we can purge its Vault secret after.
     const { data: existing } = await admin
       .from("google_connections")
       .select("vault_secret_id")
+      .eq("id", connectionId)
       .eq("user_id", userId)
       .maybeSingle();
-
-    // Mark revoked (row survives so the client can offer Reconnect).
-    const { error: updErr } = await admin
-      .from("google_connections")
-      .update({ status: "revoked", vault_secret_id: null, last_error: null })
-      .eq("user_id", userId);
-    if (updErr) {
-      return json({ error: "Failed to update connection" }, 500);
+    if (!existing) {
+      return json({ error: "No such Google connection" }, 404);
     }
 
-    // Best-effort secret removal; the row is already revoked regardless.
-    if (existing?.vault_secret_id) {
+    // Delete the row (other connections untouched). The row is gone regardless of
+    // the best-effort secret cleanup below.
+    const { error: delErr } = await admin
+      .from("google_connections")
+      .delete()
+      .eq("id", connectionId)
+      .eq("user_id", userId);
+    if (delErr) {
+      return json({ error: "Failed to remove connection" }, 500);
+    }
+    if (existing.vault_secret_id) {
       await admin.rpc("delete_google_secret", { secret_id: existing.vault_secret_id });
     }
-    return json({ ok: true, status: "revoked" });
+    return json({ ok: true });
+  }
+
+  // ── RENAME / RE-MAP (PATCH) ─────────────────────────────────
+  if (req.method === "PATCH") {
+    let connectionId: string;
+    let name: string | undefined;
+    let spaceId: string | null | undefined;
+    try {
+      const body = await req.json();
+      if (typeof body?.connectionId !== "string" || !body.connectionId.trim()) {
+        return json({ error: "Body must contain a non-empty `connectionId` string" }, 400);
+      }
+      connectionId = body.connectionId.trim();
+      if (body.name !== undefined) {
+        if (typeof body.name !== "string" || !body.name.trim()) {
+          return json({ error: "`name` must be a non-empty string" }, 400);
+        }
+        name = body.name.trim();
+      }
+      // spaceId: string re-maps, null unlinks (read-in only). Absent = leave as is.
+      if (body.spaceId !== undefined) {
+        if (body.spaceId === null) {
+          spaceId = null;
+        } else if (typeof body.spaceId === "string" && body.spaceId.trim()) {
+          spaceId = body.spaceId.trim();
+        } else {
+          return json({ error: "`spaceId` must be a uuid string or null" }, 400);
+        }
+      }
+    } catch {
+      return json({ error: "Invalid JSON body" }, 400);
+    }
+    if (name === undefined && spaceId === undefined) {
+      return json({ error: "Nothing to update (send `name` and/or `spaceId`)" }, 400);
+    }
+
+    const patch: Record<string, unknown> = {};
+    if (name !== undefined) patch.name = name;
+    if (spaceId !== undefined) patch.space_id = spaceId;
+
+    // Update ONLY the routing/label fields. vault_secret_id, sync_token and status
+    // are deliberately left alone so a rename/re-map never resets sync. `.select`
+    // lets us 404 when the caller has no matching connection row.
+    const { data: updated, error: updErr } = await admin
+      .from("google_connections")
+      .update(patch)
+      .eq("id", connectionId)
+      .eq("user_id", userId)
+      .select("status");
+    if (updErr) {
+      if (updErr.code === UNIQUE_VIOLATION) {
+        return json({ error: "That space is already linked to another Google account" }, 409);
+      }
+      return json({ error: "Failed to update connection" }, 500);
+    }
+    if (!updated || updated.length === 0) {
+      return json({ error: "No such Google connection" }, 404);
+    }
+    return json({ ok: true, status: updated[0].status });
   }
 
   // ── CONNECT (POST) ──────────────────────────────────────────
   let refreshToken: string;
+  let name: string;
+  let googleEmail: string;
+  let spaceId: string | null;
   try {
     const body = await req.json();
     if (typeof body?.refreshToken !== "string" || !body.refreshToken.trim()) {
       return json({ error: "Body must contain a non-empty `refreshToken` string" }, 400);
     }
+    if (typeof body?.name !== "string" || !body.name.trim()) {
+      return json({ error: "Body must contain a non-empty `name` string" }, 400);
+    }
+    if (typeof body?.googleEmail !== "string" || !body.googleEmail.trim()) {
+      return json({ error: "Body must contain a non-empty `googleEmail` string" }, 400);
+    }
     refreshToken = body.refreshToken.trim();
+    name = body.name.trim();
+    googleEmail = body.googleEmail.trim();
+    // spaceId optional; null = read-in only (no default fallback — decision 3).
+    if (body.spaceId === undefined || body.spaceId === null) {
+      spaceId = null;
+    } else if (typeof body.spaceId === "string" && body.spaceId.trim()) {
+      spaceId = body.spaceId.trim();
+    } else {
+      return json({ error: "`spaceId` must be a uuid string or null" }, 400);
+    }
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
   }
 
-  // Prior secret (if reconnecting) so we can clean it up after a successful swap.
+  const calendarId = "primary"; // v1: one calendar per login.
+
+  // Existing row for this (user, email, calendar)? Present = reconnect (swap the
+  // Vault secret, reactivate); absent = a brand-new connection row.
   const { data: prior } = await admin
     .from("google_connections")
-    .select("vault_secret_id")
+    .select("id, vault_secret_id")
     .eq("user_id", userId)
+    .eq("google_email", googleEmail)
+    .eq("calendar_id", calendarId)
     .maybeSingle();
   const priorSecretId: string | null = prior?.vault_secret_id ?? null;
 
@@ -129,17 +247,58 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Failed to store credential" }, 500);
   }
 
-  // Point the connection at the new secret and (re)activate it.
-  const { error: upsertErr } = await admin
-    .from("google_connections")
-    .upsert(
-      { user_id: userId, vault_secret_id: newSecretId, status: "active", last_error: null },
-      { onConflict: "user_id" },
-    );
-  if (upsertErr) {
-    // Roll back the just-created secret so we never orphan it.
-    await admin.rpc("delete_google_secret", { secret_id: newSecretId });
-    return json({ error: "Failed to save connection" }, 500);
+  let connectionId: string;
+  if (prior) {
+    // Reconnect: point the existing row at the new secret and reactivate it.
+    // name/space_id are refreshed too so re-adding an account updates its label.
+    const { error: updErr } = await admin
+      .from("google_connections")
+      .update({
+        name,
+        space_id: spaceId,
+        vault_secret_id: newSecretId,
+        status: "active",
+        last_error: null,
+      })
+      .eq("id", prior.id)
+      .eq("user_id", userId);
+    if (updErr) {
+      await admin.rpc("delete_google_secret", { secret_id: newSecretId });
+      if (spaceConflict(updErr)) {
+        return json({ error: "That space is already linked to another Google account" }, 409);
+      }
+      return json({ error: "Failed to save connection" }, 500);
+    }
+    connectionId = prior.id;
+  } else {
+    // Brand-new connection row.
+    const { data: inserted, error: insErr } = await admin
+      .from("google_connections")
+      .insert({
+        user_id: userId,
+        name,
+        google_email: googleEmail,
+        calendar_id: calendarId,
+        space_id: spaceId,
+        vault_secret_id: newSecretId,
+        status: "active",
+        last_error: null,
+      })
+      .select("id")
+      .single();
+    if (insErr || !inserted) {
+      // Roll back the just-created secret so we never orphan it.
+      await admin.rpc("delete_google_secret", { secret_id: newSecretId });
+      if (spaceConflict(insErr)) {
+        return json({ error: "That space is already linked to another Google account" }, 409);
+      }
+      if (insErr?.code === UNIQUE_VIOLATION) {
+        // (user, email, calendar) race — the account is already connected.
+        return json({ error: "This Google account is already connected" }, 409);
+      }
+      return json({ error: "Failed to save connection" }, 500);
+    }
+    connectionId = inserted.id;
   }
 
   // Remove the previous secret now that the row points at the new one.
@@ -147,5 +306,5 @@ Deno.serve(async (req: Request) => {
     await admin.rpc("delete_google_secret", { secret_id: priorSecretId });
   }
 
-  return json({ ok: true, status: "active" });
+  return json({ ok: true, id: connectionId, status: "active" });
 });

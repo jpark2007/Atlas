@@ -62,25 +62,36 @@ async function refreshAccessToken(refreshToken: string, clientId: string, client
 }
 
 /**
- * Mint a Google access token for `userId`: look up the connection's
- * vault_secret_id, decrypt the refresh token via the service-role Vault read
- * (read_google_secret), and exchange it. Throws InvalidGrantError on a revoked
- * token, a plain Error otherwise.
+ * Mint a Google access token, decrypting the refresh token via the service-role
+ * Vault read (read_google_secret) and exchanging it. Throws InvalidGrantError on a
+ * revoked token, a plain Error otherwise.
+ *
+ * `vaultSecretId` (google-sync, multi-account) targets ONE connection's secret
+ * directly. When omitted (drive-import / reference-pull, which are per-user), the
+ * caller's oldest google_connections row is used — `limit(1)` keeps it single-row
+ * now that a user can hold several connections.
  */
 export async function mintAccessToken(
   admin: SupabaseClient,
   userId: string,
   clientId: string,
   clientSecret: string,
+  vaultSecretId?: string | null,
 ): Promise<string> {
-  const { data: conn, error: connErr } = await admin
-    .from("google_connections")
-    .select("vault_secret_id")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (connErr) throw new Error(`connection lookup failed: ${connErr.message}`);
-  if (!conn?.vault_secret_id) throw new Error("connection has no vault_secret_id");
-  const { data: refreshToken, error: secretErr } = await admin.rpc("read_google_secret", { secret_id: conn.vault_secret_id });
+  let secretId = vaultSecretId ?? null;
+  if (!secretId) {
+    const { data: conn, error: connErr } = await admin
+      .from("google_connections")
+      .select("vault_secret_id")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (connErr) throw new Error(`connection lookup failed: ${connErr.message}`);
+    secretId = conn?.vault_secret_id ?? null;
+  }
+  if (!secretId) throw new Error("connection has no vault_secret_id");
+  const { data: refreshToken, error: secretErr } = await admin.rpc("read_google_secret", { secret_id: secretId });
   if (secretErr || !refreshToken) throw new Error("vault read failed");
   return await refreshAccessToken(refreshToken as string, clientId, clientSecret);
 }

@@ -88,23 +88,32 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(serverSyncEnabled, forKey: AppState.serverSyncKey) }
     }
 
-    /// Snapshot of the user's `google_connections` row (nil = no cloud connection).
-    /// Drives Settings' "Last synced Xm ago" / error + Reconnect UI.
-    @Published var googleConnection: GoogleConnectionRow?
+    /// All of the user's connected Google accounts (multi-account, 0028). Empty ⇒ no
+    /// Google connection. Drives Settings' CALENDARS list (per-connection rows + detail).
+    @Published var googleConnections: [GoogleConnection] = []
 
-    /// Re-reads the cloud connection and updates the server-owned gate. Server-owned
-    /// whenever a connection exists and isn't `revoked` (see `GoogleConnectionRow`).
-    /// Never throws to the caller and never flips to a state that could create a
-    /// second Google writer: on a read failure the persisted gate is left untouched.
-    func refreshGoogleConnection() async {
+    /// Re-reads every cloud connection and updates the server-owned gate. Cloud sync is
+    /// now implicit per connection: the server owns Google↔DB sync whenever ANY connection
+    /// exists and isn't `revoked`, so the Mac stands its local Google writers down.
+    /// Never throws to the caller and never flips to a state that could create a second
+    /// Google writer: on a read failure the persisted gate is left untouched.
+    func refreshGoogleConnections() async {
         guard let db else { return }
         do {
-            let conn = try await db.loadGoogleConnection()
-            self.googleConnection = conn
-            self.serverSyncEnabled = conn?.isServerOwned ?? false
+            let conns = try await db.loadGoogleConnections()
+            self.googleConnections = conns
+            self.serverSyncEnabled = conns.contains { $0.status != "revoked" }
         } catch {
             print("[AtlasDB] google_connections read failed — keeping current sync mode. Error: \(error.localizedDescription)")
         }
+    }
+
+    /// The Google account (connection) an event's space routes OUT to, or nil when the
+    /// space is linked to no account (the event then stays in Atlas). One space maps to
+    /// at most one connection (unique `space_id`, 0028).
+    func connectionId(forSpaceId spaceId: UUID?) -> UUID? {
+        guard let spaceId else { return nil }
+        return googleConnections.first { $0.spaceId == spaceId }?.id
     }
 
     /// Snapshot of the user's `canvas_connections` row (nil = no Canvas connection).
@@ -320,7 +329,7 @@ final class AppState: ObservableObject {
         //     the signup trigger). Nil = migration not deployed; degrade silently.
         async let profileRow = self.db?.loadProfile()
         async let collabDone: Void = self.loadCollabState()
-        async let googleDone: Void = self.refreshGoogleConnection()   // Google sync mode from the cloud connection
+        async let googleDone: Void = self.refreshGoogleConnections()  // Google sync mode from the cloud connections
         async let canvasDone: Void = self.refreshCanvasConnection()   // Canvas status for Settings from launch
 
         self.profile = try? await profileRow
@@ -917,6 +926,10 @@ final class AppState: ObservableObject {
     // MARK: - Event CRUD (in-memory + DB write-through + Google write-back)
 
     func addEvent(_ event: CalendarEvent, attachingReferences refIDs: Set<UUID> = []) {
+        var event = event
+        // Route OUT by space: stamp the connection its space is linked to (nil ⇒ stays in
+        // Atlas). The server's per-connection push reads this to mirror to the right account.
+        event.googleConnectionId = connectionId(forSpaceId: event.spaceID)
         events.append(event)
         // Optimistic in-memory attachments (dedup against any already present).
         var newAttachments: [ReferenceAttachment] = []
@@ -962,6 +975,17 @@ final class AppState: ObservableObject {
             }
             pushExternalAppleEdit(event, appleEventID: aid)
             return
+        }
+        // Re-route by space: resolve the new space → connection. When that connection
+        // differs from the one on the stored event, the event moved between Google
+        // accounts — clear the old account's google_event_id so the server tombstones it
+        // there and re-creates under the new connection (existing delete/recreate mirror
+        // machinery, routed by google_connection_id; no Google "move" call exists).
+        var event = event
+        let previousConnectionId = events.first(where: { $0.id == event.id })?.googleConnectionId
+        event.googleConnectionId = connectionId(forSpaceId: event.spaceID)
+        if event.googleConnectionId != previousConnectionId {
+            event.googleEventId = nil
         }
         if let i = events.firstIndex(where: { $0.id == event.id }) {
             events[i] = event
@@ -1072,18 +1096,6 @@ final class AppState: ObservableObject {
         // Gated by the single "Sync calendar with Google" toggle (calendar.google.enabled).
         guard UserDefaults.standard.bool(forKey: "calendar.google.enabled") else { return false }
         return !event.isReadOnly
-    }
-
-    /// Pushes existing Atlas-origin events that were never mirrored (no `googleEventId`)
-    /// to Google — used when the user turns sync on so the toggle backfills, not just
-    /// new events. Safe to call repeatedly: events that gained an id are skipped, and the
-    /// reaper's pre-fetch snapshot guards a just-backfilled event from an in-flight pull.
-    func backfillEventsToGoogle() {
-        // Single-owner: when the server owns sync it does the backfill, not the Mac.
-        guard !serverSyncEnabled else { return }
-        for event in events where event.source == .atlas && event.googleEventId == nil {
-            pushNewEventToGoogle(event)
-        }
     }
 
     private func pushNewEventToGoogle(_ event: CalendarEvent) {

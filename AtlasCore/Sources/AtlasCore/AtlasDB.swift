@@ -474,6 +474,10 @@ public struct EventRow: Codable {
     /// Decode-only: Canvas events are read-only, so the client never upserts one back —
     /// `init(domain:)` has no Canvas value to carry and sets nil (never nulls a live row).
     public var canvasUid: String?
+    /// Which Google account (connection) this event routes OUT to (migration 0028).
+    /// Stamped from the event's space at write time; nil ⇒ the space is linked to no
+    /// account, so the event stays in Atlas. The server's per-connection push reads it.
+    public var googleConnectionId: UUID?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
@@ -491,6 +495,7 @@ public struct EventRow: Codable {
         case noteId    = "note_id"
         case spaceId   = "space_id"
         case canvasUid = "canvas_uid"
+        case googleConnectionId = "google_connection_id"
     }
 
     public init(domain e: CalendarEvent) {
@@ -510,6 +515,7 @@ public struct EventRow: Codable {
         // CalendarEvent carries no Canvas id (Canvas events are read-only and never
         // upserted by the client), so nothing to round-trip from the domain here.
         self.canvasUid = nil
+        self.googleConnectionId = e.googleConnectionId
     }
 
     public func toDomain() -> CalendarEvent {
@@ -543,6 +549,7 @@ public struct EventRow: Codable {
                       googleEventId: googleEventId,
                       appleEventId: appleEventId)
         event.spaceID = spaceId
+        event.googleConnectionId = googleConnectionId
         return event
     }
 }
@@ -874,6 +881,43 @@ public struct GoogleConnectionRow: Codable {
         f.formatOptions = [.withInternetDateTime]
         return f.date(from: s)
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GoogleConnection — one row of the multi-account `google_connections` table (0028)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One connected Google account (migration 0028): a user-named login routed to a
+/// destination space. Unlike the legacy singleton `GoogleConnectionRow`, a user can
+/// have N of these. The client reads only owner-granted columns (`vault_secret_id`
+/// is hidden by RLS), so `loadGoogleConnections()` selects an explicit list.
+///
+/// `lastSyncedAt` stays a String for the same reason as `GoogleConnectionRow` — the
+/// server writes it with microsecond precision the plain `.iso8601` decoder rejects;
+/// `lastSyncedDate` parses it leniently for the UI.
+public struct GoogleConnection: Codable, Identifiable, Equatable {
+    public var id: UUID
+    public var name: String
+    public var googleEmail: String
+    public var calendarId: String?
+    public var spaceId: UUID?             // routing link; nil ⇒ read-in only
+    public var status: String            // active | error | revoked
+    public var lastError: String?
+    public var lastSyncedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case googleEmail  = "google_email"
+        case calendarId   = "calendar_id"
+        case spaceId      = "space_id"
+        case status
+        case lastError    = "last_error"
+        case lastSyncedAt = "last_synced_at"
+    }
+
+    /// `lastSyncedAt` parsed leniently (with or without fractional seconds).
+    public var lastSyncedDate: Date? { ReferenceRow.date(from: lastSyncedAt) }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1247,6 +1291,16 @@ public final class AtlasDB {
             "google_connections",
             columns: "status,last_synced_at,last_error,calendar_id")
         return rows.first
+    }
+
+    /// Reads ALL of the caller's `google_connections` rows (multi-account, 0028).
+    /// Selects only the owner-granted columns; RLS scopes the query to the signed-in
+    /// user. Sorted by id for a list order that's stable across launches.
+    public func loadGoogleConnections() async throws -> [GoogleConnection] {
+        let rows: [GoogleConnection] = try await getColumns(
+            "google_connections",
+            columns: "id,name,google_email,calendar_id,space_id,status,last_error,last_synced_at")
+        return rows.sorted { $0.id.uuidString < $1.id.uuidString }
     }
 
     /// The server's bare view of the Google connection: just `status`

@@ -51,9 +51,18 @@ struct SettingsView: View {
     @State private var appleAccessGranted: Bool = false
     @State private var appleAccessChecked: Bool = false
 
-    // MARK: – Cloud-sync (server-owned) state
-    @State private var cloudSyncWorking = false
-    @State private var cloudSyncError: String? = nil
+    // MARK: – Google multi-account (CALENDARS) state
+    /// A connect/PATCH/DELETE is in flight — disables the Add button + detail actions.
+    @State private var googleWorking = false
+    @State private var googleError: String? = nil
+    /// The connection whose detail sheet (rename / reconnect / disconnect) is open.
+    @State private var detailConnection: GoogleConnection? = nil
+    @State private var detailRename = ""
+    /// The "name it + pick a space" sheet after a successful Add-account OAuth.
+    @State private var showAddGoogleSheet = false
+    @State private var pendingGrant: GoogleAuthService.GrantedAccount? = nil
+    @State private var newAccountName = ""
+    @State private var newAccountSpace = ""
 
     // MARK: – Google connection badge state
     /// Raw `google_connections.status` (active | error | revoked), nil when there's
@@ -505,7 +514,7 @@ struct SettingsView: View {
     private var calendarsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             label("CALENDARS")
-            Text("Aggregate read-only. Pick one source to write new events.")
+            Text("Everything reads in. An event syncs to the Google account its space is linked to; an unlinked space stays in Atlas.")
                 .atlasFont(size: 11, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
 
@@ -542,8 +551,35 @@ struct SettingsView: View {
             .padding(.vertical, 8)
             .atlasHairlineBelow()
 
-            // ── Google Calendar ──────────────────────────────────────────
-            googleCalendarRow
+            // ── Google accounts (multi-account, one row per connection) ──
+            ForEach(state.googleConnections) { conn in
+                googleConnectionRow(conn)
+            }
+            Button { startAddGoogleAccount() } label: {
+                HStack(spacing: 8) {
+                    if googleWorking {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "plus.circle")
+                            .foregroundStyle(AtlasTheme.Colors.school)
+                    }
+                    Text(googleWorking ? "Connecting…" : "Add Google account…")
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .disabled(googleWorking)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .atlasHairlineBelow()
+
+            if let err = googleError {
+                Text(err).atlasFont(size: 12, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.danger)
+                    .padding(.horizontal, 12)
+            }
 
             // ── Canvas ──────────────────────────────────────────────────
             HStack(spacing: 12) {
@@ -596,30 +632,6 @@ struct SettingsView: View {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(AtlasTheme.Colors.green)
                     .atlasFont(size: 15, design: .rounded)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .atlasHairlineBelow()
-
-            // ── Two-way sync toggle ─────────────────────────────────────
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Sync calendar with Google")
-                        .atlasFont(size: 14, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text(syncSubtitle)
-                        .atlasFont(size: 12, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                }
-                Spacer()
-                Toggle("", isOn: $googleCalendarEnabled)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .tint(AtlasTheme.Colors.textPrimary)
-                    .disabled(!googleAuth.isConnected)
-                    .onChange(of: googleCalendarEnabled) { _, on in
-                        if on { state.backfillEventsToGoogle() }
-                    }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -681,13 +693,6 @@ struct SettingsView: View {
                 .atlasHairlineBelow()
             }
 
-            // ── Sync in the cloud (server-owned) ────────────────────────
-            // Only when Google is connected locally: hands the refresh token to
-            // the server so sync runs with every Atlas client closed.
-            if googleAuth.isConnected {
-                cloudSyncRow
-            }
-
             // ── Default space mapping ──────────────────────────────────
             if !state.spaces.isEmpty {
                 HStack {
@@ -721,129 +726,71 @@ struct SettingsView: View {
                 .atlasHairlineBelow()
             }
         }
-    }
-
-    // MARK: – Google Calendar row
-
-    private var googleCalendarRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "globe")
-                .foregroundStyle(AtlasTheme.Colors.school)
-                .frame(width: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Google Calendar")
-                    .atlasFont(size: 14, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                Text(googleSubtitle)
-                    .atlasFont(size: 12, design: .rounded)
-                    .foregroundStyle(googleSubtitleColor)
-            }
-            Spacer()
-            if googleAuth.isConnected {
-                // Re-run consent (prompt=consent re-grants all scopes). Always available
-                // when connected so a user whose Drive/Docs grant was declined or revoked
-                // — the onepick "access_denied" import banner — can re-consent in one
-                // click; a pre-drive.file session gets the explicit "for Drive" label
-                // since it MUST reconnect to import at all.
-                Button(googleAuth.hasDriveScope ? "Reconnect" : "Reconnect for Drive") {
-                    Task { await googleAuth.connect() }
-                }
-                .buttonStyle(.plain)
-                .atlasFont(size: 13, weight: .medium, design: .rounded)
-                .foregroundStyle(AtlasTheme.Colors.accentText)
-                .disabled(googleAuth.isWorking)
-                Button("Disconnect") {
-                    googleAuth.disconnect()
-                    googleCalendarEnabled = false
-                }
-                .buttonStyle(.plain)
-                .atlasFont(size: 13, weight: .medium, design: .rounded)
-                .foregroundStyle(AtlasTheme.Colors.danger)
-            } else {
-                Button {
-                    Task {
-                        await googleAuth.connect()
-                        if googleAuth.isConnected { googleCalendarEnabled = true }
-                    }
-                } label: {
-                    Text(googleAuth.isWorking ? "Connecting…" : "Connect")
-                        .atlasFont(size: 13, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous)
-                                .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(googleAuth.isWorking)
-            }
+        .sheet(item: $detailConnection) { conn in
+            googleDetailSheet(conn)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .atlasHairlineBelow()
-    }
-
-    private var syncSubtitle: String {
-        if !googleAuth.isConnected { return "Connect Google above to enable two-way sync." }
-        return googleCalendarEnabled
-            ? "Events sync both ways with your primary Google Calendar."
-            : "Off — your calendar stays in Atlas only."
-    }
-
-    private var googleSubtitle: String {
-        if googleAuth.isConnected {
-            if let syncError = state.lastCalendarSyncError { return "Sync issue — \(syncError)" }
-            return "Connected — syncing your primary calendar"
+        .sheet(isPresented: $showAddGoogleSheet) {
+            addGoogleSheet
         }
-        if let error = googleAuth.errorMessage { return error }
-        return "Not connected — sign in to sync events two-way"
     }
 
-    private var googleSubtitleColor: Color {
-        if googleAuth.isConnected {
-            return state.lastCalendarSyncError == nil
-                ? AtlasTheme.Colors.green : AtlasTheme.Colors.danger
-        }
-        if googleAuth.errorMessage != nil { return AtlasTheme.Colors.danger }
-        return AtlasTheme.Colors.textMuted
-    }
+    // MARK: – Google connection row (multi-account)
 
-    // MARK: – Cloud sync (server-owned) row
-
-    private var cloudSyncRow: some View {
+    /// One connected Google account: name / muted email / status line, plus the inline
+    /// destination-space dropdown (visual sibling of the Canvas connected row). The row
+    /// itself opens the detail sheet (rename / reconnect / disconnect).
+    @ViewBuilder
+    private func googleConnectionRow(_ conn: GoogleConnection) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                Image(systemName: "cloud.fill")
-                    .foregroundStyle(AtlasTheme.Colors.accent)
+                Image(systemName: "globe")
+                    .foregroundStyle(AtlasTheme.Colors.school)
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Sync in the cloud")
+                    Text(conn.name)
                         .atlasFont(size: 14, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text(cloudSyncSubtitle)
+                    Text(conn.googleEmail)
                         .atlasFont(size: 12, design: .rounded)
-                        .foregroundStyle(cloudSyncSubtitleColor)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    Text(googleConnectionStatus(conn))
+                        .atlasFont(size: 12, design: .rounded)
+                        .foregroundStyle(googleConnectionStatusColor(conn))
                 }
                 Spacer()
-                if cloudSyncWorking {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Toggle("", isOn: cloudSyncBinding)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .tint(AtlasTheme.Colors.textPrimary)
-                }
+                Image(systemName: "chevron.right")
+                    .atlasFont(size: 12, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
-            // A degraded server connection (error/revoked) keeps the row so the user
-            // can restore it. A clean user-disconnect clears it (no nag).
-            if let conn = state.googleConnection, conn.status != "active" {
-                Button(cloudSyncWorking ? "Reconnecting…" : "Reconnect") { reconnectCloudSync() }
-                    .buttonStyle(.plain)
-                    .atlasFont(size: 13, weight: .medium, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.accentText)
-                    .disabled(cloudSyncWorking)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                detailRename = conn.name
+                detailConnection = conn
+            }
+
+            // Destination space — inline, mirrors the Canvas connected row. Changing it
+            // PATCHes google-connect (routes this account's events to the new space).
+            if !state.spaces.isEmpty {
+                HStack {
+                    Text("Events land in")
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                    Spacer()
+                    Picker("Destination space", selection: Binding(
+                        get: { spaceName(forSpaceId: conn.spaceId) },
+                        set: { updateGoogleSpace(conn, toSpaceName: $0) }
+                    )) {
+                        Text("None (read-in only)").tag("")
+                        ForEach(state.spaces) { space in
+                            Text(space.name).tag(space.name)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 160)
+                    .tint(AtlasTheme.Colors.accent)
+                    .disabled(googleWorking)
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -851,96 +798,292 @@ struct SettingsView: View {
         .atlasHairlineBelow()
     }
 
-    private var cloudSyncSubtitle: String {
-        if let err = cloudSyncError { return err }
-        switch state.googleConnection?.status {
-        case "active":
-            if let synced = state.googleConnection?.lastSyncedDate {
-                return "Last synced \(Self.relativeSync(from: synced))."
-            }
-            return "On — syncing in the cloud, even with Atlas closed."
-        case "error":
-            return "Sync paused — reconnect to resume cloud sync."
-        case "revoked":
-            return "Disconnected on the server — reconnect to resume."
+    /// Status line for a connection row: server-owned sync state, per connection.
+    private func googleConnectionStatus(_ conn: GoogleConnection) -> String {
+        switch conn.status {
+        case "error", "revoked":
+            return "⚠ Reconnect needed — sync is stopped"
         default:
-            return "On to keep your calendar in sync with Atlas closed."
+            if conn.spaceId == nil { return "Connected — pick a space to sync events out" }
+            if let synced = conn.lastSyncedDate {
+                return "Connected — last synced \(Self.relativeSync(from: synced))"
+            }
+            return "Connected — first sync runs shortly"
         }
     }
 
-    private var cloudSyncSubtitleColor: Color {
-        if cloudSyncError != nil { return AtlasTheme.Colors.danger }
-        switch state.googleConnection?.status {
-        case "active":            return AtlasTheme.Colors.green
-        case "error", "revoked":  return AtlasTheme.Colors.danger
-        default:                  return AtlasTheme.Colors.textMuted
-        }
+    private func googleConnectionStatusColor(_ conn: GoogleConnection) -> Color {
+        conn.status == "active" ? AtlasTheme.Colors.green : AtlasTheme.Colors.warning
     }
 
-    /// Drives the toggle: flipping it runs the async connect/disconnect. The visible
-    /// state only changes after the network call succeeds, so a failure leaves the
-    /// mode untouched (calm error, no flip).
-    private var cloudSyncBinding: Binding<Bool> {
-        Binding(
-            get: { state.serverSyncEnabled },
-            set: { on in if on { enableCloudSync() } else { disableCloudSync() } }
-        )
+    /// The space NAME a connection is linked to (for the picker), or "" when unlinked.
+    private func spaceName(forSpaceId id: UUID?) -> String {
+        guard let id, let space = state.spaces.first(where: { $0.id == id }) else { return "" }
+        return space.name
     }
 
-    private func enableCloudSync() {
-        guard case .signedIn = auth.state else {
-            cloudSyncError = "Sign in to Atlas to enable cloud sync."
-            return
+    // MARK: – Google connection detail sheet
+
+    @ViewBuilder
+    private func googleDetailSheet(_ conn: GoogleConnection) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text(conn.name).atlasFont(size: 18, weight: .semibold, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                Spacer()
+                Button("Done") { detailConnection = nil }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                label("NAME")
+                input("School", text: $detailRename)
+                Text(conn.googleEmail)
+                    .atlasFont(size: 12, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+            }
+
+            if conn.status != "active" {
+                Text(conn.lastError ?? "This account's sync is stopped — reconnect to resume.")
+                    .atlasFont(size: 12, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.warning)
+            }
+
+            if let err = googleError {
+                Text(err).atlasFont(size: 12, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.danger)
+            }
+
+            HStack(spacing: 12) {
+                Button(googleWorking ? "Working…" : "Reconnect") { reconnectGoogle(conn) }
+                    .buttonStyle(.plain)
+                    .atlasFont(size: 14, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
+                    .disabled(googleWorking)
+                Spacer()
+                Button("Disconnect") { disconnectGoogle(conn) }
+                    .buttonStyle(.plain)
+                    .atlasFont(size: 14, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.danger)
+                    .disabled(googleWorking)
+            }
+
+            Button("Save name") { renameGoogle(conn) }
+                .buttonStyle(.plain)
+                .atlasFont(size: 13, weight: .medium, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                .disabled(googleWorking || detailRename.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-        guard googleAuth.currentRefreshToken != nil else {
-            cloudSyncError = "Reconnect Google above, then try again."
-            return
+        .padding(24)
+        .frame(width: 380)
+        .background(AtlasTheme.Colors.bgBase)
+    }
+
+    // MARK: – Add-account sheet (name it + pick a space)
+
+    @ViewBuilder
+    private var addGoogleSheet: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Name this Google account")
+                .atlasFont(size: 18, weight: .semibold, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+            if let email = pendingGrant?.email {
+                Text(email).atlasFont(size: 12, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                label("NAME")
+                input("School", text: $newAccountName)
+            }
+
+            if !state.spaces.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    label("EVENTS LAND IN")
+                    Picker("Destination space", selection: $newAccountSpace) {
+                        Text("None (read-in only)").tag("")
+                        ForEach(state.spaces) { space in
+                            Text(space.name).tag(space.name)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .tint(AtlasTheme.Colors.accent)
+                }
+            }
+
+            if let err = googleError {
+                Text(err).atlasFont(size: 12, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.danger)
+            }
+
+            HStack {
+                Button("Cancel") { showAddGoogleSheet = false; pendingGrant = nil }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                Spacer()
+                Button(googleWorking ? "Saving…" : "Save") { saveNewGoogleAccount() }
+                    .buttonStyle(.plain)
+                    .atlasFont(size: 14, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
+                    .disabled(googleWorking || newAccountName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
         }
-        cloudSyncError = nil
-        cloudSyncWorking = true
+        .padding(24)
+        .frame(width: 380)
+        .background(AtlasTheme.Colors.bgBase)
+    }
+
+    // MARK: – Google multi-account actions
+
+    /// Runs the account-chooser OAuth, then opens the name+space sheet on success.
+    private func startAddGoogleAccount() {
+        googleError = nil
+        googleWorking = true
         Task {
-            // Refresh the JWT first — reading `session` directly 401s once the
-            // 1-hour token goes stale (mirrors the Jul-6 fix elsewhere).
+            let grant = await googleAuth.connect()
+            googleWorking = false
+            guard let grant else {
+                googleError = googleAuth.errorMessage ?? "Couldn't connect Google. Try again."
+                return
+            }
+            pendingGrant = grant
+            newAccountName = ""
+            newAccountSpace = state.spaces.contains(where: { $0.name == "School" }) ? "School" : ""
+            showAddGoogleSheet = true
+        }
+    }
+
+    /// POSTs google-connect with the granted token + chosen name/space → new connection.
+    private func saveNewGoogleAccount() {
+        guard let grant = pendingGrant else { return }
+        let name = newAccountName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        googleError = nil
+        googleWorking = true
+        Task {
             guard let jwt = await auth.validAccessToken() else {
-                cloudSyncError = "Your session expired — sign in again, then try."
-                cloudSyncWorking = false
+                googleError = "Your session expired — sign in again, then try."
+                googleWorking = false
                 return
             }
             do {
-                try await googleAuth.enableServerSync(jwt: jwt)
-                await state.refreshGoogleConnection()   // re-derive server-owned mode
+                try await googleAuth.createConnection(
+                    refreshToken: grant.refreshToken,
+                    name: name,
+                    spaceId: state.spaceID(named: newAccountSpace),
+                    googleEmail: grant.email,
+                    jwt: jwt)
+                await state.refreshGoogleConnections()
+                showAddGoogleSheet = false
+                pendingGrant = nil
             } catch {
-                cloudSyncError = "Couldn't turn on cloud sync. Check your connection and try again."
+                googleError = googleConnectMessage(error, fallback: "Couldn't add the account. Try again.")
             }
-            cloudSyncWorking = false
+            googleWorking = false
         }
     }
 
-    private func disableCloudSync() {
-        guard case .signedIn = auth.state else {
-            cloudSyncError = "Sign in to Atlas to change cloud sync."
-            return
-        }
-        cloudSyncError = nil
-        cloudSyncWorking = true
+    /// Reconnect in one action: re-run OAuth for this account, then re-POST google-connect
+    /// (server treats a re-POST for the same account as a reconnect — vault + status reset).
+    private func reconnectGoogle(_ conn: GoogleConnection) {
+        googleError = nil
+        googleWorking = true
         Task {
+            let grant = await googleAuth.connect()
+            guard let grant else {
+                googleError = googleAuth.errorMessage ?? "Couldn't reconnect Google. Try again."
+                googleWorking = false
+                return
+            }
             guard let jwt = await auth.validAccessToken() else {
-                cloudSyncError = "Your session expired — sign in again, then try."
-                cloudSyncWorking = false
+                googleError = "Your session expired — sign in again, then try."
+                googleWorking = false
                 return
             }
             do {
-                try await googleAuth.disableServerSync(jwt: jwt)
-                state.serverSyncEnabled = false
-                state.googleConnection = nil            // clean disconnect: no Reconnect nag
+                try await googleAuth.createConnection(
+                    refreshToken: grant.refreshToken,
+                    name: conn.name,
+                    spaceId: conn.spaceId,
+                    googleEmail: conn.googleEmail,
+                    jwt: jwt)
+                await state.refreshGoogleConnections()
+                detailConnection = nil
             } catch {
-                cloudSyncError = "Couldn't turn off cloud sync. Check your connection and try again."
+                googleError = googleConnectMessage(error, fallback: "Couldn't reconnect. Try again.")
             }
-            cloudSyncWorking = false
+            googleWorking = false
         }
     }
 
-    private func reconnectCloudSync() { enableCloudSync() }
+    /// PATCH the connection's name.
+    private func renameGoogle(_ conn: GoogleConnection) {
+        let name = detailRename.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, name != conn.name else { detailConnection = nil; return }
+        patchGoogle(conn, name: name, spaceId: nil, thenDismissDetail: true)
+    }
+
+    /// Change (or clear) the connection's destination space. `""` unlinks (read-in only).
+    private func updateGoogleSpace(_ conn: GoogleConnection, toSpaceName newName: String) {
+        let newSpaceId = newName.isEmpty ? nil : state.spaceID(named: newName)
+        guard newSpaceId != conn.spaceId else { return }
+        patchGoogle(conn, name: nil, spaceId: .some(newSpaceId), thenDismissDetail: false)
+    }
+
+    /// Shared PATCH runner. `spaceId` is a double-optional: nil ⇒ don't touch the mapping;
+    /// `.some(nil)` ⇒ unlink; `.some(id)` ⇒ re-map. Refreshes on success.
+    private func patchGoogle(_ conn: GoogleConnection, name: String?, spaceId: UUID??, thenDismissDetail: Bool) {
+        googleError = nil
+        googleWorking = true
+        Task {
+            guard let jwt = await auth.validAccessToken() else {
+                googleError = "Your session expired — sign in again, then try."
+                googleWorking = false
+                return
+            }
+            do {
+                try await googleAuth.updateConnection(connectionId: conn.id, name: name, spaceId: spaceId, jwt: jwt)
+                await state.refreshGoogleConnections()
+                if thenDismissDetail { detailConnection = nil }
+            } catch {
+                googleError = googleConnectMessage(error, fallback: "Couldn't update the account. Try again.")
+            }
+            googleWorking = false
+        }
+    }
+
+    /// DELETE the connection + its vault secret.
+    private func disconnectGoogle(_ conn: GoogleConnection) {
+        googleError = nil
+        googleWorking = true
+        Task {
+            guard let jwt = await auth.validAccessToken() else {
+                googleError = "Your session expired — sign in again, then try."
+                googleWorking = false
+                return
+            }
+            do {
+                try await googleAuth.deleteConnection(connectionId: conn.id, jwt: jwt)
+                await state.refreshGoogleConnections()
+                detailConnection = nil
+            } catch {
+                googleError = googleConnectMessage(error, fallback: "Couldn't disconnect. Try again.")
+            }
+            googleWorking = false
+        }
+    }
+
+    /// Surfaces the one server message users must see verbatim — an occupied destination
+    /// space (409). Everything else collapses to a calm fallback.
+    private func googleConnectMessage(_ error: Error, fallback: String) -> String {
+        let detail = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+        if detail.contains("409") || detail.lowercased().contains("already linked") || detail.lowercased().contains("space") && detail.contains("unique") {
+            return "That space is already linked to another Google account."
+        }
+        return fallback
+    }
 
     /// Short relative label for "Last synced Xm ago".
     private static func relativeSync(from date: Date) -> String {

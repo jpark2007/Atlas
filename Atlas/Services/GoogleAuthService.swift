@@ -21,10 +21,14 @@ enum GoogleOAuthConfig {
     /// Google Docs + Drive scopes for Notes ↔ Google Docs (WS-10):
     ///   • `documents`  — read/write the backing Doc's content + structure.
     ///   • `drive.file` — create/locate the Docs Atlas itself owns.
+    ///   • `openid`/`email` — surface WHICH Google account granted access, so a
+    ///     multi-account connection can be labelled with its login (id_token).
     static let scopes = [
         "https://www.googleapis.com/auth/calendar.events",
         "https://www.googleapis.com/auth/documents",
         "https://www.googleapis.com/auth/drive.file",
+        "openid",
+        "email",
     ]
 
     static var clientID: String {
@@ -120,7 +124,10 @@ enum GoogleOAuth {
             .init(name: "code_challenge", value: codeChallenge),
             .init(name: "code_challenge_method", value: "S256"),
             .init(name: "access_type", value: "offline"),
-            .init(name: "prompt", value: "consent"),
+            // `select_account` so a SECOND (or different) Google login is pickable —
+            // without it Google silently reuses the browser's active session, making
+            // multi-account impossible. `consent` still forces a refresh_token issue.
+            .init(name: "prompt", value: "select_account consent"),
             .init(name: "state", value: state),
         ]
         return components.url!
@@ -174,6 +181,24 @@ enum GoogleOAuth {
         let refresh_token: String?
         let scope: String?
         let token_type: String?
+        let id_token: String?
+    }
+
+    /// The granted account's email, decoded from an OpenID Connect `id_token`
+    /// (`header.payload.signature`). We only READ the unverified payload for a
+    /// display label — the token itself came straight from Google's token endpoint
+    /// over TLS, so no signature check is needed here. Returns nil if absent/malformed.
+    static func email(fromIDToken idToken: String?) -> String? {
+        guard let idToken else { return nil }
+        let parts = idToken.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+        var b64 = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        while b64.count % 4 != 0 { b64 += "=" }
+        guard let data = Data(base64Encoded: b64),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return json["email"] as? String
     }
 
     /// Encodes form parameters. `URLComponents` renders spaces as `%20` and leaves
@@ -190,12 +215,20 @@ enum GoogleOAuth {
 
 // MARK: - Keychain store
 
-/// Minimal generic-password Keychain wrapper for the Google token blob.
+/// Minimal generic-password Keychain wrapper for Google token blobs.
+///
+/// Two coexisting slots under one `service`:
+///   • the legacy singleton `account = "oauth-tokens"` — the Drive/Docs "primary"
+///     login that powers Notes ↔ Google Docs (its live access token is minted here).
+///   • per-connection slots `account = <connectionId>` — one credential per connected
+///     calendar account (multi-account, 0028). Keying by id (not a machine-global
+///     single slot) is what stops a credential leaking across Atlas account switches.
+/// `deleteAll()` clears every slot under the service, so a Google sign-out is total.
 enum GoogleKeychain {
     static let service = "com.atlas.Atlas.google"
     static let account = "oauth-tokens"
 
-    private static func baseQuery() -> [String: Any] {
+    private static func baseQuery(account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -204,16 +237,16 @@ enum GoogleKeychain {
     }
 
     @discardableResult
-    static func save(_ tokens: GoogleTokens) -> Bool {
+    static func save(_ tokens: GoogleTokens, account: String = account) -> Bool {
         guard let data = try? JSONEncoder().encode(tokens) else { return false }
-        SecItemDelete(baseQuery() as CFDictionary)
-        var add = baseQuery()
+        SecItemDelete(baseQuery(account: account) as CFDictionary)
+        var add = baseQuery(account: account)
         add[kSecValueData as String] = data
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 
-    static func load() -> GoogleTokens? {
-        var query = baseQuery()
+    static func load(account: String = account) -> GoogleTokens? {
+        var query = baseQuery(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
@@ -222,8 +255,26 @@ enum GoogleKeychain {
         return try? JSONDecoder().decode(GoogleTokens.self, from: data)
     }
 
-    static func delete() {
-        SecItemDelete(baseQuery() as CFDictionary)
+    static func delete(account: String = account) {
+        SecItemDelete(baseQuery(account: account) as CFDictionary)
+    }
+
+    /// Per-connection convenience wrappers — key the slot by the connection's id.
+    @discardableResult
+    static func save(_ tokens: GoogleTokens, for connectionId: UUID) -> Bool {
+        save(tokens, account: connectionId.uuidString)
+    }
+    static func delete(for connectionId: UUID) {
+        delete(account: connectionId.uuidString)
+    }
+
+    /// Removes EVERY Google credential under the service — the singleton slot and all
+    /// per-connection slots — so a sign-out leaves nothing behind (no cross-account leak).
+    static func deleteAll() {
+        SecItemDelete([
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+        ] as CFDictionary)
     }
 }
 
@@ -254,17 +305,30 @@ final class GoogleAuthService: ObservableObject {
 
     // MARK: Connect / disconnect
 
-    /// Opens the system browser to Google's consent screen and captures the
-    /// authorization code via a one-shot loopback listener, then exchanges it for
-    /// tokens. The consent click itself can only be performed by the human.
-    func connect() async {
+    /// The tokens + granted account email captured by a completed OAuth round-trip —
+    /// what the caller needs to create (or reconnect) a `google_connections` row.
+    struct GrantedAccount {
+        let refreshToken: String
+        let email: String
+    }
+
+    /// Opens the system browser to Google's account chooser + consent screen and captures
+    /// the authorization code via the one-shot loopback listener, then exchanges it for
+    /// tokens. The consent click itself can only be performed by the human. Also refreshes
+    /// the singleton (Drive/Docs) slot so Notes ↔ Google Docs follows the latest login.
+    ///
+    /// Returns the granted refresh token + account email (for creating/reconnecting a
+    /// connection), or nil when the user cancelled, Google issued no refresh token, or the
+    /// id_token carried no email (`errorMessage` is set with a calm description on failure).
+    @discardableResult
+    func connect() async -> GrantedAccount? {
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
 
         guard GoogleOAuthConfig.isConfigured else {
             errorMessage = GoogleAuthError.notConfigured.errorDescription
-            return
+            return nil
         }
 
         do {
@@ -293,17 +357,27 @@ final class GoogleAuthService: ObservableObject {
                 clientSecret: GoogleOAuthConfig.clientSecret,
                 redirectURI: redirectURI
             )
-            let fresh = try await exchange(body: body, existingRefresh: nil)
+            let (fresh, email) = try await exchange(body: body, existingRefresh: nil)
+            // Refresh the singleton slot so Drive/Docs use the latest login.
             tokens = fresh
             GoogleKeychain.save(fresh)
+            guard let refresh = fresh.refreshToken, let email else {
+                errorMessage = "Google didn't return the account details — try connecting again."
+                return nil
+            }
+            return GrantedAccount(refreshToken: refresh, email: email)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            return nil
         }
     }
 
+    /// Signs out of Google entirely — clears the singleton slot AND every per-connection
+    /// credential (no cross-account leak). The `google_connections` rows themselves are
+    /// removed via `deleteConnection` (server vault), not here.
     func disconnect() {
         tokens = nil
-        GoogleKeychain.delete()
+        GoogleKeychain.deleteAll()
         errorMessage = nil
     }
 
@@ -318,19 +392,41 @@ final class GoogleAuthService: ObservableObject {
     /// user must reconnect (which forces `prompt=consent` → re-grants all scopes).
     var hasDriveScope: Bool { (tokens?.scope ?? "").contains("drive.file") }
 
-    /// Hands the Keychain refresh token to the `google-connect` edge function so the
-    /// Supabase cron can own Google↔DB sync while every Atlas client is closed. `jwt`
-    /// is the caller's Supabase user access token (verified server-side by `auth.getUser`).
-    /// Throws on any non-2xx so the caller can stay in local mode + show a calm error.
-    func enableServerSync(jwt: String) async throws {
-        guard let refresh = tokens?.refreshToken else { throw GoogleAuthError.notConnected }
+    // MARK: - Multi-account connections (google-connect edge function)
+
+    /// Creates (or reconnects) a connection: POST `{refreshToken, name, spaceId?, googleEmail}`.
+    /// A re-POST for an existing (user, email, calendar) is treated server-side as a
+    /// reconnect — vault secret replaced, status reset to active. Throws on any non-2xx so
+    /// the caller can surface the message (e.g. a 409 duplicate).
+    func createConnection(refreshToken: String, name: String, spaceId: UUID?, googleEmail: String, jwt: String) async throws {
+        var payload: [String: Any] = [
+            "refreshToken": refreshToken,
+            "name": name,
+            "googleEmail": googleEmail,
+        ]
+        if let spaceId { payload["spaceId"] = spaceId.uuidString }
         try await callConnect(method: "POST", jwt: jwt,
-                              body: try JSONSerialization.data(withJSONObject: ["refreshToken": refresh]))
+                              body: try JSONSerialization.data(withJSONObject: payload))
     }
 
-    /// Disconnects the server-side sync (`google-connect` DELETE) → returns to local mode.
-    func disableServerSync(jwt: String) async throws {
-        try await callConnect(method: "DELETE", jwt: jwt, body: nil)
+    /// Renames / re-maps a connection: PATCH `{connectionId, name?, spaceId?}`. An occupied
+    /// destination space is rejected server-side (409) — the caller surfaces the message and
+    /// reverts the picker.
+    func updateConnection(connectionId: UUID, name: String? = nil, spaceId: UUID?? = nil, jwt: String) async throws {
+        var payload: [String: Any] = ["connectionId": connectionId.uuidString]
+        if let name { payload["name"] = name }
+        // Outer optional nil ⇒ don't touch the mapping; inner nil ⇒ explicitly unlink (null).
+        if let spaceId { payload["spaceId"] = spaceId.map { $0.uuidString } ?? NSNull() }
+        try await callConnect(method: "PATCH", jwt: jwt,
+                              body: try JSONSerialization.data(withJSONObject: payload))
+    }
+
+    /// Removes a connection + its vault secret: DELETE `{connectionId}`. Other connections
+    /// are untouched. Also drops the local per-connection keychain credential.
+    func deleteConnection(connectionId: UUID, jwt: String) async throws {
+        try await callConnect(method: "DELETE", jwt: jwt,
+                              body: try JSONSerialization.data(withJSONObject: ["connectionId": connectionId.uuidString]))
+        GoogleKeychain.delete(for: connectionId)
     }
 
     private func callConnect(method: String, jwt: String, body: Data?) async throws {
@@ -364,7 +460,7 @@ final class GoogleAuthService: ObservableObject {
             clientID: GoogleOAuthConfig.clientID,
             clientSecret: GoogleOAuthConfig.clientSecret
         )
-        let fresh = try await exchange(body: body, existingRefresh: refresh)
+        let (fresh, _) = try await exchange(body: body, existingRefresh: refresh)
         tokens = fresh
         GoogleKeychain.save(fresh)
         return fresh.accessToken
@@ -372,7 +468,10 @@ final class GoogleAuthService: ObservableObject {
 
     // MARK: Network
 
-    private func exchange(body: Data, existingRefresh: String?) async throws -> GoogleTokens {
+    /// Exchanges an authorization-code (or refresh) body for tokens, plus the account
+    /// email decoded from the response's OpenID `id_token` when present (nil on refresh,
+    /// which carries no id_token).
+    private func exchange(body: Data, existingRefresh: String?) async throws -> (GoogleTokens, String?) {
         var request = URLRequest(url: GoogleOAuthConfig.tokenEndpoint)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -383,7 +482,10 @@ final class GoogleAuthService: ObservableObject {
             let detail = String(data: data, encoding: .utf8) ?? "(no body)"
             throw GoogleAuthError.tokenExchangeFailed(detail)
         }
-        return try GoogleOAuth.decodeTokens(from: data, existingRefresh: existingRefresh)
+        let tokens = try GoogleOAuth.decodeTokens(from: data, existingRefresh: existingRefresh)
+        struct IDTokenEnvelope: Decodable { let id_token: String? }
+        let idToken = (try? JSONDecoder().decode(IDTokenEnvelope.self, from: data))?.id_token
+        return (tokens, GoogleOAuth.email(fromIDToken: idToken))
     }
 }
 

@@ -2,8 +2,9 @@
  * Atlas — google-sync Edge Function (Deno)  ·  the two-way sync runner
  *
  * Invoked by pg_cron (Task 4) every 5 minutes with the service-role key. It leases
- * a batch of due google_connections rows (claim_google_sync_users, 0009 — oldest
- * last_synced_at first, single-flight via `for update skip locked`) and for each:
+ * a batch of due google_connections rows (claim_google_sync_connections, 0028 —
+ * oldest last_synced_at first, single-flight via `for update skip locked`). Each row
+ * is ONE connection (multi-account, 0028); a user may hold several. For each:
  *   DELETE Atlas → Google: process the user's tombstones FIRST (deleted_google_events,
  *         0011) — an app-side delete of a mirrored row is replayed as a Google
  *         DELETE /events/{id} (404/410 = already gone = success), then the tombstone
@@ -208,9 +209,11 @@ interface EventRow {
 }
 
 interface Connection {
+  id: string;
   user_id: string;
   vault_secret_id: string | null;
   calendar_id: string;
+  space_id: string | null;
   sync_token: string | null;
   last_synced_at: string | null;
 }
@@ -516,8 +519,10 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     fullResync: false,
   };
 
-  // 1. Decrypt the refresh token (service-role Vault read) and mint an access token.
-  const accessToken = await mintAccessToken(admin, userId, clientId, clientSecret);
+  // 1. Decrypt THIS connection's refresh token (service-role Vault read) and mint
+  //    an access token. Multi-account: mint by the connection's own secret, never a
+  //    per-user lookup (a user may hold several connections).
+  const accessToken = await mintAccessToken(admin, userId, clientId, clientSecret, conn.vault_secret_id);
 
   // I1: gids of this user's Mac-owned work-block mirrors. Work-block mirroring is
   //     Mac-owned and OFF in server mode (v1), but a legacy mirror may still exist
@@ -544,7 +549,8 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     const { data: tombRows, error: tombErr } = await admin
       .from("deleted_google_events")
       .select("google_event_id")
-      .eq("user_id", userId);
+      .eq("user_id", userId)
+      .eq("google_connection_id", conn.id);
     if (tombErr) throw new Error(`tombstone select failed: ${tombErr.message}`);
     for (const r of (tombRows ?? []) as { google_event_id: string }[]) {
       if (r.google_event_id) tombstonedGids.add(r.google_event_id);
@@ -579,6 +585,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
         .from("deleted_google_events")
         .delete()
         .eq("user_id", userId)
+        .eq("google_connection_id", conn.id)
         .in("google_event_id", cleared);
       if (error) throw new Error(`tombstone clear failed: ${error.message}`);
     }
@@ -633,6 +640,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
       .from("events")
       .select("id, google_event_id, google_origin, updated_at, google_updated_at, space_name, title, start_at, end_at, is_all_day, notes")
       .eq("user_id", userId)
+      .eq("google_connection_id", conn.id) // this connection's mirrors only (gid namespace is per-account)
       .in("google_event_id", seenGids);
     if (error) throw new Error(`events select failed: ${error.message}`);
     for (const r of (rows ?? []) as EventRow[]) {
@@ -640,16 +648,34 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     }
   }
 
-  // Default space (the app orders spaces by `sort`; there is no created_at column).
-  let defaultSpace: string | null = null;
-  const { data: spaceRows } = await admin
-    .from("spaces")
-    .select("name, sort")
-    .eq("user_id", userId)
-    .order("sort", { ascending: true })
-    .order("name", { ascending: true })
-    .limit(1);
-  defaultSpace = (spaceRows?.[0]?.name as string | undefined) ?? null;
+  // Landing / routing space for THIS connection. Incoming events land in the
+  // connection's linked space (space_id → name); PUSH routes out only events in
+  // that same space. When the connection has no link (space_id null — "read-in
+  // only"), pulled events still need a home (events.space_name is NOT NULL), so
+  // they fall back to the user's first space; PUSH is skipped (nothing routes out
+  // of an unlinked connection — "an unlinked space stays in Atlas").
+  let linkedSpace: string | null = null;
+  if (conn.space_id) {
+    const { data: sRow } = await admin
+      .from("spaces")
+      .select("name")
+      .eq("user_id", userId)
+      .eq("id", conn.space_id)
+      .maybeSingle();
+    linkedSpace = (sRow?.name as string | undefined) ?? null;
+  }
+  let defaultSpace: string | null = linkedSpace;
+  if (!defaultSpace) {
+    // Fallback landing space (the app orders spaces by `sort`; no created_at column).
+    const { data: spaceRows } = await admin
+      .from("spaces")
+      .select("name, sort")
+      .eq("user_id", userId)
+      .order("sort", { ascending: true })
+      .order("name", { ascending: true })
+      .limit(1);
+    defaultSpace = (spaceRows?.[0]?.name as string | undefined) ?? null;
+  }
 
   // The set of row ids the sync itself wrote this run — excluded from PUSH so a
   // pulled/un-mirrored row is never echoed back to Google in the same pass.
@@ -711,6 +737,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
         is_all_day: u.fields.allDay,
         notes: u.notes,
         google_event_id: gid,
+        google_connection_id: conn.id,   // attribution: this connection owns the mirror
         google_origin: true,
         updated_at: runStartISO,         // ≤ next last_synced_at ⇒ never echoed by PUSH
         google_updated_at: u.googleUpdatedISO,
@@ -724,8 +751,8 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
   // 3. Apply pull writes (skipped entirely in dryRun).
   if (!dryRun) {
     if (inserts.length > 0) {
-      // Idempotent: non-partial unique (user_id, google_event_id) makes a re-run a no-op.
-      const { error } = await admin.from("events").upsert(inserts, { onConflict: "user_id,google_event_id" });
+      // Idempotent: non-partial unique (google_connection_id, google_event_id) makes a re-run a no-op.
+      const { error } = await admin.from("events").upsert(inserts, { onConflict: "google_connection_id,google_event_id" });
       if (error) throw new Error(`insert failed: ${error.message}`);
     }
     for (const u of updates) {
@@ -744,22 +771,34 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
         .from("deleted_google_events")
         .delete()
         .eq("user_id", userId)
+        .eq("google_connection_id", conn.id)
         .in("google_event_id", deletedFromPullGids);
       if (tErr) throw new Error(`pull-delete tombstone clear failed: ${tErr.message}`);
     }
   }
 
-  // 4. PUSH. Rows changed since last_synced_at. First run (last_synced_at null)
-  //    backfills all — parity with the Mac's backfillEventsToGoogle on toggle-on.
-  //    google_origin=true rows are edit-synced too (I2): a mirrored gid ⇒ PATCH.
-  //    Only google_origin=false + null-gid rows are POSTed as new Google events.
-  let pushQ = admin
-    .from("events")
-    .select("id, google_event_id, google_origin, updated_at, google_updated_at, space_name, title, start_at, end_at, is_all_day, notes")
-    .eq("user_id", userId);
-  if (conn.last_synced_at) pushQ = pushQ.gt("updated_at", conn.last_synced_at);
-  const { data: pushRows, error: pushErr } = await pushQ;
-  if (pushErr) throw new Error(`push select failed: ${pushErr.message}`);
+  // 4. PUSH. Rows changed since last_synced_at, ROUTED to this connection: only
+  //    events in the connection's linked space, and — among those — only rows this
+  //    connection owns (google_connection_id null = not yet mirrored ⇒ POST here, or
+  //    = conn.id ⇒ PATCH here). A row mirrored to a DIFFERENT connection that happens
+  //    to sit in this space is never touched. An UNLINKED connection (no space)
+  //    routes nothing out ("an unlinked space stays in Atlas").
+  //    First run (last_synced_at null) backfills all in-space rows — parity with the
+  //    Mac's backfillEventsToGoogle. google_origin=true rows are edit-synced too (I2):
+  //    a mirrored gid ⇒ PATCH; only google_origin=false + null-gid rows are POSTed new.
+  let pushRows: EventRow[] = [];
+  if (linkedSpace) {
+    let pushQ = admin
+      .from("events")
+      .select("id, google_event_id, google_origin, updated_at, google_updated_at, space_name, title, start_at, end_at, is_all_day, notes")
+      .eq("user_id", userId)
+      .eq("space_name", linkedSpace)
+      .or(`google_connection_id.is.null,google_connection_id.eq.${conn.id}`);
+    if (conn.last_synced_at) pushQ = pushQ.gt("updated_at", conn.last_synced_at);
+    const { data, error: pushErr } = await pushQ;
+    if (pushErr) throw new Error(`push select failed: ${pushErr.message}`);
+    pushRows = (data ?? []) as EventRow[];
+  }
 
   // Per-event push isolation: a single PATCH/POST failure records here and the loop
   // CONTINUES. A per-event failure is NOT a run failure — the run still advances the
@@ -768,7 +807,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
   // whole run and strands the connection in status='error'.
   const pushErrors: { id: string; message: string }[] = [];
 
-  for (const row of (pushRows ?? []) as EventRow[]) {
+  for (const row of pushRows) {
     if (syncTouched.has(row.id)) continue; // just written by the pull this run (incl. fresh inserts)
     if (row.google_event_id) {
       // Already mirrored → PATCH (origin or not; the local edit is the newer side).
@@ -839,10 +878,15 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
             // other non-2xx is a real error.
             throw new Error(`google insert ${res.status}: ${(await res.text()).slice(0, 200)}`);
           }
-          // Write the (deterministic) id back and freeze updated_at so we don't re-push.
-          // Optimistic on updated_at: if a concurrent edit bumped it, this no-ops and
-          // the next run re-POSTs the SAME id → 409 → converges (no duplicate).
-          const patch: Record<string, unknown> = { google_event_id: gid, updated_at: runStartISO };
+          // Write the (deterministic) id back, stamp the owning connection, and freeze
+          // updated_at so we don't re-push. Optimistic on updated_at: if a concurrent
+          // edit bumped it, this no-ops and the next run re-POSTs the SAME id → 409 →
+          // converges (no duplicate).
+          const patch: Record<string, unknown> = {
+            google_event_id: gid,
+            google_connection_id: conn.id,
+            updated_at: runStartISO,
+          };
           if (googleUpdated) patch.google_updated_at = googleUpdated;
           await admin.from("events").update(patch).eq("id", row.id).eq("updated_at", row.updated_at);
         } catch (e) {
@@ -887,7 +931,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     const { error } = await admin
       .from("google_connections")
       .update({ sync_token: newSyncToken, last_synced_at: runStartISO, status: "active", last_error: errorSummary, claimed_until: null })
-      .eq("user_id", userId);
+      .eq("id", conn.id);
     if (error) throw new Error(`connection update failed: ${error.message}`);
   }
 
@@ -923,21 +967,21 @@ Deno.serve(async (req: Request) => {
   });
 
   // Batch of due connections. dryRun reads read-only (no lease → no mutation); a
-  // real run LEASES them atomically (I3: claim_google_sync_users, for update skip
-  // locked) so two overlapping ticks never process the same user.
+  // real run LEASES them atomically (I3: claim_google_sync_connections, for update
+  // skip locked) so two overlapping ticks never process the same connection.
   let conns: Connection[] | null = null;
   let connErr: { message: string } | null = null;
   if (dryRun) {
     const r = await admin
       .from("google_connections")
-      .select("user_id, vault_secret_id, calendar_id, sync_token, last_synced_at")
-      .in("status", ["active", "error"]) // mirror claim_google_sync_users (0010): error connections self-heal
+      .select("id, user_id, vault_secret_id, calendar_id, space_id, sync_token, last_synced_at")
+      .in("status", ["active", "error"]) // mirror claim_google_sync_connections (0010): error connections self-heal
       .order("last_synced_at", { ascending: true, nullsFirst: true })
       .limit(BATCH_LIMIT);
     conns = r.data as Connection[] | null;
     connErr = r.error;
   } else {
-    const r = await admin.rpc("claim_google_sync_users", { batch: BATCH_LIMIT });
+    const r = await admin.rpc("claim_google_sync_connections", { batch: BATCH_LIMIT });
     conns = r.data as Connection[] | null;
     connErr = r.error;
   }
@@ -961,7 +1005,7 @@ Deno.serve(async (req: Request) => {
           await admin
             .from("google_connections")
             .update({ status: revoked ? "revoked" : "error", last_error: msg, claimed_until: null })
-            .eq("user_id", conn.user_id);
+            .eq("id", conn.id);
         }
         return {
           userId: conn.user_id,

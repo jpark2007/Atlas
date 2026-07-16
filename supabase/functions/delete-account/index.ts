@@ -74,11 +74,15 @@ Deno.serve(async (req: Request) => {
   // FKs to auth.users, so the cascade won't remove them. Capture the ids now,
   // but purge only AFTER the user delete succeeds — purging first destroyed a
   // live account's Google sync when deleteUser failed (2026-07-15).
-  const { data: g } = await admin
+  // google_connections is multi-row now (multi-account, 0028): collect EVERY
+  // connection's secret id, not a single row.
+  const { data: gRows } = await admin
     .from("google_connections")
     .select("vault_secret_id")
-    .eq("user_id", userId)
-    .maybeSingle();
+    .eq("user_id", userId);
+  const googleSecretIds = (gRows ?? [])
+    .map((r) => r.vault_secret_id as string | null)
+    .filter((id): id is string => !!id);
   const { data: c } = await admin
     .from("canvas_connections")
     .select("vault_secret_id")
@@ -96,8 +100,8 @@ Deno.serve(async (req: Request) => {
 
   // Account is gone — now purge the orphaned Vault secrets (best-effort; a
   // leftover secret points at nothing and must never fail the response).
-  if (g?.vault_secret_id) {
-    await admin.rpc("delete_google_secret", { secret_id: g.vault_secret_id });
+  for (const secretId of googleSecretIds) {
+    await admin.rpc("delete_google_secret", { secret_id: secretId });
   }
   if (c?.vault_secret_id) {
     await admin.rpc("delete_canvas_secret", { secret_id: c.vault_secret_id });
