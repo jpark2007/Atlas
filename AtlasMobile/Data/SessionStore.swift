@@ -10,7 +10,10 @@ import AtlasCore
 @MainActor
 final class SessionStore {
 
+    /// Legacy UserDefaults key — read once for one-time migration into the Keychain.
     private let key = "atlas.supabase.session"
+    private let keychainService = KeychainStore.Service.supabase
+    private let keychainAccount = "session"
     private let api = SupabaseAuth()
 
     /// The last-known session (restored at init, updated on save/clear).
@@ -23,19 +26,33 @@ final class SessionStore {
     // MARK: - Persistence
 
     private func load() -> SupabaseSession? {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        guard let data = loadSessionData() else { return nil }
         return try? JSONDecoder().decode(SupabaseSession.self, from: data)
+    }
+
+    /// Session bytes from the Keychain, migrating a pre-Keychain UserDefaults value
+    /// on first read after update (adopt into Keychain, delete from UserDefaults) so
+    /// existing users aren't signed out.
+    private func loadSessionData() -> Data? {
+        if let data = KeychainStore.load(service: keychainService, account: keychainAccount) {
+            return data
+        }
+        guard let legacy = UserDefaults.standard.data(forKey: key) else { return nil }
+        KeychainStore.save(legacy, service: keychainService, account: keychainAccount)
+        UserDefaults.standard.removeObject(forKey: key)
+        return legacy
     }
 
     func save(_ session: SupabaseSession) {
         self.session = session
         if let data = try? JSONEncoder().encode(session) {
-            UserDefaults.standard.set(data, forKey: key)
+            KeychainStore.save(data, service: keychainService, account: keychainAccount)
         }
     }
 
     func clear() {
         session = nil
+        KeychainStore.delete(service: keychainService, account: keychainAccount)
         UserDefaults.standard.removeObject(forKey: key)
     }
 
