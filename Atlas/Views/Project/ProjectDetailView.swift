@@ -545,7 +545,59 @@ struct ProjectDetailView: View {
                 if let i = project.instructor { metaItem("person", i) }
                 if project.canvasSynced { metaItem("folder", "Canvas + Drive", accent: true) }
             }
+            colorPickerRow
         }
+    }
+
+    /// Per-project day-grid color (Option B): a hollow "inherit space color" swatch
+    /// plus the four theme tokens. Picking a token tints this project's tiles on the
+    /// day/week grid only; month dots, chips and the sidebar keep the space color.
+    private var colorPickerRow: some View {
+        HStack(spacing: 8) {
+            Text("GRID COLOR").atlasCapsLabel()
+            // Inherit (default): hollow circle in the space color, selected when no token.
+            Button {
+                state.setProjectColorToken(projectID: project.id, token: nil)
+            } label: {
+                Circle()
+                    .strokeBorder(project.spaceColor, lineWidth: 2)
+                    .frame(width: 20, height: 20)
+                    .overlay(
+                        Circle()
+                            .stroke(AtlasTheme.Colors.textPrimary,
+                                    lineWidth: project.colorToken == nil ? 2 : 0)
+                            .padding(-3)
+                    )
+                    .help("Inherit space color")
+            }
+            .buttonStyle(.plain)
+            ForEach(projectColorPalette, id: \.token) { swatch in
+                Button {
+                    state.setProjectColorToken(projectID: project.id, token: swatch.token)
+                } label: {
+                    Circle()
+                        .fill(swatch.color)
+                        .frame(width: 20, height: 20)
+                        .overlay(
+                            Circle()
+                                .stroke(AtlasTheme.Colors.textPrimary,
+                                        lineWidth: project.colorToken == swatch.token ? 2 : 0)
+                                .padding(-3)
+                        )
+                        .help(swatch.label)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    /// The four AtlasTheme tokens a project can wear — the same set spaces use.
+    private var projectColorPalette: [(token: String, label: String, color: Color)] {
+        [("school",   "Blue",   AtlasTheme.Colors.school),
+         ("personal", "Green",  AtlasTheme.Colors.personal),
+         ("side",     "Purple", AtlasTheme.Colors.side),
+         ("accent",   "Orange", AtlasTheme.Colors.accent)]
     }
 
     private func metaItem(_ icon: String, _ text: String, accent: Bool = false) -> some View {

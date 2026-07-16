@@ -12,6 +12,48 @@ extension AppState {
         spaces.first { $0.name == name }?.color ?? AtlasTheme.Colors.accent
     }
 
+    // MARK: - Per-project day-grid colors (Option B)
+
+    /// The color a DAY/WEEK-GRID tile should wear: the tile's project color when
+    /// that project set its own `colorToken`, else the space color already on the
+    /// event. Applied ONLY to grid tiles — month dots, chips, sidebar and routing
+    /// keep the space color untouched.
+    ///
+    /// Association: work-blocks (id == task.id) resolve through the backing task's
+    /// project (name + space); other events resolve through `projectID`. An event
+    /// with no project link, or whose project has no custom token, is returned
+    /// unchanged (space color) — today's exact behavior.
+    func gridColored(_ events: [CalendarEvent]) -> [CalendarEvent] {
+        events.map { ev in
+            guard let token = projectColorToken(for: ev) else { return ev }
+            var e = ev
+            e.color = ColorToken.color(for: token)
+            return e
+        }
+    }
+
+    /// The custom color token of the project a grid tile belongs to, or `nil` when
+    /// the tile has no project link / the project inherits the space color.
+    private func projectColorToken(for event: CalendarEvent) -> String? {
+        if event.isWorkBlock, let task = tasks.first(where: { $0.id == event.id }) {
+            return projectColorToken(spaceName: task.spaceName, projectName: task.projectName)
+        }
+        if let pid = event.projectID,
+           let project = spaces.flatMap(\.projects).first(where: { $0.id == pid }) {
+            return project.colorToken
+        }
+        return nil
+    }
+
+    /// The custom color token of the project matching `projectName` inside `spaceName`
+    /// (empty name ⇒ no project). `nil` when nothing matches or the project inherits.
+    private func projectColorToken(spaceName: String, projectName: String) -> String? {
+        guard !projectName.isEmpty else { return nil }
+        return spaces.flatMap(\.projects)
+            .first { $0.name == projectName && $0.spaceName == spaceName }?
+            .colorToken
+    }
+
     /// Resolve a space name to its id for dual-writing `spaceID` alongside
     /// `spaceName` (collab phase 1). Nil when no space matches — the row then
     /// relies on the name fallback exactly as before.

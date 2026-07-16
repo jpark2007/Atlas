@@ -27,6 +27,11 @@ public struct Project: Identifiable {
     public var instructor: String?
     public var canvasSynced: Bool = false
     public var overview: String = ""
+    /// This project's own color token (school/personal/side/accent) — the same
+    /// token set spaces use. `nil` means "inherit the parent space's color"
+    /// (the default). Only DAY-GRID event/work blocks wear it; month dots,
+    /// chips, sidebar and routing keep the space color. Persisted via 0031.
+    public var colorToken: String? = nil
     public var assignments: [TaskItem] = []
     public var notes: [NoteRef] = []
     public var pinned: [PinnedResource] = []
@@ -34,7 +39,7 @@ public struct Project: Identifiable {
     /// The parent space's id — authoritative once set; the name remains for display.
     public var spaceID: UUID? = nil
 
-    public init(id: UUID = UUID(), name: String, code: String? = nil, isClass: Bool, spaceName: String, spaceColor: Color, meetingInfo: String? = nil, instructor: String? = nil, canvasSynced: Bool = false, overview: String = "", assignments: [TaskItem] = [], notes: [NoteRef] = [], pinned: [PinnedResource] = [], backlinks: [Backlink] = [], spaceID: UUID? = nil) {
+    public init(id: UUID = UUID(), name: String, code: String? = nil, isClass: Bool, spaceName: String, spaceColor: Color, meetingInfo: String? = nil, instructor: String? = nil, canvasSynced: Bool = false, overview: String = "", colorToken: String? = nil, assignments: [TaskItem] = [], notes: [NoteRef] = [], pinned: [PinnedResource] = [], backlinks: [Backlink] = [], spaceID: UUID? = nil) {
         self.id = id
         self.name = name
         self.code = code
@@ -45,6 +50,7 @@ public struct Project: Identifiable {
         self.instructor = instructor
         self.canvasSynced = canvasSynced
         self.overview = overview
+        self.colorToken = colorToken
         self.assignments = assignments
         self.notes = notes
         self.pinned = pinned

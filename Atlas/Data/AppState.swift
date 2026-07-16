@@ -602,6 +602,68 @@ final class AppState: ObservableObject {
         return space
     }
 
+    /// Rename a space in place and carry every item that references it along.
+    /// Items reference their space by `space_name` (text), so a rename must rewrite
+    /// that text on all dependent projects/tasks/events/notes — otherwise they'd
+    /// detach from the renamed space (and lose their derived color). Each touched
+    /// row is re-persisted individually (no server-side cascade exists). No-op on a
+    /// blank/unchanged name, an unknown id, or a collision with another space's name
+    /// (which would silently merge two spaces' items).
+    func renameSpace(id: UUID, to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let si = spaces.firstIndex(where: { $0.id == id }) else { return }
+        let old = spaces[si].name
+        guard !trimmed.isEmpty, trimmed != old else { return }
+        guard !spaces.contains(where: { $0.id != id && $0.name == trimmed }) else { return }
+
+        spaces[si].name = trimmed
+
+        for pi in spaces[si].projects.indices where spaces[si].projects[pi].spaceName == old {
+            spaces[si].projects[pi].spaceName = trimmed
+            let updated = spaces[si].projects[pi]
+            Task { try? await self.db?.upsertProject(updated) }
+        }
+        for i in tasks.indices where tasks[i].spaceName == old {
+            tasks[i].spaceName = trimmed
+            let updated = tasks[i]
+            Task { try? await self.db?.upsertTask(updated) }
+        }
+        for i in events.indices where events[i].spaceName == old {
+            events[i].spaceName = trimmed
+            let updated = events[i]
+            Task { try? await self.db?.upsertEvent(updated) }
+        }
+        for i in notes.indices where notes[i].spaceName == old {
+            notes[i].spaceName = trimmed
+            let updated = notes[i]
+            Task { try? await self.db?.upsertNote(updated) }
+        }
+
+        let updatedSpace = spaces[si]
+        Task { try? await self.db?.upsertSpace(updatedSpace, sort: si) }
+    }
+
+    /// Change a space's color and re-derive the color on every item that inherits it,
+    /// then persist the space. Events/tasks store a resolved `Color`, so they must be
+    /// re-tinted here; projects that set their own grid color keep it. Persists via
+    /// `upsertSpace` (only `spaces.color_token` is stored). No-op on an unknown id.
+    func setSpaceColor(id: UUID, color: Color) {
+        guard let si = spaces.firstIndex(where: { $0.id == id }) else { return }
+        spaces[si].color = color
+        let name = spaces[si].name
+        for i in events.indices where events[i].spaceName == name {
+            events[i].color = color
+        }
+        for i in tasks.indices where tasks[i].spaceName == name {
+            tasks[i].spaceColor = color
+        }
+        for pi in spaces[si].projects.indices {
+            spaces[si].projects[pi].spaceColor = color
+        }
+        let updatedSpace = spaces[si]
+        Task { try? await self.db?.upsertSpace(updatedSpace, sort: si) }
+    }
+
     // MARK: - Projects (WS-8)
 
     /// Create a Project inside the Space named `spaceName` and persist it.
@@ -636,6 +698,20 @@ final class AppState: ObservableObject {
         for si in spaces.indices {
             if let pi = spaces[si].projects.firstIndex(where: { $0.id == projectID }) {
                 spaces[si].projects[pi].overview = overview
+                let updated = spaces[si].projects[pi]
+                Task { try? await self.db?.upsertProject(updated) }
+                return
+            }
+        }
+    }
+
+    /// Set (or clear, with `nil`) a project's own color token and persist it.
+    /// `nil` restores "inherit the space color". Searches every space; no-op if the
+    /// id matches nothing. Only day-grid tiles read this — see `gridColored`.
+    func setProjectColorToken(projectID: UUID, token: String?) {
+        for si in spaces.indices {
+            if let pi = spaces[si].projects.firstIndex(where: { $0.id == projectID }) {
+                spaces[si].projects[pi].colorToken = token
                 let updated = spaces[si].projects[pi]
                 Task { try? await self.db?.upsertProject(updated) }
                 return

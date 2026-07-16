@@ -286,7 +286,7 @@ struct CalendarView: View {
         case .day:
             DayCalendarView(
                 date: selectedDate,
-                events: filteredEvents(on: selectedDate),
+                events: gridEvents(on: selectedDate),
                 now: state.now,
                 onTapEmpty: handleTapEmpty,
                 onTapEvent: openSource(for:),
@@ -302,7 +302,7 @@ struct CalendarView: View {
         case .week:
             WeekGridView(
                 days: weekDays,
-                eventsProvider: { filteredEvents(on: $0) },
+                eventsProvider: { gridEvents(on: $0) },
                 now: state.now,
                 onTapEmpty: handleTapEmpty,
                 onTapEvent: openSource(for:),
@@ -345,6 +345,13 @@ struct CalendarView: View {
             + deadlineEvents(on: date)
             + state.externalEvents(on: date)
         return all.filter { passesFilters($0.spaceName, title: $0.title) }
+    }
+
+    /// Day/week-grid events: `filteredEvents` with per-project colors layered on top
+    /// (Option B). Month keeps calling `filteredEvents` directly so its dots stay the
+    /// space color; only the grid tiles wear a project's own color.
+    private func gridEvents(on date: Date) -> [CalendarEvent] {
+        state.gridColored(filteredEvents(on: date))
     }
 
     /// Deadline markers for `date`: one per open task whose `dueDate` falls on that day.

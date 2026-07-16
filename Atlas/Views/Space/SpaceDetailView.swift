@@ -10,6 +10,13 @@ struct SpaceDetailView: View {
     @State private var showPast = false
     @State private var presentInvite = false
 
+    /// Inline name editing: click the title to edit, commit on Return or blur.
+    @State private var isEditingName = false
+    @State private var draftName = ""
+    @FocusState private var nameFieldFocused: Bool
+    /// The color swatch popover anchored on the space dot.
+    @State private var showColorPicker = false
+
     private var allTasks: [TaskItem] {
         state.tasks
             .filter { $0.spaceName == space.name }
@@ -68,10 +75,40 @@ struct SpaceDetailView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Circle().fill(space.color).frame(width: 14, height: 14)
-            Text(space.name)
-                .atlasTitleSerif(size: 26)
-                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+            // Color dot — opens the token swatch popover to change spaces.color_token.
+            Button { showColorPicker = true } label: {
+                Circle().fill(space.color).frame(width: 14, height: 14)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Change space color")
+            .popover(isPresented: $showColorPicker, arrowEdge: .bottom) {
+                colorPickerPopover
+            }
+
+            // Name — click to edit in place; commit on Return or blur.
+            if isEditingName {
+                TextField("Space name", text: $draftName)
+                    .textFieldStyle(.plain)
+                    .atlasTitleSerif(size: 26)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .focused($nameFieldFocused)
+                    .frame(maxWidth: 360)
+                    .onSubmit(commitName)
+                    .onChange(of: nameFieldFocused) { focused in
+                        if !focused { commitName() }
+                    }
+            } else {
+                Text(space.name)
+                    .atlasTitleSerif(size: 26)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .onTapGesture {
+                        draftName = space.name
+                        isEditingName = true
+                        nameFieldFocused = true
+                    }
+                    .help("Click to rename")
+            }
             Spacer()
             Button {
                 presentInvite = true
@@ -203,5 +240,46 @@ struct SpaceDetailView: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text).atlasCapsLabel()
+    }
+
+    /// Persist the edited name (rename carries all referencing items along) and
+    /// leave edit mode. A blank or unchanged name is discarded by `renameSpace`.
+    private func commitName() {
+        guard isEditingName else { return }
+        isEditingName = false
+        state.renameSpace(id: space.id, to: draftName)
+    }
+
+    /// The four theme color tokens, shown in the dot popover to change the space color.
+    private var colorPickerPopover: some View {
+        HStack(spacing: 12) {
+            ForEach(spaceColorPalette, id: \.token) { swatch in
+                Button {
+                    state.setSpaceColor(id: space.id, color: swatch.color)
+                    showColorPicker = false
+                } label: {
+                    Circle()
+                        .fill(swatch.color)
+                        .frame(width: 24, height: 24)
+                        .overlay(
+                            Circle()
+                                .stroke(AtlasTheme.Colors.textPrimary,
+                                        lineWidth: space.color == swatch.color ? 2.5 : 0)
+                                .padding(-3)
+                        )
+                        .help(swatch.label)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(16)
+    }
+
+    /// The four AtlasTheme space tokens — the same palette New Space offers.
+    private var spaceColorPalette: [(token: String, label: String, color: Color)] {
+        [("school",   "Blue",   AtlasTheme.Colors.school),
+         ("personal", "Green",  AtlasTheme.Colors.personal),
+         ("side",     "Purple", AtlasTheme.Colors.side),
+         ("accent",   "Orange", AtlasTheme.Colors.accent)]
     }
 }

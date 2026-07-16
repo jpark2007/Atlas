@@ -290,6 +290,8 @@ public struct ProjectRow: Codable {
     public var canvasSynced: Bool
     public var overview: String
     public var spaceId: UUID?
+    /// This project's own color token (0031); nil ⇒ inherit the space color.
+    public var colorToken: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
@@ -303,6 +305,7 @@ public struct ProjectRow: Codable {
         case canvasSynced = "canvas_synced"
         case overview
         case spaceId      = "space_id"
+        case colorToken   = "color_token"
     }
 
     public init(domain p: Project) {
@@ -316,6 +319,7 @@ public struct ProjectRow: Codable {
         self.canvasSynced = p.canvasSynced
         self.overview     = p.overview
         self.spaceId      = p.spaceID
+        self.colorToken   = p.colorToken
     }
 
     public func toDomain() -> Project {
@@ -325,7 +329,8 @@ public struct ProjectRow: Codable {
                 spaceName: spaceName,
                 spaceColor: AtlasTheme.Colors.accent, // Task 2 re-derives from spaceName
                 meetingInfo: meetingInfo, instructor: instructor,
-                canvasSynced: canvasSynced, overview: overview)
+                canvasSynced: canvasSynced, overview: overview,
+                colorToken: colorToken)
         project.spaceID = spaceId
         return project
     }
