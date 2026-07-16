@@ -227,27 +227,49 @@ struct AppGate: View {
             case .signedOut:
                 SignInView()
             case .signedIn:
-                RootView()
-                    .onAppear { state.userName = auth.displayName }
-                    .task {
-                        let db = AtlasDB(session: { await auth.validSession() })
-                        await state.bootstrap(db: db, userID: auth.session?.user.id)
-                        // Sync Canvas once bootstrap has populated projects so matching works.
-                        if canvas.isConnected {
-                            await state.syncCanvas(using: canvas)
-                        }
+                // Gate the real UI on a VERIFIED user-id match: render RootView only
+                // once `bootstrap` has loaded THIS user's data (loadedUserID == the
+                // authenticated id). Until then show the neutral loading spinner —
+                // never the seed MockData or a previous account's still-in-memory
+                // rows, which would otherwise flash for the frames before `loadAll()`
+                // returns. The bootstrap `.task` runs regardless (attached to the
+                // container, not the gated RootView) so the load always kicks off.
+                Group {
+                    if state.loadedUserID == auth.session?.user.id {
+                        RootView()
+                            // Re-pull cross-device preferences whenever Atlas comes to the
+                            // foreground (server wins). `state.db` is set by bootstrap; nil
+                            // before it lands, in which case this no-ops.
+                            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                                guard let db = state.db else { return }
+                                Task { await state.settingsSync.pullAndApply(db: db) }
+                            }
+                    } else {
+                        ProgressView().controlSize(.large)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(AtlasTheme.Colors.bgBase)
                     }
-                    // Re-pull cross-device preferences whenever Atlas comes to the
-                    // foreground (server wins). `state.db` is set by bootstrap; nil
-                    // before it lands, in which case this no-ops.
-                    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-                        guard let db = state.db else { return }
-                        Task { await state.settingsSync.pullAndApply(db: db) }
+                }
+                .onAppear { state.userName = auth.displayName }
+                .task {
+                    let db = AtlasDB(session: { await auth.validSession() })
+                    await state.bootstrap(db: db, userID: auth.session?.user.id)
+                    // Sync Canvas once bootstrap has populated projects so matching works.
+                    if canvas.isConnected {
+                        await state.syncCanvas(using: canvas)
                     }
+                }
             case .offline:
                 RootView()
                     .onAppear { state.userName = auth.displayName }
             }
+        }
+        // On sign-out wipe every per-user in-memory model + the bootstrap/gate
+        // bookkeeping, so a subsequent sign-in (same OR different account) can never
+        // render the previous user's still-in-memory rows — the render gate stays
+        // closed until the next account's own `loadAll()` lands.
+        .onChange(of: auth.state) { _, newValue in
+            if newValue == .signedOut { state.resetForSignOut() }
         }
         .onAppear {
             state.attachGoogle(googleAuth)
