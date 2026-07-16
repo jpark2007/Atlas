@@ -15,7 +15,8 @@
  * names are injected into the prompt so routing uses their actual buckets.
  *
  * Requires:
- *   - Authorization: Bearer <Supabase JWT>  (presence-only check for v1)
+ *   - Authorization: Bearer <Supabase JWT>  (VERIFIED via auth.getUser — this
+ *     endpoint spends money on OpenRouter, so presence-only is not enough)
  *   - OPENROUTER_API_KEY set as a Supabase Edge Function secret
  *
  * Deploy:  supabase functions deploy capture
@@ -23,13 +24,17 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { checkRateLimit, clientIp, jwtSubject, tooManyRequests } from "../_shared/rate_limit.ts";
+import { checkRateLimit, tooManyRequests } from "../_shared/rate_limit.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+// A capture is a short free-text jot; a few thousand chars is generous. Anything
+// larger is abuse/accident — reject with 413 before spending an OpenRouter call.
+const MAX_TEXT_LEN = 8000;
 
 // A project is either a bare name (legacy clients) or an object carrying an
 // optional short code and description used for description-aware routing.
@@ -201,28 +206,43 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
 
-  // Require Authorization header (presence check — RLS handles real auth)
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  // ── Real JWT verification: this endpoint spends money on OpenRouter, so the
+  // caller must present a valid Supabase token (not just the public anon key,
+  // which is a validly-signed JWT that would pass a presence-only check). ──
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !anonKey || !serviceKey) {
+    return new Response(
+      JSON.stringify({ error: "Server not configured" }),
+      { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+    );
+  }
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (!token) {
     return new Response(
       JSON.stringify({ error: "Missing or invalid Authorization header" }),
       { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
     );
   }
-
-  // Rate limit BEFORE the (paid) OpenRouter call. This endpoint is presence-only,
-  // so key on the JWT `sub` (decoded, not verified — fine for keying), falling back
-  // to IP. 30/min is well above a human capturing notes and caps LLM-cost abuse.
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (supabaseUrl && serviceKey) {
-    const admin = createClient(supabaseUrl, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    const key = jwtSubject(authHeader.slice(7)) ?? `ip:${clientIp(req)}`;
-    const rl = await checkRateLimit(admin, key, "capture", 30, 60);
-    if (!rl.allowed) return tooManyRequests(rl.retryAfter, CORS_HEADERS);
+  const authClient = createClient(supabaseUrl, anonKey);
+  const { data: userData, error: userErr } = await authClient.auth.getUser(token);
+  if (userErr || !userData?.user) {
+    return new Response(
+      JSON.stringify({ error: "Invalid or expired token" }),
+      { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+    );
   }
+  const userId = userData.user.id;
+
+  // Rate limit BEFORE the (paid) OpenRouter call, keyed on the VERIFIED user id.
+  // 30/min is well above a human capturing notes and caps LLM-cost abuse.
+  const admin = createClient(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const rl = await checkRateLimit(admin, userId, "capture", 30, 60);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfter, CORS_HEADERS);
 
   // Parse request body
   let text: string;
@@ -237,6 +257,12 @@ Deno.serve(async (req: Request) => {
       );
     }
     text = body.text.trim();
+    if (text.length > MAX_TEXT_LEN) {
+      return new Response(
+        JSON.stringify({ error: `\`text\` too long (max ${MAX_TEXT_LEN} characters)` }),
+        { status: 413, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+      );
+    }
     if (Array.isArray(body.spaces)) {
       spaces = body.spaces as ContextSpace[];
     }

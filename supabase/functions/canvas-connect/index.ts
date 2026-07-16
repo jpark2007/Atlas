@@ -36,6 +36,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeSpaceName } from "../_shared/canvas_space.ts";
+import { assertPublicUrl, BlockedUrlError } from "../_shared/url_guard.ts";
 import { checkRateLimit, tooManyRequests } from "../_shared/rate_limit.ts";
 
 const CORS_HEADERS = {
@@ -160,6 +161,18 @@ Deno.serve(async (req: Request) => {
     spaceName = normalizeSpaceName(body?.spaceName) ?? "School";
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
+  }
+
+  // SSRF defense-in-depth: reject at connect time any feed URL whose host resolves
+  // to a private/loopback/link-local address (canvas-sync guards again at fetch
+  // time). A real school Canvas host resolves to a public address and passes.
+  try {
+    await assertPublicUrl(feedUrl);
+  } catch (err) {
+    if (err instanceof BlockedUrlError) {
+      return json({ error: "`feedUrl` is not a reachable public Canvas feed link" }, 400);
+    }
+    throw err;
   }
 
   // Prior secret (if reconnecting) so we can clean it up after a successful swap.

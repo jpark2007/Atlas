@@ -134,24 +134,6 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-/**
- * The `role` claim of a Supabase JWT, or null if it doesn't decode. Signature is
- * NOT re-checked here — the platform gateway already verifies it before the
- * request reaches this function (an unsigned/forged token gets a gateway 401),
- * so trusting the claim after that gate is safe and is Supabase's own pattern.
- */
-function jwtRole(token: string): string | null {
-  try {
-    const seg = token.split(".")[1];
-    if (!seg) return null;
-    let b64 = seg.replace(/-/g, "+").replace(/_/g, "/");
-    b64 += "=".repeat((4 - (b64.length % 4)) % 4);
-    const payload = JSON.parse(atob(b64));
-    return typeof payload?.role === "string" ? payload.role : null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Deterministic Google event id from a row UUID: base32hex-lowercase of the 16
@@ -1022,12 +1004,12 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Server not configured" }, 500);
   }
 
-  // Service-role only. Accept the exact injected key, or any service_role JWT
-  // (the cron sends the service key). Rejects anon (role=anon) and user
-  // (role=authenticated) tokens.
+  // Service-role only. The pg_cron job (0008) invokes with the service key
+  // directly, so require EXACT equality — no unsigned role-claim decode. Rejects
+  // anon (role=anon) and user (role=authenticated) tokens.
   const authHeader = req.headers.get("Authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-  if (!token || (token !== serviceKey && jwtRole(token) !== "service_role")) {
+  if (!token || token !== serviceKey) {
     return json({ error: "Forbidden" }, 401);
   }
 

@@ -12,8 +12,15 @@ import { checkRateLimit, clientIp, tooManyRequests } from "../_shared/rate_limit
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Hidden honeypot field on the landing form: real browsers leave it empty; bots
+// that auto-fill every input give themselves away. Kept in one place so the
+// field name can track the form.
+const HONEYPOT_FIELD = "referral_code";
+
+// This function is public (no JWT), so scope CORS to the landing origin rather
+// than `*` — only the marketing site should be able to POST from a browser.
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "https://atlas-landing-woad.vercel.app",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -35,11 +42,19 @@ Deno.serve(async (req: Request) => {
   }
 
   let email = "";
+  let honeypot = "";
   try {
     const body = await req.json();
     email = String(body?.email ?? "").trim().toLowerCase();
+    honeypot = String(body?.[HONEYPOT_FIELD] ?? "").trim();
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
+  }
+
+  // Honeypot tripped → a bot filled the hidden field. Return the SAME success
+  // response a real signup gets (never tip off the bot) but insert nothing.
+  if (honeypot !== "") {
+    return json({ ok: true }, 200);
   }
 
   if (!EMAIL_RE.test(email) || email.length > 320) {

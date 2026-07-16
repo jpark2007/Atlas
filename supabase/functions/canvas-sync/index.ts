@@ -52,6 +52,7 @@
  */
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { safeFetch } from "../_shared/url_guard.ts";
 
 const BATCH_LIMIT = 20; // connections processed per invocation (oldest first)
 
@@ -72,24 +73,6 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
   });
-}
-
-/**
- * The `role` claim of a Supabase JWT, or null if it doesn't decode. Signature is
- * NOT re-checked here — the platform gateway already verified it before the
- * request reached this function (Supabase's own pattern; mirrors google-sync).
- */
-function jwtRole(token: string): string | null {
-  try {
-    const seg = token.split(".")[1];
-    if (!seg) return null;
-    let b64 = seg.replace(/-/g, "+").replace(/_/g, "/");
-    b64 += "=".repeat((4 - (b64.length % 4)) % 4);
-    const payload = JSON.parse(atob(b64));
-    return typeof payload?.role === "string" ? payload.role : null;
-  } catch {
-    return null;
-  }
 }
 
 // A bad/reset feed URL — the capability token was rotated by the user. Needs a
@@ -353,10 +336,13 @@ async function syncUser(admin: SupabaseClient, conn: Connection, dryRun: boolean
   if (secretErr || !feedUrl) throw new Error("vault read failed");
 
   // 2. Conditional GET. Canvas feeds are big and change rarely; a 304 is the common case.
+  //    safeFetch guards against SSRF (the feed URL is user-pasted): it rejects any
+  //    host resolving to a private/loopback/link-local address, re-validates each
+  //    redirect hop, and bounds the whole fetch with a 30s timeout.
   const reqHeaders: Record<string, string> = {};
   if (conn.etag) reqHeaders["If-None-Match"] = conn.etag;
   if (conn.last_modified) reqHeaders["If-Modified-Since"] = conn.last_modified;
-  const res = await fetch(feedUrl as string, { headers: reqHeaders, redirect: "follow" });
+  const res = await safeFetch(feedUrl as string, { headers: reqHeaders }, { timeoutMs: 30_000 });
 
   if (res.status === 304) {
     result.notModified = true;
@@ -567,10 +553,12 @@ Deno.serve(async (req: Request) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceKey) return json({ error: "Server not configured" }, 500);
 
-  // Service-role only (mirrors google-sync). Rejects anon + user tokens.
+  // Service-role only (mirrors google-sync). The pg_cron job (0012) invokes with
+  // the service key directly, so require EXACT equality — no unsigned role-claim
+  // decode. Rejects anon + user tokens.
   const authHeader = req.headers.get("Authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-  if (!token || (token !== serviceKey && jwtRole(token) !== "service_role")) {
+  if (!token || token !== serviceKey) {
     return json({ error: "Forbidden" }, 401);
   }
 
