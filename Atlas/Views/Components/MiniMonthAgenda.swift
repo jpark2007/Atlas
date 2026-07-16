@@ -165,13 +165,16 @@ struct MiniMonthAgenda: View {
         }
     }
 
-    /// The days that carry a dot: events, scheduled work-blocks, or an open task
-    /// deadline — the three sources the calendar draws (mirrors `events(on:)` +
-    /// `scheduledWorkBlocks(on:)` + `CalendarView.deadlineEvents`). One pass over
-    /// the collections per render instead of one per grid cell.
+    /// The days that carry a dot: store events (Atlas/Google/Canvas), read-only
+    /// Apple externals, scheduled work-blocks, or an open task deadline — the same
+    /// master feed the full calendar draws (mirrors `events(on:)` +
+    /// `externalEvents(on:)` + `scheduledWorkBlocks(on:)` +
+    /// `CalendarView.deadlineEvents`). One pass over the collections per render
+    /// instead of one per grid cell.
     private func dotDayStarts() -> Set<Date> {
         var days = Set<Date>()
         for event in state.events { days.insert(calendar.startOfDay(for: event.start)) }
+        for event in state.externalEvents { days.insert(calendar.startOfDay(for: event.start)) }
         for task in state.tasks where !task.done {
             if let at = task.scheduledAt, !task.needsReplan(now: state.now) {
                 days.insert(calendar.startOfDay(for: at))
@@ -241,9 +244,14 @@ struct MiniMonthAgenda: View {
         isViewingToday ? "TODAY" : MiniFmt.agendaDay.string(from: selectedDay).uppercased()
     }
 
-    /// The selected day's events + scheduled work-blocks, in time order.
+    /// The selected day's master feed — store events (Atlas/Google/Canvas) +
+    /// scheduled work-blocks + read-only Apple externals — in time order, exactly
+    /// what the full calendar composes. Each row keeps its own source color and
+    /// attribution (externals stay Apple/read-only); merging never relabels them.
     private var agendaItems: [CalendarEvent] {
-        (state.events(on: selectedDay) + state.scheduledWorkBlocks(on: selectedDay))
+        (state.events(on: selectedDay)
+            + state.scheduledWorkBlocks(on: selectedDay)
+            + state.externalEvents(on: selectedDay))
             .sorted { $0.start < $1.start }
     }
 
