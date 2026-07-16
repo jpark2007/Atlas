@@ -1324,6 +1324,30 @@ public final class AtlasDB {
         return rows.first
     }
 
+    /// The dedicated Google login powering Drive/Docs background work (import /
+    /// re-sync / write-back), independent of calendar connections — at most ONE per
+    /// user (`google_docs_connections.user_id` PK, owner-readable columns). Mirrors
+    /// `loadGoogleConnections()`; nil ⇒ no explicit Docs login (the server then falls
+    /// back to the oldest calendar connection).
+    public struct GoogleDocsConnection: Codable, Equatable {
+        public var googleEmail: String
+        public var status: String            // active | error
+        public var lastError: String?
+
+        enum CodingKeys: String, CodingKey {
+            case googleEmail = "google_email"
+            case status
+            case lastError   = "last_error"
+        }
+    }
+
+    public func loadGoogleDocsConnection() async throws -> GoogleDocsConnection? {
+        let rows: [GoogleDocsConnection] = try await getColumns(
+            "google_docs_connections",
+            columns: "google_email,status,last_error")
+        return rows.first
+    }
+
     /// Reads the caller's `canvas_connections` row (server-owned Canvas sync state),
     /// or nil when the user has no Canvas connection. Selects only the owner-granted
     /// columns; RLS scopes the query to the signed-in user. Mirrors `loadGoogleConnection()`.

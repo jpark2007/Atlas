@@ -181,16 +181,32 @@ Deno.serve(async (req: Request) => {
   const baseline: string | null = expectedModifiedTime ?? (refRow.modified_time as string | null);
 
   // ── Mint a Google access token from the user's stored refresh token ──
-  const { data: conn, error: connErr } = await admin
-    .from("google_connections")
+  // Drive/Docs work runs off the dedicated docs connection (google_docs_connections,
+  // 0029), falling back to the oldest calendar connection only when none is
+  // designated (single-account users). A plain .maybeSingle() on google_connections
+  // is gone — it errors now that a user can hold several calendar rows (0028).
+  let vaultSecretId: string | null = null;
+  const { data: docsConn } = await admin
+    .from("google_docs_connections")
     .select("vault_secret_id")
     .eq("user_id", userId)
     .maybeSingle();
-  if (connErr || !conn?.vault_secret_id) {
+  vaultSecretId = docsConn?.vault_secret_id ?? null;
+  if (!vaultSecretId) {
+    const { data: calConn } = await admin
+      .from("google_connections")
+      .select("vault_secret_id")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    vaultSecretId = calConn?.vault_secret_id ?? null;
+  }
+  if (!vaultSecretId) {
     return json({ error: "Google not connected" }, 409);
   }
   const { data: refreshToken, error: secretErr } = await admin.rpc("read_google_secret", {
-    secret_id: conn.vault_secret_id,
+    secret_id: vaultSecretId,
   });
   if (secretErr || !refreshToken) return json({ error: "Failed to read credential" }, 500);
 

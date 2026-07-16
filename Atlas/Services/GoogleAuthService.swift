@@ -429,6 +429,28 @@ final class GoogleAuthService: ObservableObject {
         GoogleKeychain.delete(for: connectionId)
     }
 
+    // MARK: - Notes & Docs connection (dedicated Drive/Docs login, singleton)
+
+    /// Signs the dedicated Drive/Docs login in: POST `{docs: true, refreshToken, googleEmail}`
+    /// to `google-connect`. There is at most ONE such login per user — a re-POST replaces it.
+    /// Independent of the calendar connections; powers Notes ↔ Google Docs background work.
+    func connectDocs(refreshToken: String, googleEmail: String, jwt: String) async throws {
+        let payload: [String: Any] = [
+            "docs": true,
+            "refreshToken": refreshToken,
+            "googleEmail": googleEmail,
+        ]
+        try await callConnect(method: "POST", jwt: jwt,
+                              body: try JSONSerialization.data(withJSONObject: payload))
+    }
+
+    /// Removes the dedicated Drive/Docs login: DELETE `{docs: true}`. Calendar connections
+    /// are untouched (the server then falls back to the oldest calendar login for Docs).
+    func disconnectDocs(jwt: String) async throws {
+        try await callConnect(method: "DELETE", jwt: jwt,
+                              body: try JSONSerialization.data(withJSONObject: ["docs": true]))
+    }
+
     private func callConnect(method: String, jwt: String, body: Data?) async throws {
         let url = SupabaseConfig.functionsBase.appendingPathComponent("google-connect")
         var request = URLRequest(url: url)
@@ -603,23 +625,38 @@ final class LoopbackRedirectListener {
         let message = ok
             ? "You can close this tab and return to Atlas."
             : "Something went wrong. Return to Atlas and try again."
-        let mark = ok ? "✓" : "✕"
-        let markColor = ok ? "#b04f2f" : "#a03535"
-        // Editorial-light paper style — mirrors the hosted Drive picker page.
+        // Literal copy of the one-pick Drive import landing (DriveOnePickFlow.respond)
+        // — kicker / serif headline / hairline / staggered rise — reworded for connect.
         let html = """
         <!DOCTYPE html>
-        <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\
-        <title>\(title)</title><style>
-        body { font-family: -apple-system, system-ui; background: #f4efe6; color: #2b2622;
-               max-width: 560px; margin: 0 auto; padding: 96px 20px 0; text-align: center; }
-        .mark { font-size: 34px; color: \(markColor); border: 1.5px solid \(markColor);
-                border-radius: 50%; width: 64px; height: 64px; line-height: 64px;
-                display: inline-block; margin-bottom: 24px; }
-        h2 { font-weight: 600; margin: 0 0 10px; }
-        p { color: #6b6258; font-size: 14px; margin: 0; }
-        .rule { border-top: 1px solid #d9d1c2; width: 72px; margin: 28px auto 0; }
+        <html lang="en"><head>
+        <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="color-scheme" content="light"><title>\(title)</title>
+        <style>
+          body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+                 background: #fbfaf7; color: #1a191d; text-align: center;
+                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+          main { padding: 32px; }
+          main > * { opacity: 0; animation: rise 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) forwards; }
+          .kicker { margin: 0; font-size: 11px; font-weight: 600;
+                    letter-spacing: 0.08em; text-transform: uppercase; color: #b04f2f; }
+          h1 { margin: 14px 0 0; font-family: Georgia, "Times New Roman", serif;
+               font-weight: 500; font-size: clamp(34px, 6vw, 46px); letter-spacing: -0.021em;
+               animation-delay: 0.08s; }
+          hr { width: 40px; margin: 22px auto; border: 0;
+               border-top: 1px solid rgba(0, 0, 0, 0.14); animation-delay: 0.16s; }
+          p { margin: 0; color: #6c6a72; font-size: 15px; line-height: 1.5;
+              animation-delay: 0.24s; }
+          @keyframes rise { from { opacity: 0; transform: translateY(10px); }
+                            to { opacity: 1; transform: none; } }
+          @media (prefers-reduced-motion: reduce) { main > * { animation: none; opacity: 1; } }
         </style></head>
-        <body><div class="mark">\(mark)</div><h2>\(title)</h2><p>\(message)</p><div class="rule"></div></body></html>
+        <body><main>
+          <p class="kicker">Atlas</p>
+          <h1>\(title)</h1>
+          <hr>
+          <p>\(message)</p>
+        </main></body></html>
         """
         let bodyData = Data(html.utf8)
         let header = "HTTP/1.1 200 OK\r\n" +

@@ -303,6 +303,13 @@ final class AppState: ObservableObject {
     /// keeping (and writing into) the previous user's data.
     func bootstrap(db: AtlasDB, userID: String?) async {
         guard bootstrappedUser != userID else { return }
+        // Account switch (a different user was bootstrapped this session): blank the
+        // in-memory model NOW, before the new user's `loadAll()` returns, so the
+        // previous account's tasks/events can never flash under the new identity. The
+        // local model is the only cross-account cache — there's no on-disk store to
+        // namespace — so dropping it is the whole fix. A first bootstrap (previous nil)
+        // keeps MockData, preserving the never-blank-on-error posture below.
+        if bootstrappedUser != nil { clearUserData() }
         bootstrappedUser = userID
         self.db = db
         do {
@@ -347,6 +354,30 @@ final class AppState: ObservableObject {
         // fresh on an hourly timer (local edits also trigger a debounced publish).
         await publishAvailability()
         startAvailabilityPublishTimer()
+    }
+
+    /// Blanks every user-scoped model array so a signed-out / just-switched account
+    /// leaves nothing of the previous user's data on screen. Called on account switch
+    /// from `bootstrap`; the fresh `loadAll()` (or a re-sign-in) repopulates.
+    private func clearUserData() {
+        spaces = []
+        tasks = []
+        events = []
+        notes = []
+        goals = []
+        references = []
+        referenceAttachments = []
+        externalEvents = []
+        googleConnections = []
+        canvasConnection = nil
+        profile = nil
+        pendingInvites = []
+        projectMembers = [:]
+        sharedWithMeProjects = []
+        spaceMembers = [:]
+        teammateAvailability = [:]
+        expandedSpaces = []
+        calendarDetailItem = nil
     }
 
     /// Assigns a freshly loaded `AtlasSnapshot` onto the published model arrays —

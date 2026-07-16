@@ -64,6 +64,12 @@ struct SettingsView: View {
     @State private var newAccountName = ""
     @State private var newAccountSpace = ""
 
+    // MARK: – Notes & Docs (dedicated Drive/Docs Google login)
+    /// The singleton `google_docs_connections` row, nil ⇒ no explicit Docs login.
+    @State private var docsConnection: AtlasDB.GoogleDocsConnection? = nil
+    @State private var docsWorking = false
+    @State private var docsError: String? = nil
+
     // MARK: – Google connection badge state
     /// Raw `google_connections.status` (active | error | revoked), nil when there's
     /// no connection row. Loaded from the server on `.task` — the app must say when
@@ -143,10 +149,10 @@ struct SettingsView: View {
             }
         case .integrations:
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    canvasSection
-                    Divider().overlay(AtlasTheme.Colors.border)
+                VStack(alignment: .leading, spacing: 30) {
                     integrations
+                    Divider().overlay(AtlasTheme.Colors.border)
+                    canvasSection
                     Divider().overlay(AtlasTheme.Colors.border)
                     calendarsSection
                     Spacer(minLength: 8)
@@ -462,6 +468,9 @@ struct SettingsView: View {
             row(icon: "applelogo", tint: AtlasTheme.Colors.textSecondary, title: "Sign in with Apple",
                 subtitle: "Enable signing in Xcode to use on device")
 
+            // ── Notes & Docs (dedicated Drive/Docs login, one at a time) ─
+            notesDocsRow
+
             // ── Per-tab Google Doc sync (beta) ──────────────────────────
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -486,6 +495,131 @@ struct SettingsView: View {
         // the AtlasDB handle); nil db (offline/mock) leaves the badge as "Not connected".
         .task {
             connectionStatus = try? await state.db?.fetchGoogleConnectionStatus()?.status
+            await loadDocsConnection()
+        }
+    }
+
+    // MARK: – Notes & Docs row
+
+    /// The dedicated Drive/Docs Google login — powers Notes ↔ Google Docs background work
+    /// (import / re-sync / write-back), independent of the calendar connections and ONE at a
+    /// time. Not connected → sign in; connected → email + status + Disconnect. When no Docs
+    /// login exists but calendar accounts do, a muted hint names the fallback account.
+    @ViewBuilder
+    private var notesDocsRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: "doc.text")
+                    .foregroundStyle(AtlasTheme.Colors.school)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Notes & Docs")
+                        .atlasFont(size: 14, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    if let docs = docsConnection {
+                        Text(docs.googleEmail)
+                            .atlasFont(size: 12, design: .rounded)
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        Text(docs.status == "active"
+                             ? "Connected — Drive & Docs use this account"
+                             : (docs.lastError ?? "Reconnect needed — Drive/Docs sync is stopped"))
+                            .atlasFont(size: 12, design: .rounded)
+                            .foregroundStyle(docs.status == "active"
+                                             ? AtlasTheme.Colors.green
+                                             : AtlasTheme.Colors.warning)
+                    } else {
+                        Text("Sign in to choose the Google account for Drive & Docs")
+                            .atlasFont(size: 12, weight: .medium, design: .rounded)
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    }
+                }
+                Spacer()
+                if docsWorking {
+                    ProgressView().controlSize(.small)
+                } else if docsConnection != nil {
+                    Button("Disconnect") { disconnectDocs() }
+                        .buttonStyle(.plain)
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.danger)
+                } else {
+                    Button("Sign in with Google") { connectDocs() }
+                        .buttonStyle(.plain)
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
+                }
+            }
+
+            // Fallback hint: no explicit Docs login, but calendar accounts exist —
+            // the server uses the oldest one until the user picks explicitly.
+            if docsConnection == nil, let fallback = state.googleConnections.first {
+                Text("Using \(fallback.googleEmail) (calendar account) — sign in to choose explicitly")
+                    .atlasFont(size: 11, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .padding(.leading, 34)
+            }
+
+            if let err = docsError {
+                Text(err).atlasFont(size: 12, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.danger)
+                    .padding(.leading, 34)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .atlasHairlineBelow()
+    }
+
+    /// Reads the singleton `google_docs_connections` row. Best-effort: a nil db
+    /// (offline/mock) or an undeployed table leaves the row as "not connected".
+    private func loadDocsConnection() async {
+        docsConnection = try? await state.db?.loadGoogleDocsConnection()
+    }
+
+    /// Runs the account-chooser OAuth, then POSTs google-connect `{docs: true}` to set
+    /// (or replace) the dedicated Drive/Docs login.
+    private func connectDocs() {
+        docsError = nil
+        docsWorking = true
+        Task {
+            let grant = await googleAuth.connect()
+            guard let grant else {
+                docsError = googleAuth.errorMessage ?? "Couldn't connect Google. Try again."
+                docsWorking = false
+                return
+            }
+            guard let jwt = await auth.validAccessToken() else {
+                docsError = "Your session expired — sign in again, then try."
+                docsWorking = false
+                return
+            }
+            do {
+                try await googleAuth.connectDocs(refreshToken: grant.refreshToken,
+                                                 googleEmail: grant.email, jwt: jwt)
+                await loadDocsConnection()
+            } catch {
+                docsError = "Couldn't connect Notes & Docs. Try again."
+            }
+            docsWorking = false
+        }
+    }
+
+    /// DELETE google-connect `{docs: true}` — drops the dedicated Drive/Docs login.
+    private func disconnectDocs() {
+        docsError = nil
+        docsWorking = true
+        Task {
+            guard let jwt = await auth.validAccessToken() else {
+                docsError = "Your session expired — sign in again, then try."
+                docsWorking = false
+                return
+            }
+            do {
+                try await googleAuth.disconnectDocs(jwt: jwt)
+                docsConnection = nil
+            } catch {
+                docsError = "Couldn't disconnect Notes & Docs. Try again."
+            }
+            docsWorking = false
         }
     }
 
@@ -551,34 +685,44 @@ struct SettingsView: View {
             .padding(.vertical, 8)
             .atlasHairlineBelow()
 
-            // ── Google accounts (multi-account, one row per connection) ──
-            ForEach(state.googleConnections) { conn in
-                googleConnectionRow(conn)
-            }
-            Button { startAddGoogleAccount() } label: {
-                HStack(spacing: 8) {
-                    if googleWorking {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "plus.circle")
-                            .foregroundStyle(AtlasTheme.Colors.school)
-                    }
-                    Text(googleWorking ? "Connecting…" : "Add Google account…")
-                        .atlasFont(size: 13, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.accentText)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .disabled(googleWorking)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .atlasHairlineBelow()
-
-            if let err = googleError {
-                Text(err).atlasFont(size: 12, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.danger)
+            // ── Google accounts (multi-account) — their own labeled cluster,
+            //    with "Add Google account…" docked directly under the rows ──
+            VStack(alignment: .leading, spacing: 0) {
+                Text("GOOGLE")
+                    .atlasMono(size: 10, weight: .semibold).tracking(1.2)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .padding(.horizontal, 12)
+                    .padding(.top, 4)
+                    .padding(.bottom, 6)
+
+                ForEach(state.googleConnections) { conn in
+                    googleConnectionRow(conn)
+                }
+                Button { startAddGoogleAccount() } label: {
+                    HStack(spacing: 8) {
+                        if googleWorking {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "plus.circle")
+                                .foregroundStyle(AtlasTheme.Colors.school)
+                        }
+                        Text(googleWorking ? "Connecting…" : "Add Google account…")
+                            .atlasFont(size: 13, weight: .medium, design: .rounded)
+                            .foregroundStyle(AtlasTheme.Colors.accentText)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .disabled(googleWorking)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .atlasHairlineBelow()
+
+                if let err = googleError {
+                    Text(err).atlasFont(size: 12, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.danger)
+                        .padding(.horizontal, 12)
+                }
             }
 
             // ── Canvas ──────────────────────────────────────────────────

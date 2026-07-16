@@ -67,9 +67,12 @@ async function refreshAccessToken(refreshToken: string, clientId: string, client
  * revoked token, a plain Error otherwise.
  *
  * `vaultSecretId` (google-sync, multi-account) targets ONE connection's secret
- * directly. When omitted (drive-import / reference-pull, which are per-user), the
- * caller's oldest google_connections row is used — `limit(1)` keeps it single-row
- * now that a user can hold several connections.
+ * directly. When omitted (drive-import / reference-pull, which are per-user Drive/
+ * Docs work), the token is minted off the dedicated docs connection
+ * (google_docs_connections, 0029), falling back to the caller's oldest
+ * google_connections row ONLY when no docs connection exists — so existing
+ * single-account users keep working. `limit(1)` keeps the fallback single-row now
+ * that a user can hold several calendar connections.
  */
 export async function mintAccessToken(
   admin: SupabaseClient,
@@ -79,6 +82,15 @@ export async function mintAccessToken(
   vaultSecretId?: string | null,
 ): Promise<string> {
   let secretId = vaultSecretId ?? null;
+  if (!secretId) {
+    const { data: docsConn, error: docsErr } = await admin
+      .from("google_docs_connections")
+      .select("vault_secret_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (docsErr) throw new Error(`docs connection lookup failed: ${docsErr.message}`);
+    secretId = docsConn?.vault_secret_id ?? null;
+  }
   if (!secretId) {
     const { data: conn, error: connErr } = await admin
       .from("google_connections")

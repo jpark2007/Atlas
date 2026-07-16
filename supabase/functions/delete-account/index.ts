@@ -83,6 +83,13 @@ Deno.serve(async (req: Request) => {
   const googleSecretIds = (gRows ?? [])
     .map((r) => r.vault_secret_id as string | null)
     .filter((id): id is string => !!id);
+  // The dedicated Notes/Docs connection (google_docs_connections, 0029) is a
+  // per-user singleton; its vault secret is likewise not FK'd to auth.users.
+  const { data: dRow } = await admin
+    .from("google_docs_connections")
+    .select("vault_secret_id")
+    .eq("user_id", userId)
+    .maybeSingle();
   const { data: c } = await admin
     .from("canvas_connections")
     .select("vault_secret_id")
@@ -102,6 +109,9 @@ Deno.serve(async (req: Request) => {
   // leftover secret points at nothing and must never fail the response).
   for (const secretId of googleSecretIds) {
     await admin.rpc("delete_google_secret", { secret_id: secretId });
+  }
+  if (dRow?.vault_secret_id) {
+    await admin.rpc("delete_google_secret", { secret_id: dRow.vault_secret_id });
   }
   if (c?.vault_secret_id) {
     await admin.rpc("delete_canvas_secret", { secret_id: c.vault_secret_id });

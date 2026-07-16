@@ -698,6 +698,10 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
   // 2b. Upserts (Google-origin inserts + newest-wins updates, same-clock recency).
   const inserts: Record<string, unknown>[] = [];
   const updates: { id: string; expectUpdatedAt: string; patch: Record<string, unknown> }[] = [];
+  // Incoming events with no gid-match: a fresh Google-origin insert OR an adoption of
+  // an existing null-gid native twin (resolved after this loop). Deferred so the
+  // adoption lookup is ONE query for the whole batch, not one per candidate.
+  const insertCandidates: { gid: string; u: UpsertVal }[] = [];
   for (const [gid, u] of upserts) {
     const row = existingByGid.get(gid);
     if (row) {
@@ -723,29 +727,90 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
         },
       });
     } else {
-      if (!defaultSpace) continue; // no space to file it under — skip insert (space_name is NOT NULL)
-      const newId = crypto.randomUUID();
-      syncTouched.add(newId); // just-pulled Google-origin row — never echo it back to Google this run
-      inserts.push({
-        id: newId,
-        user_id: userId,
-        space_name: defaultSpace,
-        title: u.title,
-        subtitle: "Google Calendar",
-        start_at: u.fields.start,
-        end_at: u.fields.end,
-        is_all_day: u.fields.allDay,
-        notes: u.notes,
-        google_event_id: gid,
-        google_connection_id: conn.id,   // attribution: this connection owns the mirror
-        google_origin: true,
-        updated_at: runStartISO,         // ≤ next last_synced_at ⇒ never echoed by PUSH
-        google_updated_at: u.googleUpdatedISO,
-      });
+      insertCandidates.push({ gid, u }); // resolve adopt-vs-insert after the loop
+    }
+  }
+
+  // First-sync adoption dedupe. A user's Google calendar often already contains a
+  // copy of an event that also exists as a null-gid Atlas-native row (mirrored here
+  // by a prior account, or entered in both places). Inserting the incoming Google
+  // event would create a visible TWIN of the native row. Instead, before inserting a
+  // no-gid-match event, ADOPT an existing null-gid native row whose title AND
+  // start/end instants match exactly: stamp it with this connection's gid so the two
+  // become one. google_origin stays as-is (a false, Atlas-born row is now mirrored —
+  // edit-synced via PATCH, never re-CREATED). Fields follow the two-timestamp
+  // reconcile (updated_at=runStart, google_updated_at=google.updated) so PUSH never
+  // re-selects it and the next PULL sees it applied. No match ⇒ a real insert.
+  const adoptions: { id: string; expectUpdatedAt: string; patch: Record<string, unknown> }[] = [];
+  if (insertCandidates.length > 0) {
+    // One query for all candidate titles; match/tie-break in memory.
+    const wantTitles = [...new Set(insertCandidates.map((c) => c.u.title))];
+    const { data: nativeRows, error: nativeErr } = await admin
+      .from("events")
+      .select("id, updated_at, title, start_at, end_at")
+      .eq("user_id", userId)
+      .is("google_event_id", null)
+      .eq("google_origin", false) // Atlas-born rows only; never resurrect a legacy detached origin row
+      .in("title", wantTitles);
+    if (nativeErr) throw new Error(`adoption select failed: ${nativeErr.message}`);
+    interface NativeRow { id: string; updated_at: string; title?: string; start_at?: string; end_at?: string }
+    const nativeByTitle = new Map<string, NativeRow[]>();
+    for (const r of (nativeRows ?? []) as NativeRow[]) {
+      const key = normText(r.title);
+      const list = nativeByTitle.get(key);
+      if (list) list.push(r);
+      else nativeByTitle.set(key, [r]);
+    }
+    const usedNativeIds = new Set<string>(); // one native row can't be adopted twice
+    // Deterministic candidate order so which gid wins a shared row is stable.
+    insertCandidates.sort((a, b) => (a.gid < b.gid ? -1 : a.gid > b.gid ? 1 : 0));
+    for (const { gid, u } of insertCandidates) {
+      const pool = (nativeByTitle.get(normText(u.title)) ?? []).filter((r) =>
+        !usedNativeIds.has(r.id) &&
+        r.start_at != null && new Date(r.start_at).getTime() === new Date(u.fields.start).getTime() &&
+        r.end_at != null && new Date(r.end_at).getTime() === new Date(u.fields.end).getTime()
+      );
+      if (pool.length > 0) {
+        // Tie-break deterministically: adopt the oldest id.
+        pool.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        const adopt = pool[0];
+        usedNativeIds.add(adopt.id);
+        syncTouched.add(adopt.id); // just written by the pull — never echo it back to Google this run
+        adoptions.push({
+          id: adopt.id,
+          expectUpdatedAt: adopt.updated_at,
+          patch: {
+            google_event_id: gid,
+            google_connection_id: conn.id,
+            updated_at: runStartISO,
+            google_updated_at: u.googleUpdatedISO,
+          },
+        });
+      } else {
+        if (!defaultSpace) continue; // no space to file it under — skip insert (space_name is NOT NULL)
+        const newId = crypto.randomUUID();
+        syncTouched.add(newId); // just-pulled Google-origin row — never echo it back to Google this run
+        inserts.push({
+          id: newId,
+          user_id: userId,
+          space_name: defaultSpace,
+          title: u.title,
+          subtitle: "Google Calendar",
+          start_at: u.fields.start,
+          end_at: u.fields.end,
+          is_all_day: u.fields.allDay,
+          notes: u.notes,
+          google_event_id: gid,
+          google_connection_id: conn.id,   // attribution: this connection owns the mirror
+          google_origin: true,
+          updated_at: runStartISO,         // ≤ next last_synced_at ⇒ never echoed by PUSH
+          google_updated_at: u.googleUpdatedISO,
+        });
+      }
     }
   }
   result.inserted = inserts.length;
-  result.updated = updates.length;
+  result.updated = updates.length + adoptions.length;
   result.deleted = toDelete.length;
 
   // 3. Apply pull writes (skipped entirely in dryRun).
@@ -760,6 +825,12 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
       // concurrent Mac edit is never clobbered (it PUSHes next run instead).
       const { error } = await admin.from("events").update(u.patch).eq("id", u.id).eq("updated_at", u.expectUpdatedAt);
       if (error) throw new Error(`update failed: ${error.message}`);
+    }
+    for (const a of adoptions) {
+      // Optimistic on updated_at: a concurrent edit no-ops the adopt; the still-
+      // null-gid row is re-considered for adoption next run (idempotent).
+      const { error } = await admin.from("events").update(a.patch).eq("id", a.id).eq("updated_at", a.expectUpdatedAt);
+      if (error) throw new Error(`adoption failed: ${error.message}`);
     }
     if (toDelete.length > 0) {
       const { error } = await admin.from("events").delete().in("id", toDelete);

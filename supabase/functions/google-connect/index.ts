@@ -95,16 +95,39 @@ Deno.serve(async (req: Request) => {
 
   // ── DISCONNECT (DELETE) ─────────────────────────────────────
   if (req.method === "DELETE") {
-    let connectionId: string;
+    let body: Record<string, unknown>;
     try {
-      const body = await req.json();
-      if (typeof body?.connectionId !== "string" || !body.connectionId.trim()) {
-        return json({ error: "Body must contain a non-empty `connectionId` string" }, 400);
-      }
-      connectionId = body.connectionId.trim();
+      body = await req.json();
     } catch {
       return json({ error: "Invalid JSON body" }, 400);
     }
+
+    // Docs singleton disconnect (`{docs:true}`): remove the dedicated Notes/Docs
+    // connection + its Vault secret. Idempotent — 200 even if none exists.
+    if (body?.docs === true) {
+      const { data: docsRow } = await admin
+        .from("google_docs_connections")
+        .select("vault_secret_id")
+        .eq("user_id", userId)
+        .maybeSingle();
+      const { error: delErr } = await admin
+        .from("google_docs_connections")
+        .delete()
+        .eq("user_id", userId);
+      if (delErr) {
+        return json({ error: "Failed to remove docs connection" }, 500);
+      }
+      if (docsRow?.vault_secret_id) {
+        await admin.rpc("delete_google_secret", { secret_id: docsRow.vault_secret_id });
+      }
+      return json({ ok: true });
+    }
+
+    let connectionId: string;
+    if (typeof body?.connectionId !== "string" || !body.connectionId.trim()) {
+      return json({ error: "Body must contain a non-empty `connectionId` string" }, 400);
+    }
+    connectionId = body.connectionId.trim();
 
     // Grab the row (scoped to the caller) so we can purge its Vault secret after.
     const { data: existing } = await admin
@@ -193,34 +216,93 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── CONNECT (POST) ──────────────────────────────────────────
-  let refreshToken: string;
-  let name: string;
-  let googleEmail: string;
-  let spaceId: string | null;
+  let body: Record<string, unknown>;
   try {
-    const body = await req.json();
+    body = await req.json();
+  } catch {
+    return json({ error: "Invalid JSON body" }, 400);
+  }
+
+  // ── DOCS singleton connect (`{docs:true, refreshToken, googleEmail}`) ──
+  // Designates the ONE Google sign-in that Drive/Docs background work runs off
+  // (drive-writeback, drive-import, reference-pull), independent of the N calendar
+  // connections. Re-POST replaces the Vault secret (reconnect). No name/space — this
+  // account never routes calendar events.
+  if (body?.docs === true) {
+    let docsRefreshToken: string;
+    let docsEmail: string;
     if (typeof body?.refreshToken !== "string" || !body.refreshToken.trim()) {
       return json({ error: "Body must contain a non-empty `refreshToken` string" }, 400);
-    }
-    if (typeof body?.name !== "string" || !body.name.trim()) {
-      return json({ error: "Body must contain a non-empty `name` string" }, 400);
     }
     if (typeof body?.googleEmail !== "string" || !body.googleEmail.trim()) {
       return json({ error: "Body must contain a non-empty `googleEmail` string" }, 400);
     }
-    refreshToken = body.refreshToken.trim();
-    name = body.name.trim();
-    googleEmail = body.googleEmail.trim();
-    // spaceId optional; null = read-in only (no default fallback — decision 3).
-    if (body.spaceId === undefined || body.spaceId === null) {
-      spaceId = null;
-    } else if (typeof body.spaceId === "string" && body.spaceId.trim()) {
-      spaceId = body.spaceId.trim();
-    } else {
-      return json({ error: "`spaceId` must be a uuid string or null" }, 400);
+    docsRefreshToken = body.refreshToken.trim();
+    docsEmail = body.googleEmail.trim();
+
+    // Prior secret (if reconnecting) so we can purge it after the row points at the new one.
+    const { data: docsPrior } = await admin
+      .from("google_docs_connections")
+      .select("vault_secret_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const docsPriorSecretId: string | null = docsPrior?.vault_secret_id ?? null;
+
+    const docsSecretName = `google_docs_refresh_token:${userId}:${Date.now()}`;
+    const { data: docsSecretId, error: docsSecretErr } = await admin.rpc(
+      "create_google_secret",
+      { secret: docsRefreshToken, name: docsSecretName },
+    );
+    if (docsSecretErr || !docsSecretId) {
+      return json({ error: "Failed to store credential" }, 500);
     }
-  } catch {
-    return json({ error: "Invalid JSON body" }, 400);
+
+    // Upsert the singleton (PK user_id): swap secret + email, reactivate.
+    const { error: docsUpErr } = await admin
+      .from("google_docs_connections")
+      .upsert(
+        {
+          user_id: userId,
+          google_email: docsEmail,
+          vault_secret_id: docsSecretId,
+          status: "active",
+          last_error: null,
+        },
+        { onConflict: "user_id" },
+      );
+    if (docsUpErr) {
+      await admin.rpc("delete_google_secret", { secret_id: docsSecretId });
+      return json({ error: "Failed to save docs connection" }, 500);
+    }
+    if (docsPriorSecretId && docsPriorSecretId !== docsSecretId) {
+      await admin.rpc("delete_google_secret", { secret_id: docsPriorSecretId });
+    }
+    return json({ ok: true, status: "active" });
+  }
+
+  let refreshToken: string;
+  let name: string;
+  let googleEmail: string;
+  let spaceId: string | null;
+  if (typeof body?.refreshToken !== "string" || !body.refreshToken.trim()) {
+    return json({ error: "Body must contain a non-empty `refreshToken` string" }, 400);
+  }
+  if (typeof body?.name !== "string" || !body.name.trim()) {
+    return json({ error: "Body must contain a non-empty `name` string" }, 400);
+  }
+  if (typeof body?.googleEmail !== "string" || !body.googleEmail.trim()) {
+    return json({ error: "Body must contain a non-empty `googleEmail` string" }, 400);
+  }
+  refreshToken = body.refreshToken.trim();
+  name = body.name.trim();
+  googleEmail = body.googleEmail.trim();
+  // spaceId optional; null = read-in only (no default fallback — decision 3).
+  if (body.spaceId === undefined || body.spaceId === null) {
+    spaceId = null;
+  } else if (typeof body.spaceId === "string" && body.spaceId.trim()) {
+    spaceId = body.spaceId.trim();
+  } else {
+    return json({ error: "`spaceId` must be a uuid string or null" }, 400);
   }
 
   const calendarId = "primary"; // v1: one calendar per login.

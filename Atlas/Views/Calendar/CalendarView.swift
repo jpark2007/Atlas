@@ -31,10 +31,6 @@ struct CalendarView: View {
     @AppStorage("calendar.apple.defaultSpace") private var appleDefaultSpace: String = ""
     private let ekService = EventKitService()
 
-    // MARK: - Google Calendar sync
-    @EnvironmentObject private var googleAuth: GoogleAuthService
-    @AppStorage("calendar.google.enabled") private var googleCalendarEnabled: Bool = false
-
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -104,9 +100,7 @@ struct CalendarView: View {
                 }
             } else { loadAppleEventsIfNeeded() }
         }
-        .onChange(of: googleCalendarEnabled) { _, _ in loadAppleEventsIfNeeded() }
-        .onChange(of: googleAuth.isConnected) { _, _ in loadAppleEventsIfNeeded() }
-        // Auto-refresh so Google-side changes (incl. deletes) surface without leaving and
+        // Auto-refresh so Apple-side changes (incl. deletes) surface without leaving and
         // re-entering the tab: poll every 60s while the calendar is visible, and refresh
         // immediately when the app regains focus (e.g. after you edited on your phone).
         .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
@@ -432,17 +426,16 @@ struct CalendarView: View {
     // MARK: - External calendar aggregation (Apple + Google)
 
     /// Fetches external events for the visible range and stores them in
-    /// `state.externalEvents`. Aggregates Apple Calendar (read-only EventKit) and
-    /// Google Calendar (read via `GoogleCalendarService`) — whichever are enabled
-    /// and authorized. Called on appear, on `selectedDate`/`mode` change, and when
-    /// a source toggles. External events NEVER enter `state.events`.
+    /// `state.externalEvents`. Reads Apple Calendar (read-only EventKit) when enabled
+    /// and authorized. Called on appear, on `selectedDate`/`mode` change, and when the
+    /// Apple source toggles. External events NEVER enter `state.events`.
+    ///
+    /// Google is NOT read here: server-owned cloud sync owns Google↔DB, so Google
+    /// events arrive as `events` rows via `loadAll()`. A Mac-local Google pull would
+    /// double-show them on top of the synced rows.
     private func loadAppleEventsIfNeeded() {
         let wantApple = appleCalendarEnabled && ekService.authorizationStatus() == .fullAccess
-        // Single-owner: when the server owns Google↔DB sync the Mac makes ZERO Google
-        // calls — no live pull, no reap, no `externalEvents` merge for Google. Google
-        // events instead arrive as `events` rows via `loadAll()`. Apple stays live here.
-        let wantGoogle = googleCalendarEnabled && googleAuth.isConnected && !state.serverSyncEnabled
-        guard wantApple || wantGoogle else {
+        guard wantApple else {
             state.externalEvents = []
             return
         }
@@ -475,65 +468,21 @@ struct CalendarView: View {
             ? (state.spaces.first?.name ?? "")
             : appleDefaultSpace
 
-        // Pre-fetch snapshot of our pushed-mirror ids. An event created during the fetch
-        // won't be in here, so a listing that predates its id can never reap it (B2).
-        let eligibleGoogleIDs = Set(
-            state.events.filter { $0.source == .atlas }.compactMap(\.googleEventId))
-
         Task {
-            var combined: [CalendarEvent] = []
-            if wantApple {
-                combined += await ekService.fetchEvents(
-                    start: rangeStart,
-                    end:   rangeEnd,
-                    defaultSpaceName: defaultSpace
-                )
-            }
-            var googlePresentIDs: Set<String> = []
-            var googleFetchOK = true
-            var fetchError: String? = nil
-            if wantGoogle {
-                let service = GoogleCalendarService(auth: googleAuth)
-                do {
-                    let googleEvents = try await service.listEvents(
-                        start: rangeStart,
-                        end:   rangeEnd,
-                        defaultSpaceName: defaultSpace
-                    )
-                    combined += googleEvents
-                    googlePresentIDs = Set(googleEvents.compactMap(\.googleEventId))
-                } catch {
-                    // A failed fetch returns no events — this must NOT be read as
-                    // "everything was deleted on Google", or the reaper would wipe the
-                    // window. Record the error and skip reaping this cycle.
-                    googleFetchOK = false
-                    fetchError = error.localizedDescription
-                }
-            }
+            let combined = await ekService.fetchEvents(
+                start: rangeStart,
+                end:   rangeEnd,
+                defaultSpaceName: defaultSpace
+            )
             await MainActor.run {
-                // Drop any external event that is actually one of our own events we already
-                // mirrored — a Google event / scheduled work-block we pushed, or an Apple
-                // event mirrored via the Atlas→Apple toggle (EventKit re-reads it next tick).
-                // Otherwise it shows twice: once native, once as its read-only external copy.
-                let ownGoogleIDs = Set(state.events.compactMap(\.googleEventId))
-                    .union(state.tasks.compactMap(\.workBlockGoogleEventId))
+                // Drop any Apple event that is actually one of our own events we already
+                // mirrored via the Atlas→Apple toggle (EventKit re-reads it next tick).
+                // Otherwise it shows twice: once native, once as its read-only Apple copy.
                 let ownAppleIDs = Set(state.events.compactMap(\.appleEventId))
                 state.externalEvents = CalendarSync.excludingOwnMirrors(
                     external: combined,
-                    ownGoogleIDs: ownGoogleIDs,
+                    ownGoogleIDs: [],
                     ownAppleIDs: ownAppleIDs)
-                // Reflect Google-side deletions: reap our mirrors that vanished from a
-                // SUCCESSFUL listing for this window. Safety rules live in CalendarSync.
-                if wantGoogle && googleFetchOK {
-                    let reap = CalendarSync.reapableEventIDs(
-                        events: state.events,
-                        presentGoogleIDs: googlePresentIDs,
-                        eligibleGoogleIDs: eligibleGoogleIDs,
-                        windowStart: rangeStart,
-                        windowEnd: rangeEnd)
-                    state.removeEventsLocally(ids: reap)
-                }
-                if wantGoogle { state.lastCalendarSyncError = fetchError }
             }
         }
     }
