@@ -179,6 +179,14 @@ final class AppState: ObservableObject {
     /// Guards against double-bootstrap if `bootstrap(db:)` is called more than once.
     private var bootstrappedUser: String?
 
+    /// The user id whose real snapshot is currently loaded into the published model
+    /// arrays. `nil` until the first load lands (or after a sign-out). `AppGate` gates
+    /// the signed-in UI on this matching the authenticated user, so the seed `MockData`
+    /// — or a previous account's rows — can never render for even one frame before the
+    /// correct data arrives. Set only after `applySnapshot` (or on an error, to the
+    /// blanked-but-correct user); reset to `nil` by `clearUserData`/sign-out.
+    @Published private(set) var loadedUserID: String?
+
     /// Quick-capture pill presentation (toggled by the ⌘ hotkey / Tasks card).
     @Published var presentCapture: Bool = false
 
@@ -334,10 +342,17 @@ final class AppState: ObservableObject {
             // (old MockData ids no longer match after DB load).
             expandedSpaces = Set(self.spaces.prefix(2).map(\.id))
 
+            // Open the render gate: the model now holds THIS user's real data.
+            loadedUserID = userID
+
         } catch {
-            // Keep existing in-memory MockData — never blank the UI on a DB error.
-            // Reset the guard so the next appearance/sign-in retries the load.
-            print("[AtlasDB] bootstrap failed — keeping MockData. Error: \(error.localizedDescription)")
+            // A load failure must not leave another dataset (the seed MockData or a
+            // previous account's rows) on screen. Blank to the correct-but-empty user
+            // and open the gate anyway so the UI isn't stuck on the loading spinner.
+            // `bootstrappedUser` stays nil so the next foreground/appearance retries.
+            print("[AtlasDB] bootstrap failed — showing empty state for this user. Error: \(error.localizedDescription)")
+            clearUserData()
+            loadedUserID = userID
             bootstrappedUser = nil
         }
 
@@ -390,6 +405,21 @@ final class AppState: ObservableObject {
         teammateAvailability = [:]
         expandedSpaces = []
         calendarDetailItem = nil
+        // Close the render gate — nothing is loaded for any user until the next
+        // `loadAll()` lands (or the error path re-opens it for the same user).
+        loadedUserID = nil
+    }
+
+    /// Wipes every per-user in-memory model AND the bootstrap/gate bookkeeping on
+    /// sign-out, so the next account starts from a clean slate with nothing of the
+    /// previous user retained. `AuthService` already dropped the persisted session;
+    /// this drops the only in-memory cross-account cache. Called by `AppGate` when
+    /// auth transitions to signed-out.
+    func resetForSignOut() {
+        clearUserData()          // blanks the arrays and nils `loadedUserID`
+        bootstrappedUser = nil
+        db = nil
+        route = .dashboard
     }
 
     /// Assigns a freshly loaded `AtlasSnapshot` onto the published model arrays —
