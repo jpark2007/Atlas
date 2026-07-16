@@ -25,9 +25,17 @@ Atlas accounts and data run on **Supabase**, our backend and authentication prov
 
 Atlas works fine on its own. These integrations are optional, and each is only active if you turn it on.
 
+### Google API Services User Data Policy
+
+Atlas's use and transfer to any other app of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements. Data from your connected Google account is used only to power the sync features described below, is stored in your own account's rows in Supabase (with tokens further protected in Vault, as noted throughout), is never sold, is never shared with third parties beyond what's needed to run those features, and is never used for advertising.
+
 ### Google Calendar (two-way sync)
 
 If you connect Google Calendar, Atlas keeps your events in sync in both directions — including while the app is closed — using a server-side sync runner. To do that, your Google **refresh token** is stored **encrypted in Supabase Vault, reachable only by our server, and never returned to any app or client**. We use it only to read and write your calendar events for the sync. The permission we request is limited to your Google Calendar. You can disconnect at any time; disconnecting deletes the stored token.
+
+### Google Docs (two-way note sync)
+
+Atlas's Notes feature offers optional two-way editing with Google Docs: you can link an Atlas note to a Google Doc, edit either one, and have the changes round-trip via a Markdown conversion. To do that, Atlas reads and writes the content of the specific Google Doc you've linked — nothing else in your Drive. That content is stored as your note's content in your account's rows in Supabase, the same as any other note. We use it only to keep the linked note and Doc in sync; it's never sold, shared with third parties, or used for advertising. You can unlink a note at any time, which stops any further sync with that Doc.
 
 ### Canvas (assignments and course events)
 
@@ -41,9 +49,9 @@ On Mac, Atlas can show your Apple Calendar events using macOS's calendar access 
 
 Atlas has a capture box: you type or paste free text ("essay due Friday, gym 3x this week, dinner Sunday") and Atlas turns it into tasks, events, and notes. To do that, **the text you capture** is sent to our server and then to a third-party AI model provider (currently **OpenRouter**, which routes to a model such as GPT-4o-mini) to classify it. We send only the text you choose to capture, plus the names of your spaces and projects so the item lands in the right place. We don't send the rest of your Atlas data to the model.
 
-### Google Drive import (coming, not yet in the app)
+### Google Drive (linking and importing files)
 
-We're building an optional Drive import for notes. It will use Google's `drive.file` permission, which only ever gives Atlas access to the specific files **you pick** — never your whole Drive. It isn't shipped yet; when it is, it will only touch files you select.
+Atlas uses Google's `drive.file` permission when you pick a file yourself through Google's file picker — for example, choosing which Doc to link to a note. This permission only ever gives Atlas access to the specific files **you select**; Atlas never receives blanket access to your Drive, and never sees files you haven't explicitly picked.
 
 ## Who processes your data
 

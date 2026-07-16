@@ -59,8 +59,14 @@
       <h2>Connections you choose to add</h2>
       <p>Atlas works fine on its own. These integrations are optional, and each is only active if you turn it on.</p>
 
+      <h3>Google API Services User Data Policy</h3>
+      <p>Atlas&rsquo;s use and transfer to any other app of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements. Data from your connected Google account is used only to power the sync features described below, is stored in your own account&rsquo;s rows in Supabase (with tokens further protected in Vault, as noted throughout), is never sold, is never shared with third parties beyond what&rsquo;s needed to run those features, and is never used for advertising.</p>
+
       <h3>Google Calendar (two-way sync)</h3>
       <p>If you connect Google Calendar, Atlas keeps your events in sync in both directions &mdash; including while the app is closed &mdash; using a server-side sync runner. To do that, your Google <strong>refresh token</strong> is stored <strong>encrypted in Supabase Vault, reachable only by our server, and never returned to any app or client</strong>. We use it only to read and write your calendar events for the sync. The permission we request is limited to your Google Calendar. You can disconnect at any time; disconnecting deletes the stored token.</p>
+
+      <h3>Google Docs (two-way note sync)</h3>
+      <p>Atlas&rsquo;s Notes feature offers optional two-way editing with Google Docs: you can link an Atlas note to a Google Doc, edit either one, and have the changes round-trip via a Markdown conversion. To do that, Atlas reads and writes the content of the specific Google Doc you&rsquo;ve linked &mdash; nothing else in your Drive. That content is stored as your note&rsquo;s content in your account&rsquo;s rows in Supabase, the same as any other note. We use it only to keep the linked note and Doc in sync; it&rsquo;s never sold, shared with third parties, or used for advertising. You can unlink a note at any time, which stops any further sync with that Doc.</p>
 
       <h3>Canvas (assignments and course events)</h3>
       <p>If you add a Canvas calendar feed, you paste your personal Canvas feed URL. That URL is itself a secret &mdash; anyone holding it can read your feed &mdash; so we store it <strong>encrypted in Supabase Vault, server-only</strong>, and use it solely to pull your assignments and course events into Atlas. Canvas data is <strong>read-only</strong>: Atlas never writes back to Canvas. Disconnecting removes the stored feed URL.</p>
@@ -71,8 +77,8 @@
       <h3>AI capture</h3>
       <p>Atlas has a capture box: you type or paste free text (&ldquo;essay due Friday, gym 3x this week, dinner Sunday&rdquo;) and Atlas turns it into tasks, events, and notes. To do that, <strong>the text you capture</strong> is sent to our server and then to a third-party AI model provider (currently <strong>OpenRouter</strong>, which routes to a model such as GPT-4o-mini) to classify it. We send only the text you choose to capture, plus the names of your spaces and projects so the item lands in the right place. We don&rsquo;t send the rest of your Atlas data to the model.</p>
 
-      <h3>Google Drive import (coming, not yet in the app)</h3>
-      <p>We&rsquo;re building an optional Drive import for notes. It will use Google&rsquo;s <strong>drive.file</strong> permission, which only ever gives Atlas access to the specific files <strong>you pick</strong> &mdash; never your whole Drive. It isn&rsquo;t shipped yet; when it is, it will only touch files you select.</p>
+      <h3>Google Drive (linking and importing files)</h3>
+      <p>Atlas uses Google&rsquo;s <strong>drive.file</strong> permission when you pick a file yourself through Google&rsquo;s file picker &mdash; for example, choosing which Doc to link to a note. This permission only ever gives Atlas access to the specific files <strong>you select</strong>; Atlas never receives blanket access to your Drive, and never sees files you haven&rsquo;t explicitly picked.</p>
 
       <h2>Who processes your data</h2>
       <p>We don&rsquo;t sell your data or use it for advertising. We rely on a few service providers to run Atlas, and your data passes through them only to provide the service:</p>
