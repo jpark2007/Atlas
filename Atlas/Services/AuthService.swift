@@ -21,7 +21,10 @@ final class AuthService: ObservableObject {
     @Published var infoMessage: String?
 
     private let api = SupabaseAuth()
+    /// Legacy UserDefaults key — read once for one-time migration into the Keychain.
     private let sessionKey = "atlas.supabase.session"
+    private let keychainService = KeychainStore.Service.supabase
+    private let keychainAccount = "session"
     private var refreshTask: Task<SupabaseSession?, Never>?
     private var pkceVerifier: String?
     private var webAuthSession: ASWebAuthenticationSession?
@@ -37,7 +40,7 @@ final class AuthService: ObservableObject {
     // MARK: - Session lifecycle
 
     func restore() {
-        guard let data = UserDefaults.standard.data(forKey: sessionKey),
+        guard let data = loadSessionData(),
               let saved = try? JSONDecoder().decode(SupabaseSession.self, from: data) else {
             state = .signedOut
             return
@@ -46,6 +49,19 @@ final class AuthService: ObservableObject {
         state = .signedIn(saved.user)
         // Refresh in the background to keep the token fresh.
         Task { await refreshIfPossible() }
+    }
+
+    /// Session bytes from the Keychain, migrating a pre-Keychain UserDefaults value
+    /// on first read after update (adopt into Keychain, delete from UserDefaults) so
+    /// existing users aren't signed out.
+    private func loadSessionData() -> Data? {
+        if let data = KeychainStore.load(service: keychainService, account: keychainAccount) {
+            return data
+        }
+        guard let legacy = UserDefaults.standard.data(forKey: sessionKey) else { return nil }
+        KeychainStore.save(legacy, service: keychainService, account: keychainAccount)
+        UserDefaults.standard.removeObject(forKey: sessionKey)
+        return legacy
     }
 
     private func refreshIfPossible() async {
@@ -86,7 +102,7 @@ final class AuthService: ObservableObject {
     private func persist(_ session: SupabaseSession) {
         self.session = session
         if let data = try? JSONEncoder().encode(session) {
-            UserDefaults.standard.set(data, forKey: sessionKey)
+            KeychainStore.save(data, service: keychainService, account: keychainAccount)
         }
         state = .signedIn(session.user)
     }
@@ -160,9 +176,16 @@ final class AuthService: ObservableObject {
 
     func signOut() {
         if let token = session?.accessToken { Task { await api.signOut(accessToken: token) } }
-        UserDefaults.standard.removeObject(forKey: sessionKey)
+        clearStoredSession()
         session = nil
         state = .signedOut
+    }
+
+    /// Wipes the persisted session from the Keychain (and any lingering legacy
+    /// UserDefaults copy). Shared by sign-out and delete-account.
+    private func clearStoredSession() {
+        KeychainStore.delete(service: keychainService, account: keychainAccount)
+        UserDefaults.standard.removeObject(forKey: sessionKey)
     }
 
     // MARK: - Delete account
@@ -191,7 +214,7 @@ final class AuthService: ObservableObject {
         }
         // The auth user no longer exists — clear the local session (no server
         // logout to call) and return to the gate.
-        UserDefaults.standard.removeObject(forKey: sessionKey)
+        clearStoredSession()
         session = nil
         state = .signedOut
         return nil
