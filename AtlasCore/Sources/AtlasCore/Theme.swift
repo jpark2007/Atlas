@@ -1,4 +1,9 @@
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
 
 public struct AtlasTextScaleKey: EnvironmentKey {
     public static let defaultValue: CGFloat = 1.0
@@ -205,5 +210,22 @@ extension Color {
         let g = Double((value >> 8) & 0xff) / 255
         let b = Double(value & 0xff) / 255
         self.init(.sRGB, red: r, green: g, blue: b, opacity: 1)
+    }
+
+    /// This color as an uppercase `"#RRGGBB"` sRGB string, or `nil` if platform
+    /// color conversion fails. The single place a `Color` is serialized for
+    /// storage — every surface inherits hex custom-color support through this.
+    public var atlasHexString: String? {
+        #if canImport(AppKit)
+        guard let c = NSColor(self).usingColorSpace(.sRGB) else { return nil }
+        let r = c.redComponent, g = c.greenComponent, b = c.blueComponent
+        #elseif canImport(UIKit)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard UIColor(self).getRed(&r, green: &g, blue: &b, alpha: &a) else { return nil }
+        #else
+        return nil
+        #endif
+        return String(format: "#%02X%02X%02X",
+                      Int(round(r * 255)), Int(round(g * 255)), Int(round(b * 255)))
     }
 }

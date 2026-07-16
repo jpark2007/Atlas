@@ -608,42 +608,29 @@ struct ProjectDetailView: View {
     private var colorPickerPopover: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("PROJECT COLOR").atlasCapsLabel()
-            HStack(spacing: 12) {
-                // Inherit (default): hollow circle in the space color, selected when no token.
-                Button {
-                    state.setProjectColorToken(projectID: project.id, token: nil)
-                    showColorPicker = false
-                } label: {
+            // Inherit (default): hollow circle in the space color, selected when no token.
+            Button {
+                state.setProjectColorToken(projectID: project.id, token: nil)
+            } label: {
+                HStack(spacing: 8) {
                     Circle()
                         .strokeBorder(project.spaceColor, lineWidth: 2)
-                        .frame(width: 24, height: 24)
+                        .frame(width: 22, height: 22)
                         .overlay(
                             Circle()
                                 .stroke(AtlasTheme.Colors.textPrimary,
                                         lineWidth: project.colorToken == nil ? 2.5 : 0)
                                 .padding(-3)
                         )
-                        .help("Inherit space color")
+                    Text("Inherit space color")
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 }
-                .buttonStyle(.plain)
-                ForEach(projectColorPalette, id: \.token) { swatch in
-                    Button {
-                        state.setProjectColorToken(projectID: project.id, token: swatch.token)
-                        showColorPicker = false
-                    } label: {
-                        Circle()
-                            .fill(swatch.color)
-                            .frame(width: 24, height: 24)
-                            .overlay(
-                                Circle()
-                                    .stroke(AtlasTheme.Colors.textPrimary,
-                                            lineWidth: project.colorToken == swatch.token ? 2.5 : 0)
-                                    .padding(-3)
-                            )
-                            .help(swatch.label)
-                    }
-                    .buttonStyle(.plain)
-                }
+            }
+            .buttonStyle(.plain)
+            AtlasColorGrid(selected: project.colorToken == nil ? nil : projectDotColor) { color in
+                state.setProjectColorToken(projectID: project.id,
+                                           token: ColorToken.token(for: color))
             }
         }
         .padding(16)
@@ -663,14 +650,6 @@ struct ProjectDetailView: View {
         state.captureContext = CaptureContext(spaceName: project.spaceName,
                                               projectName: project.name)
         state.presentCapture = true
-    }
-
-    /// The four AtlasTheme tokens a project can wear — the same set spaces use.
-    private var projectColorPalette: [(token: String, label: String, color: Color)] {
-        [("school",   "Blue",   AtlasTheme.Colors.school),
-         ("personal", "Green",  AtlasTheme.Colors.personal),
-         ("side",     "Purple", AtlasTheme.Colors.side),
-         ("accent",   "Orange", AtlasTheme.Colors.accent)]
     }
 
     private func metaItem(_ icon: String, _ text: String, accent: Bool = false) -> some View {

@@ -134,6 +134,8 @@ struct SettingsView: View {
                     sidebarSection
                     Divider().overlay(AtlasTheme.Colors.border)
                     shortcutsSection
+                    Divider().overlay(AtlasTheme.Colors.border)
+                    helpSection
                     Spacer(minLength: 8)
                 }
                 .padding(28)
@@ -1386,6 +1388,45 @@ struct SettingsView: View {
             .atlasHairlineBelow()
         }
     }
+
+    // MARK: – Help & Tips section
+
+    /// Static, scannable practical tips — title + one-liner per row, hairline-
+    /// separated like every other settings group. No links, no fluff.
+    private var helpSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            label("HELP & TIPS")
+            ForEach(Self.helpTips, id: \.title) { tip in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tip.title)
+                        .atlasFont(size: 14, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text(tip.detail)
+                        .atlasFont(size: 12, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .atlasHairlineBelow()
+            }
+        }
+    }
+
+    private static let helpTips: [(title: String, detail: String)] = [
+        ("Quick capture",
+         "Jot a task from the capture bar; with no space inferred it lands in your default space (set it under Tasks)."),
+        ("Spaces vs. projects & classes",
+         "Spaces are your life buckets (School, Personal, Side). Projects live inside a space — in a School space they're Classes."),
+        ("Drag to schedule",
+         "Drag a task onto the calendar grid to block time for it. Drop sets the start; drag its edge to resize."),
+        ("Canvas sync",
+         "Connect your Canvas feed in Integrations to import assignments and events. Link a course to a class so its items file there."),
+        ("Google Calendar",
+         "Add accounts under Calendars, then link each to a space so its events sync out. An unlinked space stays in Atlas only."),
+        ("Menu-bar agenda",
+         "Atlas lives in the menu bar too — click its icon for today's agenda without opening the full window."),
+    ]
 
     // MARK: – Shortcuts section
 
