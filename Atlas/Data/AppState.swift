@@ -1,6 +1,14 @@
 import SwiftUI
 import AtlasCore
 
+/// The project a Quick-Capture entry should be force-tagged to (set by a project
+/// page's "Add Task"). Carries both the space and project name so the created
+/// task lands in the right project regardless of AI routing.
+struct CaptureContext: Equatable {
+    var spaceName: String
+    var projectName: String
+}
+
 /// Single source of truth for the UI. Backed by mock data today;
 /// the same surface will later be backed by Supabase (see docs/specs/01-architecture.md).
 @MainActor
@@ -173,6 +181,11 @@ final class AppState: ObservableObject {
 
     /// Quick-capture pill presentation (toggled by the ⌘ hotkey / Tasks card).
     @Published var presentCapture: Bool = false
+
+    /// When set (by a project page's "Add Task"), the next Quick-Capture entry is
+    /// force-tagged to this project/space instead of AI-routed — so a task added
+    /// from a project always lands in that project. Cleared when capture dismisses.
+    @Published var captureContext: CaptureContext? = nil
 
     /// ⌘K command palette / search presentation.
     @Published var presentSearch: Bool = false
@@ -404,18 +417,31 @@ final class AppState: ObservableObject {
         self.references = snapshot.references
         self.referenceAttachments = snapshot.referenceAttachments
 
-        // Re-derive colors from spaceName.
-        // Spaces already carry real colors from `color_token` — don't touch those.
-        for i in self.events.indices {
-            self.events[i].color = calendarSpaceColor(named: self.events[i].spaceName)
+        // Re-derive every denormalized color from the loaded space colors
+        // (spaces already carry real colors from `color_token`).
+        rederiveDerivedColors()
+    }
+
+    /// The single color-resolution pass: re-derive every denormalized color from
+    /// the live space colors. Shared by snapshot load and `setSpaceColor` so a
+    /// space recolor ripples to exactly the same surfaces a fresh load would —
+    /// events, tasks, nested project colors, and their Canvas assignments — with
+    /// no view left resolving a stale copy. Space colors themselves are the
+    /// source of truth here (loaded from `color_token`); this never touches them.
+    private func rederiveDerivedColors() {
+        for i in events.indices {
+            events[i].color = calendarSpaceColor(named: events[i].spaceName)
         }
-        for i in self.tasks.indices {
-            self.tasks[i].spaceColor = calendarSpaceColor(named: self.tasks[i].spaceName)
+        for i in tasks.indices {
+            tasks[i].spaceColor = calendarSpaceColor(named: tasks[i].spaceName)
         }
-        for i in self.spaces.indices {
-            for j in self.spaces[i].projects.indices {
-                self.spaces[i].projects[j].spaceColor =
-                    calendarSpaceColor(named: self.spaces[i].projects[j].spaceName)
+        for si in spaces.indices {
+            let spaceColor = spaces[si].color
+            for pi in spaces[si].projects.indices {
+                spaces[si].projects[pi].spaceColor = spaceColor
+                for ai in spaces[si].projects[pi].assignments.indices {
+                    spaces[si].projects[pi].assignments[ai].spaceColor = spaceColor
+                }
             }
         }
     }
@@ -649,16 +675,9 @@ final class AppState: ObservableObject {
     func setSpaceColor(id: UUID, color: Color) {
         guard let si = spaces.firstIndex(where: { $0.id == id }) else { return }
         spaces[si].color = color
-        let name = spaces[si].name
-        for i in events.indices where events[i].spaceName == name {
-            events[i].color = color
-        }
-        for i in tasks.indices where tasks[i].spaceName == name {
-            tasks[i].spaceColor = color
-        }
-        for pi in spaces[si].projects.indices {
-            spaces[si].projects[pi].spaceColor = color
-        }
+        // Re-derive every dependent color through the same single path a load uses,
+        // so the recolor ripples everywhere at once instead of ad-hoc re-tints.
+        rederiveDerivedColors()
         let updatedSpace = spaces[si]
         Task { try? await self.db?.upsertSpace(updatedSpace, sort: si) }
     }
@@ -715,6 +734,35 @@ final class AppState: ObservableObject {
                 Task { try? await self.db?.upsertProject(updated) }
                 return
             }
+        }
+    }
+
+    /// Rename a project in place and rewrite the text references that point at it
+    /// by name — tasks match on `projectName`, so without this a rename would
+    /// detach them from the project's task list. Events primarily link by
+    /// `projectID`, but ones tagged only by `subtitle == name` are re-pointed too.
+    /// No-op on a blank/unchanged name or an unknown id.
+    func renameProject(id: UUID, to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        for si in spaces.indices {
+            guard let pi = spaces[si].projects.firstIndex(where: { $0.id == id }) else { continue }
+            let old = spaces[si].projects[pi].name
+            guard !trimmed.isEmpty, trimmed != old else { return }
+            let space = spaces[si].name
+            spaces[si].projects[pi].name = trimmed
+            let updated = spaces[si].projects[pi]
+            Task { try? await self.db?.upsertProject(updated) }
+            for i in tasks.indices where tasks[i].projectName == old && tasks[i].spaceName == space {
+                tasks[i].projectName = trimmed
+                let t = tasks[i]
+                Task { try? await self.db?.upsertTask(t) }
+            }
+            for i in events.indices where events[i].subtitle == old && events[i].spaceName == space {
+                events[i].subtitle = trimmed
+                let e = events[i]
+                Task { try? await self.db?.upsertEvent(e) }
+            }
+            return
         }
     }
 

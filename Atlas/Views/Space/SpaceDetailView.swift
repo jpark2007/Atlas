@@ -53,6 +53,33 @@ struct SpaceDetailView: View {
         allEvents.filter { $0.end >= state.now }
     }
 
+    /// Upcoming events with recurring series collapsed to one row. Synced rows
+    /// (Canvas/Google/Apple) carry no persisted recurrence id, so a "series" is
+    /// keyed by identical title + source + time-of-day + duration — which is a
+    /// repeat in practice, while distinct one-off events (different time or name)
+    /// stay separate. Each row shows the next occurrence and how many upcoming
+    /// repeats there are.
+    private var collapsedSpaceEvents: [(event: CalendarEvent, count: Int)] {
+        var order: [String] = []
+        var groups: [String: [CalendarEvent]] = [:]
+        for ev in spaceEvents {
+            let key = seriesKey(ev)
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(ev)
+        }
+        return order.map { key in
+            let evs = groups[key]!.sorted { $0.start < $1.start }
+            return (evs.first!, evs.count)
+        }
+    }
+
+    /// The key that folds repeats of the same event into one row (see above).
+    private func seriesKey(_ e: CalendarEvent) -> String {
+        let c = Calendar.current.dateComponents([.hour, .minute], from: e.start)
+        let minutes = Int(e.end.timeIntervalSince(e.start) / 60)
+        return "\(e.title)|\(e.spaceName)|\(e.source.displayName)|\(c.hour ?? 0):\(c.minute ?? 0)|\(minutes)"
+    }
+
     /// Elapsed events behind the "N PAST" reveal, most recent first.
     private var pastEvents: [CalendarEvent] {
         allEvents.filter { $0.end < state.now }.sorted { $0.start > $1.start }
@@ -200,9 +227,17 @@ struct SpaceDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             sectionLabel("EVENTS")
             VStack(spacing: 0) {
-                ForEach(Array(spaceEvents.enumerated()), id: \.element.id) { i, event in
-                    LifecycleEventRow(event: event)
-                    if i < spaceEvents.count - 1 {
+                let rows = collapsedSpaceEvents
+                ForEach(Array(rows.enumerated()), id: \.element.event.id) { i, pair in
+                    LifecycleEventRow(event: pair.event)
+                        .overlay(alignment: .trailing) {
+                            if pair.count > 1 {
+                                Text("recurring · \(pair.count)")
+                                    .atlasMono(size: 10, weight: .medium)
+                                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                            }
+                        }
+                    if i < rows.count - 1 {
                         Divider().overlay(AtlasTheme.Colors.hairline)
                     }
                 }

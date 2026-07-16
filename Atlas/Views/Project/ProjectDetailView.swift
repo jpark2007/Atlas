@@ -13,6 +13,13 @@ struct ProjectDetailView: View {
     @State private var draftOverview = ""
     @State private var presentInvite = false
 
+    /// Inline title editing: click the name to edit, commit on Return or blur.
+    @State private var isEditingName = false
+    @State private var draftName = ""
+    @FocusState private var nameFieldFocused: Bool
+    /// The project-color swatch popover anchored on the title dot.
+    @State private var showColorPicker = false
+
     /// Add-link sheet toggle, and the last import/Quick-Look problem to surface calmly.
     @State private var presentAddLink = false
     @State private var referenceError: String?
@@ -519,15 +526,55 @@ struct ProjectDetailView: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
+                // Color dot → popover recolor (mirrors the space page's dot).
+                Button { showColorPicker = true } label: {
+                    Circle().fill(projectDotColor).frame(width: 14, height: 14)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Change project color")
+                .popover(isPresented: $showColorPicker, arrowEdge: .bottom) {
+                    colorPickerPopover
+                }
+
                 if let code = project.code {
                     Text(code)
                         .atlasTitleSerif(size: 26)
                         .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
-                Text(project.name)
-                    .atlasTitleSerif(size: 26)
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                // Name — click to edit in place; commit on Return or blur.
+                if isEditingName {
+                    TextField("Project name", text: $draftName)
+                        .textFieldStyle(.plain)
+                        .atlasTitleSerif(size: 26)
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .focused($nameFieldFocused)
+                        .frame(maxWidth: 360)
+                        .onSubmit(commitName)
+                        .onChange(of: nameFieldFocused) { focused in
+                            if !focused { commitName() }
+                        }
+                } else {
+                    Text(project.name)
+                        .atlasTitleSerif(size: 26)
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .onTapGesture {
+                            draftName = project.name
+                            isEditingName = true
+                            nameFieldFocused = true
+                        }
+                        .help("Click to rename")
+                }
                 Spacer()
+                Button { addTaskToProject() } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus").atlasFont(size: 11, weight: .semibold)
+                        Text("Add Task").atlasFont(size: 13, weight: .medium, design: .rounded)
+                    }
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
+                }
+                .buttonStyle(.plain)
+                .help("Add a task to \(project.name)")
                 Button {
                     presentInvite = true
                 } label: {
@@ -545,51 +592,76 @@ struct ProjectDetailView: View {
                 if let i = project.instructor { metaItem("person", i) }
                 if project.canvasSynced { metaItem("folder", "Canvas + Drive", accent: true) }
             }
-            colorPickerRow
         }
     }
 
-    /// Per-project day-grid color (Option B): a hollow "inherit space color" swatch
-    /// plus the four theme tokens. Picking a token tints this project's tiles on the
-    /// day/week grid only; month dots, chips and the sidebar keep the space color.
-    private var colorPickerRow: some View {
-        HStack(spacing: 8) {
-            Text("GRID COLOR").atlasCapsLabel()
-            // Inherit (default): hollow circle in the space color, selected when no token.
-            Button {
-                state.setProjectColorToken(projectID: project.id, token: nil)
-            } label: {
-                Circle()
-                    .strokeBorder(project.spaceColor, lineWidth: 2)
-                    .frame(width: 20, height: 20)
-                    .overlay(
-                        Circle()
-                            .stroke(AtlasTheme.Colors.textPrimary,
-                                    lineWidth: project.colorToken == nil ? 2 : 0)
-                            .padding(-3)
-                    )
-                    .help("Inherit space color")
-            }
-            .buttonStyle(.plain)
-            ForEach(projectColorPalette, id: \.token) { swatch in
+    /// The dot's fill: the project's own color when it set one, else the space color.
+    private var projectDotColor: Color {
+        if let token = project.colorToken { return ColorToken.color(for: token) }
+        return project.spaceColor
+    }
+
+    /// PROJECT COLOR popover (mirrors the space page): an "inherit space color"
+    /// swatch plus the four theme tokens. Picking a token tints this project's
+    /// day/week-grid tiles and its sidebar dot; inherit clears back to the space color.
+    private var colorPickerPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("PROJECT COLOR").atlasCapsLabel()
+            HStack(spacing: 12) {
+                // Inherit (default): hollow circle in the space color, selected when no token.
                 Button {
-                    state.setProjectColorToken(projectID: project.id, token: swatch.token)
+                    state.setProjectColorToken(projectID: project.id, token: nil)
+                    showColorPicker = false
                 } label: {
                     Circle()
-                        .fill(swatch.color)
-                        .frame(width: 20, height: 20)
+                        .strokeBorder(project.spaceColor, lineWidth: 2)
+                        .frame(width: 24, height: 24)
                         .overlay(
                             Circle()
                                 .stroke(AtlasTheme.Colors.textPrimary,
-                                        lineWidth: project.colorToken == swatch.token ? 2 : 0)
+                                        lineWidth: project.colorToken == nil ? 2.5 : 0)
                                 .padding(-3)
                         )
-                        .help(swatch.label)
+                        .help("Inherit space color")
                 }
                 .buttonStyle(.plain)
+                ForEach(projectColorPalette, id: \.token) { swatch in
+                    Button {
+                        state.setProjectColorToken(projectID: project.id, token: swatch.token)
+                        showColorPicker = false
+                    } label: {
+                        Circle()
+                            .fill(swatch.color)
+                            .frame(width: 24, height: 24)
+                            .overlay(
+                                Circle()
+                                    .stroke(AtlasTheme.Colors.textPrimary,
+                                            lineWidth: project.colorToken == swatch.token ? 2.5 : 0)
+                                    .padding(-3)
+                            )
+                            .help(swatch.label)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
-        .padding(.top, 2)
+        .padding(16)
+    }
+
+    /// Persist the edited name (rename carries dependent tasks/events along) and
+    /// leave edit mode. A blank or unchanged name is discarded by `renameProject`.
+    private func commitName() {
+        guard isEditingName else { return }
+        isEditingName = false
+        state.renameProject(id: project.id, to: draftName)
+    }
+
+    /// Open the shared Quick-Capture bar tagged to this project, so the task it
+    /// creates lands here (and in this space) instead of being AI-routed.
+    private func addTaskToProject() {
+        state.captureContext = CaptureContext(spaceName: project.spaceName,
+                                              projectName: project.name)
+        state.presentCapture = true
     }
 
     /// The four AtlasTheme tokens a project can wear — the same set spaces use.
