@@ -139,16 +139,24 @@ struct CalendarEventDetailView: View {
     private var fields: some View {
         VStack(alignment: .leading, spacing: 0) {
             fieldGroup("STARTS") {
-                DatePicker("", selection: $start,
-                           displayedComponents: item.isAllDay ? [.date] : [.date, .hourAndMinute])
-                    .labelsHidden().datePickerStyle(.field).disabled(isReadOnly)
-                    .tint(AtlasTheme.Colors.accentText)
+                if isReadOnly {
+                    readOnlyDate(start)
+                } else {
+                    DatePicker("", selection: $start,
+                               displayedComponents: item.isAllDay ? [.date] : [.date, .hourAndMinute])
+                        .labelsHidden().datePickerStyle(.field)
+                        .tint(AtlasTheme.Colors.accentText)
+                }
             }
             if !item.isAllDay {
                 fieldGroup("ENDS") {
-                    DatePicker("", selection: $end, displayedComponents: [.date, .hourAndMinute])
-                        .labelsHidden().datePickerStyle(.field).disabled(isReadOnly)
-                        .tint(AtlasTheme.Colors.accentText)
+                    if isReadOnly {
+                        readOnlyDate(end)
+                    } else {
+                        DatePicker("", selection: $end, displayedComponents: [.date, .hourAndMinute])
+                            .labelsHidden().datePickerStyle(.field)
+                            .tint(AtlasTheme.Colors.accentText)
+                    }
                 }
             }
             fieldGroup("DESCRIPTION") {
@@ -303,6 +311,17 @@ struct CalendarEventDetailView: View {
     }
 
     // MARK: - Helpers
+
+    /// Read-only date/time as plain editorial mono text — no input chrome, so a
+    /// synced Canvas/external item reads as typography on paper, not a disabled box.
+    private func readOnlyDate(_ date: Date) -> some View {
+        let f = DateFormatter()
+        f.dateFormat = item.isAllDay ? "EEE, MMM d" : "EEE, MMM d · h:mm a"
+        return Text(f.string(from: date))
+            .atlasMono(size: 14)
+            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
     @ViewBuilder
     private func fieldGroup<Content: View>(_ label: String,

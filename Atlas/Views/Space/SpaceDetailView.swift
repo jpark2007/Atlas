@@ -285,36 +285,14 @@ struct SpaceDetailView: View {
         state.renameSpace(id: space.id, to: draftName)
     }
 
-    /// The four theme color tokens, shown in the dot popover to change the space color.
+    /// The dense swatch grid + hex field shown in the dot popover to change the space color.
     private var colorPickerPopover: some View {
-        HStack(spacing: 12) {
-            ForEach(spaceColorPalette, id: \.token) { swatch in
-                Button {
-                    state.setSpaceColor(id: space.id, color: swatch.color)
-                    showColorPicker = false
-                } label: {
-                    Circle()
-                        .fill(swatch.color)
-                        .frame(width: 24, height: 24)
-                        .overlay(
-                            Circle()
-                                .stroke(AtlasTheme.Colors.textPrimary,
-                                        lineWidth: space.color == swatch.color ? 2.5 : 0)
-                                .padding(-3)
-                        )
-                        .help(swatch.label)
-                }
-                .buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("SPACE COLOR").atlasCapsLabel()
+            AtlasColorGrid(selected: space.color) { color in
+                state.setSpaceColor(id: space.id, color: color)
             }
         }
         .padding(16)
-    }
-
-    /// The four AtlasTheme space tokens — the same palette New Space offers.
-    private var spaceColorPalette: [(token: String, label: String, color: Color)] {
-        [("school",   "Blue",   AtlasTheme.Colors.school),
-         ("personal", "Green",  AtlasTheme.Colors.personal),
-         ("side",     "Purple", AtlasTheme.Colors.side),
-         ("accent",   "Orange", AtlasTheme.Colors.accent)]
     }
 }

@@ -23,6 +23,10 @@ public enum AtlasDBError: LocalizedError {
 /// Only `spaces.color_token` is ever persisted. All other domain types receive
 /// `AtlasTheme.Colors.accent` as a placeholder on `toDomain()`; Task 2
 /// re-derives real colors from `spaceName` via `AppState.calendarSpaceColor(named:)`.
+///
+/// Beyond the four named tokens the stored value may be a literal `"#RRGGBB"`
+/// hex string (the custom-color picker). The columns are plain text end-to-end,
+/// so a hex value round-trips unharmed; `color(for:)`/`token(for:)` resolve it.
 public enum ColorToken: String {
     case school, personal, side, accent
 
@@ -35,17 +39,25 @@ public enum ColorToken: String {
         }
     }
 
-    /// Best-effort mapping: compare against known theme colors; defaults to "accent".
+    /// Best-effort mapping from a `Color` to a stored token. Named theme colors
+    /// serialize to their token; anything else serializes to its `"#RRGGBB"` hex
+    /// so custom colors persist. Falls back to "accent" only if hex extraction
+    /// fails (impossible for the sRGB colors this app produces).
     public static func token(for color: Color) -> String {
         if color == AtlasTheme.Colors.school   { return "school" }
         if color == AtlasTheme.Colors.personal { return "personal" }
         if color == AtlasTheme.Colors.side     { return "side" }
-        return "accent"
+        if color == AtlasTheme.Colors.accent   { return "accent" }
+        return color.atlasHexString ?? "accent"
     }
 
-    /// Returns the `Color` for a stored token string; defaults to accent.
+    /// Returns the `Color` for a stored token string. A leading `#` (or any
+    /// non-token value that scans as hex) resolves to that literal color; the
+    /// four named tokens map to their theme color; everything else → accent.
     public static func color(for token: String) -> Color {
-        ColorToken(rawValue: token)?.color ?? AtlasTheme.Colors.accent
+        if let named = ColorToken(rawValue: token) { return named.color }
+        if token.hasPrefix("#") { return Color(hex: token) }
+        return AtlasTheme.Colors.accent
     }
 }
 
