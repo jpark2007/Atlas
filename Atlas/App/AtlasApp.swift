@@ -57,6 +57,7 @@ struct AtlasApp: App {
         MenuBarExtra {
             AtlasMenuBarContent(focus: focus)
                 .environmentObject(state)
+                .environmentObject(auth)
                 .preferredColorScheme(.light)   // paper theme — don't follow a dark menu bar
         } label: {
             FocusMenuLabel(focus: focus)
@@ -84,7 +85,20 @@ struct FocusMenuLabel: View {
 /// session controls stacked on top while a session runs.
 struct AtlasMenuBarContent: View {
     @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var auth: AuthService
     @ObservedObject var focus: FocusViewModel
+
+    /// Same identity gate AppGate applies to RootView: the agenda instrument reads
+    /// `state.events`, so only show it once THIS user's data has actually landed
+    /// (`loadedUserID` == the authenticated id) — never the seed MockData or a
+    /// signed-out/loading blank. `.offline` shows the cached rows like RootView does.
+    private var dataReady: Bool {
+        switch auth.state {
+        case .signedIn: return state.loadedUserID == auth.session?.user.id
+        case .offline:  return true
+        default:        return false
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -93,14 +107,18 @@ struct AtlasMenuBarContent: View {
                 Divider().overlay(AtlasTheme.Colors.hairline)
             }
 
-            MiniMonthAgenda(
-                onOpenCalendar: {
-                    Self.closePopup()
-                    Self.activateMainWindow()
-                    state.route = .calendar
-                },
-                agendaLimit: 8   // a stacked day must not grow the popup unbounded
-            )
+            if dataReady {
+                MiniMonthAgenda(
+                    onOpenCalendar: {
+                        Self.closePopup()
+                        Self.activateMainWindow()
+                        state.route = .calendar
+                    },
+                    agendaLimit: 8   // a stacked day must not grow the popup unbounded
+                )
+            } else {
+                loadingPlaceholder
+            }
 
             Divider().overlay(AtlasTheme.Colors.hairline)
 
@@ -109,6 +127,18 @@ struct AtlasMenuBarContent: View {
         .padding(16)
         .frame(width: 340)
         .background(AtlasTheme.Colors.bgBase)
+    }
+
+    /// Neutral placeholder shown until the signed-in user's data loads — matches the
+    /// popup's paper style, never leaks demo events.
+    private var loadingPlaceholder: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text("Loading…")
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 120)
     }
 
     /// Focus session controls — the same actions the old menu rows offered.
