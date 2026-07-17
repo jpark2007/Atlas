@@ -44,12 +44,10 @@ struct SignInView: View {
                     .padding(.top, 2)
                 }
 
-                if AuthService.appleSignInAvailable {
-                    dividerOr
+                dividerOr
 
-                    VStack(spacing: 10) {
-                        appleButton
-                    }
+                VStack(spacing: 10) {
+                    appleButton
                 }
 
                 Button("Continue without an account") { auth.continueOffline() }
@@ -117,8 +115,16 @@ struct SignInView: View {
         .opacity(auth.isWorking ? 0.5 : 1)
     }
 
+    /// Native SIWA when the running binary carries the entitlement (Debug/dev);
+    /// otherwise the web-based Apple OAuth flow (Developer ID direct-download builds
+    /// can't ship the entitlement). Same button, same resulting session either way.
     private var appleButton: some View {
-        providerButton(title: "Sign in with Apple", system: "apple.logo") { Task { await auth.signInWithApple() } }
+        providerButton(title: "Sign in with Apple", system: "apple.logo") {
+            Task {
+                if AuthService.appleSignInAvailable { await auth.signInWithApple() }
+                else { await auth.signInWithAppleWeb() }
+            }
+        }
     }
 
     /// Outlined ink control — the editorial system never fills a button.

@@ -149,6 +149,26 @@ final class AuthService: ObservableObject {
         }
     }
 
+    /// Web-based Sign in with Apple for Developer ID (direct-download) builds, which
+    /// legally can't carry the native `applesignin` entitlement (`appleSignInAvailable`
+    /// == false). Runs Supabase-hosted Apple OAuth (PKCE) in the same
+    /// ASWebAuthenticationSession browser flow as Google, ending in the identical
+    /// Keychain-persisted session as native SIWA — one session storage path.
+    func signInWithAppleWeb() async {
+        await run {
+            let verifier = PKCE.verifier()
+            pkceVerifier = verifier
+            let url = api.pkceAuthorizeURL(provider: "apple", codeChallenge: PKCE.challenge(verifier))
+            let callback = try await startWebAuth(url: url)
+            guard let code = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "code" })?.value else {
+                throw SupabaseAuthError(message: "Apple sign-in returned no authorization code.")
+            }
+            let s = try await api.exchangePKCE(authCode: code, verifier: verifier)
+            persist(s)
+        }
+    }
+
     // MARK: - Google OAuth (PKCE via web auth session)
 
     func signInWithGoogle() async {

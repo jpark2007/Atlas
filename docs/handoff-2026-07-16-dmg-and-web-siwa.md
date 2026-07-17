@@ -33,9 +33,11 @@ Tip of main includes tonight's three completed waves — all **deployed to prod*
 4. **After that**: mobile Settings hub (@ merge "settings hub" — Account/Integrations/
    Notifications/General/Help & Tips subpages with chevrons) and the DMG work below.
 
-Site live at **https://atlas-landing-woad.vercel.app** (hardened deploy verified:
-headers live, `supabase-staging/` 404s, honeypot present). NOTE: `atlas-landing.vercel.app`
-(no suffix) is a DIFFERENT project — never deploy there.
+Site live at **https://atlaslm.vercel.app** (Drew renamed the domain 07-16; the old
+`atlas-landing-woad.vercel.app` now 307-redirects there — same Vercel project
+`atlas-landing`, `landing/.vercel/project.json` link still correct, deploy as before).
+Hardened deploy verified: headers live, `supabase-staging/` 404s, honeypot present.
+NOTE: `atlas-landing.vercel.app` (no suffix) is a DIFFERENT project — never deploy there.
 
 ## DMG status — one script-run from done
 
@@ -63,7 +65,7 @@ headers live, `supabase-staging/` 404s, honeypot present). NOTE: `atlas-landing.
 3. `cd landing && vercel deploy --prod --yes` — this also takes the already-committed
    download button + favicon live (current live site still shows "Coming soon", which
    is correct while no DMG exists — no dead link).
-4. `curl -I https://atlas-landing-woad.vercel.app/downloads/Atlas.dmg` → 200, then
+4. `curl -I https://atlaslm.vercel.app/downloads/Atlas.dmg` → 200, then
    download + open on a Mac to confirm Gatekeeper accepts (stapled).
 5. Send Drew the link for Jonah.
    Consider whether to commit the DMG to git (it's a binary; committing to `landing/downloads/`
