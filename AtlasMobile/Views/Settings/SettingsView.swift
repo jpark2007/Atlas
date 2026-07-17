@@ -63,41 +63,93 @@ struct SettingsView: View {
 
     private let leadOptions = [0, 5, 15, 30, 60]
 
+    /// The hub: each row pushes a detail subpage. `.task`/`.onChange` live here on the
+    /// root — which stays alive under any pushed page — so connections load and synced
+    /// prefs push regardless of which subpage is on screen.
     var body: some View {
         List {
-            accountSection
-            captureSection
-            notificationsSection
-            voiceSection
-            integrationsSection
-            calendarsSection
-            helpSection
+            Section {
+                navRow("Account") { accountPage }
+                navRow("Integrations") { integrationsPage }
+                navRow("Notifications") { notificationsPage }
+                navRow("General") { generalPage }
+                navRow("Help & Tips") { helpPage }
+            }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .background(MobileTheme.bg.ignoresSafeArea())
-        .tint(MobileTheme.ink)
+        .settingsListChrome()
         .task {
             let settings = await UNUserNotificationCenter.current().notificationSettings()
             osAuthorized = settings.authorizationStatus != .denied
         }
         .task { await loadConnections() }
-        .alert("Delete your Atlas account?", isPresented: $showDeleteConfirm) {
-            Button("Delete account", role: .destructive) { performDeleteAccount() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This permanently erases your account and all your Atlas data — spaces, projects, tasks, events and notes. This can't be undone.")
+        // Synced preferences — push the change (debounced). The pull-triggered echo of
+        // either key is recognized as redundant and skipped.
+        .onChange(of: defaultSpaceName) { _, _ in store.pushSyncedSettings() }
+        .onChange(of: prefs)            { _, _ in store.pushSyncedSettings() }
+    }
+
+    // MARK: - Hub rows & subpages
+
+    /// A top-level hub row: a plain-List NavigationLink (its own trailing disclosure
+    /// chevron) that pushes a detail subpage within the Settings NavigationStack.
+    private func navRow<Destination: View>(
+        _ title: String, @ViewBuilder destination: @escaping () -> Destination
+    ) -> some View {
+        NavigationLink { destination() } label: { Text(title).rowLabel() }
+            .rowStyle()
+    }
+
+    private var accountPage: some View {
+        List { accountSection }
+            .settingsListChrome()
+            .navigationTitle("Account")
+            .navigationBarTitleDisplayMode(.inline)
+            .alert("Delete your Atlas account?", isPresented: $showDeleteConfirm) {
+                Button("Delete account", role: .destructive) { performDeleteAccount() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This permanently erases your account and all your Atlas data — spaces, projects, tasks, events and notes. This can't be undone.")
+            }
+    }
+
+    private var integrationsPage: some View {
+        List {
+            calendarsSection
+            integrationsSection
         }
+        .settingsListChrome()
+        .navigationTitle("Integrations")
+        .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("Disconnect Canvas?", isPresented: $showCanvasDisconnectConfirm, titleVisibility: .visible) {
             Button("Disconnect", role: .destructive) { disconnectCanvas() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Atlas will stop importing your Canvas assignments and events. You can reconnect anytime with your feed link.")
         }
-        // Synced preferences — push the change (debounced). The pull-triggered echo of
-        // either key is recognized as redundant and skipped.
-        .onChange(of: defaultSpaceName) { _, _ in store.pushSyncedSettings() }
-        .onChange(of: prefs)            { _, _ in store.pushSyncedSettings() }
+    }
+
+    private var notificationsPage: some View {
+        List { notificationsSection }
+            .settingsListChrome()
+            .navigationTitle("Notifications")
+            .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var generalPage: some View {
+        List {
+            captureSection
+            voiceSection
+        }
+        .settingsListChrome()
+        .navigationTitle("General")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var helpPage: some View {
+        List { helpSection }
+            .settingsListChrome()
+            .navigationTitle("Help & Tips")
+            .navigationBarTitleDisplayMode(.inline)
     }
 
     // MARK: - Account
@@ -716,6 +768,16 @@ struct SettingsView: View {
 // MARK: - Editorial row styling
 
 private extension View {
+    /// Shared list chrome for the Settings hub and every subpage — plain list, paper
+    /// background, ink tint. Keeps the six pages visually identical.
+    func settingsListChrome() -> some View {
+        self
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(MobileTheme.bg.ignoresSafeArea())
+            .tint(MobileTheme.ink)
+    }
+
     /// Shared row chrome for the Settings list — full-bleed hairline separators on
     /// the bg, no card fill.
     func rowStyle() -> some View {
