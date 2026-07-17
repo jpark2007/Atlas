@@ -37,8 +37,10 @@
  * Deploy: supabase functions deploy google-connect --project-ref jxrmozhgsebwtbdleyxp
  */
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkRateLimit, tooManyRequests } from "../_shared/rate_limit.ts";
+import { refreshAccessToken } from "../_shared/google_pull.ts";
+import { diffSelection, fetchCalendarList } from "../_shared/google_calendars.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -61,6 +63,70 @@ function spaceConflict(err: { code?: string; message?: string } | null): boolean
   return err?.code === UNIQUE_VIOLATION && !!err.message?.includes("space_id");
 }
 
+/**
+ * Enumerate the account's calendars (calendarList.list) and upsert the per-connection
+ * registry (google_connection_calendars, 0036). Best-effort: a fetch/quota failure
+ * NEVER fails the connect — we guarantee a selected 'primary' row so the sync still
+ * has a calendar. An existing calendar's `selected` choice is preserved across a
+ * reconnect; a brand-new calendar defaults to selected only if it is the primary
+ * (v1 behavior: primary syncs, secondaries are opt-in).
+ */
+async function syncConnectionCalendars(
+  admin: SupabaseClient,
+  connectionId: string,
+  googleEmail: string,
+  refreshToken: string,
+  clientId: string | undefined,
+  clientSecret: string | undefined,
+): Promise<void> {
+  // Existing selections to preserve across a reconnect / re-enumeration.
+  const { data: existing } = await admin
+    .from("google_connection_calendars")
+    .select("calendar_id, selected")
+    .eq("connection_id", connectionId);
+  const selById = new Map(
+    ((existing ?? []) as { calendar_id: string; selected: boolean }[]).map((r) => [r.calendar_id, r.selected]),
+  );
+
+  let entries: { calendarId: string; summary: string; isPrimary: boolean }[] = [];
+  if (clientId && clientSecret) {
+    try {
+      const accessToken = await refreshAccessToken(refreshToken, clientId, clientSecret);
+      entries = await fetchCalendarList(accessToken);
+    } catch {
+      entries = []; // fall through to the primary-only fallback below
+    }
+  }
+
+  if (entries.length === 0) {
+    // Enumeration unavailable (no client creds / fetch error): guarantee a primary
+    // row so the connection syncs its primary calendar exactly as before.
+    if (!selById.has("primary")) {
+      await admin.from("google_connection_calendars").insert({
+        connection_id: connectionId,
+        calendar_id: "primary",
+        summary: googleEmail,
+        is_primary: true,
+        selected: true,
+      });
+    }
+    return;
+  }
+
+  const rows = entries.map((e) => ({
+    connection_id: connectionId,
+    calendar_id: e.calendarId,
+    summary: e.summary,
+    is_primary: e.isPrimary,
+    // Preserve an existing choice; new calendars default to primary-only. `sync_token`
+    // is intentionally omitted so an existing calendar keeps its incremental cursor.
+    selected: selById.has(e.calendarId) ? selById.get(e.calendarId)! : e.isPrimary,
+  }));
+  await admin
+    .from("google_connection_calendars")
+    .upsert(rows, { onConflict: "connection_id,calendar_id" });
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -75,6 +141,11 @@ Deno.serve(async (req: Request) => {
   if (!supabaseUrl || !anonKey || !serviceKey) {
     return json({ error: "Server not configured" }, 500);
   }
+  // Google creds (project-wide secrets, shared with google-sync) let us enumerate the
+  // account's calendars at connect time. Absent → calendar enumeration is skipped and
+  // the connection falls back to a primary-only row (never fatal to connect).
+  const googleClientId = Deno.env.get("GOOGLE_CLIENT_ID");
+  const googleClientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
 
   // ── Real JWT verification: resolve the caller from their Supabase token ──
   const authHeader = req.headers.get("Authorization") ?? "";
@@ -163,17 +234,27 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true });
   }
 
-  // ── RENAME / RE-MAP (PATCH) ─────────────────────────────────
+  // ── RENAME / RE-MAP / CALENDAR SELECTION (PATCH) ────────────
   if (req.method === "PATCH") {
     let connectionId: string;
     let name: string | undefined;
     let spaceId: string | null | undefined;
+    let calendars: string[] | undefined;
     try {
       const body = await req.json();
       if (typeof body?.connectionId !== "string" || !body.connectionId.trim()) {
         return json({ error: "Body must contain a non-empty `connectionId` string" }, 400);
       }
       connectionId = body.connectionId.trim();
+      // `calendars`: the FULL set of calendar ids the user wants synced for this
+      // connection. Present ⇒ this is a selection update (handled below, independent
+      // of name/space). A pure selection PATCH omits name/spaceId.
+      if (body.calendars !== undefined) {
+        if (!Array.isArray(body.calendars) || body.calendars.some((c: unknown) => typeof c !== "string")) {
+          return json({ error: "`calendars` must be an array of calendar-id strings" }, 400);
+        }
+        calendars = (body.calendars as string[]).map((c) => c.trim()).filter((c) => c.length > 0);
+      }
       if (body.name !== undefined) {
         if (typeof body.name !== "string" || !body.name.trim()) {
           return json({ error: "`name` must be a non-empty string" }, 400);
@@ -193,8 +274,84 @@ Deno.serve(async (req: Request) => {
     } catch {
       return json({ error: "Invalid JSON body" }, 400);
     }
+
+    // ── CALENDAR SELECTION update ──────────────────────────────
+    // Set which of the connection's calendars sync. Newly selected → reset its
+    // per-calendar cursor so the next tick full-resyncs it. Newly deselected → delete
+    // that calendar's mirrored events from Atlas WITHOUT deleting them from Google
+    // (clear the tombstones the delete trigger writes), then reset its cursor.
+    if (calendars !== undefined) {
+      // Ownership: the connection must belong to the caller.
+      const { data: conn } = await admin
+        .from("google_connections")
+        .select("id")
+        .eq("id", connectionId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!conn) return json({ error: "No such Google connection" }, 404);
+
+      const { data: calRows } = await admin
+        .from("google_connection_calendars")
+        .select("calendar_id, selected")
+        .eq("connection_id", connectionId);
+      const currentlySelected = ((calRows ?? []) as { calendar_id: string; selected: boolean }[])
+        .filter((r) => r.selected)
+        .map((r) => r.calendar_id);
+      const { toSelect, toDeselect } = diffSelection(currentlySelected, calendars);
+
+      for (const calId of toSelect) {
+        // Reset the cursor so the next sync tick full-resyncs this newly-on calendar.
+        const { error } = await admin
+          .from("google_connection_calendars")
+          .update({ selected: true, sync_token: null })
+          .eq("connection_id", connectionId)
+          .eq("calendar_id", calId);
+        if (error) return json({ error: "Failed to update calendar selection" }, 500);
+      }
+
+      for (const calId of toDeselect) {
+        // Collect this calendar's mirrored gids BEFORE deleting so we can clear the
+        // tombstones the AFTER DELETE trigger writes — a deselect must not delete the
+        // user's real Google events, only their Atlas mirrors.
+        const { data: evs } = await admin
+          .from("events")
+          .select("google_event_id")
+          .eq("user_id", userId)
+          .eq("google_connection_id", connectionId)
+          .eq("google_calendar_id", calId);
+        const gids = ((evs ?? []) as { google_event_id: string | null }[])
+          .map((e) => e.google_event_id)
+          .filter((g): g is string => !!g);
+
+        const { error: delErr } = await admin
+          .from("events")
+          .delete()
+          .eq("user_id", userId)
+          .eq("google_connection_id", connectionId)
+          .eq("google_calendar_id", calId);
+        if (delErr) return json({ error: "Failed to remove deselected calendar's events" }, 500);
+
+        if (gids.length > 0) {
+          await admin
+            .from("deleted_google_events")
+            .delete()
+            .eq("google_connection_id", connectionId)
+            .in("google_event_id", gids);
+        }
+
+        const { error: updErr } = await admin
+          .from("google_connection_calendars")
+          .update({ selected: false, sync_token: null })
+          .eq("connection_id", connectionId)
+          .eq("calendar_id", calId);
+        if (updErr) return json({ error: "Failed to update calendar selection" }, 500);
+      }
+
+      return json({ ok: true });
+    }
+
     if (name === undefined && spaceId === undefined) {
-      return json({ error: "Nothing to update (send `name` and/or `spaceId`)" }, 400);
+      return json({ error: "Nothing to update (send `name`, `spaceId`, or `calendars`)" }, 400);
     }
 
     const patch: Record<string, unknown> = {};
@@ -394,6 +551,11 @@ Deno.serve(async (req: Request) => {
   if (priorSecretId && priorSecretId !== newSecretId) {
     await admin.rpc("delete_google_secret", { secret_id: priorSecretId });
   }
+
+  // Enumerate the account's calendars so the client can offer a per-calendar picker
+  // (0036). Best-effort — a failure here leaves a primary-only row and never fails the
+  // connect; the picker still shows primary and the sync runs as before.
+  await syncConnectionCalendars(admin, connectionId, googleEmail, refreshToken, googleClientId, googleClientSecret);
 
   return json({ ok: true, id: connectionId, status: "active" });
 });

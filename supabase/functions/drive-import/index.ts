@@ -15,7 +15,9 @@
  *
  *   POST /functions/v1/drive-import
  *        { "projectId": "<uuid>",
- *          "files": [{ "id", "name", "mimeType", "modifiedTime" }, …] }
+ *          "files": [{ "id", "name"?, "mimeType"?, "modifiedTime"? }, …] }
+ *          Only `id` is required — the server reads each file's metadata itself
+ *          (see enrichment note below); client-supplied metadata is honored when sent.
  *        → verifies the Supabase JWT, confirms the project belongs to the caller,
  *          and registers one project_references row per file (deduped by
  *          drive_file_id). A Google Doc gets a backing `notes` row — UNLESS the same
@@ -23,7 +25,9 @@
  *          reference just points at that existing note (same Doc = same note). Fresh
  *          Doc-notes are then pulled inline (best-effort) so they land populated
  *          instead of waiting for the 5-min cron; everything else is a view-only
- *          `file` reference.  →  200 { ok, imported, skipped, pulled }
+ *          `file` reference. A file whose metadata can't be read is counted as
+ *          `failed` (never silently dropped).
+ *          →  200 { ok, imported, skipped, failed, pulled, skippedOverCap }
  *
  * drive.file grant note: the Picker grants file access to the Google **Cloud project**
  * (app), keyed by the appId/project-number + the OAuth client. For the pull cron to
@@ -46,7 +50,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { type DocNoteRef, mintAccessToken, pullDocNoteReference } from "../_shared/google_pull.ts";
+import { type DocNoteRef, driveFileMeta, mintAccessToken, pullDocNoteReference } from "../_shared/google_pull.ts";
 import { checkRateLimit, tooManyRequests } from "../_shared/rate_limit.ts";
 
 const GOOGLE_DOC_MIME = "application/vnd.google-apps.document";
@@ -198,10 +202,13 @@ async function onPicked(data) {
 }
 
 // ── POST: register the picked files as project references. ──
+// `mimeType`/`name` are optional on the wire: the Mac picker sends bare ids and the
+// server enriches each below (server-side read — see enrichment note). A client that
+// already resolved the metadata may still send it (backwards compatible).
 interface PickedFile {
   id: string;
   name: string;
-  mimeType: string;
+  mimeType: string | null; // null until enriched server-side
   modifiedTime: string | null;
 }
 
@@ -247,17 +254,17 @@ Deno.serve(async (req: Request) => {
     projectId = b.projectId.trim();
     files = (b.files as unknown[])
       .map((f) => f as Record<string, unknown>)
-      .filter((f) => typeof f?.id === "string" && typeof f?.mimeType === "string")
+      .filter((f) => typeof f?.id === "string" && (f.id as string).trim())
       .map((f) => ({
         id: (f.id as string),
-        name: typeof f.name === "string" && f.name.trim() ? (f.name as string) : "Untitled",
-        mimeType: (f.mimeType as string),
+        name: typeof f.name === "string" && f.name.trim() ? (f.name as string) : "",
+        mimeType: typeof f.mimeType === "string" ? (f.mimeType as string) : null,
         modifiedTime: typeof f.modifiedTime === "string" ? (f.modifiedTime as string) : null,
       }));
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
   }
-  if (files.length === 0) return json({ ok: true, imported: 0, skipped: 0, skippedOverCap: 0 });
+  if (files.length === 0) return json({ ok: true, imported: 0, skipped: 0, failed: 0, skippedOverCap: 0 });
 
   // Truncate to the per-import cap and report the remainder rather than failing.
   let skippedOverCap = 0;
@@ -285,6 +292,54 @@ Deno.serve(async (req: Request) => {
   if (projErr) return json({ error: "Failed to load project" }, 500);
   if (!project) return json({ error: "Project not found" }, 404);
   const spaceName = project.space_name as string;
+
+  // ── Server-side metadata enrichment ──
+  // The Mac picker sends bare ids: the file was picked under Google's onepick WEB
+  // client, so the Mac's own (desktop-client) token can't reliably read it. We read
+  // each file's metadata here with the server-minted token instead of on the Mac, so
+  // a read that fails is COUNTED as `failed` and surfaced — never swallowed into a
+  // silent imported:0. Client-supplied metadata (older clients) is kept as-is.
+  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+  const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+  let accessToken: string | null = null; // reused by the inline Doc pull below
+  let failed = 0;
+  const pickedCount = files.length; // before enrichment drops unreadable files
+  if (files.some((f) => !f.mimeType)) {
+    if (clientId && clientSecret) {
+      try {
+        accessToken = await mintAccessToken(admin, userId, clientId, clientSecret);
+      } catch (e) {
+        console.error(`drive-import: mintAccessToken failed: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+    const enriched: PickedFile[] = [];
+    for (const f of files) {
+      if (f.mimeType) { enriched.push(f); continue; }
+      if (!accessToken) {
+        console.error(`drive-import: cannot enrich ${f.id} — no Google access token`);
+        failed++;
+        continue;
+      }
+      const metaRes = await driveFileMeta(accessToken, f.id);
+      if (!metaRes.ok) {
+        console.error(`drive-import: enrich ${f.id} failed — drive ${metaRes.status}: ${metaRes.message}`);
+        failed++;
+        continue;
+      }
+      if (metaRes.meta.trashed || !metaRes.meta.mimeType) {
+        console.error(`drive-import: enrich ${f.id} dropped — ${metaRes.meta.trashed ? "trashed" : "no mimeType"}`);
+        failed++;
+        continue;
+      }
+      enriched.push({
+        id: f.id,
+        name: metaRes.meta.name ?? f.name,
+        mimeType: metaRes.meta.mimeType,
+        modifiedTime: metaRes.meta.modifiedTime ?? null,
+      });
+    }
+    files = enriched;
+  }
 
   // Dedupe against the project's existing pool (same lesson as 0009/C1 — dedupe in
   // code, never rely on ON CONFLICT). A re-imported file is skipped, not duplicated.
@@ -343,7 +398,7 @@ Deno.serve(async (req: Request) => {
           user_id: userId,
           project_id: projectId,
           kind: "doc_note",
-          title: f.name,
+          title: f.name || "Untitled",
           drive_file_id: f.id,
           mime_type: f.mimeType,
           modified_time: existingDoc.modified_time,
@@ -360,7 +415,7 @@ Deno.serve(async (req: Request) => {
           user_id: userId,
           space_name: spaceName,
           project_id: projectId,
-          title: f.name,
+          title: f.name || "Untitled",
           body: "",
           updated_at: nowISO,
           is_external: true,
@@ -371,7 +426,7 @@ Deno.serve(async (req: Request) => {
           user_id: userId,
           project_id: projectId,
           kind: "doc_note",
-          title: f.name,
+          title: f.name || "Untitled",
           drive_file_id: f.id,
           mime_type: f.mimeType,
           modified_time: null, // null ⇒ first pull fetches content
@@ -393,7 +448,7 @@ Deno.serve(async (req: Request) => {
         user_id: userId,
         project_id: projectId,
         kind: "file",
-        title: f.name,
+        title: f.name || "Untitled",
         drive_file_id: f.id,
         mime_type: f.mimeType,
         modified_time: f.modifiedTime,
@@ -420,10 +475,12 @@ Deno.serve(async (req: Request) => {
   // content, so only newDocNoteRefs are pulled.
   let pulled = 0;
   try {
-    const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
-    const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
-    if (clientId && clientSecret && newDocNoteRefs.length > 0) {
-      const accessToken = await mintAccessToken(admin, userId, clientId, clientSecret);
+    // Reuse the token minted for enrichment; mint on demand when the client sent
+    // metadata (so enrichment was skipped) but there are fresh Doc-notes to pull.
+    if (!accessToken && clientId && clientSecret && newDocNoteRefs.length > 0) {
+      accessToken = await mintAccessToken(admin, userId, clientId, clientSecret);
+    }
+    if (accessToken && newDocNoteRefs.length > 0) {
       const runISO = new Date().toISOString();
       for (const ref of newDocNoteRefs) {
         try {
@@ -434,5 +491,9 @@ Deno.serve(async (req: Request) => {
     }
   } catch (_e) { /* no connection / vault miss: rows stay pending */ }
 
-  return json({ ok: true, imported: refRows.length, skipped, pulled, skippedOverCap });
+  console.log(
+    `drive-import: ${pickedCount} picked → ${refRows.length} registered ` +
+      `(skipped ${skipped}, failed ${failed}, pulled ${pulled}, overCap ${skippedOverCap})`,
+  );
+  return json({ ok: true, imported: refRows.length, skipped, failed, pulled, skippedOverCap });
 });

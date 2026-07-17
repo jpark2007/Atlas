@@ -140,13 +140,16 @@ struct SpaceDetailView: View {
             Button {
                 presentInvite = true
             } label: {
-                Text("Invite")
-                    .atlasFont(size: 13, weight: .medium, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                HStack(spacing: 4) {
+                    Image(systemName: "person.badge.plus").atlasFont(size: 11, weight: .semibold)
+                    Text("Invite people").atlasFont(size: 13, weight: .medium, design: .rounded)
+                }
+                .foregroundStyle(AtlasTheme.Colors.accentText)
             }
             .buttonStyle(.plain)
+            .help("Invite someone to collaborate on this space")
             .sheet(isPresented: $presentInvite) {
-                InviteToSpaceSheet(spaceId: space.id)
+                InviteToSpaceSheet(spaceId: space.id, spaceName: space.name)
             }
             // Counts describe the visible (pending/upcoming) lists — a finished
             // space saying "0 tasks" above a 30-COMPLETED reveal would read wrong.

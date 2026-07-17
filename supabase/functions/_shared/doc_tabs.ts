@@ -53,6 +53,10 @@ export interface DocTab {
   markdown: string;
   writable: boolean;
   readonlyReason: string | null;
+  /** Advisory: a cosmetic inline style (text color, highlight, strikethrough,
+   *  small caps, super/subscript) was stripped on import. The tab stays writable;
+   *  the styling survives in Google unless the tab is edited and saved. */
+  droppedStyling: boolean;
   images: DocImage[];
 }
 
@@ -127,6 +131,7 @@ function walk(tabs: any[], parent: string | null, acc: DocTab[]) {
       markdown: conv.markdown,
       writable: conv.reason === null,
       readonlyReason: conv.reason,
+      droppedStyling: conv.droppedStyling,
       images: conv.images,
     });
     if (Array.isArray(t?.childTabs) && t.childTabs.length) {
@@ -169,7 +174,7 @@ function paraIsland(p: any, inlineObjects: any): boolean {
 // ── Docs JSON → markdown (one tab) ──────────────────────────────────────────
 
 // deno-lint-ignore no-explicit-any
-function tabToMarkdown(documentTab: any): { markdown: string; reason: string | null; images: DocImage[] } {
+function tabToMarkdown(documentTab: any): { markdown: string; reason: string | null; images: DocImage[]; droppedStyling: boolean } {
   const content: any[] = documentTab?.body?.content ?? [];
   const lists: any = documentTab?.lists ?? {};
   // Inline objects (images) live PER-TAB when the Doc is fetched with
@@ -177,6 +182,7 @@ function tabToMarkdown(documentTab: any): { markdown: string; reason: string | n
   const inlineObjects: any = documentTab?.inlineObjects ?? {};
   const images: DocImage[] = [];
   let reason: string | null = null;
+  let droppedStyling = false; // advisory: a cosmetic inline style was stripped
   const flag = (r: string) => { if (reason === null) reason = r; };
   const lines: string[] = [];
   let orderedCounter = 0;
@@ -228,9 +234,9 @@ function tabToMarkdown(documentTab: any): { markdown: string; reason: string | n
     let line = "";
     for (const e of p.elements ?? []) {
       if (e.textRun !== undefined) {
-        const runReason = runToMarkdown(e.textRun);
-        line += runReason.md;
-        if (!island && runReason.reason) flag(runReason.reason);
+        const run = runToMarkdown(e.textRun);
+        line += run.md;
+        if (!island && run.dropped) droppedStyling = true;
       } else if (e.inlineObjectElement !== undefined) {
         // Inline image: harvest it (re-host at pull time; re-insert at write time
         // for WRITABLE image lines, display-only for frozen ones) and emit a
@@ -269,7 +275,7 @@ function tabToMarkdown(documentTab: any): { markdown: string; reason: string | n
   });
 
   const markdown = lines.join("\n") + (lines.length ? "\n" : "");
-  return { markdown, reason, images };
+  return { markdown, reason, images, droppedStyling };
 }
 
 /** True when an image carries a crop, rotation, or brightness/contrast/
@@ -285,34 +291,37 @@ function isCropLocked(imgProps: any): boolean {
 }
 
 // deno-lint-ignore no-explicit-any
-function runToMarkdown(run: any): { md: string; reason: string | null } {
+function runToMarkdown(run: any): { md: string; dropped: boolean } {
   const raw = (run.content as string ?? "").replace(/\n$/, "");
   // Empty carrier run (e.g. a styled paragraph-terminating "\n"): drop it, marks
   // and all, matching RichDocMarkdown.swift's `guard !run.text.isEmpty` — an
   // invisible run neither prints marks (degenerate `****`) nor blocks writes.
-  if (raw === "") return { md: "", reason: null };
+  if (raw === "") return { md: "", dropped: false };
   const ts = run.textStyle ?? {};
   const link: string | undefined = ts.link?.url;
-  let reason: string | null = null;
 
-  // Strictness: any styling beyond the dialect flags the tab read-only.
-  // Linked runs are exempt on underline + foregroundColor (Google's auto link style).
-  if (ts.strikethrough === true) reason = "strikethrough";
-  else if (ts.smallCaps === true) reason = "small caps";
-  else if (ts.baselineOffset === "SUPERSCRIPT" || ts.baselineOffset === "SUBSCRIPT") reason = "super/subscript";
-  else if (ts.backgroundColor?.color !== undefined) reason = "highlight color";
-  else if (ts.foregroundColor?.color !== undefined && link === undefined) reason = "text color";
+  // Cosmetic inline styles the dialect can't round-trip (text color, highlight,
+  // strikethrough, small caps, super/subscript) no longer lock the tab: we STRIP
+  // them, keep the text and its bold/italic/underline/link marks, and raise an
+  // advisory `dropped` flag so the editor can note the loss. Write-back never
+  // re-applies these, so the styling survives in Google unless the tab is saved.
+  // Linked runs' foregroundColor is Google's auto link style — not user styling.
+  const dropped = ts.strikethrough === true ||
+    ts.smallCaps === true ||
+    ts.baselineOffset === "SUPERSCRIPT" || ts.baselineOffset === "SUBSCRIPT" ||
+    ts.backgroundColor?.color !== undefined ||
+    (ts.foregroundColor?.color !== undefined && link === undefined);
 
   if (link !== undefined) {
     // Marks inside links are dropped (dialect has no styled links).
-    return { md: `[${esc(raw)}](${link})`, reason };
+    return { md: `[${esc(raw)}](${link})`, dropped };
   }
   let md = esc(raw);
   if (ts.underline === true) md = `<u>${md}</u>`;
   if (ts.bold === true && ts.italic === true) md = `***${md}***`;
   else if (ts.bold === true) md = `**${md}**`;
   else if (ts.italic === true) md = `*${md}*`;
-  return { md, reason };
+  return { md, dropped };
 }
 
 /** Escape dialect-significant characters. Matches RichDocMarkdown.swift's

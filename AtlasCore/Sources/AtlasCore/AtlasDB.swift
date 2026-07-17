@@ -779,6 +779,7 @@ public struct DocNoteTabRow: Codable {
     public var bodyMd: String
     public var writable: Bool
     public var readonlyReason: String?
+    public var droppedStyling: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -791,12 +792,13 @@ public struct DocNoteTabRow: Codable {
         case bodyMd         = "body_md"
         case writable
         case readonlyReason = "readonly_reason"
+        case droppedStyling = "dropped_styling"
     }
 
     public func toDomain() -> DocNoteTab {
         DocNoteTab(id: id, referenceID: referenceId, tabId: tabId, parentTabId: parentTabId,
                    title: title, ord: ord, bodyMD: bodyMd, writable: writable,
-                   readonlyReason: readonlyReason)
+                   readonlyReason: readonlyReason, droppedStyling: droppedStyling ?? false)
     }
 }
 
@@ -903,6 +905,34 @@ public struct GoogleConnection: Codable, Identifiable, Equatable {
 
     /// `lastSyncedAt` parsed leniently (with or without fractional seconds).
     public var lastSyncedDate: Date? { ReferenceRow.date(from: lastSyncedAt) }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GoogleConnectionCalendar — one calendar of a connection (per-calendar sync, 0036)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One row of `google_connection_calendars` (migration 0036): a calendar belonging
+/// to a Google connection, and whether the user has it syncing. The client reads only
+/// owner-granted columns (`sync_token` is service-role only), so the load selects an
+/// explicit list. Toggling `selected` (via the google-connect edge function) is what
+/// opts a calendar in/out of sync.
+public struct GoogleConnectionCalendar: Codable, Identifiable, Equatable {
+    public var connectionId: UUID
+    public var calendarId: String
+    public var summary: String
+    public var isPrimary: Bool
+    public var selected: Bool
+
+    /// Stable identity for SwiftUI lists (a calendar id is unique within a connection).
+    public var id: String { "\(connectionId.uuidString):\(calendarId)" }
+
+    enum CodingKeys: String, CodingKey {
+        case connectionId = "connection_id"
+        case calendarId   = "calendar_id"
+        case summary
+        case isPrimary    = "is_primary"
+        case selected
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1277,6 +1307,22 @@ public final class AtlasDB {
             "google_connections",
             columns: "id,name,google_email,calendar_id,space_id,status,last_error,last_synced_at")
         return rows.sorted { $0.id.uuidString < $1.id.uuidString }
+    }
+
+    /// Reads the caller's `google_connection_calendars` rows (per-calendar selection,
+    /// 0036), scoped by RLS to connections the user owns. Filters to one connection
+    /// client-side (mirrors `fetchDocNoteTabs`), primary first then by name, so the
+    /// calendar picker renders in a stable order.
+    public func loadGoogleConnectionCalendars(connectionId: UUID) async throws -> [GoogleConnectionCalendar] {
+        let rows: [GoogleConnectionCalendar] = try await getColumns(
+            "google_connection_calendars",
+            columns: "connection_id,calendar_id,summary,is_primary,selected")
+        return rows
+            .filter { $0.connectionId == connectionId }
+            .sorted {
+                if $0.isPrimary != $1.isPrimary { return $0.isPrimary }
+                return $0.summary.localizedCaseInsensitiveCompare($1.summary) == .orderedAscending
+            }
     }
 
     /// The dedicated Google login powering Drive/Docs background work (import /

@@ -435,16 +435,20 @@ struct ProjectDetailView: View {
                 pickerListener = nil
                 guard !ids.isEmpty else { return }
 
-                let token = try await googleAuth.validAccessToken()
-                let files = await enrichPickedFiles(ids: ids, token: token)
+                let files = ids.map { PickedFile(id: $0) }
                 // Mint the JWT only now: the interactive picker round-trip can outlive
                 // the 1-hour token TTL, so a click-time capture arrives expired.
                 guard let jwt = await auth.validAccessToken() else {
                     referenceError = "Your Atlas session expired — sign in again to finish the import."
                     return
                 }
-                try await registerDriveImports(projectID: project.id, files: files, jwt: jwt)
+                let result = try await registerDriveImports(projectID: project.id, files: files, jwt: jwt)
                 await state.reloadReferences()
+                // Every picked file failed server-side enrichment (imported 0): surface it
+                // rather than let the import vanish silently.
+                if result.imported == 0 {
+                    referenceError = "Couldn't import the selected file(s) — try reconnecting Google in Settings."
+                }
             } catch is DriveOnePickError {
                 // User cancelled or the wait timed out — nothing to surface.
                 pickerListener = nil
@@ -579,13 +583,16 @@ struct ProjectDetailView: View {
                 Button {
                     presentInvite = true
                 } label: {
-                    Text("Invite")
-                        .atlasFont(size: 13, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.badge.plus").atlasFont(size: 11, weight: .semibold)
+                        Text("Invite people").atlasFont(size: 13, weight: .medium, design: .rounded)
+                    }
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
                 }
                 .buttonStyle(.plain)
+                .help("Invite someone to collaborate on this project")
                 .sheet(isPresented: $presentInvite) {
-                    InviteMemberSheet(projectId: project.id)
+                    InviteMemberSheet(projectId: project.id, projectName: project.name)
                 }
             }
             HStack(spacing: 16) {

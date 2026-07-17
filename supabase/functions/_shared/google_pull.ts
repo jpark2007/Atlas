@@ -64,7 +64,7 @@ async function readCappedText(res: Response, what: string): Promise<string> {
   return text;
 }
 
-async function refreshAccessToken(refreshToken: string, clientId: string, clientSecret: string): Promise<string> {
+export async function refreshAccessToken(refreshToken: string, clientId: string, clientSecret: string): Promise<string> {
   const body = new URLSearchParams({
     refresh_token: refreshToken,
     client_id: clientId,
@@ -354,6 +354,7 @@ export async function pullDocNoteReference(
           body_md: t.markdown,
           writable: t.writable,
           readonly_reason: t.readonlyReason,
+          dropped_styling: t.droppedStyling,
           updated_at: runISO,
         })),
         { onConflict: "note_id,tab_id" },

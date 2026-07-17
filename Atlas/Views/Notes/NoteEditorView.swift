@@ -192,22 +192,31 @@ struct NoteEditorView: View {
             if newerVersionAvailable { newerVersionBanner }
 
             if !docTabs.isEmpty {
-                AtlasSegmentedPicker(
-                    options: docTabs,
-                    label: { $0.displayTitle(in: docTabs) },
-                    selection: Binding(
-                        get: { selectedTab ?? docTabs[0] },
-                        set: { switchTab(to: $0) }
+                // The switcher's intrinsic width grows with tab count/length; left
+                // unbounded it drags the whole editor column wider than the card and
+                // clips the leading edge. A horizontal scroller lets it exceed the
+                // card width by scrolling instead of forcing it.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    AtlasSegmentedPicker(
+                        options: docTabs,
+                        label: { $0.displayTitle(in: docTabs) },
+                        selection: Binding(
+                            get: { selectedTab ?? docTabs[0] },
+                            set: { switchTab(to: $0) }
+                        )
                     )
-                )
-                .padding(.horizontal, 18)
+                    .padding(.horizontal, 18)
+                }
                 .padding(.vertical, 6)
             }
-            // One banner at most — a pending first-sync lock outranks a read-only tab.
+            // One banner at most — a pending first-sync lock outranks a read-only
+            // tab, which outranks the (non-blocking) dropped-styling advisory.
             if syncPending {
                 pendingSyncBanner
             } else if let tab = selectedTab, !tab.writable {
                 readOnlyTabBanner(tab)
+            } else if let tab = selectedTab, tab.droppedStyling {
+                droppedStylingBanner
             }
 
             styleBar
@@ -419,6 +428,7 @@ struct NoteEditorView: View {
             Text("This tab has content Atlas can't safely edit\(tab.readonlyReason.map { " (\($0))" } ?? "") — read-only here.")
                 .atlasFont(size: 12)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)   // wrap, never force width
             Spacer()
             Button {
                 if let ref = docReference, let fileId = ref.driveFileId,
@@ -432,6 +442,25 @@ struct NoteEditorView: View {
             }
             .buttonStyle(.plain)
             .help("Edit this tab in Google Docs")
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 6)
+        .background(AtlasTheme.Colors.warning.opacity(0.08))
+    }
+
+    /// Non-blocking advisory for a WRITABLE tab whose text color/highlight (and
+    /// similar cosmetic styles) were stripped on import — editing works normally.
+    /// Mirrors `readOnlyTabBanner`'s warning-tint styling.
+    private var droppedStylingBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "paintpalette")
+                .atlasFont(size: 12)
+                .foregroundStyle(AtlasTheme.Colors.accentText)
+            Text("Text color / highlight from Google Docs isn't shown here — it's kept in Google unless you edit this tab in Atlas.")
+                .atlasFont(size: 12)
+                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)   // wrap, never force width
+            Spacer()
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 6)

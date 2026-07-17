@@ -56,6 +56,10 @@ struct SettingsView: View {
     /// The connection whose detail sheet (rename / reconnect / disconnect) is open.
     @State private var detailConnection: GoogleConnection? = nil
     @State private var detailRename = ""
+    /// The open connection's calendars (per-calendar selection, 0036), loaded when the
+    /// detail sheet appears. `detailCalendarsLoading` gates the initial spinner.
+    @State private var detailCalendars: [GoogleConnectionCalendar] = []
+    @State private var detailCalendarsLoading = false
     /// The "name it + pick a space" sheet after a successful Add-account OAuth.
     @State private var showAddGoogleSheet = false
     @State private var pendingGrant: GoogleAuthService.GrantedAccount? = nil
@@ -988,6 +992,8 @@ struct SettingsView: View {
                     .foregroundStyle(AtlasTheme.Colors.warning)
             }
 
+            calendarsPickerSection(conn)
+
             if let err = googleError {
                 Text(err).atlasFont(size: 12, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.danger)
@@ -1016,6 +1022,64 @@ struct SettingsView: View {
         .padding(24)
         .frame(width: 380)
         .background(AtlasTheme.Colors.bgBase)
+        .task(id: conn.id) { await loadDetailCalendars(conn.id) }
+    }
+
+    // MARK: – Calendar picker (per-calendar selection, 0036)
+
+    /// The connection's calendars as a checkbox list — tap to opt a calendar in/out of
+    /// sync. Primary is badged. Follows AtlasTheme (outline square glyphs, caps label,
+    /// no accent fills). Hidden until at least one calendar is known.
+    @ViewBuilder
+    private func calendarsPickerSection(_ conn: GoogleConnection) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            label("CALENDARS")
+            if detailCalendarsLoading && detailCalendars.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading calendars…")
+                        .atlasFont(size: 12, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+            } else if detailCalendars.isEmpty {
+                Text("Only this account's primary calendar is available.")
+                    .atlasFont(size: 12, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+            } else {
+                Text("Choose which calendars sync into Atlas.")
+                    .atlasFont(size: 11, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(detailCalendars) { cal in
+                            Button { toggleCalendar(cal, conn: conn) } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: cal.selected ? "checkmark.square.fill" : "square")
+                                        .foregroundStyle(cal.selected
+                                                         ? AtlasTheme.Colors.textPrimary
+                                                         : AtlasTheme.Colors.textMuted)
+                                    Text(cal.summary)
+                                        .atlasFont(size: 13, design: .rounded)
+                                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                                        .lineLimit(1)
+                                    if cal.isPrimary {
+                                        Text("PRIMARY")
+                                            .atlasMono(size: 9, weight: .semibold).tracking(1)
+                                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                                    }
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                                .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(googleWorking)
+                        }
+                    }
+                }
+                .frame(maxHeight: 168)
+            }
+        }
     }
 
     // MARK: – Add-account sheet (name it + pick a space)
@@ -1114,8 +1178,17 @@ struct SettingsView: View {
                     googleEmail: grant.email,
                     jwt: jwt)
                 await state.refreshGoogleConnections()
+                let email = grant.email
                 showAddGoogleSheet = false
                 pendingGrant = nil
+                // Surface the calendar picker for the account just added — its detail
+                // sheet loads the enumerated calendars. Deferred a beat so the add sheet
+                // finishes dismissing before the detail sheet presents (same host view).
+                if let created = state.googleConnections.first(where: { $0.googleEmail == email }) {
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    detailRename = created.name
+                    detailConnection = created
+                }
             } catch {
                 googleError = googleConnectMessage(error, fallback: "Couldn't add the account. Try again.")
             }
@@ -1152,6 +1225,41 @@ struct SettingsView: View {
             } catch {
                 googleError = googleConnectMessage(error, fallback: "Couldn't reconnect. Try again.")
             }
+            googleWorking = false
+        }
+    }
+
+    /// Loads the open connection's calendars for the picker. Best-effort — an empty /
+    /// failed load just leaves the "primary only" hint (the primary always syncs).
+    private func loadDetailCalendars(_ connectionId: UUID) async {
+        detailCalendarsLoading = true
+        defer { detailCalendarsLoading = false }
+        detailCalendars = (try? await state.db?.loadGoogleConnectionCalendars(connectionId: connectionId)) ?? []
+    }
+
+    /// Opt a calendar in/out of sync: PATCH google-connect with the FULL selected set,
+    /// then reload. Optimistically flips the local row so the checkbox responds at once.
+    private func toggleCalendar(_ cal: GoogleConnectionCalendar, conn: GoogleConnection) {
+        googleError = nil
+        googleWorking = true
+        // Optimistic flip so the tap feels instant; reload reconciles with the server.
+        if let i = detailCalendars.firstIndex(where: { $0.id == cal.id }) {
+            detailCalendars[i].selected.toggle()
+        }
+        let selectedIds = detailCalendars.filter { $0.selected }.map { $0.calendarId }
+        Task {
+            guard let jwt = await auth.validAccessToken() else {
+                googleError = "Your session expired — sign in again, then try."
+                googleWorking = false
+                await loadDetailCalendars(conn.id)
+                return
+            }
+            do {
+                try await googleAuth.updateCalendars(connectionId: conn.id, selectedCalendarIds: selectedIds, jwt: jwt)
+            } catch {
+                googleError = googleConnectMessage(error, fallback: "Couldn't update calendars. Try again.")
+            }
+            await loadDetailCalendars(conn.id)
             googleWorking = false
         }
     }
@@ -1348,10 +1456,11 @@ struct SettingsView: View {
                     Text("Default").tag(1.0)
                     Text("Large").tag(1.15)
                     Text("X-Large").tag(1.3)
+                    Text("XX-Large").tag(1.5)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 260)
+                .frame(width: 320)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

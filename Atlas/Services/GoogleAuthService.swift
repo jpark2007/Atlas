@@ -421,6 +421,19 @@ final class GoogleAuthService: ObservableObject {
                               body: try JSONSerialization.data(withJSONObject: payload))
     }
 
+    /// Sets which of a connection's calendars sync: PATCH `{connectionId, calendars:[ids]}`
+    /// (the FULL selected set). Server resets the newly-selected calendars' cursors (next
+    /// tick full-resyncs them) and deletes the deselected calendars' mirrored events from
+    /// Atlas — without deleting the user's real Google events.
+    func updateCalendars(connectionId: UUID, selectedCalendarIds: [String], jwt: String) async throws {
+        let payload: [String: Any] = [
+            "connectionId": connectionId.uuidString,
+            "calendars": selectedCalendarIds,
+        ]
+        try await callConnect(method: "PATCH", jwt: jwt,
+                              body: try JSONSerialization.data(withJSONObject: payload))
+    }
+
     /// Removes a connection + its vault secret: DELETE `{connectionId}`. Other connections
     /// are untouched. Also drops the local per-connection keychain credential.
     func deleteConnection(connectionId: UUID, jwt: String) async throws {

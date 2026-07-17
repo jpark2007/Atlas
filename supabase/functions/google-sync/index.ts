@@ -188,6 +188,7 @@ interface EventRow {
   end_at?: string;
   is_all_day?: boolean;
   notes?: string | null;
+  google_calendar_id?: string | null;
 }
 
 interface Connection {
@@ -521,21 +522,47 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     }
   }
 
+  // Which calendars of this connection sync (0036). Reads fan in from every SELECTED
+  //     calendar; each carries its own incremental sync_token. Resilience: a connection
+  //     with no registry rows yet (created before 0036, or enumeration failed) syncs its
+  //     stored primary calendar with the legacy connection-level cursor — pre-0036 behavior.
+  interface SelectedCalendar { calendar_id: string; is_primary: boolean; sync_token: string | null }
+  let selectedCals: SelectedCalendar[] = [];
+  {
+    const { data: calRows, error: calErr } = await admin
+      .from("google_connection_calendars")
+      .select("calendar_id, is_primary, sync_token")
+      .eq("connection_id", conn.id)
+      .eq("selected", true);
+    if (calErr) throw new Error(`calendar list select failed: ${calErr.message}`);
+    selectedCals = (calRows ?? []) as SelectedCalendar[];
+  }
+  if (selectedCals.length === 0) {
+    selectedCals = [{ calendar_id: conn.calendar_id, is_primary: true, sync_token: conn.sync_token }];
+  }
+  // Writes route OUT to the connection's PRIMARY calendar only (reads fan in from all).
+  const primaryCalId = selectedCals.find((c) => c.is_primary)?.calendar_id ?? conn.calendar_id;
+
   // I4 (two-way delete). Replay this user's app-side deletions to Google FIRST. A
   //     tombstone (deleted_google_events, 0011) is written by an AFTER DELETE trigger
   //     whenever an events row carrying a google_event_id is deleted (Mac or phone).
   //     Read the set up front: it both drives the Google deletes below AND gates the
-  //     PULL so a not-yet-deleted event is never resurrected.
+  //     PULL so a not-yet-deleted event is never resurrected. Each tombstone carries the
+  //     calendar the event lived on (0036) so the delete replays to the right calendar.
   const tombstonedGids = new Set<string>();
+  const tombstoneCalById = new Map<string, string>();
   {
     const { data: tombRows, error: tombErr } = await admin
       .from("deleted_google_events")
-      .select("google_event_id")
+      .select("google_event_id, google_calendar_id")
       .eq("user_id", userId)
       .eq("google_connection_id", conn.id);
     if (tombErr) throw new Error(`tombstone select failed: ${tombErr.message}`);
-    for (const r of (tombRows ?? []) as { google_event_id: string }[]) {
-      if (r.google_event_id) tombstonedGids.add(r.google_event_id);
+    for (const r of (tombRows ?? []) as { google_event_id: string; google_calendar_id: string | null }[]) {
+      if (r.google_event_id) {
+        tombstonedGids.add(r.google_event_id);
+        tombstoneCalById.set(r.google_event_id, r.google_calendar_id ?? primaryCalId);
+      }
     }
   }
   result.tombstoned = tombstonedGids.size;
@@ -548,7 +575,8 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     const cleared: string[] = [];
     for (const gid of tombstonedGids) {
       try {
-        const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendar_id)}/events/${encodeURIComponent(gid)}`, {
+        const calId = tombstoneCalById.get(gid) ?? primaryCalId;
+        const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(calId)}/events/${encodeURIComponent(gid)}`, {
           method: "DELETE",
           headers: { Authorization: `Bearer ${accessToken}` },
         });
@@ -573,69 +601,12 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     }
   }
 
-  // 2. PULL. Incremental when we hold a sync_token; on 410 (or no token) fall
-  //    back to a full-window resync.
-  let listing: ListResult = { items: [], nextSyncToken: null, gone: false };
-  if (conn.sync_token) {
-    listing = await listEvents(accessToken, conn.calendar_id, conn.sync_token, false);
-  }
-  if (!conn.sync_token || listing.gone) {
-    listing = await listEvents(accessToken, conn.calendar_id, null, true);
-    result.fullResync = true;
-  }
-  const newSyncToken = listing.nextSyncToken ?? conn.sync_token;
-
-  // Split incoming events into deletions and upserts, keyed by gid.
-  interface UpsertVal extends MappedGoogle {
-    googleUpdated: number;
-    googleUpdatedISO: string;
-  }
-  const cancelledGids: string[] = [];
-  const upserts = new Map<string, UpsertVal>();
-  for (const ev of listing.items) {
-    const gid = ev.id;
-    if (!gid) continue;
-    if (workBlockGids.has(gid)) continue; // I1: never ingest a Mac-owned work-block mirror
-    if (tombstonedGids.has(gid)) continue; // I4: app-deleted (Google DELETE issued above) — never resurrect
-    if (ev.status === "cancelled") {
-      cancelledGids.push(gid);
-      continue;
-    }
-    const iv = interval(ev.start, ev.end);
-    if (!iv) continue; // unmappable (e.g. no times) — skip
-    const gUpdatedISO = ev.updated ? new Date(ev.updated).toISOString() : runStartISO;
-    upserts.set(gid, {
-      fields: iv,
-      title: ev.summary ?? "Untitled",
-      notes: normNotes(ev.description),
-      googleUpdated: new Date(gUpdatedISO).getTime(),
-      googleUpdatedISO: gUpdatedISO,
-    });
-  }
-
-  // Existing local rows for every gid we saw (both upserts and cancellations).
-  // Content columns are needed for the no-op guard (C2).
-  const seenGids = [...new Set([...upserts.keys(), ...cancelledGids])];
-  const existingByGid = new Map<string, EventRow>();
-  if (seenGids.length > 0) {
-    const { data: rows, error } = await admin
-      .from("events")
-      .select("id, google_event_id, google_origin, updated_at, google_updated_at, space_name, title, start_at, end_at, is_all_day, notes")
-      .eq("user_id", userId)
-      .eq("google_connection_id", conn.id) // this connection's mirrors only (gid namespace is per-account)
-      .in("google_event_id", seenGids);
-    if (error) throw new Error(`events select failed: ${error.message}`);
-    for (const r of (rows ?? []) as EventRow[]) {
-      if (r.google_event_id) existingByGid.set(r.google_event_id, r);
-    }
-  }
-
-  // Landing / routing space for THIS connection. Incoming events land in the
-  // connection's linked space (space_id → name); PUSH routes out only events in
-  // that same space. When the connection has no link (space_id null — "read-in
-  // only"), pulled events still need a home (events.space_name is NOT NULL), so
-  // they fall back to the user's first space; PUSH is skipped (nothing routes out
-  // of an unlinked connection — "an unlinked space stays in Atlas").
+  // Landing / routing space for THIS connection (once — same for every calendar).
+  // Incoming events land in the connection's linked space (space_id → name); PUSH
+  // routes out only events in that same space. When the connection has no link
+  // (space_id null — "read-in only"), pulled events still need a home
+  // (events.space_name is NOT NULL), so they fall back to the user's first space;
+  // PUSH is skipped ("an unlinked space stays in Atlas").
   let linkedSpace: string | null = null;
   if (conn.space_id) {
     const { data: sRow } = await admin
@@ -663,53 +634,118 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
   // pulled/un-mirrored row is never echoed back to Google in the same pass.
   const syncTouched = new Set<string>();
 
-  // 2a. Deletions (cancelled events). "Deleted anywhere = deleted everywhere": a
-  //     Google-side cancellation DELETES the local row regardless of google_origin
-  //     (the former Atlas-mirror un-mirror branch is gone). deletedFromPullGids lets
-  //     step 3 clear the self-tombstones this delete will trigger.
-  const toDelete: string[] = [];
-  const deletedFromPullGids: string[] = [];
-  for (const gid of cancelledGids) {
-    const row = existingByGid.get(gid);
-    if (!row) continue;
-    syncTouched.add(row.id);
-    toDelete.push(row.id);
-    deletedFromPullGids.push(gid);
+  // 2. PULL — per SELECTED calendar (0036). Each calendar keeps its own incremental
+  //    sync_token; 410 GONE (or no token) → full −30d…+365d resync of THAT calendar.
+  //    Reads fan in from every selected calendar; connection-level accumulators collect
+  //    their writes so the adoption dedupe and the apply are each ONE batch.
+  interface UpsertVal extends MappedGoogle {
+    googleUpdated: number;
+    googleUpdatedISO: string;
   }
-
-  // 2b. Upserts (Google-origin inserts + newest-wins updates, same-clock recency).
+  const allUpserts = new Map<string, UpsertVal>(); // merged, for the PUSH eventTypeRestriction lookup
   const inserts: Record<string, unknown>[] = [];
   const updates: { id: string; expectUpdatedAt: string; patch: Record<string, unknown> }[] = [];
-  // Incoming events with no gid-match: a fresh Google-origin insert OR an adoption of
-  // an existing null-gid native twin (resolved after this loop). Deferred so the
-  // adoption lookup is ONE query for the whole batch, not one per candidate.
-  const insertCandidates: { gid: string; u: UpsertVal }[] = [];
-  for (const [gid, u] of upserts) {
-    const row = existingByGid.get(gid);
-    if (row) {
+  const toDelete: string[] = [];
+  const deletedFromPullGids: string[] = [];
+  // Each candidate carries the calendar it came from so its inserted/adopted row is
+  // stamped google_calendar_id (needed so a later deselect deletes the right rows).
+  const insertCandidates: { gid: string; calendarId: string; u: UpsertVal }[] = [];
+  const newSyncTokens = new Map<string, string | null>(); // calendar_id → cursor to persist
+
+  for (const cal of selectedCals) {
+    let listing: ListResult = { items: [], nextSyncToken: null, gone: false };
+    if (cal.sync_token) {
+      listing = await listEvents(accessToken, cal.calendar_id, cal.sync_token, false);
+    }
+    if (!cal.sync_token || listing.gone) {
+      listing = await listEvents(accessToken, cal.calendar_id, null, true);
+      result.fullResync = true;
+    }
+    newSyncTokens.set(cal.calendar_id, listing.nextSyncToken ?? cal.sync_token);
+
+    // Split this calendar's incoming events into deletions and upserts, keyed by gid.
+    const cancelledGids: string[] = [];
+    const upserts = new Map<string, UpsertVal>();
+    for (const ev of listing.items) {
+      const gid = ev.id;
+      if (!gid) continue;
+      if (workBlockGids.has(gid)) continue; // I1: never ingest a Mac-owned work-block mirror
+      if (tombstonedGids.has(gid)) continue; // I4: app-deleted (Google DELETE issued above) — never resurrect
+      if (ev.status === "cancelled") {
+        cancelledGids.push(gid);
+        continue;
+      }
+      const iv = interval(ev.start, ev.end);
+      if (!iv) continue; // unmappable (e.g. no times) — skip
+      const gUpdatedISO = ev.updated ? new Date(ev.updated).toISOString() : runStartISO;
+      const val: UpsertVal = {
+        fields: iv,
+        title: ev.summary ?? "Untitled",
+        notes: normNotes(ev.description),
+        googleUpdated: new Date(gUpdatedISO).getTime(),
+        googleUpdatedISO: gUpdatedISO,
+      };
+      upserts.set(gid, val);
+      allUpserts.set(gid, val);
+    }
+
+    // Existing local rows for THIS calendar's gids (scoped by calendar so attribution
+    // stays exact). Content columns feed the C2 no-op guard.
+    const seenGids = [...new Set([...upserts.keys(), ...cancelledGids])];
+    const existingByGid = new Map<string, EventRow>();
+    if (seenGids.length > 0) {
+      const { data: rows, error } = await admin
+        .from("events")
+        .select("id, google_event_id, google_origin, updated_at, google_updated_at, space_name, title, start_at, end_at, is_all_day, notes, google_calendar_id")
+        .eq("user_id", userId)
+        .eq("google_connection_id", conn.id) // this connection's mirrors only
+        .eq("google_calendar_id", cal.calendar_id) // …and this calendar's (per-calendar attribution)
+        .in("google_event_id", seenGids);
+      if (error) throw new Error(`events select failed: ${error.message}`);
+      for (const r of (rows ?? []) as EventRow[]) {
+        if (r.google_event_id) existingByGid.set(r.google_event_id, r);
+      }
+    }
+
+    // 2a. Deletions (cancelled events). "Deleted anywhere = deleted everywhere": a
+    //     Google-side cancellation DELETES the local row regardless of google_origin.
+    //     deletedFromPullGids lets step 3 clear the self-tombstones this delete triggers.
+    for (const gid of cancelledGids) {
+      const row = existingByGid.get(gid);
+      if (!row) continue;
       syncTouched.add(row.id);
-      // C2 recency (same clock): skip unless Google changed since we last applied/observed it.
-      const storedGU = row.google_updated_at ? new Date(row.google_updated_at).getTime() : -Infinity;
-      if (u.googleUpdated <= storedGU) continue;
-      // C2 no-op guard: identical mapped content ⇒ skip the write (no trigger bump).
-      if (contentMatches(row, u)) continue;
-      // Write Google's content; stamp updated_at=runStart so PUSH never re-selects
-      // it, and google_updated_at=google.updated so the next PULL sees it applied.
-      updates.push({
-        id: row.id,
-        expectUpdatedAt: row.updated_at,
-        patch: {
-          title: u.title,
-          start_at: u.fields.start,
-          end_at: u.fields.end,
-          is_all_day: u.fields.allDay,
-          notes: u.notes,
-          updated_at: runStartISO,
-          google_updated_at: u.googleUpdatedISO,
-        },
-      });
-    } else {
-      insertCandidates.push({ gid, u }); // resolve adopt-vs-insert after the loop
+      toDelete.push(row.id);
+      deletedFromPullGids.push(gid);
+    }
+
+    // 2b. Upserts (newest-wins updates now; inserts/adoptions resolved after the loop).
+    for (const [gid, u] of upserts) {
+      const row = existingByGid.get(gid);
+      if (row) {
+        syncTouched.add(row.id);
+        // C2 recency (same clock): skip unless Google changed since we last applied/observed it.
+        const storedGU = row.google_updated_at ? new Date(row.google_updated_at).getTime() : -Infinity;
+        if (u.googleUpdated <= storedGU) continue;
+        // C2 no-op guard: identical mapped content ⇒ skip the write (no trigger bump).
+        if (contentMatches(row, u)) continue;
+        // Write Google's content; stamp updated_at=runStart so PUSH never re-selects
+        // it, and google_updated_at=google.updated so the next PULL sees it applied.
+        updates.push({
+          id: row.id,
+          expectUpdatedAt: row.updated_at,
+          patch: {
+            title: u.title,
+            start_at: u.fields.start,
+            end_at: u.fields.end,
+            is_all_day: u.fields.allDay,
+            notes: u.notes,
+            updated_at: runStartISO,
+            google_updated_at: u.googleUpdatedISO,
+          },
+        });
+      } else {
+        insertCandidates.push({ gid, calendarId: cal.calendar_id, u }); // resolve adopt-vs-insert after the loop
+      }
     }
   }
 
@@ -746,7 +782,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     const usedNativeIds = new Set<string>(); // one native row can't be adopted twice
     // Deterministic candidate order so which gid wins a shared row is stable.
     insertCandidates.sort((a, b) => (a.gid < b.gid ? -1 : a.gid > b.gid ? 1 : 0));
-    for (const { gid, u } of insertCandidates) {
+    for (const { gid, calendarId, u } of insertCandidates) {
       const pool = (nativeByTitle.get(normText(u.title)) ?? []).filter((r) =>
         !usedNativeIds.has(r.id) &&
         r.start_at != null && new Date(r.start_at).getTime() === new Date(u.fields.start).getTime() &&
@@ -764,6 +800,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
           patch: {
             google_event_id: gid,
             google_connection_id: conn.id,
+            google_calendar_id: calendarId, // per-calendar attribution (0036)
             updated_at: runStartISO,
             google_updated_at: u.googleUpdatedISO,
           },
@@ -784,6 +821,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
           notes: u.notes,
           google_event_id: gid,
           google_connection_id: conn.id,   // attribution: this connection owns the mirror
+          google_calendar_id: calendarId,  // …and which calendar it came from (0036)
           google_origin: true,
           updated_at: runStartISO,         // ≤ next last_synced_at ⇒ never echoed by PUSH
           google_updated_at: u.googleUpdatedISO,
@@ -828,7 +866,20 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
         .in("google_event_id", deletedFromPullGids);
       if (tErr) throw new Error(`pull-delete tombstone clear failed: ${tErr.message}`);
     }
+    // Persist each selected calendar's advanced incremental cursor (0036).
+    for (const [calId, token] of newSyncTokens) {
+      const { error } = await admin
+        .from("google_connection_calendars")
+        .update({ sync_token: token })
+        .eq("connection_id", conn.id)
+        .eq("calendar_id", calId);
+      if (error) throw new Error(`calendar sync_token update failed: ${error.message}`);
+    }
   }
+
+  // Connection-level cursor kept in step with the PRIMARY calendar — feeds only the
+  // pre-0036 resilience fallback (a connection with no registry rows).
+  const newSyncToken = newSyncTokens.get(primaryCalId) ?? conn.sync_token;
 
   // 4. PUSH. Rows changed since last_synced_at, ROUTED to this connection: only
   //    events in the connection's linked space, and — among those — only rows this
@@ -843,7 +894,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
   if (linkedSpace) {
     let pushQ = admin
       .from("events")
-      .select("id, google_event_id, google_origin, updated_at, google_updated_at, space_name, title, start_at, end_at, is_all_day, notes")
+      .select("id, google_event_id, google_origin, updated_at, google_updated_at, space_name, title, start_at, end_at, is_all_day, notes, google_calendar_id")
       .eq("user_id", userId)
       .eq("space_name", linkedSpace)
       .or(`google_connection_id.is.null,google_connection_id.eq.${conn.id}`);
@@ -864,10 +915,12 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
     if (syncTouched.has(row.id)) continue; // just written by the pull this run (incl. fresh inserts)
     if (row.google_event_id) {
       // Already mirrored → PATCH (origin or not; the local edit is the newer side).
+      // Target the calendar the row lives on (fallback primary for legacy null rows).
+      const patchCalId = row.google_calendar_id ?? primaryCalId;
       result.pushedUpdated++;
       if (!dryRun) {
         try {
-          const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendar_id)}/events/${encodeURIComponent(row.google_event_id)}`, {
+          const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(patchCalId)}/events/${encodeURIComponent(row.google_event_id)}`, {
             method: "PATCH",
             headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
             body: JSON.stringify(googleEventBody(row)),
@@ -891,7 +944,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
             // the pull, updated_at=runStart (≤ next last_synced_at) gates the push —
             // and NEVER retry it.
             if (res.status === 400 && text.includes("eventTypeRestriction")) {
-              const pulledUpdated = upserts.get(row.google_event_id)?.googleUpdatedISO ?? new Date().toISOString();
+              const pulledUpdated = allUpserts.get(row.google_event_id)?.googleUpdatedISO ?? new Date().toISOString();
               await admin
                 .from("events")
                 .update({ google_updated_at: pulledUpdated, updated_at: runStartISO })
@@ -916,7 +969,8 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
       if (!dryRun) {
         try {
           const gid = uuidToGoogleId(row.id);
-          const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendar_id)}/events`, {
+          // Writes route OUT to the connection's primary calendar (reads fan in from all).
+          const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(primaryCalId)}/events`, {
             method: "POST",
             headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
             body: JSON.stringify({ ...googleEventBody(row), id: gid }),
@@ -938,6 +992,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, clientId: strin
           const patch: Record<string, unknown> = {
             google_event_id: gid,
             google_connection_id: conn.id,
+            google_calendar_id: primaryCalId, // pushed to the primary calendar (0036)
             updated_at: runStartISO,
           };
           if (googleUpdated) patch.google_updated_at = googleUpdated;

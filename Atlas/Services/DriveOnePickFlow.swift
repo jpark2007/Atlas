@@ -79,58 +79,28 @@ enum DriveOnePickError: LocalizedError {
 
 // MARK: - Picked file model
 
-/// A file chosen in the onepick picker, enriched with Drive metadata for the
-/// drive-import contract. `Encodable` → the POST body. Missing metadata encodes as
-/// `null`; the server keeps only files with a string `mimeType` (a bare-id fallback
-/// is dropped best-effort).
+/// A file chosen in the onepick picker. Only the id travels — the picked file was
+/// authorized under Google's onepick WEB client, which the Mac's own token can't
+/// reliably read, so `drive-import` reads the metadata server-side (with its minted
+/// token) and reports any file it can't read as `failed`. `Encodable` → the POST body.
 struct PickedFile: Encodable {
     let id: String
-    let name: String?
-    let mimeType: String?
-    let modifiedTime: String?
 }
 
-/// Enriches picked file ids with Drive metadata (name/mimeType/modifiedTime) so
-/// the server can classify each — a Google Doc → backing note, everything else →
-/// a view-only file reference. Uses the app's own `drive.file` token (project-scoped,
-/// so it can read onepick-picked files). A file the token can't read falls back to a
-/// bare id. Same REST pattern as `ReferencePreviewLoader`/`GoogleDocsService`.
-func enrichPickedFiles(ids: [String], token: String,
-                       urlSession: URLSession = .shared) async -> [PickedFile] {
-    var files: [PickedFile] = []
-    for id in ids {
-        var components = URLComponents(string: "https://www.googleapis.com/drive/v3/files/\(id)")!
-        components.queryItems = [
-            .init(name: "fields", value: "id,name,mimeType,modifiedTime"),
-            .init(name: "supportsAllDrives", value: "true"),
-        ]
-        var request = URLRequest(url: components.url!)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-
-        if let (data, response) = try? await urlSession.data(for: request),
-           (200..<300).contains((response as? HTTPURLResponse)?.statusCode ?? 0),
-           let meta = try? JSONDecoder().decode(DriveFileMeta.self, from: data) {
-            files.append(PickedFile(id: meta.id, name: meta.name,
-                                    mimeType: meta.mimeType, modifiedTime: meta.modifiedTime))
-        } else {
-            files.append(PickedFile(id: id, name: nil, mimeType: nil, modifiedTime: nil))
-        }
-    }
-    return files
+/// The `drive-import` response counts, so the caller can tell a real import from a
+/// silent no-op (every picked file failed server-side enrichment → imported 0).
+struct DriveImportResult: Decodable {
+    let imported: Int
+    let skipped: Int
+    let failed: Int
 }
 
-private struct DriveFileMeta: Decodable {
-    let id: String
-    let name: String?
-    let mimeType: String?
-    let modifiedTime: String?
-}
-
-/// POSTs the enriched picked files to the `drive-import` edge function — the
-/// unchanged `{projectId, files[]}` contract. `jwt` is the caller's Supabase user
-/// access token (verified server-side by `auth.getUser`). Throws on any non-2xx.
+/// POSTs the picked file ids to the `drive-import` edge function — `{projectId, files[]}`.
+/// `jwt` is the caller's Supabase user access token (verified server-side by
+/// `auth.getUser`). Returns the import counts. Throws on any non-2xx.
+@discardableResult
 func registerDriveImports(projectID: UUID, files: [PickedFile], jwt: String,
-                          urlSession: URLSession = .shared) async throws {
+                          urlSession: URLSession = .shared) async throws -> DriveImportResult {
     let url = SupabaseConfig.functionsBase.appendingPathComponent("drive-import")
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
@@ -144,6 +114,7 @@ func registerDriveImports(projectID: UUID, files: [PickedFile], jwt: String,
         let detail = String(data: data, encoding: .utf8) ?? "(no body)"
         throw GoogleAuthError.serverSyncFailed(detail)
     }
+    return try JSONDecoder().decode(DriveImportResult.self, from: data)
 }
 
 private struct DriveImportBody: Encodable {

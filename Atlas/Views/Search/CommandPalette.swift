@@ -390,12 +390,17 @@ struct CommandPaletteOverlay: View {
             PaletteAction(id: "new-note", title: "New Note", subtitle: "Create a blank note",
                           icon: "note.text.badge.plus",
                           run: {
-                              state.addNote(
+                              let note = state.addNote(
                                   title: "Untitled note",
                                   body: "",
                                   spaceName: state.spaces.first?.name,
                                   isExternal: false
                               )
+                              if focus.sessionActive {
+                                  focus.noteToOpen = note
+                              } else {
+                                  editingNote = note
+                              }
                           }),
 
             PaletteAction(id: "new-event", title: "New Event", subtitle: "Open the event editor",

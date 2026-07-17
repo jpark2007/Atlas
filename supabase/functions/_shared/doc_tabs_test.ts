@@ -84,6 +84,53 @@ Deno.test("simple tab renders markdown and stays writable", () => {
 
 Deno.test("link auto-styling (underline/color on a linked run) does NOT flag read-only", () => {
   assertEquals(readTabs(FIXTURE)[0].writable, true);
+  assertEquals(readTabs(FIXTURE)[0].droppedStyling, false);
+});
+
+// Cosmetic inline styles (text color, highlight, strikethrough, small caps,
+// super/subscript) NO LONGER lock the tab: they're stripped on import, the tab
+// stays writable, and `droppedStyling` flags the loss (advisory only). The
+// single-tab Drive-Markdown path already strips these silently; this keeps the
+// per-tab path consistent.
+Deno.test("divergence: text color is stripped, tab stays WRITABLE with droppedStyling", () => {
+  const doc = { tabs: [{
+    tabProperties: { tabId: "t.c", title: "Color", index: 0 },
+    documentTab: { body: { content: [
+      { sectionBreak: {} },
+      { paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+          elements: [
+            { textRun: { content: "red ", textStyle: { foregroundColor: { color: { rgbColor: { red: 1 } } } } } },
+            { textRun: { content: "and bold", textStyle: { bold: true, foregroundColor: { color: { rgbColor: { red: 1 } } } } } },
+            { textRun: { content: "\n", textStyle: {} } },
+          ] } },
+    ] }, lists: {} },
+    childTabs: [],
+  }] };
+  const t = readTabs(doc)[0];
+  assertEquals(t.writable, true);
+  assertEquals(t.readonlyReason, null);
+  assertEquals(t.droppedStyling, true);
+  // Text preserved; color gone; bold (a dialect mark) kept.
+  assertEquals(t.markdown, "red **and bold**\n");
+});
+
+Deno.test("divergence: highlight color is stripped, tab stays WRITABLE with droppedStyling", () => {
+  const doc = { tabs: [{
+    tabProperties: { tabId: "t.h", title: "Highlight", index: 0 },
+    documentTab: { body: { content: [
+      { sectionBreak: {} },
+      { paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+          elements: [
+            { textRun: { content: "marked text\n", textStyle: { backgroundColor: { color: { rgbColor: { green: 1 } } } } } },
+          ] } },
+    ] }, lists: {} },
+    childTabs: [],
+  }] };
+  const t = readTabs(doc)[0];
+  assertEquals(t.writable, true);
+  assertEquals(t.readonlyReason, null);
+  assertEquals(t.droppedStyling, true);
+  assertEquals(t.markdown, "marked text\n");
 });
 
 Deno.test("table becomes a frozen island: tab stays WRITABLE, grid lines carry the marker", () => {

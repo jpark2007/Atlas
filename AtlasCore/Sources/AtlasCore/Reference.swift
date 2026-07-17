@@ -114,9 +114,15 @@ public struct DocNoteTab: Identifiable, Equatable, Hashable {
     public let bodyMD: String
     public let writable: Bool
     public let readonlyReason: String?
+    /// Advisory: a cosmetic inline style (text color, highlight, strikethrough,
+    /// small caps, super/subscript) was stripped from this tab on import. The tab
+    /// stays writable; the styling survives in Google unless the tab is edited
+    /// and saved in Atlas. Drives a non-blocking info banner in the editor.
+    public let droppedStyling: Bool
 
     public init(id: UUID, referenceID: UUID, tabId: String, parentTabId: String?,
-                title: String, ord: Int, bodyMD: String, writable: Bool, readonlyReason: String?) {
+                title: String, ord: Int, bodyMD: String, writable: Bool, readonlyReason: String?,
+                droppedStyling: Bool = false) {
         self.id = id
         self.referenceID = referenceID
         self.tabId = tabId
@@ -126,6 +132,7 @@ public struct DocNoteTab: Identifiable, Equatable, Hashable {
         self.bodyMD = bodyMD
         self.writable = writable
         self.readonlyReason = readonlyReason
+        self.droppedStyling = droppedStyling
     }
 
     /// "Parent ▸ Child" for nested tabs, matching the Docs sidebar.

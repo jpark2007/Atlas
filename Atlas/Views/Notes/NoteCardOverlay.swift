@@ -22,10 +22,10 @@ struct NoteCardOverlay: View {
 
     var body: some View {
         GeometryReader { geo in
-            let maxW = max(geo.size.width  - margin * 2, minSize.width)
-            let maxH = max(geo.size.height - margin * 2, minSize.height)
-            let width  = isExpanded ? maxW : min(max(storedWidth,  minSize.width),  maxW)
-            let height = isExpanded ? maxH : min(max(storedHeight, minSize.height), maxH)
+            let availW = max(geo.size.width  - margin * 2, 0)
+            let availH = max(geo.size.height - margin * 2, 0)
+            let width  = isExpanded ? availW : min(max(storedWidth,  minSize.width),  availW)
+            let height = isExpanded ? availH : min(max(storedHeight, minSize.height), availH)
 
             VStack(spacing: 0) {
                 header
