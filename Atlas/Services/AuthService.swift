@@ -1,6 +1,7 @@
 import Foundation
 import AuthenticationServices
 import CryptoKit
+import Security
 import AtlasCore
 
 @MainActor
@@ -127,6 +128,16 @@ final class AuthService: ObservableObject {
     }
 
     // MARK: - Sign in with Apple
+
+    /// Whether the running binary was actually signed with the Sign In with Apple
+    /// entitlement. Debug/dev builds carry it (button shows); Developer ID
+    /// direct-download builds sign against Atlas-DeveloperID.entitlements which omits
+    /// it (button hides — email/password sign-in remains). Reading the live
+    /// code-signing entitlement means the same source works in both builds, no config.
+    static let appleSignInAvailable: Bool = {
+        guard let task = SecTaskCreateFromSelf(nil) else { return false }
+        return SecTaskCopyValueForEntitlement(task, "com.apple.developer.applesignin" as CFString, nil) != nil
+    }()
 
     func signInWithApple() async {
         await run {
