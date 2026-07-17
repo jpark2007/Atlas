@@ -17,11 +17,17 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkRateLimit, clientIp, tooManyRequests } from "../_shared/rate_limit.ts";
 import {
+  activesSeries,
+  dailyCounts,
   isValidCode,
   platformBreakdown,
   sha256Hex,
+  signupSeries,
+  snapshotRow,
   timingSafeEqual,
+  type DayCount,
   type PingRow,
+  type SnapshotRow,
 } from "../_shared/admin_stats.ts";
 
 // Public endpoint — scope CORS to the landing origin (mirrors waitlist).
@@ -112,9 +118,21 @@ Deno.serve(async (req: Request) => {
   if (action !== "stats") return json({ error: "Unknown action" }, 400);
 
   const since = new Date(Date.now() - THIRTY_DAYS_MS).toISOString();
+  const CHART_DAYS = 90;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const windowStart = new Date(Date.now() - CHART_DAYS * 24 * 60 * 60 * 1000)
+    .toISOString();
 
   // Fan out the independent reads.
-  const [countRes, metricRes, pingRes, reportRes] = await Promise.all([
+  const [
+    countRes,
+    metricRes,
+    pingRes,
+    reportRes,
+    signupRes,
+    downloadRes,
+    snapshotRes,
+  ] = await Promise.all([
     supabase.rpc("admin_user_count"),
     supabase.from("site_metrics").select("count").eq("key", "dmg_downloads").maybeSingle(),
     supabase.from("app_pings").select("user_id, platform").gte("last_seen_at", since),
@@ -123,6 +141,13 @@ Deno.serve(async (req: Request) => {
       .select("id, message, platform, app_version, status, created_at, resolved_at")
       .order("created_at", { ascending: false })
       .limit(50),
+    supabase.rpc("admin_signup_days"),
+    supabase.from("download_events").select("created_at").gte("created_at", windowStart),
+    supabase
+      .from("metric_snapshots")
+      .select("day, mac_active_30d, ios_active_30d")
+      .gte("day", windowStart.slice(0, 10))
+      .order("day", { ascending: true }),
   ]);
 
   const totalUsers = typeof countRes.data === "number" ? countRes.data : 0;
@@ -130,6 +155,34 @@ Deno.serve(async (req: Request) => {
   const { mac, mobile, byPlatform } = platformBreakdown(
     (pingRes.data ?? []) as PingRow[],
   );
+  const ios = byPlatform["ios"] ?? 0;
+
+  // ── Time-series shaping ──
+  const signups = signupSeries(
+    (signupRes.data ?? []) as DayCount[],
+    totalUsers,
+    todayKey,
+    CHART_DAYS,
+  );
+  const downloads = dailyCounts(
+    ((downloadRes.data ?? []) as { created_at: string }[]).map((r) => r.created_at),
+    todayKey,
+    CHART_DAYS,
+  );
+  const actives = activesSeries(
+    (snapshotRes.data ?? []) as SnapshotRow[],
+    { day: todayKey, mac, ios },
+  );
+
+  // ── Self-populating history: record today's snapshot on every open. Fire and
+  //    forget — a failed write only skips one day of history, never the response.
+  const snap = snapshotRow(todayKey, totalUsers, dmgDownloads, mac, ios);
+  supabase
+    .from("metric_snapshots")
+    .upsert({ ...snap, updated_at: new Date().toISOString() }, { onConflict: "day" })
+    .then(({ error }) => {
+      if (error) console.error("metric_snapshots upsert failed:", error.message);
+    });
 
   return json({
     totalUsers,
@@ -138,5 +191,10 @@ Deno.serve(async (req: Request) => {
     mobile,
     byPlatform,
     reports: reportRes.data ?? [],
+    charts: {
+      signups: { points: signups.points, priorTotal: signups.priorTotal },
+      downloads: { points: downloads },
+      actives: { points: actives },
+    },
   }, 200);
 });

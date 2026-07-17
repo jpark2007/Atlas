@@ -77,6 +77,25 @@
   .tile__n { font-family: var(--serif); font-size: 2.2rem; font-weight: 500; letter-spacing: -0.02em; }
   .tile__l { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-top: 0.15rem; }
 
+  /* ── charts ── */
+  .charts { display: grid; gap: 1rem; margin: 0 0 2.5rem; }
+  .chart {
+    border: 1px solid var(--hairline); border-radius: 14px;
+    background: #fff; padding: 1.1rem 1.2rem 1rem;
+  }
+  .chart__head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 1rem; margin-bottom: 0.5rem;
+  }
+  .chart__val { font-family: var(--serif); font-size: 1.6rem; font-weight: 500; letter-spacing: -0.02em; }
+  .chart svg { display: block; width: 100%; height: auto; color: var(--ink); overflow: visible; }
+  .chart svg text { font-family: var(--serif); fill: var(--muted); }
+  .chart__cap { font-size: 12px; color: var(--muted); font-style: italic; margin: 0.5rem 0 0; }
+  .chart__legend { display: flex; gap: 1.1rem; font-size: 12px; color: var(--muted); margin-top: 0.5rem; }
+  .chart__legend span { display: inline-flex; align-items: center; }
+  .swatch { display: inline-block; width: 16px; height: 0; border-top: 2px solid var(--ink); margin-right: 6px; }
+  .swatch--ios { border-top-style: dashed; opacity: 0.55; }
+
   section.block { margin: 0 0 2.5rem; }
   .revenue {
     border: 1px dashed var(--hairline-strong); border-radius: 14px;
@@ -139,6 +158,42 @@
       </div>
 
       <section class="block">
+        <p class="kicker">Trends</p>
+        <div class="charts">
+          <div class="chart">
+            <div class="chart__head">
+              <span class="tile__l">Users · cumulative</span>
+              <span class="chart__val" id="cUsersVal">—</span>
+            </div>
+            <div id="cUsers"></div>
+            <p class="chart__cap" id="cUsersCap" hidden></p>
+          </div>
+
+          <div class="chart">
+            <div class="chart__head">
+              <span class="tile__l">Downloads · per day</span>
+              <span class="chart__val" id="cDlVal">—</span>
+            </div>
+            <div id="cDl"></div>
+            <p class="chart__cap" id="cDlCap" hidden></p>
+          </div>
+
+          <div class="chart">
+            <div class="chart__head">
+              <span class="tile__l">Active users · 30-day</span>
+              <span class="chart__val" id="cActVal">—</span>
+            </div>
+            <div id="cAct"></div>
+            <div class="chart__legend">
+              <span><i class="swatch"></i>Mac</span>
+              <span><i class="swatch swatch--ios"></i>iOS</span>
+            </div>
+            <p class="chart__cap" id="cActCap" hidden></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
         <p class="kicker">Revenue</p>
         <div class="revenue">
           <span>No paid plan yet</span>
@@ -194,11 +249,157 @@
     return Math.round(hrs / 24) + "d ago";
   }
 
+  // ── hand-rolled SVG charts (no libs; ink lines on paper) ──
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const CW = 720, CH = 190;
+  const PAD = { l: 6, r: 6, t: 20, b: 22 };
+  const PLOTW = CW - PAD.l - PAD.r;
+  const PLOTH = CH - PAD.t - PAD.b;
+
+  function svgEl(name, attrs) {
+    const el = document.createElementNS(SVGNS, name);
+    for (const k in attrs) el.setAttribute(k, String(attrs[k]));
+    return el;
+  }
+  function newSvg() {
+    const s = svgEl("svg", { viewBox: "0 0 " + CW + " " + CH, role: "img" });
+    // baseline hairline
+    s.appendChild(svgEl("line", {
+      x1: PAD.l, y1: PAD.t + PLOTH, x2: PAD.l + PLOTW, y2: PAD.t + PLOTH,
+      stroke: "currentColor", "stroke-opacity": 0.14, "stroke-width": 1,
+    }));
+    return s;
+  }
+  function xAt(i, n) { return PAD.l + (n <= 1 ? PLOTW / 2 : (i / (n - 1)) * PLOTW); }
+  function yAt(v, max) { return PAD.t + PLOTH - (max <= 0 ? 0 : (v / max) * PLOTH); }
+  function fmtDay(key) {
+    const d = new Date(key + "T00:00:00Z");
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  }
+  // sparse x labels: first, last, ~every 7th
+  function xLabels(svg, keys) {
+    const n = keys.length;
+    keys.forEach((k, i) => {
+      // first, last, and ~every 7th — but drop 7th-marks that crowd the last one
+      if (i !== 0 && i !== n - 1 && (i % 7 !== 0 || i > n - 5)) return;
+      const t = svgEl("text", {
+        x: xAt(i, n), y: CH - 6, "font-size": 11,
+        "text-anchor": i === 0 ? "start" : i === n - 1 ? "end" : "middle",
+      });
+      t.textContent = fmtDay(k);
+      svg.appendChild(t);
+    });
+  }
+  function yMaxLabel(svg, max) {
+    const t = svgEl("text", { x: PAD.l, y: PAD.t - 7, "font-size": 11, "text-anchor": "start" });
+    t.textContent = String(max);
+    svg.appendChild(t);
+  }
+  function mount(id, svg) { const el = $(id); el.innerHTML = ""; el.appendChild(svg); }
+  function caption(id, show) { const el = $(id); el.hidden = !show; if (show) el.textContent = "History builds from today — the line fills in as days pass."; }
+
+  function renderUsersChart(sig) {
+    const pts = (sig && sig.points) || [];
+    const svg = newSvg();
+    const cum = pts.map((p) => p.cumulative);
+    const last = cum.length ? cum[cum.length - 1] : 0;
+    const max = Math.max(1, ...cum);
+    const n = pts.length;
+    $("cUsersVal").textContent = last;
+
+    // subtle daily bars underneath (dual encoding of per-day signups)
+    const dmax = Math.max(1, ...pts.map((p) => p.n));
+    const band = Math.min(28, PLOTH * 0.28);
+    const bw = Math.min(10, Math.max(1, (PLOTW / Math.max(1, n)) * 0.5));
+    pts.forEach((p, i) => {
+      if (!p.n) return;
+      const h = (p.n / dmax) * band;
+      svg.appendChild(svgEl("rect", {
+        x: xAt(i, n) - bw / 2, y: PAD.t + PLOTH - h, width: bw, height: h,
+        fill: "currentColor", "fill-opacity": 0.12,
+      }));
+    });
+
+    // cumulative area + line
+    const line = pts.map((p, i) => (i ? "L" : "M") + xAt(i, n) + " " + yAt(p.cumulative, max)).join(" ");
+    if (n) {
+      const area = line + " L" + xAt(n - 1, n) + " " + (PAD.t + PLOTH) +
+        " L" + xAt(0, n) + " " + (PAD.t + PLOTH) + " Z";
+      svg.appendChild(svgEl("path", { d: area, fill: "currentColor", "fill-opacity": 0.06 }));
+      svg.appendChild(svgEl("path", { d: line, fill: "none", stroke: "currentColor", "stroke-width": 1.75 }));
+    }
+    if (n <= 8) pts.forEach((p, i) => svg.appendChild(svgEl("circle", { cx: xAt(i, n), cy: yAt(p.cumulative, max), r: 2.5, fill: "currentColor" })));
+    yMaxLabel(svg, max);
+    xLabels(svg, pts.map((p) => p.day));
+    mount("cUsers", svg);
+    // full history is available for signups; only caption if truly empty
+    caption("cUsersCap", n > 0 && cum.every((c) => c === 0));
+  }
+
+  function renderDownloadsChart(dl) {
+    const pts = (dl && dl.points) || [];
+    const svg = newSvg();
+    const n = pts.length;
+    const total = pts.reduce((s, p) => s + p.n, 0);
+    const nonzero = pts.filter((p) => p.n > 0).length;
+    const max = Math.max(1, ...pts.map((p) => p.n));
+    $("cDlVal").textContent = total;
+    const bw = Math.min(16, Math.max(1.5, (PLOTW / Math.max(1, n)) * 0.6));
+    pts.forEach((p, i) => {
+      const title = fmtDay(p.day) + ": " + p.n;
+      if (p.n > 0) {
+        const h = (p.n / max) * PLOTH;
+        // clamp so end-of-window bars never spill past the plot edges
+        const bx = Math.max(PAD.l, Math.min(PAD.l + PLOTW - bw, xAt(i, n) - bw / 2));
+        const rect = svgEl("rect", {
+          x: bx, y: PAD.t + PLOTH - h, width: bw, height: h,
+          fill: "currentColor", "fill-opacity": 0.82, rx: 1,
+        });
+        rect.appendChild(svgEl("title", {})).textContent = title;
+        svg.appendChild(rect);
+      }
+    });
+    yMaxLabel(svg, max);
+    xLabels(svg, pts.map((p) => p.day));
+    mount("cDl", svg);
+    caption("cDlCap", nonzero > 0 && nonzero <= 2);
+  }
+
+  function renderActivesChart(act) {
+    const pts = (act && act.points) || [];
+    const svg = newSvg();
+    const n = pts.length;
+    const macNow = n ? pts[n - 1].mac : 0;
+    const iosNow = n ? pts[n - 1].ios : 0;
+    $("cActVal").textContent = (macNow + iosNow);
+    const max = Math.max(1, ...pts.map((p) => Math.max(p.mac, p.ios)));
+
+    const path = (key, dash) => {
+      const d = pts.map((p, i) => (i ? "L" : "M") + xAt(i, n) + " " + yAt(p[key], max)).join(" ");
+      if (n > 1) svg.appendChild(svgEl("path", Object.assign({ d, fill: "none", stroke: "currentColor", "stroke-width": 1.75 }, dash)));
+      pts.forEach((p, i) => svg.appendChild(svgEl("circle", Object.assign({ cx: xAt(i, n), cy: yAt(p[key], max), r: 2.5, fill: "currentColor" }, dash))));
+    };
+    path("mac", {});
+    path("ios", { "stroke-opacity": 0.55, "fill-opacity": 0.55, "stroke-dasharray": "4 3" });
+    yMaxLabel(svg, max);
+    xLabels(svg, pts.map((p) => p.day));
+    mount("cAct", svg);
+    caption("cActCap", n <= 2);
+  }
+
+  function renderCharts(data) {
+    const c = data.charts || {};
+    renderUsersChart(c.signups);
+    renderDownloadsChart(c.downloads);
+    renderActivesChart(c.actives);
+  }
+
   function render(data) {
     $("tUsers").textContent = data.totalUsers ?? 0;
     $("tDownloads").textContent = data.dmgDownloads ?? 0;
     $("tMac").textContent = data.mac ?? 0;
     $("tMobile").textContent = data.mobile ?? 0;
+    renderCharts(data);
 
     const wrap = $("reports");
     wrap.innerHTML = "";

@@ -51,5 +51,10 @@ Deno.serve(async (req: Request) => {
     .upsert({ key: "dmg_downloads", count: next }, { onConflict: "key" });
   if (upErr) console.error("track-download write failed:", upErr.message);
 
+  // Also log a timestamped event so downloads can be charted per day. The
+  // site_metrics counter above stays the source of truth for the all-time tile.
+  const { error: evErr } = await supabase.from("download_events").insert({});
+  if (evErr) console.error("track-download event insert failed:", evErr.message);
+
   return json({ ok: true }, 200);
 });

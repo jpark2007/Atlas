@@ -63,3 +63,133 @@ export async function sha256Hex(input: string): Promise<string> {
 export function isValidCode(code: string): boolean {
   return /^\d{4,8}$/.test(code);
 }
+
+// ─────────────────────────────────────────────────────────────
+// Time-series shaping for the dashboard charts. Pure + UTC-only:
+// every "day" is a YYYY-MM-DD key derived from the ISO timestamp's
+// date part, so bucketing never depends on the server's timezone.
+// ─────────────────────────────────────────────────────────────
+
+export interface DayCount {
+  day: string;
+  n: number;
+}
+export interface CumPoint {
+  day: string;
+  n: number;
+  cumulative: number;
+}
+export interface SnapshotRow {
+  day: string;
+  mac_active_30d: number;
+  ios_active_30d: number;
+}
+export interface ActivePoint {
+  day: string;
+  mac: number;
+  ios: number;
+}
+
+/** The UTC date part (YYYY-MM-DD) of an ISO timestamp or date string. */
+export function dayKey(iso: string): string {
+  return String(iso).slice(0, 10);
+}
+
+/** The last `days` UTC day-keys ending at (and including) `todayKey`, ascending. */
+export function dayWindow(todayKey: string, days: number): string[] {
+  const DAY = 86400000;
+  const end = Date.parse(todayKey + "T00:00:00Z");
+  const out: string[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    out.push(new Date(end - i * DAY).toISOString().slice(0, 10));
+  }
+  return out;
+}
+
+/** Bucket ISO timestamps into per-day counts across a fixed, zero-filled window. */
+export function dailyCounts(
+  timestamps: string[],
+  todayKey: string,
+  days: number,
+): DayCount[] {
+  const counts: Record<string, number> = {};
+  for (const t of timestamps) {
+    const k = dayKey(t);
+    counts[k] = (counts[k] ?? 0) + 1;
+  }
+  return dayWindow(todayKey, days).map((day) => ({ day, n: counts[day] ?? 0 }));
+}
+
+/** Cumulative signups across the window. The running total is anchored so the
+ *  final point equals `totalUsers` exactly: everything older than the window is
+ *  folded into `priorTotal` (totalUsers minus the signups that fall inside it),
+ *  which also absorbs any deleted-user drift. `dayRows` are the per-day counts
+ *  from admin_signup_days(); rows outside the window are ignored (already in the
+ *  baseline). */
+export function signupSeries(
+  dayRows: DayCount[],
+  totalUsers: number,
+  todayKey: string,
+  days: number,
+): { points: CumPoint[]; priorTotal: number } {
+  const byDay: Record<string, number> = {};
+  for (const r of dayRows) byDay[dayKey(r.day)] = (Number(r.n) || 0);
+
+  const window = dayWindow(todayKey, days);
+  let inWindow = 0;
+  for (const d of window) inWindow += byDay[d] ?? 0;
+  const priorTotal = Math.max(0, totalUsers - inWindow);
+
+  let running = priorTotal;
+  const points = window.map((day) => {
+    const n = byDay[day] ?? 0;
+    running += n;
+    return { day, n, cumulative: running };
+  });
+  return { points, priorTotal };
+}
+
+/** The metric_snapshots row to upsert for today. Shape mirrors the table columns
+ *  (updated_at is added at write time by the caller). */
+export function snapshotRow(
+  todayKey: string,
+  totalUsers: number,
+  dmgDownloads: number,
+  mac: number,
+  ios: number,
+): {
+  day: string;
+  total_users: number;
+  dmg_downloads: number;
+  mac_active_30d: number;
+  ios_active_30d: number;
+} {
+  return {
+    day: todayKey,
+    total_users: totalUsers,
+    dmg_downloads: dmgDownloads,
+    mac_active_30d: mac,
+    ios_active_30d: ios,
+  };
+}
+
+/** Mac vs iOS actives over time from stored snapshots, with today's freshly
+ *  computed values merged in (so the chart shows today even on the first-ever
+ *  open, before the upsert is read back). Sparse by design — pre-history days
+ *  genuinely have no snapshot, so they're absent rather than zero-filled. */
+export function activesSeries(
+  rows: SnapshotRow[],
+  today: { day: string; mac: number; ios: number },
+): ActivePoint[] {
+  const byDay: Record<string, { mac: number; ios: number }> = {};
+  for (const r of rows) {
+    byDay[dayKey(r.day)] = {
+      mac: Number(r.mac_active_30d) || 0,
+      ios: Number(r.ios_active_30d) || 0,
+    };
+  }
+  byDay[today.day] = { mac: today.mac, ios: today.ios };
+  return Object.keys(byDay)
+    .sort()
+    .map((day) => ({ day, mac: byDay[day].mac, ios: byDay[day].ios }));
+}
