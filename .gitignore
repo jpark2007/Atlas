@@ -51,3 +51,6 @@ Config/Secrets.xcconfig
 
 # Supabase CLI scratch
 supabase/.temp/
+
+# Apple Sign in with Apple private keys — never commit
+*.p8

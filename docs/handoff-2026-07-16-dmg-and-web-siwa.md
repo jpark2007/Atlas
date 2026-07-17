@@ -90,11 +90,21 @@ NOTE: `atlas-landing.vercel.app` (no suffix) is a DIFFERENT project — never de
   (harmless; ignore it).
 - The DMG build embeds the real `Config/Secrets.xcconfig` (gitignored) — testers need
   nothing. Jonah still needs that file sent directly for his own dev builds.
-- **DMG beta sign-in is email/password only** (Apple button hidden). Drew's own
-  account is SIWA-created, so he can't log into the DMG build itself until web-SIWA
-  lands — he tests with dev builds, fine. Fresh testers sign up with email.
+- ~~DMG beta sign-in is email/password only~~ **RESOLVED same night**: web-SIWA
+  shipped (@f20d3e0 + server config below) — the Apple button works in the DMG via
+  the browser flow, including for Drew's SIWA-created account.
 
-## NEXT FEATURE (Drew approved direction): web-based Sign In with Apple for the DMG
+## ✅ DONE same night — web-based Sign In with Apple for the DMG
+
+Shipped @f20d3e0 (client: `signInWithAppleWeb()` reuses the Google PKCE browser flow +
+`atlas://auth-callback`; no loopback server, no new whitelist). Server config live:
+Services ID `com.atlaslm.atlas.web`, key `ZB5R38Y42Z` (.p8 at
+`Config/AppleAuthKey_ZB5R38Y42Z.p8`, gitignored), Supabase Apple provider Client IDs =
+`com.atlaslm.atlas.web,com.atlaslm.Atlas,com.atlaslm.AtlasMobile` (web Services ID
+must stay FIRST). **Apple OAuth secret expires 2027-01-15 — regenerate (ES256 JWT,
+iss=2WA54D67Y8, kid=ZB5R38Y42Z, sub=Services ID, aud=appleid.apple.com) and re-paste
+in Supabase before then.** DMG live at https://atlaslm.vercel.app/downloads/Atlas.dmg.
+Original plan kept below for reference.
 
 Goal: DMG users get the Apple button back via browser flow (Supabase OAuth), like
 Slack/Notion. Same team-scoped Apple user id → same Atlas account either way.
