@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Developer ID (direct-download) entitlements. Identical to Atlas.entitlements
+	     EXCEPT it omits com.apple.developer.applesignin: Apple does not permit the
+	     Sign In with Apple capability in Developer ID builds, so including it forces
+	     a provisioning profile and fails the archive. Debug/dev builds keep SIWA via
+	     Atlas.entitlements; the SIWA button is hidden at runtime when this file is in
+	     effect (see AuthService.appleSignInAvailable). -->
+	<!-- Microphone access under the hardened runtime (click-to-talk dictation). -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<!-- Calendar access under the hardened runtime (Apple Calendar / EventKit
+	     import). Like the mic key above, the resource-access entitlement is
+	     required even though the app is not sandboxed. -->
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
+	<!-- NOTE: App Sandbox is intentionally NOT enabled. The Carbon global hotkey
+	     (system-wide ⌘⇧K) requires the sandbox to be off. -->
+</dict>
+</plist>

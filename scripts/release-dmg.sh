@@ -112,13 +112,11 @@ ok "Project regenerated"
 # ── 2. archive ───────────────────────────────────────────────────────────────
 step "2/7  xcodebuild archive (Release)"
 rm -rf "$ARCHIVE"
-# NOTE: Atlas carries the Sign In with Apple entitlement, which forces a
-# provisioning profile even for Developer ID. Manual Developer ID signing needs
-# a "Developer ID" provisioning profile for com.atlaslm.Atlas that includes the
-# Sign In with Apple capability, created in the Apple Developer portal and
-# downloaded to ~/Library/MobileDevice/Provisioning Profiles/. Until that exists,
-# this step fails with "requires a provisioning profile with the Sign In with
-# Apple feature". -allowProvisioningUpdates lets Xcode fetch it once it exists.
+# NOTE: The Release config signs against Atlas/Atlas-DeveloperID.entitlements,
+# which omits com.apple.developer.applesignin (Apple does not allow Sign In with
+# Apple in Developer ID builds). With no SIWA entitlement, Developer ID needs NO
+# provisioning profile — manual signing with the "Developer ID Application" cert
+# is sufficient. -allowProvisioningUpdates is kept as a harmless fallback.
 xcodebuild archive \
   -project "$PROJECT" \
   -scheme "$SCHEME" \
@@ -127,17 +125,15 @@ xcodebuild archive \
   -archivePath "$ARCHIVE" \
   -allowProvisioningUpdates \
   | tail -20
-[[ -d "$ARCHIVE" ]] || die "archive failed — see step 2 notes: likely missing the Developer ID provisioning profile with Sign In with Apple for com.atlaslm.Atlas"
+[[ -d "$ARCHIVE" ]] || die "archive failed — check the Developer ID Application cert is in the login keychain"
 ok "Archived → $ARCHIVE"
 
 # ── 3. take the .app straight from the archive ───────────────────────────────
 # We copy directly from the archive rather than `xcodebuild -exportArchive`.
 # The archived .app is already Developer ID signed with the hardened runtime
 # (Xcode signs during archive using the Release config). exportArchive would
-# re-sign against a provisioning profile, and Atlas carries the Sign In with
-# Apple entitlement which forces exportArchive to demand a Developer ID profile
-# with that capability — not available headlessly. Direct copy keeps the exact
-# bytes that were signed and notarizes fine. See release notes / task report.
+# re-sign against a provisioning profile. Direct copy keeps the exact bytes that
+# were signed and notarizes fine. See release notes / task report.
 step "3/7  Stage the .app from the archive"
 rm -rf "$EXPORT_DIR"
 mkdir -p "$EXPORT_DIR"

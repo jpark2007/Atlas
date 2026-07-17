@@ -44,10 +44,12 @@ struct SignInView: View {
                     .padding(.top, 2)
                 }
 
-                dividerOr
+                if AuthService.appleSignInAvailable {
+                    dividerOr
 
-                VStack(spacing: 10) {
-                    appleButton
+                    VStack(spacing: 10) {
+                        appleButton
+                    }
                 }
 
                 Button("Continue without an account") { auth.continueOffline() }
