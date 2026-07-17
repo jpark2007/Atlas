@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import AuthenticationServices
 import CryptoKit
 import Security
@@ -28,8 +29,13 @@ final class AuthService: ObservableObject {
     private let keychainAccount = "session"
     private var refreshTask: Task<SupabaseSession?, Never>?
     private var pkceVerifier: String?
-    private var webAuthSession: ASWebAuthenticationSession?
     private let presenter = AuthPresentationAnchor()
+    /// Single in-flight web-auth flow. The URL is delivered later by
+    /// `handleAuthCallback(_:)` (the scene's `.onOpenURL`); this holds the
+    /// suspended `startWebAuth` continuation until then. Only ever one at a time —
+    /// a new flow supersedes (fails) any pending one.
+    private var webAuthContinuation: CheckedContinuation<URL, Error>?
+    private var webAuthTimeout: Task<Void, Never>?
 
     var displayName: String {
         if case .signedIn(let user) = state { return user.displayName }
@@ -151,8 +157,8 @@ final class AuthService: ObservableObject {
 
     /// Web-based Sign in with Apple for Developer ID (direct-download) builds, which
     /// legally can't carry the native `applesignin` entitlement (`appleSignInAvailable`
-    /// == false). Runs Supabase-hosted Apple OAuth (PKCE) in the same
-    /// ASWebAuthenticationSession browser flow as Google, ending in the identical
+    /// == false). Runs Supabase-hosted Apple OAuth (PKCE) through the same
+    /// default-browser web-auth flow as Google, ending in the identical
     /// Keychain-persisted session as native SIWA — one session storage path.
     func signInWithAppleWeb() async {
         await run {
@@ -186,19 +192,45 @@ final class AuthService: ObservableObject {
         }
     }
 
+    /// Opens the OAuth URL in the system **default** browser (Slack-style, not the
+    /// Safari sheet ASWebAuthenticationSession forces) and suspends until the
+    /// browser redirects back to `atlas://auth-callback?…`, which the scene's
+    /// `.onOpenURL` hands to `handleAuthCallback(_:)`. Starting a second flow fails
+    /// the first; a stale flow (user closed the tab) times out so nothing leaks and
+    /// a later retry gets a fresh continuation.
     private func startWebAuth(url: URL) async throws -> URL {
-        try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(
-                url: url, callbackURLScheme: SupabaseConfig.redirectScheme
-            ) { callbackURL, error in
-                if let callbackURL { continuation.resume(returning: callbackURL) }
-                else { continuation.resume(throwing: error ?? SupabaseAuthError(message: "Sign-in cancelled.")) }
+        // A new flow supersedes any pending one — fail the old continuation first so
+        // it can never be resumed twice.
+        failWebAuth(SupabaseAuthError(message: "Sign-in cancelled."))
+        NSWorkspace.shared.open(url)
+        return try await withCheckedThrowingContinuation { continuation in
+            webAuthContinuation = continuation
+            webAuthTimeout = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 5 * 60 * 1_000_000_000)   // 5 min
+                guard !Task.isCancelled else { return }
+                self?.failWebAuth(SupabaseAuthError(message: "Sign-in timed out. Please try again."))
             }
-            session.presentationContextProvider = presenter
-            session.prefersEphemeralWebBrowserSession = false
-            webAuthSession = session
-            session.start()
         }
+    }
+
+    /// Delivers the `atlas://auth-callback` URL from the scene's `.onOpenURL` to the
+    /// suspended `startWebAuth` continuation and brings Atlas back to the front (the
+    /// browser had focus). No-ops if no flow is pending or the URL isn't our callback.
+    func handleAuthCallback(_ url: URL) {
+        guard url.host == "auth-callback", let continuation = webAuthContinuation else { return }
+        webAuthContinuation = nil
+        webAuthTimeout?.cancel(); webAuthTimeout = nil
+        NSApp.activate(ignoringOtherApps: true)
+        continuation.resume(returning: url)
+    }
+
+    /// Fails and clears the pending web-auth continuation, if any. Idempotent —
+    /// safe to call when nothing is pending (supersede / timeout paths).
+    private func failWebAuth(_ error: Error) {
+        guard let continuation = webAuthContinuation else { return }
+        webAuthContinuation = nil
+        webAuthTimeout?.cancel(); webAuthTimeout = nil
+        continuation.resume(throwing: error)
     }
 
     // MARK: - Offline / sign out

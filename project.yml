@@ -80,6 +80,13 @@ targets:
         GoogleOAuthClientID: "$(GOOGLE_OAUTH_CLIENT_ID)"
         GoogleOAuthClientSecret: "$(GOOGLE_OAUTH_CLIENT_SECRET)"
         DriveOnePickRedirectURI: "$(DRIVE_ONEPICK_REDIRECT_URI)"
+        # Registers atlas:// so the Supabase OAuth callback (atlas://auth-callback)
+        # opened in the system default browser routes back into the app via
+        # .onOpenURL — Xcode's INFOPLIST_KEY_* mechanism can't emit CFBundleURLTypes.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.atlaslm.Atlas
+            CFBundleURLSchemes:
+              - atlas
   AtlasTests:
     type: bundle.unit-test
     platform: macOS

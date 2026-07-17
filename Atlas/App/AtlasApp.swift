@@ -22,6 +22,9 @@ struct AtlasApp: App {
     var body: some Scene {
         WindowGroup {
             AppGate()
+                // OAuth redirect (atlas://auth-callback) opened in the default browser
+                // routes back here — hand it to the suspended web-auth continuation.
+                .onOpenURL { auth.handleAuthCallback($0) }
                 .environmentObject(state)
                 .environmentObject(auth)
                 .environmentObject(canvas)
