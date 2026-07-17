@@ -175,6 +175,44 @@ Deno.test("non-island lockers still lock: nested list flags the tab read-only", 
   assertEquals(t.readonlyReason, "nested list");
 });
 
+Deno.test("horizontal rule becomes a frozen divider island: tab stays WRITABLE, paragraphs editable", () => {
+  const doc = { tabs: [{
+    tabProperties: { tabId: "t.hr", title: "HR", index: 0 },
+    documentTab: { body: { content: [
+      { sectionBreak: {} },
+      { paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+          elements: [{ textRun: { content: "above the rule\n", textStyle: {} } }] } },
+      { paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+          elements: [{ horizontalRule: { textStyle: {} } }] } },
+      { paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+          elements: [{ textRun: { content: "below the rule\n", textStyle: {} } }] } },
+    ] }, lists: {} },
+    childTabs: [],
+  }] };
+  const t = readTabs(doc)[0];
+  assertEquals(t.writable, true);
+  assertEquals(t.readonlyReason, null);
+  // The rule is one `!> ---` divider island; the surrounding paragraphs stay editable.
+  assertEquals(t.markdown, "above the rule\n!> ---\nbelow the rule\n");
+});
+
+Deno.test("non-island lockers still lock: page break, footnote, and equation flag the tab", () => {
+  for (const el of [{ pageBreak: {} }, { footnoteReference: {} }, { equation: {} }]) {
+    const doc = { tabs: [{
+      tabProperties: { tabId: "t.u", title: "U", index: 0 },
+      documentTab: { body: { content: [
+        { sectionBreak: {} },
+        { paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+            elements: [{ textRun: { content: "x", textStyle: {} } }, el, { textRun: { content: "\n", textStyle: {} } }] } },
+      ] }, lists: {} },
+      childTabs: [],
+    }] };
+    const t = readTabs(doc)[0];
+    assertEquals(t.writable, false);
+    assertEquals(t.readonlyReason, "unsupported inline element");
+  }
+});
+
 Deno.test("preview concatenation strips island markers (mobile/search surface)", () => {
   const md = tabsPreviewMarkdown(readTabs(FIXTURE));
   assertEquals(md.startsWith("# Simple\n"), true);
@@ -424,6 +462,51 @@ Deno.test("splice: text around a table rewrites ONLY the gaps, bottom-up, table 
     const loc = r.insertText?.location;
     if (range) assertEquals(range.endIndex <= 7 || range.startIndex >= 20, true);
     if (loc) assertEquals(loc.index <= 7 || loc.index >= 20, true);
+  }
+});
+
+/** intro paragraph [1,7) · horizontal-rule paragraph [7,9) · tail paragraph [9,15). */
+const HR_TAB = {
+  body: { content: [
+    { sectionBreak: {}, startIndex: 0, endIndex: 1 },
+    { startIndex: 1, endIndex: 7, paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+        elements: [{ textRun: { content: "intro\n", textStyle: {} } }] } },
+    { startIndex: 7, endIndex: 9, paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+        elements: [{ horizontalRule: { textStyle: {} } }] } },
+    { startIndex: 9, endIndex: 15, paragraph: { paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+        elements: [{ textRun: { content: "tail!\n", textStyle: {} } }] } },
+  ] },
+  inlineObjects: {},
+  lists: {},
+};
+
+Deno.test("segmentTab: a horizontal-rule paragraph is a 'para' island between editable gaps", () => {
+  const { islands, gaps } = segmentTab(HR_TAB);
+  assertEquals(islands, [{ type: "para", startIndex: 7, endIndex: 9 }]);
+  assertEquals(gaps, [{ startIndex: 1, endIndex: 7 }, { startIndex: 9, endIndex: 15 }]);
+});
+
+Deno.test("splice: editing around a horizontal-rule island rewrites ONLY the gaps, rule untouched", () => {
+  const md = "intro2\n!> ---\ntail2\n";
+  const reqs = renderTabRequests("t.H", HR_TAB, md) as any[];
+  assertEquals(reqs, [
+    // tail gap first (bottom-up): delete [9,14) keeping the final mark, insert at 9
+    { deleteContentRange: { range: { tabId: "t.H", startIndex: 9, endIndex: 14 } } },
+    { insertText: { location: { tabId: "t.H", index: 9 }, text: "tail2" } },
+    { updateParagraphStyle: { range: { tabId: "t.H", startIndex: 9, endIndex: 14 },
+        paragraphStyle: { namedStyleType: "NORMAL_TEXT" }, fields: "namedStyleType" } },
+    // intro gap: delete [1,6) keeping ITS final newline, insert at 1
+    { deleteContentRange: { range: { tabId: "t.H", startIndex: 1, endIndex: 6 } } },
+    { insertText: { location: { tabId: "t.H", index: 1 }, text: "intro2" } },
+    { updateParagraphStyle: { range: { tabId: "t.H", startIndex: 1, endIndex: 7 },
+        paragraphStyle: { namedStyleType: "NORMAL_TEXT" }, fields: "namedStyleType" } },
+  ]);
+  // No request range or insertion may touch the rule's paragraph [7,9).
+  for (const r of reqs) {
+    const range = r.deleteContentRange?.range ?? r.updateParagraphStyle?.range;
+    const loc = r.insertText?.location;
+    if (range) assertEquals(range.endIndex <= 7 || range.startIndex >= 9, true);
+    if (loc) assertEquals(loc.index <= 7 || loc.index >= 9, true);
   }
 });
 

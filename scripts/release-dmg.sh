@@ -33,7 +33,11 @@ cd "$ROOT"
 PROJECT="Atlas.xcodeproj"
 SCHEME="Atlas"
 APP_NAME="Atlas.app"
-VOL_NAME="Atlas"
+# "Atlas Installer", not "Atlas": once Atlas.app is installed in /Applications,
+# macOS App Management (TCC) blocks unprivileged access to /Volumes/Atlas/Atlas.app
+# (a recognized install path for com.atlaslm.Atlas), so `hdiutil create` fails
+# with "Operation not permitted". Any other volume name avoids the protected path.
+VOL_NAME="Atlas Installer"
 TEAM_ID="2WA54D67Y8"
 NOTARY_PROFILE="atlas-notary"
 

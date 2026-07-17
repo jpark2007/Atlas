@@ -74,6 +74,7 @@ struct SettingsView: View {
                 navRow("Notifications") { notificationsPage }
                 navRow("General") { generalPage }
                 navRow("Help & Tips") { helpPage }
+                navRow("Report a bug") { ReportBugPage(db: store.db) }
             }
         }
         .settingsListChrome()

@@ -381,6 +381,11 @@ final class AppState: ObservableObject {
         // fresh on an hourly timer (local edits also trigger a debounced publish).
         await publishAvailability()
         startAvailabilityPublishTimer()
+
+        // Fire-and-forget launch ping so the owner dashboard can count Mac
+        // actives. Best-effort: silent on any failure (offline / pre-migration).
+        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        Task { [db] in try? await db.recordAppPing(platform: "macos", appVersion: appVersion) }
     }
 
     /// Blanks every user-scoped model array so a signed-out / just-switched account

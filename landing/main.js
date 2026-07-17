@@ -9,6 +9,12 @@
 const WAITLIST_ENDPOINT =
   "https://jxrmozhgsebwtbdleyxp.supabase.co/functions/v1/waitlist";
 
+/* TRACK_DOWNLOAD_ENDPOINT — a non-blocking beacon fired when the "Download for
+   Mac" button is clicked, so the owner dashboard can count DMG downloads. Never
+   delays or blocks the actual download. */
+const TRACK_DOWNLOAD_ENDPOINT =
+  "https://jxrmozhgsebwtbdleyxp.supabase.co/functions/v1/track-download";
+
 const COPY = {
   idle: "Join the waitlist",
   sending: "Adding you…",
@@ -74,6 +80,28 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       // Never leave the button stuck in "Adding you…".
       setStatus(COPY.errorGeneral, "error");
       resetButton();
+    }
+  });
+})();
+
+/* ---- download beacon ------------------------------------------------
+   Count DMG downloads without getting in the way. `sendBeacon` (POST, no
+   preflight, no body) queues the request and returns instantly, so the click
+   proceeds to the download uninterrupted; a fetch keepalive is the fallback.
+   Any failure is silently ignored — a missed count never blocks a download.
+   -------------------------------------------------------------------- */
+(function initDownloadBeacon() {
+  const btn = document.querySelector("[data-download]");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(TRACK_DOWNLOAD_ENDPOINT);
+      } else {
+        fetch(TRACK_DOWNLOAD_ENDPOINT, { method: "POST", keepalive: true }).catch(() => {});
+      }
+    } catch (_) {
+      /* never let tracking interfere with the download */
     }
   });
 })();

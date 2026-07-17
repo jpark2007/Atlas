@@ -20,7 +20,7 @@ const HONEYPOT_FIELD = "referral_code";
 // This function is public (no JWT), so scope CORS to the landing origin rather
 // than `*` — only the marketing site should be able to POST from a browser.
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "https://atlas-landing-woad.vercel.app",
+  "Access-Control-Allow-Origin": "https://atlaslm.vercel.app",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",

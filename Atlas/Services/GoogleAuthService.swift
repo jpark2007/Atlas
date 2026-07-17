@@ -19,12 +19,19 @@ enum GoogleOAuthConfig {
 
     /// Read+write events on the user's calendars (two-way sync, WS-5) plus the
     /// Google Docs + Drive scopes for Notes ↔ Google Docs (WS-10):
+    ///   • `calendar.events` — read/write events on any calendar the user can access.
+    ///   • `calendar.readonly` — enumerate the account's calendarList (per-calendar
+    ///     picker, 0036). `calendar.events` alone canNOT list calendars — calendarList.list
+    ///     403s without a calendar/calendar.readonly grant — so without this the picker
+    ///     silently falls back to primary-only. Read-only is the narrowest scope that
+    ///     unlocks the enumeration (we still write via calendar.events).
     ///   • `documents`  — read/write the backing Doc's content + structure.
     ///   • `drive.file` — create/locate the Docs Atlas itself owns.
     ///   • `openid`/`email` — surface WHICH Google account granted access, so a
     ///     multi-account connection can be labelled with its login (id_token).
     static let scopes = [
         "https://www.googleapis.com/auth/calendar.events",
+        "https://www.googleapis.com/auth/calendar.readonly",
         "https://www.googleapis.com/auth/documents",
         "https://www.googleapis.com/auth/drive.file",
         "openid",

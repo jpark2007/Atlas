@@ -78,6 +78,11 @@ final class MobileStore: ObservableObject {
         await refresh()
         // Pull cross-device preferences (server wins) once data is loaded.
         await pullSyncedSettings()
+
+        // Fire-and-forget launch ping so the owner dashboard can count iOS
+        // actives. Best-effort: silent on any failure (offline / pre-migration).
+        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        Task { [db] in try? await db.recordAppPing(platform: "ios", appVersion: appVersion) }
     }
 
     // MARK: - Auth

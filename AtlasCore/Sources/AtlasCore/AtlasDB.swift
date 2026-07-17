@@ -1384,6 +1384,49 @@ public final class AtlasDB {
                        body: body, sess: sess)
     }
 
+    // MARK: Bug reports + presence pings (0037)
+
+    /// File a bug report as the signed-in user. `platform` is "macos" / "ios";
+    /// `appVersion` is CFBundleShortVersionString. RLS requires `user_id =
+    /// auth.uid()`, so we stamp the current user id on the row. The owner reads
+    /// these back only via the service-role admin-stats function.
+    public func insertBugReport(message: String, appVersion: String, platform: String) async throws {
+        let sess = try await requireSession()
+        let userId = try await currentUserId()
+        struct Body: Encodable {
+            let user_id: UUID
+            let message: String
+            let app_version: String
+            let platform: String
+        }
+        let body = try JSONEncoder().encode(
+            Body(user_id: userId, message: message, app_version: appVersion, platform: platform))
+        try await send(method: "POST", table: "bug_reports",
+                       extraHeaders: ["Prefer": "return=minimal"],
+                       body: body, sess: sess)
+    }
+
+    /// Fire-and-forget launch presence: upsert this device's `app_pings` row so
+    /// the owner dashboard can count Mac vs mobile actives. Best-effort — callers
+    /// ignore failures (offline, pre-migration DB, etc.).
+    public func recordAppPing(platform: String, appVersion: String) async throws {
+        let sess = try await requireSession()
+        let userId = try await currentUserId()
+        struct Body: Encodable {
+            let user_id: UUID
+            let platform: String
+            let app_version: String
+            let last_seen_at: String
+        }
+        let now = ISO8601DateFormatter().string(from: Date())
+        let body = try JSONEncoder().encode(
+            Body(user_id: userId, platform: platform, app_version: appVersion, last_seen_at: now))
+        try await send(method: "POST", table: "app_pings",
+                       query: [URLQueryItem(name: "on_conflict", value: "user_id,platform")],
+                       extraHeaders: upsertHeaders,
+                       body: body, sess: sess)
+    }
+
     // MARK: Shared projects (collab phase 2) — members / invites
 
     /// The signed-in user's id, parsed from the session's `user.id` string.

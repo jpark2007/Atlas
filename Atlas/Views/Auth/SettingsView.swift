@@ -1027,6 +1027,14 @@ struct SettingsView: View {
 
     // MARK: – Calendar picker (per-calendar selection, 0036)
 
+    /// True when the only calendar on record is the server's primary-only fallback: a
+    /// single row whose id is the literal `"primary"`. A genuinely-enumerated primary
+    /// carries the account's real calendar id (its email), never `"primary"`, so this
+    /// uniquely identifies "enumeration didn't run" (pre-`calendar.readonly` grant).
+    private var isPrimaryOnlyFallback: Bool {
+        detailCalendars.count == 1 && detailCalendars.first?.calendarId == "primary"
+    }
+
     /// The connection's calendars as a checkbox list — tap to opt a calendar in/out of
     /// sync. Primary is badged. Follows AtlasTheme (outline square glyphs, caps label,
     /// no accent fills). Hidden until at least one calendar is known.
@@ -1041,6 +1049,14 @@ struct SettingsView: View {
                         .atlasFont(size: 12, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
+            } else if isPrimaryOnlyFallback {
+                // Enumeration never ran (older grant lacks calendar.readonly, or a fetch
+                // error): the server recorded only the fallback `primary` row. Tell the
+                // user their other calendars are listable after a reconnect, rather than
+                // silently implying this account has just one calendar.
+                Text("Reconnect to list your other calendars.")
+                    .atlasFont(size: 12, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
             } else if detailCalendars.isEmpty {
                 Text("Only this account's primary calendar is available.")
                     .atlasFont(size: 12, design: .rounded)
@@ -1500,6 +1516,9 @@ struct SettingsView: View {
 
     // MARK: – Help & Tips section
 
+    /// "Report a bug" sheet presentation (in-app issue filing, 0037).
+    @State private var showReportBug = false
+
     /// Static, scannable practical tips — title + one-liner per row, hairline-
     /// separated like every other settings group. No links, no fluff.
     private var helpSection: some View {
@@ -1519,6 +1538,18 @@ struct SettingsView: View {
                 .padding(.vertical, 8)
                 .atlasHairlineBelow()
             }
+
+            Button { showReportBug = true } label: {
+                row(icon: "ant", tint: AtlasTheme.Colors.accent,
+                    title: "Report a bug",
+                    subtitle: "Hit a snag? Send it straight to us — no email needed.")
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+        .sheet(isPresented: $showReportBug) {
+            ReportBugSheet(db: state.db)
         }
     }
 

@@ -11,15 +11,16 @@
  * bold/italic/underline/link. Link runs are exempt from strictness on
  * underline/foregroundColor (Google auto-styles links).
  *
- * FROZEN ISLANDS: tables and image paragraphs that can't round-trip (cropped/
- * rotated/adjusted images, an image sharing its paragraph with text or a
- * heading/list prefix, multiple images on one line, positioned/floating-image
- * tether paragraphs) no longer lock the tab. They are emitted as `!> `-marked
- * lines — display-only in the editor — and the write path SPLICES around them
- * (renderTabRequests): only the editable gaps between islands are ever deleted
- * and rebuilt, so island content is physically untouched by a save. Anything
- * else beyond the dialect (nested lists, unknown styles, smart chips, TOC,
- * mid-doc section breaks, unsupported inline elements…) still locks the whole
+ * FROZEN ISLANDS: tables, horizontal-rule dividers, and image paragraphs that
+ * can't round-trip (cropped/rotated/adjusted images, an image sharing its
+ * paragraph with text or a heading/list prefix, multiple images on one line,
+ * positioned/floating-image tether paragraphs) no longer lock the tab. They are
+ * emitted as `!> `-marked lines — display-only in the editor — and the write path
+ * SPLICES around them (renderTabRequests): only the editable gaps between islands
+ * are ever deleted and rebuilt, so island content is physically untouched by a
+ * save. Anything else beyond the dialect (nested lists, unknown styles, smart
+ * chips, TOC, mid-doc section breaks, and the remaining unsupported inline
+ * elements — page/column breaks, footnotes, equations…) still locks the whole
  * tab, with a lossy-but-readable markdown preview.
  *
  * DIALECT SOURCE OF TRUTH: AtlasCore/Sources/AtlasCore/RichDocMarkdown.swift.
@@ -142,12 +143,12 @@ function walk(tabs: any[], parent: string | null, acc: DocTab[]) {
 
 // ── Island classification (shared by pull markdown + write splice) ──────────
 
-/** True when a paragraph is a frozen island: it tethers a positioned (floating)
- *  image, or carries inline image(s) that can't round-trip as a solo clean
- *  `![image:id]` line — image+text on one line, an image under a heading/list
- *  prefix, several images in one paragraph, or a cropped/rotated/adjusted image.
- *  MUST stay in lockstep between tabToMarkdown (pull) and segmentTab (write) —
- *  it is the single decision both sides share.
+/** True when a paragraph is a frozen island: it holds a horizontal-rule divider,
+ *  tethers a positioned (floating) image, or carries inline image(s) that can't
+ *  round-trip as a solo clean `![image:id]` line — image+text on one line, an
+ *  image under a heading/list prefix, several images in one paragraph, or a
+ *  cropped/rotated/adjusted image. MUST stay in lockstep between tabToMarkdown
+ *  (pull) and segmentTab (write) — it is the single decision both sides share.
  */
 // deno-lint-ignore no-explicit-any
 function paraIsland(p: any, inlineObjects: any): boolean {
@@ -161,6 +162,10 @@ function paraIsland(p: any, inlineObjects: any): boolean {
       const objectId = e.inlineObjectElement.inlineObjectId as string;
       const imgProps = inlineObjects?.[objectId]?.inlineObjectProperties?.embeddedObject?.imageProperties;
       if (isCropLocked(imgProps)) anyCropped = true;
+    } else if (e.horizontalRule !== undefined) {
+      // A horizontal-rule divider can't round-trip through the dialect, so it
+      // freezes its paragraph — preserved untouched in Google, display-only here.
+      return true;
     } else if (e.textRun !== undefined) {
       if (((e.textRun.content as string) ?? "").replace(/\n$/, "") !== "") hadText = true;
     }
@@ -256,9 +261,14 @@ function tabToMarkdown(documentTab: any): { markdown: string; reason: string | n
         line += `![image:${objectId}]`;
       } else if (e.person !== undefined || e.richLink !== undefined) {
         if (!island) flag("smart chip");
+      } else if (e.horizontalRule !== undefined) {
+        // A horizontal rule always freezes its paragraph (paraIsland), so this is
+        // only reached with island === true. Emit a `---` divider token for
+        // display; the write splices around the island, leaving the real rule
+        // untouched in Google.
+        line += "---";
       } else if (e.pageBreak !== undefined || e.columnBreak !== undefined ||
-                 e.footnoteReference !== undefined || e.horizontalRule !== undefined ||
-                 e.equation !== undefined) {
+                 e.footnoteReference !== undefined || e.equation !== undefined) {
         if (!island) flag("unsupported inline element");
       }
     }

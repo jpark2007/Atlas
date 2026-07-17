@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Atlas — Owner dashboard</title>
+<meta name="robots" content="noindex, nofollow" />
+<meta name="theme-color" content="#fbfaf7" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,340..600;1,9..144,340..600&family=Nunito:ital,wght@0,400..800;1,400..700&display=swap" rel="stylesheet" />
+<link rel="icon" type="image/png" href="/assets/favicon-32.png" />
+
+<style>
+  :root {
+    --paper: #fbfaf7;
+    --ink: #1a191d;
+    --muted: #6c6a72;
+    --hairline: rgba(0, 0, 0, 0.08);
+    --hairline-strong: rgba(0, 0, 0, 0.14);
+    --ink-wash: rgba(26, 25, 29, 0.05);
+    --serif: "Fraunces", Georgia, "Times New Roman", serif;
+    --sans: "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+  .wrap { width: min(920px, 92vw); margin: 0 auto; }
+  main { padding: clamp(2.5rem, 8vh, 5rem) 0 4rem; }
+
+  h1 {
+    font-family: var(--serif); font-weight: 460; letter-spacing: -0.01em;
+    font-size: clamp(1.8rem, 4vw, 2.6rem); margin: 0 0 0.25rem;
+  }
+  .lede { color: var(--muted); margin: 0 0 2.5rem; }
+  .kicker {
+    font-size: 12px; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 0.5rem;
+  }
+
+  /* ── code gate ── */
+  .gate { max-width: 360px; }
+  .gate__row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+  input[type="text"], input[type="password"] {
+    font-family: var(--sans); font-size: 1rem; color: var(--ink);
+    background: #fff; border: 1px solid var(--hairline-strong);
+    border-radius: 10px; padding: 0.7rem 0.9rem; width: 100%;
+    letter-spacing: 0.3em;
+  }
+  input:focus { outline: none; border-color: var(--ink); }
+  button {
+    font-family: var(--sans); font-weight: 700; font-size: 0.95rem;
+    cursor: pointer; border-radius: 10px; padding: 0.7rem 1.1rem;
+    border: 1px solid var(--ink); background: var(--ink); color: var(--paper);
+    transition: opacity 0.15s var(--ease);
+    white-space: nowrap;
+  }
+  button:hover { opacity: 0.85; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.ghost { background: transparent; color: var(--ink); border-color: var(--hairline-strong); }
+  .status { min-height: 1.2rem; margin-top: 0.75rem; font-size: 0.9rem; color: var(--muted); }
+  .status[data-kind="error"] { color: #a3402f; }
+
+  /* ── tiles ── */
+  .tiles {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;
+    margin: 0 0 2.5rem;
+  }
+  @media (max-width: 680px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  .tile {
+    border: 1px solid var(--hairline); border-radius: 14px;
+    background: #fff; padding: 1.1rem 1.2rem;
+  }
+  .tile__n { font-family: var(--serif); font-size: 2.2rem; font-weight: 500; letter-spacing: -0.02em; }
+  .tile__l { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-top: 0.15rem; }
+
+  section.block { margin: 0 0 2.5rem; }
+  .revenue {
+    border: 1px dashed var(--hairline-strong); border-radius: 14px;
+    padding: 1.2rem 1.4rem; color: var(--muted);
+    display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
+  }
+  .revenue strong { font-family: var(--serif); font-size: 1.6rem; color: var(--ink); font-weight: 500; }
+
+  /* ── bug reports ── */
+  .report {
+    border: 1px solid var(--hairline); border-radius: 12px; background: #fff;
+    padding: 0.9rem 1.1rem; margin-bottom: 0.75rem;
+  }
+  .report--resolved { opacity: 0.5; }
+  .report__msg { white-space: pre-wrap; word-break: break-word; margin: 0 0 0.5rem; }
+  .report__foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    font-size: 12px; color: var(--muted);
+  }
+  .report__meta { font-weight: 600; letter-spacing: 0.02em; }
+  .tag {
+    display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+    text-transform: uppercase; padding: 0.1rem 0.45rem; border-radius: 6px;
+    background: var(--ink-wash); margin-right: 0.4rem;
+  }
+  .report button { padding: 0.4rem 0.8rem; font-size: 0.85rem; }
+  .empty { color: var(--muted); font-style: italic; }
+
+  .foot-actions { margin-top: 2.5rem; display: flex; gap: 0.75rem; align-items: center; }
+  a.back { color: var(--muted); text-decoration: none; font-size: 0.9rem; }
+  a.back:hover { color: var(--ink); }
+  [hidden] { display: none !important; }
+</style>
+
+<main>
+  <div class="wrap">
+    <p class="kicker">Atlas · internal</p>
+    <h1>Owner dashboard</h1>
+
+    <!-- ── Gate ── -->
+    <div id="gate" class="gate">
+      <p class="lede">Enter the access code to continue.</p>
+      <form id="gateForm" class="gate__row" autocomplete="off">
+        <input id="codeInput" type="password" inputmode="numeric" placeholder="Code"
+               aria-label="Access code" maxlength="8" />
+        <button type="submit" id="enterBtn">Enter</button>
+      </form>
+      <p class="status" id="gateStatus" role="status" aria-live="polite"></p>
+    </div>
+
+    <!-- ── Dashboard ── -->
+    <div id="dash" hidden>
+      <p class="lede">Live figures. Refreshes on load and after each action.</p>
+
+      <div class="tiles">
+        <div class="tile"><div class="tile__n" id="tUsers">—</div><div class="tile__l">Total users</div></div>
+        <div class="tile"><div class="tile__n" id="tDownloads">—</div><div class="tile__l">Downloads</div></div>
+        <div class="tile"><div class="tile__n" id="tMac">—</div><div class="tile__l">Mac users</div></div>
+        <div class="tile"><div class="tile__n" id="tMobile">—</div><div class="tile__l">Mobile users</div></div>
+      </div>
+
+      <section class="block">
+        <p class="kicker">Revenue</p>
+        <div class="revenue">
+          <span>No paid plan yet</span>
+          <strong>$0</strong>
+        </div>
+      </section>
+
+      <section class="block">
+        <p class="kicker">Bug reports</p>
+        <div id="reports"></div>
+      </section>
+
+      <p class="status" id="dashStatus" role="status" aria-live="polite"></p>
+
+      <div class="foot-actions">
+        <button class="ghost" id="refreshBtn" type="button">Refresh</button>
+        <button class="ghost" id="changeCodeBtn" type="button">Change code</button>
+        <a class="back" href="/">← Back to site</a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+  const ADMIN_ENDPOINT =
+    "https://jxrmozhgsebwtbdleyxp.supabase.co/functions/v1/admin-stats";
+
+  const $ = (id) => document.getElementById(id);
+  let CODE = sessionStorage.getItem("atlas_admin_code") || "";
+
+  function setStatus(el, msg, kind) {
+    el.textContent = msg || "";
+    if (kind) el.dataset.kind = kind; else delete el.dataset.kind;
+  }
+
+  async function callAdmin(payload) {
+    const res = await fetch(ADMIN_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    let body = null;
+    try { body = await res.json(); } catch { /* non-JSON */ }
+    return { ok: res.ok, status: res.status, body };
+  }
+
+  function ageLabel(iso) {
+    const then = new Date(iso).getTime();
+    const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+    if (mins < 60) return mins + "m ago";
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return hrs + "h ago";
+    return Math.round(hrs / 24) + "d ago";
+  }
+
+  function render(data) {
+    $("tUsers").textContent = data.totalUsers ?? 0;
+    $("tDownloads").textContent = data.dmgDownloads ?? 0;
+    $("tMac").textContent = data.mac ?? 0;
+    $("tMobile").textContent = data.mobile ?? 0;
+
+    const wrap = $("reports");
+    wrap.innerHTML = "";
+    const reports = data.reports || [];
+    if (!reports.length) {
+      const p = document.createElement("p");
+      p.className = "empty";
+      p.textContent = "No bug reports yet.";
+      wrap.appendChild(p);
+      return;
+    }
+    for (const r of reports) {
+      const resolved = r.status === "resolved";
+      const card = document.createElement("div");
+      card.className = "report" + (resolved ? " report--resolved" : "");
+
+      const msg = document.createElement("p");
+      msg.className = "report__msg";
+      msg.textContent = r.message || "";
+      card.appendChild(msg);
+
+      const foot = document.createElement("div");
+      foot.className = "report__foot";
+
+      const meta = document.createElement("span");
+      meta.className = "report__meta";
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = (r.platform || "?") + (r.app_version ? " " + r.app_version : "");
+      meta.appendChild(tag);
+      meta.appendChild(document.createTextNode(ageLabel(r.created_at)));
+      foot.appendChild(meta);
+
+      if (resolved) {
+        const done = document.createElement("span");
+        done.textContent = "Resolved";
+        foot.appendChild(done);
+      } else {
+        const btn = document.createElement("button");
+        btn.textContent = "Resolve";
+        btn.addEventListener("click", () => resolveReport(r.id, btn));
+        foot.appendChild(btn);
+      }
+      card.appendChild(foot);
+      wrap.appendChild(card);
+    }
+  }
+
+  async function loadStats(statusEl) {
+    const { ok, status, body } = await callAdmin({ code: CODE, action: "stats" });
+    if (ok) {
+      render(body);
+      return true;
+    }
+    if (status === 401) setStatus(statusEl, "That code didn't work.", "error");
+    else if (status === 429) setStatus(statusEl, "Too many attempts — wait a bit and retry.", "error");
+    else setStatus(statusEl, "Couldn't load. Try again.", "error");
+    return false;
+  }
+
+  function showDashboard() {
+    $("gate").hidden = true;
+    $("dash").hidden = false;
+  }
+
+  async function resolveReport(id, btn) {
+    btn.disabled = true;
+    const { ok, status } = await callAdmin({ code: CODE, action: "resolve", reportId: id });
+    if (ok) { await loadStats($("dashStatus")); }
+    else {
+      btn.disabled = false;
+      setStatus($("dashStatus"),
+        status === 429 ? "Too many requests — slow down." : "Couldn't resolve that.", "error");
+    }
+  }
+
+  // ── gate submit ──
+  $("gateForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const code = ($("codeInput").value || "").trim();
+    if (!/^\d{4,8}$/.test(code)) {
+      setStatus($("gateStatus"), "Enter the 4–8 digit code.", "error");
+      return;
+    }
+    CODE = code;
+    $("enterBtn").disabled = true;
+    setStatus($("gateStatus"), "Checking…", null);
+    const ok = await loadStats($("gateStatus"));
+    $("enterBtn").disabled = false;
+    if (ok) {
+      sessionStorage.setItem("atlas_admin_code", CODE);
+      setStatus($("gateStatus"), "", null);
+      showDashboard();
+    }
+  });
+
+  $("refreshBtn").addEventListener("click", () => loadStats($("dashStatus")));
+
+  $("changeCodeBtn").addEventListener("click", async () => {
+    const next = prompt("New access code (4–8 digits):");
+    if (next == null) return;
+    const nc = next.trim();
+    if (!/^\d{4,8}$/.test(nc)) {
+      setStatus($("dashStatus"), "New code must be 4–8 digits.", "error");
+      return;
+    }
+    const { ok, status, body } = await callAdmin({ code: CODE, action: "change_code", newCode: nc });
+    if (ok) {
+      CODE = nc;
+      sessionStorage.setItem("atlas_admin_code", CODE);
+      setStatus($("dashStatus"), "Code changed.", null);
+    } else {
+      setStatus($("dashStatus"),
+        (body && body.error) || (status === 429 ? "Too many requests." : "Couldn't change code."), "error");
+    }
+  });
+
+  // ── resume a session if the code is still in memory ──
+  if (CODE) {
+    loadStats($("gateStatus")).then((ok) => { if (ok) showDashboard(); });
+  }
+</script>
+</html>
