@@ -33,6 +33,7 @@ extension AppState {
             lastCanvasSyncError = nil
         } catch {
             lastCanvasSyncError = error.localizedDescription
+            AtlasLog.append("Canvas sync failed: \(error.localizedDescription)")
         }
     }
 

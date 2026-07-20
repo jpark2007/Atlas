@@ -138,7 +138,7 @@ Deno.serve(async (req: Request) => {
     supabase.from("app_pings").select("user_id, platform").gte("last_seen_at", since),
     supabase
       .from("bug_reports")
-      .select("id, message, platform, app_version, status, created_at, resolved_at")
+      .select("id, title, message, contact_email, log, platform, app_version, status, created_at, resolved_at")
       .order("created_at", { ascending: false })
       .limit(50),
     supabase.rpc("admin_signup_days"),

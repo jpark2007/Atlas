@@ -1390,7 +1390,9 @@ public final class AtlasDB {
     /// `appVersion` is CFBundleShortVersionString. RLS requires `user_id =
     /// auth.uid()`, so we stamp the current user id on the row. The owner reads
     /// these back only via the service-role admin-stats function.
-    public func insertBugReport(message: String, appVersion: String, platform: String) async throws {
+    public func insertBugReport(message: String, appVersion: String, platform: String,
+                                title: String? = nil, contactEmail: String? = nil,
+                                log: String? = nil) async throws {
         let sess = try await requireSession()
         let userId = try await currentUserId()
         struct Body: Encodable {
@@ -1398,9 +1400,13 @@ public final class AtlasDB {
             let message: String
             let app_version: String
             let platform: String
+            let title: String?
+            let contact_email: String?
+            let log: String?
         }
         let body = try JSONEncoder().encode(
-            Body(user_id: userId, message: message, app_version: appVersion, platform: platform))
+            Body(user_id: userId, message: message, app_version: appVersion, platform: platform,
+                 title: title, contact_email: contactEmail, log: log))
         try await send(method: "POST", table: "bug_reports",
                        extraHeaders: ["Prefer": "return=minimal"],
                        body: body, sess: sess)

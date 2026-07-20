@@ -113,6 +113,7 @@ final class AppState: ObservableObject {
             self.serverSyncEnabled = conns.contains { $0.status != "revoked" }
         } catch {
             print("[AtlasDB] google_connections read failed — keeping current sync mode. Error: \(error.localizedDescription)")
+            AtlasLog.append("google_connections read failed: \(error.localizedDescription)")
         }
     }
 
@@ -173,6 +174,7 @@ final class AppState: ObservableObject {
             self.canvasConnection = try await db.loadCanvasConnection()
         } catch {
             print("[AtlasDB] canvas_connections read failed — keeping current state. Error: \(error.localizedDescription)")
+            AtlasLog.append("canvas_connections read failed: \(error.localizedDescription)")
         }
     }
 
@@ -197,6 +199,19 @@ final class AppState: ObservableObject {
 
     /// ⌘K command palette / search presentation.
     @Published var presentSearch: Bool = false
+
+    /// "Report a bug" sheet presentation (command palette, sidebar, error surfaces).
+    /// `bugReportPrefillTitle` seeds the sheet's Title field — set it before flipping
+    /// the flag so an error's "Report this" affordance can pre-fill the report.
+    @Published var presentBugReport: Bool = false
+    var bugReportPrefillTitle: String? = nil
+
+    /// Opens the bug-report sheet, optionally pre-filling its Title from an error
+    /// message (truncated to the column's 200-char bound).
+    func reportBug(prefillTitle: String? = nil) {
+        bugReportPrefillTitle = prefillTitle.map { String($0.prefix(200)) }
+        presentBugReport = true
+    }
 
     /// Which section the full-page Settings route shows (General / Integrations / Metrics).
     @Published var settingsSection: SettingsSection = .general
@@ -351,6 +366,7 @@ final class AppState: ObservableObject {
             // and open the gate anyway so the UI isn't stuck on the loading spinner.
             // `bootstrappedUser` stays nil so the next foreground/appearance retries.
             print("[AtlasDB] bootstrap failed — showing empty state for this user. Error: \(error.localizedDescription)")
+            AtlasLog.append("bootstrap loadAll failed: \(error.localizedDescription)")
             clearUserData()
             loadedUserID = userID
             bootstrappedUser = nil
@@ -587,6 +603,7 @@ final class AppState: ObservableObject {
             try await db.createProjectInvite(projectId: projectId, inviteeEmail: email)
         } catch {
             print("[Collab] failed to send invite: \(error)")
+            AtlasLog.append("project invite failed: \(error.localizedDescription)")
         }
     }
 
@@ -598,6 +615,7 @@ final class AppState: ObservableObject {
             try await db.createSpaceInvite(spaceId: spaceId, inviteeEmail: email)
         } catch {
             print("[Collab] failed to send space invite: \(error)")
+            AtlasLog.append("space invite failed: \(error.localizedDescription)")
         }
     }
 
@@ -614,6 +632,7 @@ final class AppState: ObservableObject {
             }
         } catch {
             print("[Collab] failed to respond to invite: \(error)")
+            AtlasLog.append("respond to invite failed: \(error.localizedDescription)")
         }
     }
 
@@ -1219,6 +1238,7 @@ final class AppState: ObservableObject {
     private func surfaceAppleWriteError(_ error: Error) {
         lastCalendarSyncError = (error as? LocalizedError)?.errorDescription
             ?? error.localizedDescription
+        AtlasLog.append("Apple Calendar write failed: \(lastCalendarSyncError ?? "unknown")")
     }
 
     /// Removes events locally (memory + DB) **without** echoing a delete to Google — used

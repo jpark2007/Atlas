@@ -16,9 +16,9 @@ const TRACK_DOWNLOAD_ENDPOINT =
   "https://jxrmozhgsebwtbdleyxp.supabase.co/functions/v1/track-download";
 
 const COPY = {
-  idle: "Join the waitlist",
+  idle: "Notify me",
   sending: "Adding you…",
-  success: "You're on the list. We'll be in touch when it's your turn.",
+  success: "You're in. We'll email you when there's news worth sharing.",
   errorGeneral: "That didn't go through. Give it another try?",
   errorEmail: "Hmm, that doesn't look like an email. Mind checking it?",
 };
@@ -91,19 +91,21 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
    Any failure is silently ignored — a missed count never blocks a download.
    -------------------------------------------------------------------- */
 (function initDownloadBeacon() {
-  const btn = document.querySelector("[data-download]");
-  if (!btn) return;
-  btn.addEventListener("click", () => {
-    try {
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(TRACK_DOWNLOAD_ENDPOINT);
-      } else {
-        fetch(TRACK_DOWNLOAD_ENDPOINT, { method: "POST", keepalive: true }).catch(() => {});
+  const btns = document.querySelectorAll("[data-download]");
+  if (!btns.length) return;
+  btns.forEach((btn) =>
+    btn.addEventListener("click", () => {
+      try {
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(TRACK_DOWNLOAD_ENDPOINT);
+        } else {
+          fetch(TRACK_DOWNLOAD_ENDPOINT, { method: "POST", keepalive: true }).catch(() => {});
+        }
+      } catch (_) {
+        /* never let tracking interfere with the download */
       }
-    } catch (_) {
-      /* never let tracking interfere with the download */
-    }
-  });
+    })
+  );
 })();
 
 /* ---- scroll moments -------------------------------------------------

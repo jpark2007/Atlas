@@ -85,6 +85,8 @@ struct SidebarView: View {
                 profileRow
                     .padding(.top, 8)
 
+                reportBugRow
+
                 if !state.pendingInvites.isEmpty {
                     Button {
                         presentInvites = true
@@ -153,6 +155,26 @@ struct SidebarView: View {
         }
         .buttonStyle(.plain)
         .onHover { track(.settings, $0) }
+    }
+
+    /// Quiet "Report a bug" affordance under the profile row — opens the app-wide
+    /// report sheet (`AppState.presentBugReport`), the same one ⌘K offers.
+    private var reportBugRow: some View {
+        Button { state.reportBug() } label: {
+            HStack(spacing: 9) {
+                Image(systemName: "ant")
+                    .atlasFont(size: 12, weight: .medium)
+                    .frame(width: 24)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                Text("Report a bug")
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                Spacer()
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Logo

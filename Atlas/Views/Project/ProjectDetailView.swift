@@ -285,9 +285,15 @@ struct ProjectDetailView: View {
             .projectSectionHeader()
 
             if let referenceError {
-                Text(referenceError)
-                    .atlasFont(size: 12, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.danger)
+                HStack(spacing: 8) {
+                    Text(referenceError)
+                        .atlasFont(size: 12, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.danger)
+                    Button("Report this") { state.reportBug(prefillTitle: referenceError) }
+                        .buttonStyle(.plain)
+                        .atlasFont(size: 12, weight: .semibold, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
+                }
             }
 
             if refs.isEmpty {
@@ -455,6 +461,7 @@ struct ProjectDetailView: View {
             } catch {
                 pickerListener = nil
                 referenceError = "Drive import didn't finish — \(error.localizedDescription)"
+                AtlasLog.append("Drive import failed: \(error.localizedDescription)")
             }
         }
     }

@@ -306,7 +306,7 @@ struct SettingsView: View {
             }
 
             if let err = canvasError {
-                Text(err).atlasFont(size: 12, design: .rounded).foregroundStyle(AtlasTheme.Colors.danger)
+                errorRow(err)
             }
         }
         .padding(.horizontal, 12)
@@ -717,8 +717,7 @@ struct SettingsView: View {
                 .atlasHairlineBelow()
 
                 if let err = googleError {
-                    Text(err).atlasFont(size: 12, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.danger)
+                    errorRow(err)
                         .padding(.horizontal, 12)
                 }
             }
@@ -1757,6 +1756,19 @@ struct SettingsView: View {
     private func label(_ t: String) -> some View {
         Text(t).atlasMono(size: 11, weight: .semibold).tracking(1.2)
             .foregroundStyle(AtlasTheme.Colors.textMuted)
+    }
+
+    /// A red connection-error line with a "Report this" affordance that opens the
+    /// app-wide bug sheet pre-filled with the error text (log auto-attached).
+    private func errorRow(_ err: String) -> some View {
+        HStack(spacing: 8) {
+            Text(err).atlasFont(size: 12, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.danger)
+            Button("Report this") { state.reportBug(prefillTitle: err) }
+                .buttonStyle(.plain)
+                .atlasFont(size: 12, weight: .semibold, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.accentText)
+        }
     }
 
     private func row(icon: String, tint: Color, title: String, subtitle: String) -> some View {

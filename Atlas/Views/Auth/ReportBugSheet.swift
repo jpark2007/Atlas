@@ -1,17 +1,22 @@
 import SwiftUI
 import AtlasCore
 
-/// A tiny "Report a bug" sheet opened from Settings → Help & Tips. Multiline
-/// field + Send; the report inserts into `bug_reports` via `AtlasDB` with the
-/// signed-in user's JWT, stamping the app version + platform "macos". No email,
-/// no attachments — beta testers file issues in one step. Follows AtlasTheme
-/// (outline controls, caps labels, flat paper).
+/// The "Report a bug" sheet — opened from Settings → Help & Tips, the ⌘K command
+/// palette, the sidebar, or an error's "Report this" affordance. A short title, a
+/// description, and an optional contact email; recent in-app logs (`AtlasLog`) are
+/// attached automatically. Inserts into `bug_reports` via `AtlasDB` with the
+/// signed-in user's JWT, stamping app version + platform "macos". Follows
+/// AtlasTheme (outline controls, caps labels, flat paper).
 struct ReportBugSheet: View {
     /// The signed-in DB client (from `AppState.db`). Nil ⇒ offline; Send is disabled.
     let db: AtlasDB?
+    /// Optional seed for the Title field (e.g. an error message that opened this sheet).
+    var prefillTitle: String? = nil
 
     @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
     @State private var message = ""
+    @State private var contactEmail = ""
     @State private var sending = false
     @State private var sent = false
     @State private var error: String? = nil
@@ -40,6 +45,19 @@ struct ReportBugSheet: View {
                     .atlasFont(size: 14, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
             } else {
+                Text("TITLE")
+                    .atlasMono(size: 11, weight: .semibold).tracking(1.2)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+
+                TextField("A quick summary", text: $title)
+                    .textFieldStyle(.plain)
+                    .atlasFont(size: 14, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .tint(AtlasTheme.Colors.accent)
+                    .padding(8)
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(AtlasTheme.Colors.border, lineWidth: 1))
+
                 Text("WHAT WENT WRONG?")
                     .atlasMono(size: 11, weight: .semibold).tracking(1.2)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
@@ -50,12 +68,26 @@ struct ReportBugSheet: View {
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .tint(AtlasTheme.Colors.accent)
                     .scrollContentBackground(.hidden)
-                    .frame(height: 130)
+                    .frame(height: 110)
                     .padding(8)
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(AtlasTheme.Colors.border, lineWidth: 1))
 
-                Text("Sent with Atlas \(appVersion) · macOS")
+                Text("YOUR EMAIL (OPTIONAL — IN CASE THIS IS SPECIFIC TO YOUR ACCOUNT)")
+                    .atlasMono(size: 11, weight: .semibold).tracking(1.2)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                TextField("you@example.com", text: $contactEmail)
+                    .textFieldStyle(.plain)
+                    .atlasFont(size: 14, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .tint(AtlasTheme.Colors.accent)
+                    .padding(8)
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(AtlasTheme.Colors.border, lineWidth: 1))
+
+                Text("Sent with Atlas \(appVersion) · macOS · Includes recent app logs")
                     .atlasFont(size: 11, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
 
@@ -78,6 +110,7 @@ struct ReportBugSheet: View {
         .padding(24)
         .frame(width: 380)
         .background(AtlasTheme.Colors.bgBase)
+        .onAppear { if title.isEmpty, let prefillTitle { title = prefillTitle } }
     }
 
     private func send() {
@@ -86,9 +119,16 @@ struct ReportBugSheet: View {
         error = nil
         let text = String(trimmed.prefix(4000))
         let version = appVersion
+        let titleText = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let emailText = contactEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let logText = String(AtlasLog.snapshot().suffix(16000))
         Task {
             do {
-                try await db.insertBugReport(message: text, appVersion: version, platform: "macos")
+                try await db.insertBugReport(
+                    message: text, appVersion: version, platform: "macos",
+                    title: titleText.isEmpty ? nil : String(titleText.prefix(200)),
+                    contactEmail: emailText.isEmpty ? nil : String(emailText.prefix(320)),
+                    log: logText.isEmpty ? nil : logText)
                 sent = true
             } catch {
                 self.error = "Couldn't send — check your connection and try again."

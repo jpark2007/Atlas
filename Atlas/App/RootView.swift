@@ -123,6 +123,11 @@ struct RootView: View {
         .background(WindowConfigurator())
         .atlasCaptureOverlay()   // ⌘⇧K quick-capture pill
         .atlasCommandPalette()   // ⌘K search / command palette
+        // App-wide "Report a bug" sheet — opened from the palette, the sidebar, or
+        // an error's "Report this" affordance (via `state.reportBug(...)`).
+        .sheet(isPresented: $state.presentBugReport) {
+            ReportBugSheet(db: state.db, prefillTitle: state.bugReportPrefillTitle)
+        }
         .overlay {
             if state.presentGraph {
                 GraphView()

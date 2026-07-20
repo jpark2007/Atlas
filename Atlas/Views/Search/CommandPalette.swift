@@ -422,7 +422,11 @@ struct CommandPaletteOverlay: View {
                               state.route = .calendar
                               state.eventEditorSeed = seed
                               state.presentEventEditor = true
-                          })
+                          }),
+
+            PaletteAction(id: "report-bug", title: "Report a Bug", subtitle: "Send us what went wrong",
+                          icon: "ant",
+                          run: { state.reportBug() })
         ]
     }
 
