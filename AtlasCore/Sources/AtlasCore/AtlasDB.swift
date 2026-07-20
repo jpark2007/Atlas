@@ -891,6 +891,7 @@ public struct GoogleConnection: Codable, Identifiable, Equatable {
     public var status: String            // active | error | revoked
     public var lastError: String?
     public var lastSyncedAt: String?
+    public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -901,10 +902,16 @@ public struct GoogleConnection: Codable, Identifiable, Equatable {
         case status
         case lastError    = "last_error"
         case lastSyncedAt = "last_synced_at"
+        case createdAt    = "created_at"
     }
 
     /// `lastSyncedAt` parsed leniently (with or without fractional seconds).
     public var lastSyncedDate: Date? { ReferenceRow.date(from: lastSyncedAt) }
+
+    /// When the connection row was created (same lenient parse as `lastSyncedDate`).
+    /// Used to tell a genuinely-new connection ("first sync runs shortly") apart from
+    /// one that has been active but never received a sync (the cron isn't reaching it).
+    public var createdDate: Date? { ReferenceRow.date(from: createdAt) }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1305,7 +1312,7 @@ public final class AtlasDB {
     public func loadGoogleConnections() async throws -> [GoogleConnection] {
         let rows: [GoogleConnection] = try await getColumns(
             "google_connections",
-            columns: "id,name,google_email,calendar_id,space_id,status,last_error,last_synced_at")
+            columns: "id,name,google_email,calendar_id,space_id,status,last_error,last_synced_at,created_at")
         return rows.sorted { $0.id.uuidString < $1.id.uuidString }
     }
 

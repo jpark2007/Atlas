@@ -939,22 +939,44 @@ struct SettingsView: View {
         .atlasHairlineBelow()
     }
 
+    /// Grace period after a connection is created before a still-empty `last_synced_at`
+    /// is treated as a stall rather than a pending first sync. The cron runs every 5
+    /// minutes (0008), so ~15 min covers a slow first tick without masking a dead one.
+    private static let firstSyncGrace: TimeInterval = 15 * 60
+
     /// Status line for a connection row: server-owned sync state, per connection.
     private func googleConnectionStatus(_ conn: GoogleConnection) -> String {
         switch conn.status {
         case "error", "revoked":
+            // Surface the server's own reason when it recorded one (e.g. invalid_grant,
+            // a push error) instead of a generic line — it's the actionable detail.
+            if let reason = conn.lastError, !reason.isEmpty {
+                return "⚠ Sync stopped — \(reason)"
+            }
             return "⚠ Reconnect needed — sync is stopped"
         default:
             if conn.spaceId == nil { return "Connected — pick a space to sync events out" }
             if let synced = conn.lastSyncedDate {
                 return "Connected — last synced \(Self.relativeSync(from: synced))"
             }
+            // Never synced. Only reassure during the grace window; past it, the cron
+            // isn't reaching this connection — say so instead of promising a sync that
+            // isn't coming (was permanently "first sync runs shortly").
+            if let created = conn.createdDate, Date().timeIntervalSince(created) > Self.firstSyncGrace {
+                return "⚠ Connected, but not syncing — no events received yet"
+            }
             return "Connected — first sync runs shortly"
         }
     }
 
     private func googleConnectionStatusColor(_ conn: GoogleConnection) -> Color {
-        conn.status == "active" ? AtlasTheme.Colors.green : AtlasTheme.Colors.warning
+        guard conn.status == "active" else { return AtlasTheme.Colors.warning }
+        // An active-but-never-synced connection past the grace window is a warning too.
+        if conn.lastSyncedDate == nil, conn.spaceId != nil,
+           let created = conn.createdDate, Date().timeIntervalSince(created) > Self.firstSyncGrace {
+            return AtlasTheme.Colors.warning
+        }
+        return AtlasTheme.Colors.green
     }
 
     /// The space NAME a connection is linked to (for the picker), or "" when unlinked.
