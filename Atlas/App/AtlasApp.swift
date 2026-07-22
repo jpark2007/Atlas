@@ -259,6 +259,7 @@ struct AppGate: View {
     @EnvironmentObject private var shortcuts: ShortcutStore
 
     @State private var showCaptureKeyPopup = false
+    @State private var showNamePrompt = false
 
     var body: some View {
         Group {
@@ -294,6 +295,13 @@ struct AppGate: View {
                     }
                 }
                 .onAppear { state.userName = auth.displayName }
+                // Name prompt shows FIRST for new accounts; the capture-key popup
+                // follows once it dismisses, so the two never stack (see .task).
+                .sheet(isPresented: $showNamePrompt, onDismiss: {
+                    showCaptureKeyPopup = CaptureKeyOnboarding.shouldShow(session: auth.session)
+                }) {
+                    NamePromptPopup().environmentObject(state)
+                }
                 .sheet(isPresented: $showCaptureKeyPopup) {
                     CaptureKeyPopup().environmentObject(shortcuts)
                 }
@@ -307,7 +315,14 @@ struct AppGate: View {
                     #if DEBUG
                     print("[onboarding] session created_at = \(auth.session?.user.createdAt ?? "nil")")
                     #endif
-                    showCaptureKeyPopup = CaptureKeyOnboarding.shouldShow(session: auth.session)
+                    // New accounts: ask for a name first. When it dismisses, its
+                    // onDismiss shows the capture-key popup. Not new / already seen:
+                    // fall straight through to the capture-key gate.
+                    if NamePromptOnboarding.shouldShow(session: auth.session) {
+                        showNamePrompt = true
+                    } else {
+                        showCaptureKeyPopup = CaptureKeyOnboarding.shouldShow(session: auth.session)
+                    }
                 }
             case .offline:
                 RootView()

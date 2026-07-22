@@ -142,6 +142,21 @@ final class AppState: ObservableObject {
     /// The signed-in user's public identity (collab). Nil until loaded.
     @Published var profile: ProfileRow? = nil
 
+    /// The user's chosen first name / nickname for greetings, stored in the
+    /// profile's `display_name` (empty ⇒ never set). Set by the post-signup name
+    /// prompt and Settings → Profile; read by the dashboard greeting.
+    var nickname: String { profile?.displayName ?? "" }
+
+    /// Persists a nickname to the profile's `display_name` (server + local).
+    /// Optimistically updates `profile` so the greeting refreshes at once; the
+    /// server write is best-effort (a nil db / undeployed table degrades silently).
+    func saveNickname(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        profile?.displayName = trimmed
+        guard let db else { return }
+        Task { try? await db.updateDisplayName(trimmed) }
+    }
+
     /// Invites addressed to me, awaiting accept/decline (collab phase 2).
     @Published var pendingInvites: [InviteRow] = []
     /// Membership rosters for shared projects, keyed by project id.

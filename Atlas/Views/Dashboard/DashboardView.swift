@@ -72,12 +72,16 @@ struct DashboardView: View {
     }
 
     /// Time-of-day greeting, uppercased ("GOOD AFTERNOON"), driven by `state.now`.
+    /// Appends the user's nickname when set ("GOOD MORNING, DREW"); plain otherwise.
     private var greeting: String {
+        let timeOfDay: String
         switch calendar.component(.hour, from: state.now) {
-        case 5..<12:  return "GOOD MORNING"
-        case 12..<17: return "GOOD AFTERNOON"
-        default:      return "GOOD EVENING"
+        case 5..<12:  timeOfDay = "GOOD MORNING"
+        case 12..<17: timeOfDay = "GOOD AFTERNOON"
+        default:      timeOfDay = "GOOD EVENING"
         }
+        let name = state.nickname.trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? timeOfDay : "\(timeOfDay), \(name.uppercased())"
     }
 
     /// "MON — JUL 6, 2026" — driven by `state.now`.

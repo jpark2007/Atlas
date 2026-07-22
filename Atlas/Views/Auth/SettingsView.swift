@@ -78,6 +78,10 @@ struct SettingsView: View {
     @State private var deletingAccount = false
     @State private var deleteAccountError: String? = nil
 
+    // MARK: – Profile name (nickname → dashboard greeting; profiles.display_name)
+    @State private var nicknameField = ""
+    @State private var nicknameSeeded = false
+
     private let ekService = EventKitService()
 
     // MARK: - Onboarding tips
@@ -115,7 +119,7 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AtlasTheme.Colors.bgBase)
         .onAppear { refreshAppleAccessStatus() }
-        .onDisappear { stopRecording() }
+        .onDisappear { stopRecording(); commitNickname() }
         // Push each synced preference (debounced) when the user changes it. Only
         // user-initiated changes push — never launch — so a fresh device can't
         // clobber the server. (sidebar.mode is pushed from RootView, which observes
@@ -195,6 +199,24 @@ struct SettingsView: View {
                     .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.danger)
                 }
             }
+            // Editable first name / nickname — feeds the dashboard greeting. Persists
+            // to profiles.display_name (server-synced). Seeded once from the profile;
+            // saved on submit and when Settings closes if changed.
+            if auth.state != .offline {
+                VStack(alignment: .leading, spacing: 6) {
+                    label("YOUR NAME")
+                    input("First name or nickname", text: $nicknameField)
+                        .frame(maxWidth: 280)
+                        .onSubmit { commitNickname() }
+                    Text("Used to greet you on the dashboard. Leave blank for a plain greeting.")
+                        .atlasFont(size: 11, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                .onAppear {
+                    if !nicknameSeeded { nicknameField = state.nickname; nicknameSeeded = true }
+                }
+            }
+
             if auth.state != .offline {
                 HStack(spacing: 10) {
                     Button { showDeleteAccountConfirm = true } label: {
@@ -1775,6 +1797,15 @@ struct SettingsView: View {
         case .offline: return "Using local mock data"
         default: return ""
         }
+    }
+
+    /// Persists the edited nickname to profiles.display_name — only when it actually
+    /// changed, so closing Settings unchanged never fires a redundant write.
+    private func commitNickname() {
+        guard nicknameSeeded else { return }
+        let trimmed = nicknameField.trimmingCharacters(in: .whitespaces)
+        guard trimmed != state.nickname else { return }
+        state.saveNickname(trimmed)
     }
 
     private func label(_ t: String) -> some View {
