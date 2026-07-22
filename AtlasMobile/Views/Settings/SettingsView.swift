@@ -3,6 +3,7 @@ import AtlasCore
 import Speech
 import AVFoundation
 import UserNotifications
+import TipKit
 
 /// The gear-presented Settings sheet: SettingsView under an inline nav bar with a
 /// Done button. Each tab's inline gear presents this.
@@ -63,6 +64,10 @@ struct SettingsView: View {
 
     private let leadOptions = [0, 5, 15, 30, 60]
 
+    // Onboarding tips (rule-gated in AtlasTips): connect a source, report a bug (beta).
+    @State private var connectTip = AtlasTips.ConnectSource()
+    @State private var bugTip = AtlasTips.ReportBug()
+
     /// The hub: each row pushes a detail subpage. `.task`/`.onChange` live here on the
     /// root — which stays alive under any pushed page — so connections load and synced
     /// prefs push regardless of which subpage is on screen.
@@ -75,6 +80,7 @@ struct SettingsView: View {
                 navRow("General") { generalPage }
                 navRow("Help & Tips") { helpPage }
                 navRow("Report a bug") { ReportBugPage(db: store.db) }
+                    .onboardingTip(bugTip, when: AtlasBuild.isBeta)
             }
         }
         .settingsListChrome()
@@ -577,6 +583,7 @@ struct SettingsView: View {
         .buttonStyle(.plain)
         .disabled(canvasWorking)
         .rowStyle()
+        .popoverTip(connectTip)
 
         Text("Canvas → Calendar → Calendar Feed (copy the .ics link)")
             .font(.system(size: 13, weight: .medium, design: .rounded))
@@ -616,6 +623,8 @@ struct SettingsView: View {
             }
             do {
                 try await canvas.connect(feedUrl: feed, spaceName: canvasSpaceName, jwt: jwt)
+                await AtlasTipEvents.connectedSource.donate()
+                AtlasTips.ConnectSource.hasConnection = true
                 await loadConnections()
                 canvasFeedURL = ""   // don't retain the capability URL in the field
             } catch {
@@ -796,5 +805,12 @@ private extension View {
     func rowValue() -> some View {
         font(.system(size: 15, weight: .regular, design: .rounded))
             .foregroundStyle(MobileTheme.muted)
+    }
+
+    /// Conditional `.popoverTip` — iOS 17's optional-tip overload needs iOS 26, so gate
+    /// with a plain `if` (mirrors the Mac's `onboardingTip` helper from Task 2).
+    @ViewBuilder
+    func onboardingTip(_ tip: some Tip, when condition: Bool) -> some View {
+        if condition { popoverTip(tip) } else { self }
     }
 }

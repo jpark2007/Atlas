@@ -1,5 +1,6 @@
 import SwiftUI
 import AtlasCore
+import TipKit
 
 /// The Schedule home (spec §4.1): a day header with nav + swipe, the shared space
 /// filter, a "Needs a time" block pinned on top, and the day's timeline. Opens on
@@ -23,6 +24,8 @@ struct ScheduleView: View {
     // Create-here: captured while PlaceTaskSheet is open, presented on its dismiss.
     @State private var pendingPrefill: ManualAddSheet.Prefill?
     @State private var manualPrefill: ManualAddSheet.Prefill?
+    // Onboarding tip #2 — anchored on the "Needs a time" section (rule-gated in AtlasTips).
+    @State private var dragTip = AtlasTips.DragToSchedule()
 
     private let cal = Calendar.current
 
@@ -87,7 +90,13 @@ struct ScheduleView: View {
         .sheet(item: $detail) { detail in
             ItemDetailSheet(detail: detail).environmentObject(store)
         }
-        .onAppear { consumeFocusToday(); consumePlacement() }
+        .onAppear {
+            consumeFocusToday(); consumePlacement()
+            AtlasTips.DragToSchedule.hasUnscheduled = !needsTime.isEmpty
+        }
+        .onChange(of: needsTime.count) { _, _ in
+            AtlasTips.DragToSchedule.hasUnscheduled = !needsTime.isEmpty
+        }
         .onChange(of: store.scheduleFocusToday) { _, _ in consumeFocusToday() }
         .onChange(of: store.pendingPlacement?.id) { _, _ in consumePlacement() }
         .onChange(of: viewMode) { _, new in
@@ -220,6 +229,7 @@ struct ScheduleView: View {
                                  onOpen: { detail = .task($0) },
                                  onPlace: { showPlace = true },
                                  onLongPress: { store.pendingPlacement = $0 })
+                    .popoverTip(dragTip)
                 DayTimelineView(
                     day: selectedDay,
                     now: context.date,
@@ -250,6 +260,7 @@ struct ScheduleView: View {
                                  onPlace: { showPlace = true },
                                  onLongPress: { store.pendingPlacement = $0 },
                                  compact: true)
+                    .popoverTip(dragTip)
                 DayGridView(
                     day: selectedDay,
                     now: context.date,
@@ -398,6 +409,7 @@ struct ScheduleView: View {
                                        minute: placeMinutes % 60, second: 0,
                                        of: cal.startOfDay(for: selectedDay))
         Task { await store.updateTask(updated) }
+        Task { await AtlasTipEvents.scheduledOnCalendar.donate() }
         MobileTheme.Haptic.success()
         withAnimation(MobileTheme.spring) { placing = nil }
     }

@@ -206,6 +206,19 @@ final class MobileStore: ObservableObject {
         } catch {
             // Keep the existing snapshot; a later refresh retries.
         }
+        // Refresh the connect-source onboarding tip's gate (best-effort, fire-and-forget).
+        Task { await refreshConnectionTipState() }
+    }
+
+    /// Sets `AtlasTips.ConnectSource.hasConnection` from the live connection rows — any
+    /// Google account or a Canvas feed. Best-effort: on error the flag is left as-is so
+    /// the tip's remaining rules still apply. The successful iOS Canvas connect also sets
+    /// it directly (Settings), so this mainly seeds the "already connected" case at launch.
+    private func refreshConnectionTipState() async {
+        guard session != nil else { return }
+        let google = (try? await db.loadGoogleConnections()) ?? []
+        let canvas = (try? await db.loadCanvasConnection()) ?? nil
+        AtlasTips.ConnectSource.hasConnection = !google.isEmpty || canvas != nil
     }
 
     /// `EventRow.toDomain()`/`TaskRow.toDomain()` stamp every event/task

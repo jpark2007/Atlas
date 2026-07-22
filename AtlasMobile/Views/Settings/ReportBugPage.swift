@@ -1,5 +1,6 @@
 import SwiftUI
 import AtlasCore
+import TipKit
 
 /// "Report a bug" subpage pushed from Settings. A short title, a description, and
 /// an optional contact email; recent in-app logs (`AtlasLog`) attach automatically.
@@ -121,6 +122,7 @@ struct ReportBugPage: View {
                     contactEmail: emailText.isEmpty ? nil : String(emailText.prefix(320)),
                     log: logText.isEmpty ? nil : logText)
                 sent = true
+                await AtlasTipEvents.reportedBug.donate()
             } catch {
                 self.error = "Couldn't send — check your connection and try again."
             }

@@ -1,5 +1,6 @@
 import SwiftUI
 import AtlasCore
+import TipKit
 
 /// The Capture hero. A small state machine drives the screen: empty → listening /
 /// thinking → result (typed or spoken — one shared flow). Offline dumps are held
@@ -438,6 +439,8 @@ struct CaptureView: View {
                 notes: notes)
             Task { await store.addTask(task) }
         }
+        // Feeds the onboarding checklist (Task 7); no capture tip on iOS.
+        Task { await AtlasTipEvents.captured.donate() }
     }
 
     private func resolveSpace(_ name: String) -> Space? {
