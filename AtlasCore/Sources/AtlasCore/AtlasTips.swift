@@ -157,7 +157,15 @@ public enum AtlasTips {
     /// and bumps the shared `appOpens` counters used by rules 1/3/5/6.
     public static func configureOnce() {
         #if DEBUG
-        // Uncomment locally to preview every tip regardless of rules:
+        // ---------------------------------------------------------------------
+        // QA POINTER — force-show every tip (Debug only)
+        //
+        // Leave this COMMENTED for normal Debug runs so rule/session timing works
+        // as shipped. To sweep all ten tips at once (ignoring #Rule gating, session
+        // counts, and prior dismissals), uncomment the single line below and run a
+        // Debug build. Re-comment before committing — no committed file may ship
+        // with it enabled. It is compiled out of Release entirely.
+        // ---------------------------------------------------------------------
         // Tips.showAllTipsForTesting()
         #endif
         try? Tips.configure([
