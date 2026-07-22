@@ -1,57 +1,61 @@
-# Task 3 Report: iOS + widget palette remap to Mac paper values
+# Task 3 — Mac `.help()` hover sweep — Report
 
-## What I implemented
+**Status:** COMPLETE
+**Commit:** `9c70734` — feat(help): .help() hover tooltips across Mac icon-only buttons
+**Build:** `xcodebuild … build CODE_SIGNING_ALLOWED=NO` → **BUILD SUCCEEDED**
+**Files changed:** 14 · **New `.help()` button call sites:** 16
 
-Applied the two token remaps exactly as specified in the brief:
+## Method
+Ran the brief's grep across `Atlas/Views` (98 `Image(systemName:)` hits), then read each host file to classify every hit as: genuine icon-only `Button` (add help), decorative `Image` (skip), button-with-visible-text-label (skip), already-has-`.help` (leave), or `Menu`/hidden control (skip). Two commits since the plan had reshaped SidebarView/CalendarView/NoteEditorView/CaptureOverlay, so I anchored on button behavior, not line numbers.
 
-1. **`AtlasMobile/Theme/MobileTheme.swift`** (lines 13-24 region):
-   - `bg`: `fbfaf7` → `f2efe6`
-   - `ink`: `1a191d` → `211d17`
-   - `muted`: `6c6a72` → `565145`
-   - `faint`: `9a98a0` → `7d7669`
-   - `hairline`: `Color.black.opacity(0.08)` → `Color(hex: "211d17").opacity(0.12)`
-   - `accent` / `accentText`: unchanged (`d97757` / `b04f2f`)
-   - `danger`: `c0392b` → `ff5c5c`
-   - Updated the `// MARK: Colors` comment to note the values now match the Mac's `AtlasTheme.Colors` paper palette
-   - Updated the `danger` doc comment to reflect it's now the same token as `AtlasTheme.Colors.danger`
-   - Fixed the stale comment at (originally) line 81: `Hairline rule (black 8%)` → `Hairline rule (ink 12%)`
+Verified `CalendarView.shift(by:)`: it steps by **day** in day mode, **week** in week/list mode, **month** in month mode — the nav chevrons are view-relative, so the brief's "Previous week"/"Next week" would be inaccurate. Used mode-agnostic copy.
 
-2. **`AtlasMobileWidgets/WidgetTheme.swift`** (lines 6-14 region):
-   - Same `bg`/`ink`/`muted`/`faint`/`hairline` remap as above
-   - `accent` / `accentText`: unchanged
-   - No `danger` token added (per brief — WidgetTheme doesn't have one today)
+## Inventory — `.help()` added
 
-Verified all new hex values against the Mac source of truth at `AtlasCore/Sources/AtlasCore/Theme.swift:35-71` before editing (bgBase `f2efe6`, textPrimary `211d17`, textSecondary `565145`, textMuted `7d7669`, hairline `Color(hex: "211d17").opacity(0.12)`, accent `d97757`, accentText `b04f2f`, danger `ff5c5c`) — all match.
+| File | Button | Copy |
+|---|---|---|
+| SidebarView.swift | space expand/collapse chevron | `Expand or collapse` |
+| CalendarView.swift | clear search (xmark.circle.fill) | `Clear the search` |
+| CalendarView.swift | nav chevron.left (shift −1) | `Previous day, week, or month` |
+| CalendarView.swift | nav chevron.right (shift +1) | `Next day, week, or month` |
+| CalendarEventDetailView.swift | clear linked note (xmark.circle.fill) | `Clear the linked note` |
+| NoteEditorView.swift | style-bar mark button | `Bold` / `Italic` / `Underline` (via `markHelp(mark)`) |
+| NoteEditorView.swift | style-bar list button | `Bulleted list` / `Numbered list` |
+| TimeGridView.swift | DeadlineRailMarker (flag.fill) | `See what's due` |
+| GraphView.swift | close graph (xmark) | `Close the graph` |
+| ProjectDetailView.swift | live-task checkbox | `Mark done` / `Mark not done` (dynamic on `task.done`) |
+| TaskDetailView.swift | header checkbox | `Mark done` / `Mark not done` (dynamic on `live.done`) |
+| TaskDetailView.swift | description edit (pencil) | `Edit description` |
+| TaskDetailView.swift | unlink note (xmark.circle.fill) | `Clear the linked note` |
+| DashboardView.swift | focus-list checkbox | `Mark done` / `Mark not done` (dynamic) |
+| SpaceDetailView.swift | task-row checkbox | `Mark done` / `Mark not done` (dynamic) |
+| CompletedView.swift | reopen checkbox (always done) | `Mark not done` |
+| MiniMonthAgenda.swift | month prev chevron.left | `Previous month` |
+| MiniMonthAgenda.swift | month next chevron.right | `Next month` |
+| AttachReferencePicker.swift | ReferenceListRow remove (xmark.circle.fill) | `Remove this reference` |
+| AtlasColorPicker.swift | apply hex (arrow.right.circle.fill) | `Apply this hex color` |
 
-Token names were not changed anywhere; only the right-hand-side values and two comments changed.
+The two style-bar buttons and two MiniMonth chevrons collapse to 16 distinct `.help()` call sites (the mark/list buttons each carry per-glyph copy).
 
-## Build command run and result
+## Already had `.help` — left as-is (per brief)
+CaptureOverlay mic (`Stop dictation` / `Click to talk`); NoteEditorView & ReferenceRowView syncNow (`Sync now — …`); UnscheduledTray checkbox (`Mark done`); ProjectDetailView add-project, starter-task trash, overview pencil, color dot, Import/Add-link, Add Task, Invite people; SpaceDetailView color dot / Invite people; FocusView reset + corner buttons; GraphView re-run layout; SettingsView graph / reset-shortcut / read-only glyph; NoteCardOverlay expand/close/resize.
 
-```
-xcodebuild -project Atlas.xcodeproj -scheme AtlasMobile -configuration Debug -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO
-```
+## Not buttons — correctly skipped
+- **CaptureOverlay `sparkles`** — the brief listed it, but the recent commit changed it: it is now a decorative status glyph that swaps with a ProgressView spinner, NOT a `Button`. Skipped.
+- SettingsView `eye.fill` (plain Image, already `.help`), all row/badge glyphs.
+- Sidebar search / settings / report-bug / space buttons now carry visible text labels → excluded.
+- CommandPalette hidden ⌘K host button (opacity 0, accessibilityHidden).
+- All decorative `Image(systemName:)` in banners, headers, list rows, event tiles, deadline pills.
 
-Result: `** BUILD SUCCEEDED **`
+## Deliberately skipped — icon-only `Menu`s (outside the `Button` definition), flagged for judgment
+The brief scoped the task to `Image(systemName:)` inside a `Button`. These are icon-only `Menu`s, so they were left alone:
+- ReferenceRowView ellipsis (`…`) row menu
+- TaskDetailView note-picker chevron.down menu (secondary re-tag)
 
-The build log shows `AtlasMobileWidgets.appex` was built and embedded into `AtlasMobile.app/PlugIns` as part of this same invocation, confirming the widget extension target (which contains `WidgetTheme.swift`) compiled successfully alongside the app target.
+If a follow-up wants tooltips on these, `Menu` accepts `.help()` too (e.g. "More actions" / "Change the linked note").
 
-## Files changed
+## Skipped for unclear purpose
+None — every genuine icon-only Button's purpose was resolvable from code.
 
-- `AtlasMobile/Theme/MobileTheme.swift`
-- `AtlasMobileWidgets/WidgetTheme.swift`
-
-`git log -1 --stat` on the resulting commit (`7c839bc`): 2 files changed, 16 insertions(+), 14 deletions(-). No other files were touched or staged.
-
-## Self-review findings
-
-- Diffed the committed change (`git show 7c839bc`) against the brief's exact before/after code blocks for both Step 1 and Step 2 — byte-for-byte match, including whitespace/alignment.
-- Confirmed `accent` (`d97757`) and `accentText` (`b04f2f`) were left unchanged in both files, as instructed.
-- Confirmed no `danger` token was added to `WidgetTheme.swift`.
-- Confirmed the stale comment fix at `MobileTheme.swift` (hairline black 8% → ink 12%) was applied.
-- Confirmed token names (`bg`, `ink`, `muted`, `faint`, `hairline`, `accent`, `accentText`, `danger`) are unchanged in both files — only values/comments changed, so the 16 call-site view files require zero edits.
-- Ran `git status --porcelain` scoped to the two target files before staging, and again after staging (index column showed `M` for both, working-tree column clean) — confirmed only the two intended files were staged and committed.
-- `git log -1 --stat` on the resulting commit shows exactly 2 files changed, matching the brief's file list precisely.
-
-## Issues or concerns
-
-None. The remap was mechanical and matched the brief verbatim; the build succeeded on the first attempt with no errors or warnings related to these changes. No index.lock contention was encountered during staging/commit despite the concurrent-agent constraint.
+## Verification
+Build is green. Per CLAUDE.md, hover tooltips are UI a green build can't prove — Drew should hover each icon ~1s to confirm the copy shows and reads as one clean line. Pre-existing uncommitted files (project.yml, supabase functions, PrivacyInfo, landing/) were not staged or touched.

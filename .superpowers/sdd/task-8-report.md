@@ -1,126 +1,37 @@
-# Task 8 Report — Metrics Module
+# Task 8 — iOS 2-step calendar-views spotlight — Report
 
-## Status: COMPLETE
+**Status:** COMPLETE. Both builds green. Committed (code files only).
 
----
+## What was built
+A skippable dim+cutout spotlight shown once ever on the first Schedule visit:
+- Step 0: cutout over the list/grid `viewToggle`; advances when the user really taps it (`viewMode` changes).
+- Step 1: cutout over the calendar glyph; finishes when month opens (`showMonth` becomes true).
+- Prominent "Skip" button ends immediately. `@AppStorage("spotlight.calendarViews.done")` set on every exit path so it never re-triggers.
 
-## TDD Evidence
+## Files
+- `AtlasMobile/Views/Schedule/CalendarSpotlight.swift` (new) — `SpotlightAnchorKey` PreferenceKey, `spotlightAnchor(_:)` View extension, `CalendarSpotlightOverlay`.
+- `AtlasMobile/Views/Schedule/ScheduleView.swift` (modified) — anchors on `viewToggle`/calendar Button; spotlight state; overlay hosting; step advance/finish wiring.
 
-### RED (test wrote first, before Metrics.swift)
-```
-error: cannot find 'AtlasMetrics' in scope   ×9 instances
-** TEST FAILED **
-```
+## Adjustments from brief (all sanctioned or forced by drift)
+1. **Line numbers drifted** (Tasks 6+7 touched the file). Anchored on structure: `.spotlightAnchor("toggle")` on `viewToggle`, `.spotlightAnchor("calendar")` on the calendar-glyph Button. The glyph's existing action (`checklist.month` flag + `peekedMonth` donate) was left untouched — step 2 finish is driven by `.onChange(of: showMonth)`, not by editing the button.
+2. **Skip button uses GeometryReader proxy** (`geo.size.width/2`, `geo.size.height - 80`) instead of the brief's deprecated `UIScreen.main.bounds`. Sanctioned in the task.
+3. **`.zero` anchor guard** — overlay renders the cutout only when `anchors[holeID]` exists and is non-zero, preventing a flash of a hole at the origin before the preference is delivered.
+4. **Merged into existing handlers** rather than adding duplicates: first-visit gating folded into the existing `.onAppear`; step-0→1 advance folded into the existing `.onChange(of: viewMode)`. Only `.onChange(of: showMonth)`, `.onPreferenceChange`, and the spotlight `.overlay` were added as new modifiers.
 
-### GREEN (after Metrics.swift)
-```
-Test Suite 'MetricsTests' passed at 2026-06-27 07:37:44.657
-  testCompletionRate              passed
-  testCompletionRate_noTasks      passed
-  testEventCounts_todayAndThisWeek passed
-  testFullScenario                passed
-  testGoalAvgProgress             passed
-  testGoalAvgProgress_noGoals     passed
-  testNoteCount                   passed
-  testPerSpaceLoad                passed
-  testTaskCounts_openDoneScheduled passed
-Test Suite 'All tests' passed
-```
+## Builds
+- iOS: `-scheme AtlasMobile -destination generic/platform=iOS Simulator` → **BUILD SUCCEEDED**
+- Mac: `-scheme Atlas -destination platform=macOS` → **BUILD SUCCEEDED**
+- `xcodegen generate` run before building (new file under AtlasMobile/).
 
----
-
-## What metrics are computed
-
-| Field | How derived |
-|---|---|
-| `totalTasks` | `tasks.count` |
-| `openTasks` | `tasks.filter { !$0.done }.count` |
-| `doneTasks` | `tasks.filter { $0.done }.count` |
-| `scheduledTasks` | `tasks.filter { $0.scheduledAt != nil }.count` |
-| `eventsToday` | events where `Calendar.isDate(start, inSameDayAs: referenceDate)` |
-| `eventsThisWeek` | events where `Calendar.dateInterval(of: .weekOfYear, for:).contains(start)` |
-| `perSpace` | grouped by `spaceName`, tracking open/total; color from `spaces` list |
-| `goalAvgProgress` | `mean(goals.map(\.progress))`, 0 if empty |
-| `noteCount` | `notes.count` |
-| `completionRate` | `doneTasks / max(1, totalTasks)` |
-
-### Honestly omitted (with reason)
-
-- **`completedToday` / `completedThisWeek`** — `TaskItem` has no `completedAt` timestamp; `done: Bool` only tells us *if* completed, not *when*. A `// TODO: richer time-bucketed metrics once tasks carry completedAt` comment is in `Metrics.swift`.
-- **`focusMinutesToday`** — `FocusViewModel` is in-memory only (`completedWorkIntervals` on a non-persisted ObservableObject, not surfaced via `AppState`). Including a stale `0` would be misleading, so the field was omitted entirely.
-- **Streak** — requires per-day completion timestamps; same blocker.
-
----
-
-## Three Views
-
-### MetricsCard (dashboard, 320 wide)
-- "At a glance" header + "Details →" button → `state.presentMetrics = true`
-- Stat row: open tasks | events today
-- `MetricsCompletionBar` (gradient capsule, labeled %)
-- Goal avg % (accent color when ≥ 70 %)
-- The `.sheet(isPresented: $state.presentMetrics)` is wired here so the popup appears over the dashboard.
-
-### MetricsPopupView (modal sheet, 440×520)
-- Summary AtlasCard: open / done / notes + completion bar
-- Calendar AtlasCard: events today + this week
-- By Space AtlasCard: `MetricsSpaceLoadBars` — per-space colored capsule bars
-- Goals AtlasCard: avg progress + completion bar
-- "View full metrics page →" button (`state.route = .metrics`)
-
-### MetricsView (full page, `.metrics` route)
-- Page kicker "METRICS"
-- At a glance card: 4-column stat grid (open / done / events today / notes) + completion bar
-- By Space card: `MetricsSpaceLoadBars` (same shared view)
-- Calendar card: events today + this week
-- Goals card: avg % stat + goal bar
-
-### Shared subviews (defined in MetricsView.swift, internal visibility)
-- `MetricsStatCell` — number + label
-- `MetricsCompletionBar` — labeled gradient capsule bar
-- `MetricsSpaceLoadBars` — per-space colored bars with open/total label
-
----
-
-## Palette Quick Actions (CommandPalette.swift)
-
-Appended to `quickActions` after "Open Metrics":
-
-| Action | id | Icon | Behavior |
-|---|---|---|---|
-| New Task | `new-task` | `plus.circle.fill` | `state.presentCapture = true` |
-| New Note | `new-note` | `note.text.badge.plus` | `state.addNote(title:body:spaceName:isExternal:)` (discardable) |
-| New Event | `new-event` | `calendar.badge.plus` | computes next round hour → sets `eventEditorSeed` + `state.route = .calendar` + `presentEventEditor = true` |
-
-All 4 actions appear in the "Quick actions" group when query is empty; `activate()` dispatches via the existing `.action(let action) { action.run(); dismiss() }` branch.
-
----
-
-## Build + Test Output
-
-```
-** BUILD SUCCEEDED **
-Test Suite 'MetricsTests' passed (9/9 cases, 0 failures)
-Test Suite 'All tests' passed
-```
-
----
-
-## Files Changed
-
-| Path | Change |
-|---|---|
-| `Atlas/Data/Metrics.swift` | CREATED — `SpaceLoad`, `AtlasMetrics`, dual `compute` |
-| `AtlasTests/MetricsTests.swift` | CREATED — 9 TDD tests |
-| `Atlas/Views/Metrics/MetricsView.swift` | REPLACED — full page + shared subviews |
-| `Atlas/Views/Metrics/MetricsCard.swift` | REPLACED — dashboard card |
-| `Atlas/Views/Metrics/MetricsPopupView.swift` | REPLACED — popup sheet |
-| `Atlas/Views/Search/CommandPalette.swift` | MODIFIED — 3 palette actions added |
-
----
+## Manual QA for Drew (device)
+1. Fresh install → first Schedule tab visit: screen dims with a rounded cutout over the list/grid toggle + caption "Switch between list and grid".
+2. Tapping the toggle *through the hole* actually changes the view AND advances to the calendar glyph ("Tap to jump to any day in month view").
+3. Tapping the calendar glyph opens month view AND ends the spotlight.
+4. "Skip" (bottom center) ends it immediately at either step.
+5. Leave and return to Schedule tab in the same session → not re-shown.
+6. Relaunch app → never shown again.
+7. Reset: delete app or clear `spotlight.calendarViews.done` in UserDefaults.
+- Dim + cutout positioning is visual and NOT proven by the green build — Drew must confirm the hole lands on the right controls and taps pass through.
 
 ## Concerns
-
-1. **Sheet ownership**: `MetricsCard` owns `sheet(isPresented: $state.presentMetrics)`. If another view in the tree also installs a sheet on that binding there could be a conflict. Consider moving to `RootView`-level sheet in a future cleanup.
-2. **`eventsThisWeek` includes today**: The field counts today's events *plus* other events this week. This is intentional and consistent (today is in this week), but the label should say "this week (incl. today)" if ever surfaced in copy.
-3. **Per-space `id: UUID()`** is regenerated on every `compute` call. This is fine for rendering (stable within one SwiftUI pass) but means `perSpace` arrays are not `Equatable`/cacheable by id. Fine for now given compute is cheap.
+- None functional. The dim has `.allowsHitTesting(false)` so header controls remain tappable through it — confirmed by design, needs Drew's visual pass.
