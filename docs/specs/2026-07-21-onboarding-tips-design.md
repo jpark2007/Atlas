@@ -41,16 +41,24 @@ or empty states instead, handled case-by-case, not part of this sweep).
 
 | # | Tip | Platforms | Rule |
 |---|-----|-----------|------|
-| 1 | ⌘K command palette / search | both | 2nd app open AND never used search |
-| 2 | Drag-to-schedule | both | first calendar visit AND ≥1 unscheduled task |
+| 1 | ⌘K command palette / search | Mac only¹ | 2nd app open AND never used search |
+| 2 | Drag-to-schedule | both² | first calendar visit AND ≥1 unscheduled task |
 | 3 | Connect Google/Canvas | both | 3rd open AND no connection |
-| 4 | Per-calendar checkboxes | both | first connect (inside the auto-opened sheet) |
+| 4 | Per-calendar checkboxes | Mac only³ | first connect (inside the auto-opened sheet) |
 | 5 | Report a Bug | both | once, beta builds only, after a few sessions |
 | 6 | Global capture reminder | Mac only | never captured after ~3 opens — "Press ⌘⇧K from any app" |
-| 7 | Doc tabs basics | both | first time inside a note |
-| 8 | Drive sync | both | first note in a Drive-linked project AND Google connected |
-| 9 | Frozen islands | both | first time an island is visible |
+| 7 | Doc tabs basics | Mac only⁴ | first time inside a note |
+| 8 | Drive sync | Mac only⁴ | first note in a Drive-linked project AND Google connected |
+| 9 | Frozen islands | Mac only⁴ | first time an island is visible |
 | 10 | Invite people | Mac only | on a space page AND user is the only member |
+
+¹ iOS has no search affordance at all (verified 07-21) — nothing to teach there;
+adding iOS search is out of scope.
+² iOS anchor is the day grid (`DayGridView`); implementer verifies what the
+actual iOS scheduling interaction is and matches the copy to it.
+³ iOS Settings shows Google connections read-only (managed on Mac); per-calendar
+checkboxes only exist in the Mac sheet.
+⁴ Notes/doc tabs/frozen islands do not exist on iOS (verified 07-21).
 
 Considered and cut: calendar list-scope tip (keep the list tight; revisit if
 beta feedback asks).
@@ -74,7 +82,14 @@ works from any app, type or click-to-talk dictation) gets a real surface:
   to enumerate other apps' custom binds (e.g. Raycast); do not pretend otherwise.
 - Recorder writes the UserDefaults keys `HotkeyService` reads AND keeps
   `ShortcutStore`'s Quick Capture binding in sync — the global and in-app binds
-  must never drift.
+  must never drift. **Verified drift risk (07-21):** the two persist under
+  different keys with different encodings (`shortcut.capture.key`/`.modifiers`
+  as character + SwiftUI modifiers vs `captureHotkeyKeyCode`/`captureHotkeyModifiersRaw`
+  as Carbon keycode + Carbon mask); nothing keeps them in lockstep today. A
+  single sync point (one writer that updates both representations) is required.
+- No first-run flag exists on Mac today; the plan must define how "new account"
+  is detected (e.g. profile creation date checked at first bootstrap + a local
+  "seen" flag) — existing accounts must never see the popup.
 - iOS: no global hotkeys on the platform; capture stays in-app, no equivalent.
 
 ## 4. iOS getting-started checklist
@@ -84,7 +99,8 @@ Dismissible "Get started" card on the iPhone home screen, "n of 4 done" style:
 1. Connect Google or Canvas
 2. Capture your first task
 3. Put something on the calendar
-4. Open a note
+4. Peek at month view (notes don't exist on iOS, so the original "open a note"
+   item is replaced)
 - Bonus (soft, NOT required for completion): Add the Atlas widget
 
 Items auto-check via the same TipKit event donations — no separate tracking
@@ -93,12 +109,16 @@ can be dismissed manually any time. Dismissal/completion persists.
 
 ## 5. iOS calendar-views spotlight (the one guided beat)
 
-A short, **skippable** spotlight on first visit to the iOS calendar: dim +
-cutout highlighting the view switcher, walking list → day → month. Max 2–3
-steps, advances on real taps of the switcher, prominent skip, never shown again
-after completion or skip. Custom SwiftUI (TipKit has no spotlight primitive) —
-kept deliberately tiny; this is the ONLY spotlight anywhere. Mac gets none
-(drag-to-schedule is tip #2, not a spotlight — Drew considered and passed).
+A short, **skippable** spotlight on first visit to the iOS schedule screen.
+Reality of the UI (verified 07-21): the switcher is a two-glyph list/grid
+toggle in `ScheduleView`, and month view is a separately pushed page opened by
+the calendar glyph. So the spotlight is exactly **2 steps**: (1) highlight the
+list/grid toggle — advance when the user actually taps it; (2) highlight the
+calendar glyph — finish when they open month view. Dim + cutout, prominent
+skip, never shown again after completion or skip. Custom SwiftUI (TipKit has
+no spotlight primitive) — kept deliberately tiny; this is the ONLY spotlight
+anywhere. Mac gets none (drag-to-schedule is tip #2, not a spotlight — Drew
+considered and passed).
 
 ## Out of scope
 
