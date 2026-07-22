@@ -26,6 +26,11 @@ struct ScheduleView: View {
     @State private var manualPrefill: ManualAddSheet.Prefill?
     // Onboarding tip #2 — anchored on the "Needs a time" section (rule-gated in AtlasTips).
     @State private var dragTip = AtlasTips.DragToSchedule()
+    // First-visit 2-step spotlight over the list/grid toggle + calendar glyph (shown once ever).
+    @AppStorage("spotlight.calendarViews.done") private var spotlightDone = false
+    @State private var spotlightStep = 0
+    @State private var spotlightAnchors: [String: CGRect] = [:]
+    @State private var spotlightActive = false
 
     private let cal = Calendar.current
 
@@ -41,6 +46,19 @@ struct ScheduleView: View {
                 .animation(MobileTheme.spring, value: placing != nil || blockMoveActive)
         }
         .background(MobileTheme.bg.ignoresSafeArea())
+        .onPreferenceChange(SpotlightAnchorKey.self) { spotlightAnchors = $0 }
+        .overlay {
+            if spotlightActive {
+                CalendarSpotlightOverlay(step: spotlightStep, anchors: spotlightAnchors) {
+                    spotlightActive = false; spotlightDone = true
+                }
+            }
+        }
+        .onChange(of: showMonth) { _, opened in
+            if spotlightActive && spotlightStep == 1 && opened {
+                spotlightActive = false; spotlightDone = true   // step 2 → finish on month open
+            }
+        }
         .overlay(alignment: .bottom) {
             if !cal.isDateInToday(selectedDay) {
                 Button {
@@ -93,6 +111,7 @@ struct ScheduleView: View {
         .onAppear {
             consumeFocusToday(); consumePlacement()
             AtlasTips.DragToSchedule.hasUnscheduled = !needsTime.isEmpty
+            if !spotlightDone { spotlightActive = true }   // first Schedule visit only
         }
         .onChange(of: needsTime.count) { _, _ in
             AtlasTips.DragToSchedule.hasUnscheduled = !needsTime.isEmpty
@@ -101,6 +120,7 @@ struct ScheduleView: View {
         .onChange(of: store.pendingPlacement?.id) { _, _ in consumePlacement() }
         .onChange(of: viewMode) { _, new in
             if new != "grid" { placing = nil; blockMoveActive = false }
+            if spotlightActive && spotlightStep == 0 { spotlightStep = 1 }   // step 1 → advance on toggle tap
         }
     }
 
@@ -129,6 +149,7 @@ struct ScheduleView: View {
                 Spacer()
                 spaceFilterMenu
                 viewToggle
+                    .spotlightAnchor("toggle")
                 Button {
                     showMonth = true
                     UserDefaults.standard.set(true, forKey: "checklist.month")
@@ -138,6 +159,7 @@ struct ScheduleView: View {
                         .font(.system(size: 17, weight: .medium))
                         .foregroundStyle(MobileTheme.ink)
                 }
+                .spotlightAnchor("calendar")
             }
         }
         .padding(.horizontal, 28)
