@@ -129,7 +129,11 @@ struct ScheduleView: View {
                 Spacer()
                 spaceFilterMenu
                 viewToggle
-                Button { showMonth = true } label: {
+                Button {
+                    showMonth = true
+                    UserDefaults.standard.set(true, forKey: "checklist.month")
+                    Task { await AtlasTipEvents.peekedMonth.donate() }
+                } label: {
                     Image(systemName: "calendar")
                         .font(.system(size: 17, weight: .medium))
                         .foregroundStyle(MobileTheme.ink)
@@ -224,6 +228,10 @@ struct ScheduleView: View {
         // TimelineView re-evaluates every minute so the NOW rail advances.
         TimelineView(.everyMinute) { context in
             List {
+                GetStartedCard()
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
                 NeedsTimeSection(tasks: needsTime,
                                  onSetTime: { timing = $0 },
                                  onOpen: { detail = .task($0) },
@@ -254,6 +262,7 @@ struct ScheduleView: View {
         // TimelineView re-evaluates every minute so the NOW line advances.
         TimelineView(.everyMinute) { context in
             VStack(spacing: 0) {
+                GetStartedCard()
                 NeedsTimeSection(tasks: needsTime,
                                  onSetTime: { timing = $0 },
                                  onOpen: { detail = .task($0) },
@@ -410,6 +419,7 @@ struct ScheduleView: View {
                                        of: cal.startOfDay(for: selectedDay))
         Task { await store.updateTask(updated) }
         Task { await AtlasTipEvents.scheduledOnCalendar.donate() }
+        UserDefaults.standard.set(true, forKey: "checklist.scheduled")
         MobileTheme.Haptic.success()
         withAnimation(MobileTheme.spring) { placing = nil }
     }
@@ -423,6 +433,7 @@ struct ScheduleView: View {
                                        minute: minute % 60, second: 0,
                                        of: cal.startOfDay(for: selectedDay))
         Task { await store.updateTask(updated) }
+        UserDefaults.standard.set(true, forKey: "checklist.scheduled")
     }
 
     /// Block-move confirm for an event — shift start AND end by the same `delta`

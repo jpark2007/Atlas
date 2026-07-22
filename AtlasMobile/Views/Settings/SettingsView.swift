@@ -624,6 +624,7 @@ struct SettingsView: View {
             do {
                 try await canvas.connect(feedUrl: feed, spaceName: canvasSpaceName, jwt: jwt)
                 await AtlasTipEvents.connectedSource.donate()
+                UserDefaults.standard.set(true, forKey: "checklist.connected")
                 AtlasTips.ConnectSource.hasConnection = true
                 await loadConnections()
                 canvasFeedURL = ""   // don't retain the capability URL in the field

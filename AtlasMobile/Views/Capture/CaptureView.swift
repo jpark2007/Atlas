@@ -441,6 +441,7 @@ struct CaptureView: View {
         }
         // Feeds the onboarding checklist (Task 7); no capture tip on iOS.
         Task { await AtlasTipEvents.captured.donate() }
+        UserDefaults.standard.set(true, forKey: "checklist.captured")
     }
 
     private func resolveSpace(_ name: String) -> Space? {
