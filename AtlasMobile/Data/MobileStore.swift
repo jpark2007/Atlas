@@ -211,14 +211,19 @@ final class MobileStore: ObservableObject {
     }
 
     /// Sets `AtlasTips.ConnectSource.hasConnection` from the live connection rows — any
-    /// Google account or a Canvas feed. Best-effort: on error the flag is left as-is so
-    /// the tip's remaining rules still apply. The successful iOS Canvas connect also sets
-    /// it directly (Settings), so this mainly seeds the "already connected" case at launch.
+    /// Google account or a Canvas feed. A failed load coalesces to empty/nil, so on error
+    /// `hasConnection` becomes false and the tip's remaining rules still apply. The
+    /// successful iOS Canvas connect also sets it directly (Settings), so this mainly seeds
+    /// the "already connected" case at launch — including connections made on another device.
     private func refreshConnectionTipState() async {
         guard session != nil else { return }
         let google = (try? await db.loadGoogleConnections()) ?? []
         let canvas = (try? await db.loadCanvasConnection()) ?? nil
-        AtlasTips.ConnectSource.hasConnection = !google.isEmpty || canvas != nil
+        let hasAny = !google.isEmpty || canvas != nil
+        AtlasTips.ConnectSource.hasConnection = hasAny
+        // Mirror into the "Get started" checklist so a cross-device (e.g. Mac-made) Google
+        // connection ticks the Connect row. Set true only — absence must not untick it.
+        if hasAny { UserDefaults.standard.set(true, forKey: "checklist.connected") }
     }
 
     /// `EventRow.toDomain()`/`TaskRow.toDomain()` stamp every event/task
