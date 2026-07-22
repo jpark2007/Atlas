@@ -366,6 +366,14 @@ struct CaptureView: View {
                 text = ""
                 phase = .empty
                 note = "Saved — will sort when you’re back online"
+            } catch AtlasAIError.tooLong {
+                // Server rejected the size (413) — surface it, keep the text.
+                phase = .empty
+                note = "Sorry — that message is too long to sort"
+            } catch AtlasAIError.serverUnavailable, AtlasAIError.rateLimited {
+                // Server down / busy (5xx / 429) — surface it, keep the text.
+                phase = .empty
+                note = "Servers are down — please try again later"
             } catch {
                 phase = .empty
                 note = "Couldn’t sort that. Try again."

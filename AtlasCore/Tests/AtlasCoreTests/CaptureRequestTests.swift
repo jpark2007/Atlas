@@ -39,4 +39,17 @@ final class CaptureRequestTests: XCTestCase {
         XCTAssertNil(results.first?.endISO)
         XCTAssertNil(results.first?.isAllDay)
     }
+
+    // Status-code → typed error mapping (the pure seam the UIs branch on).
+    // 413 = too long, 429 = rate limited, any 5xx = server unavailable, and
+    // everything else stays a generic httpError the callers treat as "other".
+    func test_errorMapping_statusCodes() {
+        XCTAssertEqual(AtlasAIError.from(status: 413), .tooLong)
+        XCTAssertEqual(AtlasAIError.from(status: 429), .rateLimited)
+        XCTAssertEqual(AtlasAIError.from(status: 500), .serverUnavailable)
+        XCTAssertEqual(AtlasAIError.from(status: 502), .serverUnavailable)
+        XCTAssertEqual(AtlasAIError.from(status: 503), .serverUnavailable)
+        XCTAssertEqual(AtlasAIError.from(status: 400, body: "bad"), .httpError(400, "bad"))
+        XCTAssertEqual(AtlasAIError.from(status: 401, body: "nope"), .httpError(401, "nope"))
+    }
 }

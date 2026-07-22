@@ -51,19 +51,44 @@ public struct CaptureRequest: Codable {
 
 // MARK: - Error
 
-public enum AtlasAIError: LocalizedError {
+public enum AtlasAIError: LocalizedError, Equatable {
     case notAuthenticated
+    /// The message exceeds the server's size cap (HTTP 413).
+    case tooLong
+    /// The server or the model behind it is unreachable/erroring (HTTP 5xx).
+    case rateLimited          // HTTP 429
+    case serverUnavailable    // HTTP 5xx
+    /// The response arrived but its JSON could not be decoded.
+    case parseFailed
+    /// Any other non-2xx status we don't map to a user-facing message.
     case httpError(Int, String)
-    case decodingError(Error)
 
     public var errorDescription: String? {
         switch self {
         case .notAuthenticated:
             return "No active session — cannot call the capture function."
+        case .tooLong:
+            return "That message is too long to sort."
+        case .rateLimited:
+            return "The capture service is busy — try again shortly."
+        case .serverUnavailable:
+            return "The capture service is unavailable — try again later."
+        case .parseFailed:
+            return "Could not decode the AI response."
         case .httpError(let code, let body):
             return "Edge function returned HTTP \(code): \(body)"
-        case .decodingError(let underlying):
-            return "Could not decode AI response: \(underlying.localizedDescription)"
+        }
+    }
+
+    /// Pure mapping of an HTTP status code to a typed error. 413 → tooLong,
+    /// 429 → rateLimited, any other 5xx → serverUnavailable, everything else
+    /// stays a generic `httpError` (which callers treat as "other").
+    public static func from(status: Int, body: String = "") -> AtlasAIError {
+        switch status {
+        case 413: return .tooLong
+        case 429: return .rateLimited
+        case 500..<600: return .serverUnavailable
+        default: return .httpError(status, body)
         }
     }
 }
@@ -92,8 +117,9 @@ public final class AtlasAI {
     /// POST `SupabaseConfig.functionsBase/capture` with `{ text, spaces? }`.
     /// Returns an ARRAY of results (a multi-item paragraph splits into several).
     /// Throws `AtlasAIError.notAuthenticated` if `session()` is nil.
-    /// Throws `AtlasAIError.httpError` on non-2xx.
-    /// Throws `AtlasAIError.decodingError` if the JSON can't be decoded.
+    /// Throws a typed `AtlasAIError` on non-2xx (see `AtlasAIError.from`).
+    /// Throws `AtlasAIError.parseFailed` if the JSON can't be decoded.
+    /// Connectivity failures throw `URLError` unchanged (for the offline queue).
     public func parse(_ text: String,
                spaces: [CaptureContextSpace] = []) async throws -> [CaptureResult] {
         guard let session = sessionProvider() else {
@@ -116,13 +142,13 @@ public final class AtlasAI {
         }
         guard (200..<300).contains(http.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? "(empty)"
-            throw AtlasAIError.httpError(http.statusCode, body)
+            throw AtlasAIError.from(status: http.statusCode, body: body)
         }
 
         do {
             return try AtlasAI.decodeResults(from: data)
         } catch {
-            throw AtlasAIError.decodingError(error)
+            throw AtlasAIError.parseFailed
         }
     }
 

@@ -75,6 +75,10 @@ struct CaptureCommandBar: View {
     @State private var text: String = ""
     @FocusState private var fieldFocused: Bool
     @State private var confirmation: String? = nil
+    @State private var errorMessage: String? = nil
+    // The text we restored alongside an error, so a programmatic restore doesn't
+    // trip the "clear on edit" onChange — only a real keystroke (text ≠ anchor) does.
+    @State private var errorAnchor: String = ""
     @State private var isProcessing: Bool = false
 
     // Click-to-talk dictation. NEVER listens on open — only when the mic button
@@ -157,6 +161,13 @@ struct CaptureCommandBar: View {
                 .focused($fieldFocused)
                 .disabled(isProcessing)
                 .onSubmit(submit)
+                // A real keystroke (text ≠ the restored anchor) clears a lingering
+                // error label; the programmatic restore in showError doesn't.
+                .onChange(of: text) { _, newValue in
+                    if errorMessage != nil, newValue != errorAnchor {
+                        withAnimation { errorMessage = nil }
+                    }
+                }
 
             // Inline status: confirmation > live dictation > permission note > hint.
             trailingStatus
@@ -175,6 +186,7 @@ struct CaptureCommandBar: View {
         .shadow(color: .black.opacity(0.12), radius: 22, x: 0, y: 10)
         .shadow(color: .black.opacity(0.06), radius: 6, x: 0, y: 2)
         .animation(.easeInOut(duration: 0.2), value: confirmation)
+        .animation(.easeInOut(duration: 0.2), value: errorMessage)
     }
 
     private var glassBackground: some View {
@@ -186,7 +198,9 @@ struct CaptureCommandBar: View {
 
     @ViewBuilder
     private var trailingStatus: some View {
-        if let msg = confirmation {
+        if let err = errorMessage {
+            statusLabel(err, color: AtlasTheme.Colors.danger)
+        } else if let msg = confirmation {
             Text(msg)
                 .atlasFont(size: 13, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.accentText)
@@ -286,6 +300,7 @@ struct CaptureCommandBar: View {
 
         // Clear the field immediately so the bar feels responsive.
         text = ""
+        errorMessage = nil
         isProcessing = true
 
         // From a project's "Add Task": force-tag the task to that project/space and
@@ -305,10 +320,10 @@ struct CaptureCommandBar: View {
             defer { isProcessing = false }
 
             // Oversized paste (> server cap): skip the AI round-trip entirely —
-            // the function would 413 — and keep the text as a fallback task.
+            // the function would 413 — and tell the user, restoring their text so
+            // nothing is lost. Same message as a server 413 below.
             guard rawText.count <= 20_000 else {
-                fallbackTask(rawText)
-                await showConfirmation(CaptureOutcome.degraded.confirmation)
+                showError(Self.tooLongMessage, restoring: rawText)
                 return
             }
 
@@ -334,9 +349,15 @@ struct CaptureCommandBar: View {
                 }
                 let outcomes = results.map { state.applyCapture($0) }
                 await showConfirmation(CaptureOutcome.confirmation(for: outcomes))
+            } catch AtlasAIError.tooLong {
+                // Server rejected the size (413) — surface it, keep the text.
+                showError(Self.tooLongMessage, restoring: rawText)
+            } catch AtlasAIError.serverUnavailable, AtlasAIError.rateLimited {
+                // Server down / busy (5xx / 429) — surface it, keep the text.
+                showError(Self.serverDownMessage, restoring: rawText)
             } catch {
-                // ANY error (network, 404 — function not deployed, parse failure):
-                // always fall through to a fallback task so capture never breaks.
+                // ANY other error (offline, 404 — function not deployed, parse
+                // failure): fall through to a fallback task so capture never breaks.
                 fallbackTask(rawText)
                 await showConfirmation(CaptureOutcome.degraded.confirmation)
             }
@@ -361,6 +382,23 @@ struct CaptureCommandBar: View {
             ? String(firstLine.prefix(80)) + "…"
             : firstLine
         state.addTask(title: title, notes: rawText)
+    }
+
+    // The two user-facing failure strings (kept verbatim, shared with iOS).
+    static let tooLongMessage = "Sorry — that message is too long to sort"
+    static let serverDownMessage = "Servers are down — please try again later"
+
+    /// Surface a failure inline WITHOUT committing anything: stop the spinner,
+    /// restore the user's text into the field, and show `message` in danger color.
+    /// The message auto-clears on the next edit or submit (see `errorMessage`
+    /// reset in `submit` and the field's `onChange`). No task is created.
+    @MainActor
+    private func showError(_ message: String, restoring rawText: String) {
+        isProcessing = false
+        errorAnchor = rawText
+        text = rawText
+        withAnimation { errorMessage = message }
+        fieldFocused = true
     }
 
     /// Displays `message` for ~1 second then dismisses the capture bar.
