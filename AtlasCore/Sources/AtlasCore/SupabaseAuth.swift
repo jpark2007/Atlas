@@ -6,10 +6,12 @@ public struct SupabaseUser: Codable, Equatable {
     public let id: String
     public let email: String?
     public let userMetadata: [String: AnyCodable]?
+    public let createdAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id, email
         case userMetadata = "user_metadata"
+        case createdAt = "created_at"
     }
 
     public var displayName: String {

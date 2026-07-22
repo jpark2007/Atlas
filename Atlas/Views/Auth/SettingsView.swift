@@ -1584,7 +1584,7 @@ struct SettingsView: View {
     private var shortcutsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             label("SHORTCUTS")
-            Text("In-app only. Global system-wide hotkey is deferred (v2).")
+            Text("Rebind the in-app and system-wide capture keys. The Global Capture Key works from any app.")
                 .atlasFont(size: 11, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
 
@@ -1729,6 +1729,18 @@ struct SettingsView: View {
                     // Auto-clear warning after 2 s.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                         conflictWarning = nil
+                    }
+                } else if action == .capture {
+                    if let owner = CaptureShortcutSync.systemConflict(candidate) {
+                        conflictWarning = "macOS uses that for \(owner)."
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { conflictWarning = nil }
+                    } else {
+                        conflictWarning = nil
+                        let status = CaptureShortcutSync.apply(candidate, to: shortcuts)
+                        if status != noErr {
+                            conflictWarning = "Something else owns that combo — pick another."
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { conflictWarning = nil }
+                        }
                     }
                 } else {
                     conflictWarning = nil

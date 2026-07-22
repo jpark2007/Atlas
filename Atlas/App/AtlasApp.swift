@@ -256,6 +256,9 @@ struct AppGate: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var googleAuth: GoogleAuthService
     @EnvironmentObject private var canvas: CanvasService
+    @EnvironmentObject private var shortcuts: ShortcutStore
+
+    @State private var showCaptureKeyPopup = false
 
     var body: some View {
         Group {
@@ -291,6 +294,9 @@ struct AppGate: View {
                     }
                 }
                 .onAppear { state.userName = auth.displayName }
+                .sheet(isPresented: $showCaptureKeyPopup) {
+                    CaptureKeyPopup().environmentObject(shortcuts)
+                }
                 .task {
                     let db = AtlasDB(session: { await auth.validSession() })
                     await state.bootstrap(db: db, userID: auth.session?.user.id)
@@ -298,6 +304,10 @@ struct AppGate: View {
                     if canvas.isConnected {
                         await state.syncCanvas(using: canvas)
                     }
+                    #if DEBUG
+                    print("[onboarding] session created_at = \(auth.session?.user.createdAt ?? "nil")")
+                    #endif
+                    showCaptureKeyPopup = CaptureKeyOnboarding.shouldShow(session: auth.session)
                 }
             case .offline:
                 RootView()
