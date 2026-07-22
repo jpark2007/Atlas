@@ -1,9 +1,18 @@
 import SwiftUI
 import AtlasCore
+import TipKit
 
 struct SpaceDetailView: View {
     @EnvironmentObject var state: AppState
     let space: Space
+
+    /// Invite-people onboarding tip, shown only on a solo space page.
+    @State private var inviteTip = AtlasTips.InvitePeople()
+
+    /// True when nobody else shares this space yet (0 or 1 member).
+    private var isOnlyMember: Bool {
+        (state.spaceMembers[space.id]?.count ?? 0) <= 1
+    }
 
     /// Whether the collapsed completed-tasks / past-events groups are expanded.
     @State private var showCompleted = false
@@ -148,6 +157,7 @@ struct SpaceDetailView: View {
             }
             .buttonStyle(.plain)
             .help("Invite someone to collaborate on this space")
+            .onboardingTip(inviteTip, when: isOnlyMember, arrowEdge: .bottom)
             .sheet(isPresented: $presentInvite) {
                 InviteToSpaceSheet(spaceId: space.id, spaceName: space.name)
             }
@@ -297,5 +307,14 @@ struct SpaceDetailView: View {
             }
         }
         .padding(16)
+    }
+}
+
+private extension View {
+    /// Attach an onboarding tip only while `condition` holds — the macOS 14-safe form of a
+    /// conditional `.popoverTip` (the optional-tip overload needs macOS 26).
+    @ViewBuilder
+    func onboardingTip(_ tip: some Tip, when condition: Bool, arrowEdge: Edge = .top) -> some View {
+        if condition { popoverTip(tip, arrowEdge: arrowEdge) } else { self }
     }
 }

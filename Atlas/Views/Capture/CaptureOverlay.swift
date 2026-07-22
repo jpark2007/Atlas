@@ -1,5 +1,6 @@
 import SwiftUI
 import AtlasCore
+import TipKit
 
 // MARK: - Public entry point
 //
@@ -365,6 +366,8 @@ struct CaptureCommandBar: View {
     /// Displays `message` for ~1 second then dismisses the capture bar.
     @MainActor
     private func showConfirmation(_ message: String) async {
+        // Every path that reaches here has committed at least one item — donate once.
+        Task { await AtlasTipEvents.captured.donate() }
         withAnimation { confirmation = message }
         try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 s
         withAnimation { confirmation = nil }

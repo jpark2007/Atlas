@@ -94,7 +94,10 @@ struct RootView: View {
             .background(AtlasTheme.Colors.bgBase)
         }
         .navigationSplitViewStyle(.balanced)
-        .onAppear { applyColumnVisibility() }
+        .onAppear {
+            applyColumnVisibility()
+            AtlasTips.ConnectSource.hasConnection = state.hasAnyConnection
+        }
         .onChange(of: focus.sessionActive) { _, _ in
             applyColumnVisibility()
             // A session can start while the overlay is out (menu-bar/palette) —

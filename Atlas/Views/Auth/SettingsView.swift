@@ -2,6 +2,7 @@ import SwiftUI
 import AtlasCore
 import AppKit
 import EventKit
+import TipKit
 
 /// Full-page Settings route (General / Integrations / Metrics). Opened by the sidebar gear.
 struct SettingsView: View {
@@ -78,6 +79,10 @@ struct SettingsView: View {
     @State private var deleteAccountError: String? = nil
 
     private let ekService = EventKitService()
+
+    // MARK: - Onboarding tips
+    @State private var connectTip = AtlasTips.ConnectSource()
+    @State private var perCalTip = AtlasTips.PerCalendarPicker()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -411,6 +416,8 @@ struct SettingsView: View {
             do {
                 try await canvas.connect(feedUrl: feed, spaceName: canvasSpaceName, jwt: jwt)
                 await state.refreshCanvasConnection()
+                await AtlasTipEvents.connectedSource.donate()
+                AtlasTips.ConnectSource.hasConnection = true
                 canvasFeedURL = ""   // don't retain the capability URL in the field
             } catch {
                 canvasError = "Couldn't connect Canvas. Check the link and your connection, then try again."
@@ -715,6 +722,7 @@ struct SettingsView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .atlasHairlineBelow()
+                .popoverTip(connectTip)
 
                 if let err = googleError {
                     errorRow(err)
@@ -1041,6 +1049,7 @@ struct SettingsView: View {
     private func calendarsPickerSection(_ conn: GoogleConnection) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             label("CALENDARS")
+                .popoverTip(perCalTip, arrowEdge: .top)
             if detailCalendarsLoading && detailCalendars.isEmpty {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
@@ -1193,6 +1202,8 @@ struct SettingsView: View {
                     googleEmail: grant.email,
                     jwt: jwt)
                 await state.refreshGoogleConnections()
+                await AtlasTipEvents.connectedSource.donate()
+                AtlasTips.ConnectSource.hasConnection = true
                 let email = grant.email
                 showAddGoogleSheet = false
                 pendingGrant = nil
@@ -1255,6 +1266,7 @@ struct SettingsView: View {
     /// Opt a calendar in/out of sync: PATCH google-connect with the FULL selected set,
     /// then reload. Optimistically flips the local row so the checkbox responds at once.
     private func toggleCalendar(_ cal: GoogleConnectionCalendar, conn: GoogleConnection) {
+        perCalTip.invalidate(reason: .actionPerformed)
         googleError = nil
         googleWorking = true
         // Optimistic flip so the tap feels instant; reload reconciles with the server.

@@ -1,5 +1,6 @@
 import SwiftUI
 import AtlasCore
+import TipKit
 
 // MARK: - Public wiring
 
@@ -116,6 +117,7 @@ struct CommandPaletteOverlay: View {
                 selection = 0
                 sections = computeSections()
                 DispatchQueue.main.async { fieldFocused = true }
+                Task { await AtlasTipEvents.usedSearch.donate() }
             }
         }
         .sheet(item: $editingNote) { note in

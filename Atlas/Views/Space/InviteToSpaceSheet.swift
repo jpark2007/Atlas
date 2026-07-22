@@ -1,5 +1,6 @@
 import SwiftUI
 import AtlasCore
+import TipKit
 
 /// Space-level counterpart to InviteMemberSheet (Phase 2) — a single email
 /// field + send button. Sharing a space shares everything inside it, so the
@@ -49,6 +50,7 @@ struct InviteToSpaceSheet: View {
                 Button {
                     Task {
                         await state.inviteToSpace(email: email, spaceId: spaceId)
+                        await AtlasTipEvents.invited.donate()
                         sent = true
                     }
                 } label: {

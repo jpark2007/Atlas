@@ -1,5 +1,6 @@
 import SwiftUI
 import AtlasCore
+import TipKit
 
 /// The Atlas Calendar — the hero screen. Day / Week time grid with a space
 /// filter and a drag-to-schedule tray of unscheduled tasks. Reads/writes the
@@ -25,6 +26,9 @@ struct CalendarView: View {
     @State private var dropColumns: [TaskDropColumn] = []
     /// An already-placed event being dragged to a new slot (nil = not dragging from grid).
     @State private var draggingEvent: CalendarEvent?
+
+    /// Drag-to-schedule onboarding tip, anchored on the unscheduled tray.
+    @State private var dragTip = AtlasTips.DragToSchedule()
 
     // MARK: - Apple Calendar sync
     @AppStorage("calendar.apple.enabled") private var appleCalendarEnabled: Bool = false
@@ -65,6 +69,11 @@ struct CalendarView: View {
                         dragTaskID = nil
                     }
                 )
+                .popoverTip(dragTip, arrowEdge: .leading)
+                .onAppear { AtlasTips.DragToSchedule.hasUnscheduled = !state.unscheduledTasks.isEmpty }
+                .onChange(of: state.unscheduledTasks.count) { _, count in
+                    AtlasTips.DragToSchedule.hasUnscheduled = count > 0
+                }
             }
             .padding(.horizontal, 24)
             .padding(.top, 14)
@@ -577,6 +586,7 @@ struct CalendarView: View {
         withAnimation(.easeOut(duration: 0.2)) {
             state.schedule(taskId: taskID, at: dropped)
         }
+        Task { await AtlasTipEvents.scheduledByDrag.donate() }
         return true
     }
 

@@ -1,8 +1,14 @@
 import SwiftUI
 import AtlasCore
+import TipKit
 
 struct SidebarView: View {
     @EnvironmentObject var state: AppState
+
+    // MARK: - Onboarding tips
+    @State private var searchTip = AtlasTips.CommandPalette()
+    @State private var bugTip = AtlasTips.ReportBug()
+    @State private var globalCaptureTip = AtlasTips.GlobalCapture()
 
     /// Non-nil while the create-project sheet is up; carries the target space.
     @State private var newProjectTarget: NewProjectTarget?
@@ -160,7 +166,10 @@ struct SidebarView: View {
     /// Quiet "Report a bug" affordance under the profile row — opens the app-wide
     /// report sheet (`AppState.presentBugReport`), the same one ⌘K offers.
     private var reportBugRow: some View {
-        Button { state.reportBug() } label: {
+        Button {
+            state.reportBug()
+            Task { await AtlasTipEvents.reportedBug.donate() }
+        } label: {
             HStack(spacing: 9) {
                 Image(systemName: "ant")
                     .atlasFont(size: 12, weight: .medium)
@@ -175,6 +184,7 @@ struct SidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onboardingTip(bugTip, when: AtlasBuild.isBeta)
     }
 
     // MARK: - Logo
@@ -188,12 +198,16 @@ struct SidebarView: View {
             Spacer()
         }
         .padding(.horizontal, 8)
+        .popoverTip(globalCaptureTip, arrowEdge: .trailing)
     }
 
     // MARK: - Search
 
     private var searchField: some View {
-        Button { state.presentSearch = true } label: {
+        Button {
+            state.presentSearch = true
+            searchTip.invalidate(reason: .actionPerformed)
+        } label: {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .atlasFont(size: 13, weight: .medium)
@@ -220,6 +234,7 @@ struct SidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .popoverTip(searchTip, arrowEdge: .bottom)
     }
 
     // MARK: - Nav row
@@ -423,6 +438,13 @@ struct SidebarView: View {
 // MARK: - Row chrome (paper language)
 
 private extension View {
+    /// Attach an onboarding tip only while `condition` holds — the macOS 14-safe form of a
+    /// conditional `.popoverTip` (the optional-tip overload needs macOS 26).
+    @ViewBuilder
+    func onboardingTip(_ tip: some Tip, when condition: Bool, arrowEdge: Edge = .top) -> some View {
+        if condition { popoverTip(tip, arrowEdge: arrowEdge) } else { self }
+    }
+
     /// Paper-language selection/hover chrome for a sidebar row. The active row
     /// gets a 2px accent (clay) tick on the left edge and no fill; a
     /// hovered-but-inactive row gets a soft full-row ink wash with square

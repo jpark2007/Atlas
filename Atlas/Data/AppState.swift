@@ -111,6 +111,7 @@ final class AppState: ObservableObject {
             let conns = try await db.loadGoogleConnections()
             self.googleConnections = conns
             self.serverSyncEnabled = conns.contains { $0.status != "revoked" }
+            AtlasTips.ConnectSource.hasConnection = hasAnyConnection
         } catch {
             print("[AtlasDB] google_connections read failed — keeping current sync mode. Error: \(error.localizedDescription)")
             AtlasLog.append("google_connections read failed: \(error.localizedDescription)")
@@ -131,6 +132,12 @@ final class AppState: ObservableObject {
     /// validated a token and never imported, so this is a display signal only (unlike
     /// `serverSyncEnabled`, which gates the Mac's live Google writers).
     @Published var canvasConnection: CanvasConnectionRow?
+
+    /// True when at least one external source is connected (any Google account or a
+    /// Canvas feed). Gates the "connect a source" onboarding tip.
+    var hasAnyConnection: Bool {
+        !googleConnections.isEmpty || canvasConnection != nil
+    }
 
     /// The signed-in user's public identity (collab). Nil until loaded.
     @Published var profile: ProfileRow? = nil
@@ -172,6 +179,7 @@ final class AppState: ObservableObject {
         guard let db else { return }
         do {
             self.canvasConnection = try await db.loadCanvasConnection()
+            AtlasTips.ConnectSource.hasConnection = hasAnyConnection
         } catch {
             print("[AtlasDB] canvas_connections read failed — keeping current state. Error: \(error.localizedDescription)")
             AtlasLog.append("canvas_connections read failed: \(error.localizedDescription)")

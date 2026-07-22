@@ -1,5 +1,6 @@
 import SwiftUI
 import AtlasCore
+import TipKit
 
 /// The constrained Atlas notes editor (WS-10). A focused rich-text view over a
 /// `RichDoc` whose ONLY styling is the allowed subset:
@@ -42,6 +43,11 @@ struct NoteEditorView: View {
     @State private var newerVersionAvailable = false
     /// True while a manual "Sync now" reload is in flight.
     @State private var isSyncingNow = false
+
+    // MARK: - Onboarding tips
+    @State private var docTabsTip = AtlasTips.DocTabs()
+    @State private var driveTip = AtlasTips.DriveSync()
+    @State private var frozenTip = AtlasTips.FrozenIslands()
 
     /// Per-tab Google Doc sync (beta). OFF ⇒ behavior is identical to single-tab today:
     /// tabs never load, the switcher never renders, and saves take the legacy whole-file path.
@@ -115,6 +121,7 @@ struct NoteEditorView: View {
                 seedDoc(draft.body)
             }
             baselineUpdatedAt = liveNote?.updatedAt ?? draft.updatedAt
+            Task { await AtlasTipEvents.openedNote.donate() }
         }
         // Per-tab mode (flag ON + multi-tab Doc): load the tabs and switch `doc` to the
         // first tab's body. Single-tab Docs and flag OFF fall through untouched — `docTabs`
@@ -208,6 +215,7 @@ struct NoteEditorView: View {
                     .padding(.horizontal, 18)
                 }
                 .padding(.vertical, 6)
+                .popoverTip(docTabsTip, arrowEdge: .bottom)
             }
             // One banner at most — a pending first-sync lock outranks a read-only
             // tab, which outranks the (non-blocking) dropped-styling advisory.
@@ -390,6 +398,7 @@ struct NoteEditorView: View {
         .buttonStyle(.plain)
         .disabled(isSyncingNow)
         .help("Sync now — check for the latest synced version")
+        .onboardingTip(driveTip, when: docReference != nil)
     }
 
     /// Shown when a newer Google version synced while the buffer was dirty: we keep the
@@ -506,6 +515,7 @@ struct NoteEditorView: View {
     /// the target tab's Markdown into `doc` and clears the per-tab dirty flag.
     private func switchTab(to tab: DocNoteTab) {
         guard tab.id != selectedTab?.id else { return }
+        docTabsTip.invalidate(reason: .actionPerformed)
         if tabDirty, let current = selectedTab, current.writable, let ref = docReference {
             // Island-safe: escape any user block that fakes an `!>` marker before the push.
             let markdown = tabMarkdownForSave
@@ -813,16 +823,20 @@ struct NoteEditorView: View {
     /// editable normal block.
     @ViewBuilder
     private func frozenRow(display: String) -> some View {
-        if let objectId = imagePlaceholderObjectId(display) {
-            imageBlock(objectId: objectId, placeholder: display)
-                .help("Locked — this content can only be changed in Google Docs")
-        } else {
-            Text(display)
-                .atlasFont(size: 13)
-                .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .help("Locked — this content can only be changed in Google Docs")
+        Group {
+            if let objectId = imagePlaceholderObjectId(display) {
+                imageBlock(objectId: objectId, placeholder: display)
+                    .help("Locked — this content can only be changed in Google Docs")
+            } else {
+                Text(display)
+                    .atlasFont(size: 13)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help("Locked — this content can only be changed in Google Docs")
+            }
         }
+        .onAppear { Task { await AtlasTipEvents.sawFrozenIsland.donate() } }
+        .popoverTip(frozenTip, arrowEdge: .leading)
     }
 
     /// The object id in an `![image:<id>]` line (trimmed), else nil. Mirrors the
@@ -1174,5 +1188,14 @@ extension EnvironmentValues {
     var referencePull: ReferencePullClient? {
         get { self[ReferencePullKey.self] }
         set { self[ReferencePullKey.self] = newValue }
+    }
+}
+
+private extension View {
+    /// Attach an onboarding tip only while `condition` holds — the macOS 14-safe form of a
+    /// conditional `.popoverTip` (the optional-tip overload needs macOS 26).
+    @ViewBuilder
+    func onboardingTip(_ tip: some Tip, when condition: Bool, arrowEdge: Edge = .top) -> some View {
+        if condition { popoverTip(tip, arrowEdge: arrowEdge) } else { self }
     }
 }
