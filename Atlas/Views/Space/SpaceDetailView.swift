@@ -209,6 +209,7 @@ struct SpaceDetailView: View {
                         .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
+                .help(task.done ? "Mark not done" : "Mark done")
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(task.title)

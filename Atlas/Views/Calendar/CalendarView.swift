@@ -182,6 +182,7 @@ struct CalendarView: View {
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
+                .help("Clear the search")
             }
         }
         .padding(.horizontal, 10)
@@ -263,6 +264,7 @@ struct CalendarView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(AtlasTheme.Colors.textSecondary)
+            .help("Previous day, week, or month")
 
             Button { selectedDate = Calendar.current.startOfDay(for: Date()) } label: {
                 Text("Today")
@@ -283,6 +285,7 @@ struct CalendarView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(AtlasTheme.Colors.textSecondary)
+            .help("Next day, week, or month")
         }
         .atlasFont(size: 14, weight: .semibold, design: .rounded)
     }

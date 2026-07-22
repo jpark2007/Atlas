@@ -337,6 +337,7 @@ struct DeadlineRailMarker: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help("See what's due")
         .popover(isPresented: $showList, arrowEdge: .leading) {
             DeadlineListPopover(deadlines: cluster.events)
         }

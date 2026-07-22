@@ -72,6 +72,7 @@ struct ReferenceListRow: View {
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
+                .help("Remove this reference")
             }
         }
         .padding(.vertical, 9)

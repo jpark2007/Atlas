@@ -202,6 +202,7 @@ struct DashboardView: View {
                     .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
             }
             .buttonStyle(.plain)
+            .help(task.done ? "Mark not done" : "Mark done")
 
             Button { state.route = .task(task.id) } label: {
                 HStack(spacing: 8) {

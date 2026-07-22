@@ -84,6 +84,7 @@ struct CompletedView: View {
                         .foregroundStyle(AtlasTheme.Colors.accent)
                 }
                 .buttonStyle(.plain)
+                .help("Mark not done")
 
                 Text(task.title)
                     .atlasFont(size: 14, design: .rounded)

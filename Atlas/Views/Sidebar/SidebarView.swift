@@ -303,6 +303,7 @@ struct SidebarView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help("Expand or collapse")
 
                 Button {
                     newProjectTarget = NewProjectTarget(spaceName: space.name)

@@ -450,6 +450,7 @@ struct GraphView: View {
                     .overlay(Circle().strokeBorder(AtlasTheme.Colors.border, lineWidth: 1))
             }
             .buttonStyle(.plain)
+            .help("Close the graph")
         }
         .padding(.horizontal, 18)
         .padding(.top, 16)

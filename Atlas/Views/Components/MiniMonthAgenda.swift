@@ -62,7 +62,9 @@ struct MiniMonthAgenda: View {
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Spacer()
             chevron("chevron.left")  { pageMonth(-1) }
+                .help("Previous month")
             chevron("chevron.right") { pageMonth(1) }
+                .help("Next month")
         }
     }
 

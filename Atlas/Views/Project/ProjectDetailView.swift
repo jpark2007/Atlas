@@ -811,6 +811,7 @@ struct ProjectDetailView: View {
                         .foregroundStyle(task.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
+                .help(task.done ? "Mark not done" : "Mark done")
 
                 Text(task.title)
                     .atlasFont(size: 14, design: .rounded)

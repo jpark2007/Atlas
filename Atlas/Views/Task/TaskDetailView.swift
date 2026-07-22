@@ -84,6 +84,7 @@ struct TaskDetailView: View {
                     .foregroundStyle(live.done ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textMuted)
             }
             .buttonStyle(.plain)
+            .help(live.done ? "Mark not done" : "Mark done")
             .padding(.top, 3)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -326,6 +327,7 @@ struct TaskDetailView: View {
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     .buttonStyle(.plain)
+                    .help("Edit description")
                 }
             }
 
@@ -436,6 +438,7 @@ struct TaskDetailView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .help("Clear the linked note")
                 } else {
                     notePickerMenu {
                         HStack(spacing: 6) {

@@ -649,6 +649,17 @@ struct NoteEditorView: View {
                 )
         }
         .buttonStyle(.plain)
+        .help(markHelp(mark))
+    }
+
+    /// One-line tooltip naming the inline mark a style-bar button toggles.
+    private func markHelp(_ mark: RichDoc.InlineMarks) -> String {
+        switch mark {
+        case .bold:      return "Bold"
+        case .italic:    return "Italic"
+        case .underline: return "Underline"
+        default:         return "Format"
+        }
     }
 
     private func listButton(_ systemImage: String, kind: RichDoc.BlockKind) -> some View {
@@ -665,6 +676,7 @@ struct NoteEditorView: View {
                 )
         }
         .buttonStyle(.plain)
+        .help(kind == .numbered ? "Numbered list" : "Bulleted list")
     }
 
     // MARK: - Block row

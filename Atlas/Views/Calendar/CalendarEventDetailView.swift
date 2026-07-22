@@ -225,6 +225,7 @@ struct CalendarEventDetailView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .help("Clear the linked note")
                 }
                 Spacer()
             }

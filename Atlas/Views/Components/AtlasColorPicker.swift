@@ -61,6 +61,7 @@ struct AtlasColorGrid: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!isValidHex)
+                .help("Apply this hex color")
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
