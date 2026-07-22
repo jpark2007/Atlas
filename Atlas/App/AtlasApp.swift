@@ -42,7 +42,7 @@ struct AtlasApp: App {
                 .environment(\.atlasTextScale, CGFloat(textScale))
                 .frame(minWidth: 960, minHeight: 600)
                 .preferredColorScheme(.light)
-                .background(GlobalHotkeyInstaller(state: state, auth: auth))
+                .background(GlobalHotkeyInstaller(state: state, auth: auth, shortcuts: shortcuts))
         }
         // .hiddenTitleBar gives the transparent, full-size-content title bar (edge-to-edge
         // light content, no gray strip, no title) while KEEPING the standard traffic-light
@@ -227,6 +227,7 @@ private struct GlobalHotkeyInstaller: View {
     /// tripped a fatal SwiftUI error on hotkey press).
     let state: AppState
     let auth: AuthService
+    let shortcuts: ShortcutStore
 
     var body: some View {
         Color.clear
@@ -239,7 +240,12 @@ private struct GlobalHotkeyInstaller: View {
                 CapturePanelController.shared.configure(state: state, auth: auth)
                 HotkeyService.shared.register {
                     CapturePanelController.shared.toggle()
+                    Task { await AtlasTipEvents.usedGlobalCapture.donate() }
                 }
+                // Derive the Carbon hotkey from the in-app `.capture` binding so the
+                // system-wide hotkey can never drift from stored divergent values.
+                // Must run AFTER register(...) so it replaces the register-time value.
+                CaptureShortcutSync.reconcileOnLaunch(shortcuts)
             }
     }
 }

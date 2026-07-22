@@ -80,23 +80,29 @@ final class HotkeyService {
     }
 
     /// Swap the current hotkey for a new combo without re-installing the handler.
-    func update(keyCode: UInt32, modifiers: UInt32) {
-        applyShortcut(keyCode: keyCode, modifiers: modifiers)
+    /// Returns the `RegisterEventHotKey` status so callers can detect a failed
+    /// registration (e.g. the combo is already owned system-wide).
+    @discardableResult
+    func update(keyCode: UInt32, modifiers: UInt32) -> OSStatus {
+        let status = applyShortcut(keyCode: keyCode, modifiers: modifiers)
         let defaults = UserDefaults.standard
         defaults.set(Int(keyCode), forKey: HotkeyDefaults.captureKeyCodeKey)
         defaults.set(Int(modifiers), forKey: HotkeyDefaults.captureModifiersKey)
+        return status
     }
 
-    private func applyShortcut(keyCode: UInt32, modifiers: UInt32) {
+    @discardableResult
+    private func applyShortcut(keyCode: UInt32, modifiers: UInt32) -> OSStatus {
         if let existing = hotKeyRef {
             UnregisterEventHotKey(existing)
             hotKeyRef = nil
         }
         var newRef: EventHotKeyRef?
-        RegisterEventHotKey(keyCode, modifiers, Self.hotKeyID, GetApplicationEventTarget(), 0, &newRef)
+        let status = RegisterEventHotKey(keyCode, modifiers, Self.hotKeyID, GetApplicationEventTarget(), 0, &newRef)
         hotKeyRef = newRef
         currentKeyCode = keyCode
         currentModifiers = modifiers
+        return status
     }
 
     // MARK: - Display helpers (for a future Settings rebind UI)
