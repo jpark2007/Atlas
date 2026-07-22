@@ -1059,12 +1059,15 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Server not configured" }, 500);
   }
 
-  // Service-role only. The pg_cron job (0008) invokes with the service key
-  // directly, so require EXACT equality — no unsigned role-claim decode. Rejects
-  // anon (role=anon) and user (role=authenticated) tokens.
+  // Service-role only. The pg_cron job (0008) invokes with a token from Vault,
+  // so require EXACT equality — no unsigned role-claim decode. Rejects anon
+  // (role=anon) and user (role=authenticated) tokens. The platform-injected
+  // SUPABASE_SERVICE_ROLE_KEY format can differ from the vault-stored cron
+  // credential, so cron auth also accepts the dedicated CRON_SECRET.
+  const cronSecret = Deno.env.get("CRON_SECRET") ?? "";
   const authHeader = req.headers.get("Authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-  if (!token || token !== serviceKey) {
+  if (!token || (token !== serviceKey && !(cronSecret && token === cronSecret))) {
     return json({ error: "Forbidden" }, 401);
   }
 
