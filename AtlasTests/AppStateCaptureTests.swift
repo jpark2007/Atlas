@@ -34,7 +34,8 @@ final class AppStateCaptureTests: XCTestCase {
                         notes: String? = nil) -> CaptureResult {
         CaptureResult(kind: kind, title: title, spaceName: space,
                       projectName: nil, dueISO: dueISO, startISO: startISO,
-                      durationMin: durationMin, notes: notes)
+                      endISO: nil, durationMin: durationMin, isAllDay: nil,
+                      notes: notes)
     }
 
     func testApplyCaptureTaskWithDate() {

@@ -34,7 +34,7 @@ const CORS_HEADERS = {
 
 // A capture is a short free-text jot; a few thousand chars is generous. Anything
 // larger is abuse/accident — reject with 413 before spending an OpenRouter call.
-const MAX_TEXT_LEN = 8000;
+const MAX_TEXT_LEN = 20000;
 
 // A project is either a bare name (legacy clients) or an object carrying an
 // optional short code and description used for description-aware routing.
@@ -136,7 +136,10 @@ Each element of "items" matches this schema:
   "dueISO"?: string,          // Full ISO 8601 UTC instant converted from the user's local time,
                               // e.g. a 5:30 PM PDT deadline → "2026-07-03T00:30:00Z" (tasks)
   "startISO"?: string,        // Full ISO 8601 UTC instant, converted the same way (events)
+  "endISO"?: string,          // Full ISO 8601 UTC instant for the event's END, only when an
+                              // explicit end/finish time is stated; else omit and durationMin governs
   "durationMin"?: number,     // duration in minutes (events, default 60 if not specified)
+  "isAllDay"?: boolean,       // true for an event on a date with NO stated clock time (all-day)
   "notes"?: string            // extra detail / body text (notes, or longer event notes)
 }
 
@@ -167,6 +170,15 @@ Rules:
   "event" starting at that local time — not a floating task with no deadline.
 - A deadline WITHOUT a stated time ("due Friday") = that LOCAL day at 00:00 user-local,
   converted to UTC.
+- If an event states an explicit END/finish time ("2–3pm", "from 9 to 10:30", "ends at 4"),
+  put that end as "endISO" (converted to UTC the same way). Otherwise OMIT endISO and let
+  durationMin govern. NEVER invent an end time.
+- An event on a DATE with NO stated clock time ("game on Saturday", "trip July 5") is
+  all-day: set "isAllDay": true and put that LOCAL day's midnight (UTC-converted) in startISO.
+- A pasted SCHEDULE listing several dated sessions (a season, syllabus, itinerary, class
+  list) becomes ONE event per listed session — each with its own date/time. Emit at most 20
+  items; if there are more, keep the 20 EARLIEST. Only make items for sessions that carry an
+  actual date; never invent dates or times for unlisted ones.
 - TITLES ARE CLEAN. The title must NOT contain the date/time words you parsed into
   dueISO/startISO — strip phrases like "due next friday", "on friday", "at 5:30",
   "tomorrow", "tonight" and leave a bare noun/verb phrase: "essay due next friday" →
@@ -304,7 +316,7 @@ Deno.serve(async (req: Request) => {
         ],
         response_format: { type: "json_object" },
         temperature: 0.2,
-        max_tokens: 1024,
+        max_tokens: 4096,
       }),
     });
   } catch (err) {

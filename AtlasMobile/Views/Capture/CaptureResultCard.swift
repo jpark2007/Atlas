@@ -11,7 +11,9 @@ struct DraftItem: Identifiable {
     var projectName: String?
     var due: Date?
     var start: Date?
+    var end: Date?
     var durationMin: Int?
+    var isAllDay: Bool
     var notes: String?
 
     init(_ r: CaptureResult) {
@@ -21,7 +23,9 @@ struct DraftItem: Identifiable {
         projectName = r.projectName
         due = CaptureDateParser.date(from: r.dueISO)
         start = CaptureDateParser.date(from: r.startISO)
+        end = CaptureDateParser.date(from: r.endISO)
         durationMin = r.durationMin
+        isAllDay = r.isAllDay ?? false
         notes = r.notes
     }
 }

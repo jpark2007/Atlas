@@ -18,4 +18,25 @@ final class CaptureRequestTests: XCTestCase {
         let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertNil(obj["timezone"])
     }
+
+    // The event schema gained optional `endISO` + `isAllDay`; decoding must read
+    // them when present and tolerate their absence (missing keys → nil).
+    func test_decodeResults_readsEndISOAndAllDay() throws {
+        let json = Data("""
+        [{"kind":"event","title":"Game","spaceName":"Personal",
+          "startISO":"2026-07-05T00:00:00Z","endISO":"2026-07-05T02:00:00Z","isAllDay":true}]
+        """.utf8)
+        let results = try AtlasAI.decodeResults(from: json)
+        XCTAssertEqual(results.first?.endISO, "2026-07-05T02:00:00Z")
+        XCTAssertEqual(results.first?.isAllDay, true)
+    }
+
+    func test_decodeResults_toleratesMissingNewFields() throws {
+        let json = Data("""
+        [{"kind":"task","title":"Call","spaceName":"Personal"}]
+        """.utf8)
+        let results = try AtlasAI.decodeResults(from: json)
+        XCTAssertNil(results.first?.endISO)
+        XCTAssertNil(results.first?.isAllDay)
+    }
 }

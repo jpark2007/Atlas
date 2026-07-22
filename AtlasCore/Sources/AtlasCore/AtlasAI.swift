@@ -12,7 +12,9 @@ public struct CaptureResult: Codable {
     public let projectName: String?
     public let dueISO: String?
     public let startISO: String?
+    public let endISO: String?
     public let durationMin: Int?
+    public let isAllDay: Bool?
     public let notes: String?
 }
 

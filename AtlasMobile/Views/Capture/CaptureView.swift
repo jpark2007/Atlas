@@ -403,11 +403,26 @@ struct CaptureView: View {
         let color = space?.color ?? MobileTheme.accent
 
         if draft.kind == "event" {
-            let start = draft.start ?? draft.due ?? Date()
-            let end = start.addingTimeInterval(TimeInterval((draft.durationMin ?? 60) * 60))
+            let rawStart = draft.start ?? draft.due ?? Date()
+            let start: Date
+            let end: Date
+            if draft.isAllDay {
+                // All-day: one calendar day, midnight → next midnight (matches Mac).
+                let cal = Calendar.current
+                start = cal.startOfDay(for: rawStart)
+                end = cal.date(byAdding: .day, value: 1, to: start) ?? start
+            } else {
+                start = rawStart
+                if let stated = draft.end, stated > rawStart {
+                    end = stated
+                } else {
+                    end = rawStart.addingTimeInterval(TimeInterval((draft.durationMin ?? 60) * 60))
+                }
+            }
             let event = CalendarEvent(
                 title: draft.title, subtitle: "", start: start, end: end,
-                color: color, spaceName: spaceName, notes: draft.notes, source: .atlas)
+                color: color, spaceName: spaceName, notes: draft.notes,
+                isAllDay: draft.isAllDay, source: .atlas)
             Task { await store.addEvent(event) }
         } else {
             let notes = draft.kind == "note" ? (draft.notes ?? draft.title) : (draft.notes ?? "")

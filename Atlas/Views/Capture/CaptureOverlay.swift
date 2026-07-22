@@ -303,9 +303,17 @@ struct CaptureCommandBar: View {
         Task { @MainActor in
             defer { isProcessing = false }
 
+            // Oversized paste (> server cap): skip the AI round-trip entirely —
+            // the function would 413 — and keep the text as a fallback task.
+            guard rawText.count <= 20_000 else {
+                fallbackTask(rawText)
+                await showConfirmation(CaptureOutcome.degraded.confirmation)
+                return
+            }
+
             // Offline or no session → plain-task fallback, no network call.
             guard auth.session != nil else {
-                state.addTask(title: rawText)
+                fallbackTask(rawText)
                 await showConfirmation(CaptureOutcome.degraded.confirmation)
                 return
             }
@@ -319,7 +327,7 @@ struct CaptureCommandBar: View {
                 )
                 guard !results.isEmpty else {
                     // Parsed OK but nothing actionable — never lose the text.
-                    state.addTask(title: rawText)
+                    fallbackTask(rawText)
                     await showConfirmation(CaptureOutcome.degraded.confirmation)
                     return
                 }
@@ -327,11 +335,31 @@ struct CaptureCommandBar: View {
                 await showConfirmation(CaptureOutcome.confirmation(for: outcomes))
             } catch {
                 // ANY error (network, 404 — function not deployed, parse failure):
-                // always fall through to a plain task so capture never breaks.
-                state.addTask(title: rawText)
+                // always fall through to a fallback task so capture never breaks.
+                fallbackTask(rawText)
                 await showConfirmation(CaptureOutcome.degraded.confirmation)
             }
         }
+    }
+
+    /// The never-lose-text fallback. A long or multi-line paste keeps its FULL
+    /// text in the task's notes and uses its first non-empty line (≤ 80 chars) as
+    /// a clean title; short single-line text stays the title verbatim (as before).
+    private func fallbackTask(_ rawText: String) {
+        let isLong = rawText.contains("\n") || rawText.count > 120
+        guard isLong else {
+            state.addTask(title: rawText)
+            return
+        }
+        let firstLine = rawText
+            .split(separator: "\n")
+            .map(String.init)
+            .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }?
+            .trimmingCharacters(in: .whitespaces) ?? rawText
+        let title = firstLine.count > 80
+            ? String(firstLine.prefix(80)) + "…"
+            : firstLine
+        state.addTask(title: title, notes: rawText)
     }
 
     /// Displays `message` for ~1 second then dismisses the capture bar.

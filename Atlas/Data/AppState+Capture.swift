@@ -42,22 +42,61 @@ extension AppState {
 
     /// Place an event on the calendar. Without a parseable `startISO` there's no
     /// slot to place it in, so it falls back to a dated/undated task.
+    ///
+    /// End time: an explicit `endISO` after the start wins; otherwise the event
+    /// runs `durationMin` (default 60). An `isAllDay` event spans one calendar day
+    /// — midnight → next midnight — matching EventEditorSheet's convention.
+    /// Source stays the `.atlas` default (rule 5 — never mislabel origin).
     private func applyEvent(_ result: CaptureResult) -> CaptureOutcome {
         guard let start = CaptureDateParser.date(from: result.startISO) else {
             addTask(title: result.title)
             return .task(hasDate: false)
         }
-        let durationSeconds = Double(result.durationMin ?? 60) * 60
+
+        let isAllDay = result.isAllDay ?? false
+        let eventStart: Date
+        let eventEnd: Date
+        if isAllDay {
+            let cal = Calendar.current
+            eventStart = cal.startOfDay(for: start)
+            eventEnd = cal.date(byAdding: .day, value: 1, to: eventStart) ?? eventStart
+        } else {
+            eventStart = start
+            if let end = CaptureDateParser.date(from: result.endISO), end > start {
+                eventEnd = end
+            } else {
+                eventEnd = start.addingTimeInterval(Double(result.durationMin ?? 60) * 60)
+            }
+        }
+
         var event = CalendarEvent(
             title: result.title,
             subtitle: "",
-            start: start,
-            end: start.addingTimeInterval(durationSeconds),
+            start: eventStart,
+            end: eventEnd,
             color: calendarSpaceColor(named: result.spaceName),
-            spaceName: result.spaceName
+            spaceName: result.spaceName,
+            isAllDay: isAllDay
         )
         event.spaceID = spaceID(named: result.spaceName)
         addEvent(event)
         return .event
+    }
+
+    /// Create a plain task carrying `notes` — used by the quick-capture
+    /// graceful fallback so a long pasted dump keeps its full text in the body
+    /// (never a giant title). Mirrors `addTask` but persists a notes field.
+    @discardableResult
+    func addTask(title: String, notes: String) -> TaskItem {
+        let resolvedSpace = resolvedTaskSpaceName(hint: "", text: title)
+        var task = TaskItem(title: title,
+                            dueLabel: TaskItem.dueLabel(for: nil),
+                            notes: notes)
+        task.spaceName = resolvedSpace
+        task.spaceID = spaceID(named: resolvedSpace)
+        task.spaceColor = calendarSpaceColor(named: resolvedSpace)
+        tasks.append(task)
+        Task { try? await self.db?.upsertTask(task) }
+        return task
     }
 }
