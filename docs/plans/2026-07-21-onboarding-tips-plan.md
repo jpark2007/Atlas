@@ -13,7 +13,7 @@
 - macOS 14 / iOS 17 minimum floors — already satisfied; TipKit needs no availability guards.
 - `.help()` copy: Atlas editorial voice, **sentence case, no trailing period, one line each**.
 - Tips trigger on **anchor view appearing while rules pass** — never on click or hover.
-- **One tip displayed at a time** (TipKit's `Tips.configure()` default display frequency handles this; do not override to `.immediate`).
+- **One tip displayed at a time** per anchor (TipKit UI behavior). `displayFrequency(.immediate)` in Task 1 matches TipKit's default and is intentional — rules do the throttling.
 - `Tips.configure()` is called **exactly once per app** at launch, before any tip renders.
 - Event donations happen at the **real call site** where the user does the thing (choke-points listed per task), never speculatively.
 - A tip retires itself with `invalidate(.actionPerformed)` (or an `#Rule` that reads a donated event) the moment the user does the thing unprompted.
