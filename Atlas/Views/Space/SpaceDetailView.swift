@@ -9,9 +9,10 @@ struct SpaceDetailView: View {
     /// Invite-people onboarding tip, shown only on a solo space page.
     @State private var inviteTip = AtlasTips.InvitePeople()
 
-    /// True when nobody else shares this space yet (0 or 1 member).
+    /// True only once a loaded roster confirms you are its single member. A not-yet-loaded
+    /// roster (nil) reads as NOT only-member so the invite tip doesn't flash before it arrives.
     private var isOnlyMember: Bool {
-        (state.spaceMembers[space.id]?.count ?? 0) <= 1
+        state.spaceMembers[space.id]?.count == 1
     }
 
     /// Whether the collapsed completed-tasks / past-events groups are expanded.
@@ -308,14 +309,5 @@ struct SpaceDetailView: View {
             }
         }
         .padding(16)
-    }
-}
-
-private extension View {
-    /// Attach an onboarding tip only while `condition` holds — the macOS 14-safe form of a
-    /// conditional `.popoverTip` (the optional-tip overload needs macOS 26).
-    @ViewBuilder
-    func onboardingTip(_ tip: some Tip, when condition: Bool, arrowEdge: Edge = .top) -> some View {
-        if condition { popoverTip(tip, arrowEdge: arrowEdge) } else { self }
     }
 }

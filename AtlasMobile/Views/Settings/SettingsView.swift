@@ -807,11 +807,4 @@ private extension View {
         font(.system(size: 15, weight: .regular, design: .rounded))
             .foregroundStyle(MobileTheme.muted)
     }
-
-    /// Conditional `.popoverTip` — iOS 17's optional-tip overload needs iOS 26, so gate
-    /// with a plain `if` (mirrors the Mac's `onboardingTip` helper from Task 2).
-    @ViewBuilder
-    func onboardingTip(_ tip: some Tip, when condition: Bool) -> some View {
-        if condition { popoverTip(tip) } else { self }
-    }
 }

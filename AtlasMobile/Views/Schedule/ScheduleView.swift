@@ -250,16 +250,18 @@ struct ScheduleView: View {
         // TimelineView re-evaluates every minute so the NOW rail advances.
         TimelineView(.everyMinute) { context in
             List {
-                GetStartedCard()
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
+                if spotlightDone {
+                    GetStartedCard()
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                }
                 NeedsTimeSection(tasks: needsTime,
                                  onSetTime: { timing = $0 },
                                  onOpen: { detail = .task($0) },
                                  onPlace: { showPlace = true },
                                  onLongPress: { store.pendingPlacement = $0 })
-                    .popoverTip(dragTip)
+                    .onboardingTip(dragTip, when: spotlightDone)
                 DayTimelineView(
                     day: selectedDay,
                     now: context.date,
@@ -284,14 +286,14 @@ struct ScheduleView: View {
         // TimelineView re-evaluates every minute so the NOW line advances.
         TimelineView(.everyMinute) { context in
             VStack(spacing: 0) {
-                GetStartedCard()
+                if spotlightDone { GetStartedCard() }
                 NeedsTimeSection(tasks: needsTime,
                                  onSetTime: { timing = $0 },
                                  onOpen: { detail = .task($0) },
                                  onPlace: { showPlace = true },
                                  onLongPress: { store.pendingPlacement = $0 },
                                  compact: true)
-                    .popoverTip(dragTip)
+                    .onboardingTip(dragTip, when: spotlightDone)
                 DayGridView(
                     day: selectedDay,
                     now: context.date,

@@ -476,6 +476,7 @@ struct TaskDetailView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .help("Choose a note")
     }
 
     /// Link (or clear) the task's tagged note and persist it.

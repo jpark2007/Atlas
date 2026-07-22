@@ -74,5 +74,3 @@ Deviation note: iOS ships **only** tips #2, #3, #5 — no search/notes/tabs/isla
 - [ ] Dim + cutout renders correctly around each anchor.
 - [ ] **Skip** exits immediately.
 - [ ] Spotlight never shows again after the first run (persists across relaunch).
-</content>
-</invoke>

@@ -124,6 +124,7 @@ struct ReferenceRowView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+        .help("More options")
     }
 
     // MARK: - Derived presentation

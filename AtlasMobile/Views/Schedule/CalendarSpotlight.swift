@@ -54,7 +54,9 @@ struct CalendarSpotlightOverlay: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(Capsule().fill(Color.black.opacity(0.7)))
-                        .position(x: hole.midX, y: hole.maxY + 28)
+                        // `hole` is in global coords but the dim ignores the safe area, so
+                        // convert the caption's y into this GeometryReader's inset-local space.
+                        .position(x: hole.midX, y: hole.maxY + 28 - geo.safeAreaInsets.top)
 
                     Button("Skip", action: onSkip)
                         .font(.system(size: 13, weight: .semibold, design: .rounded))

@@ -1202,12 +1202,3 @@ extension EnvironmentValues {
         set { self[ReferencePullKey.self] = newValue }
     }
 }
-
-private extension View {
-    /// Attach an onboarding tip only while `condition` holds — the macOS 14-safe form of a
-    /// conditional `.popoverTip` (the optional-tip overload needs macOS 26).
-    @ViewBuilder
-    func onboardingTip(_ tip: some Tip, when condition: Bool, arrowEdge: Edge = .top) -> some View {
-        if condition { popoverTip(tip, arrowEdge: arrowEdge) } else { self }
-    }
-}

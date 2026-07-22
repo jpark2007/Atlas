@@ -439,13 +439,6 @@ struct SidebarView: View {
 // MARK: - Row chrome (paper language)
 
 private extension View {
-    /// Attach an onboarding tip only while `condition` holds — the macOS 14-safe form of a
-    /// conditional `.popoverTip` (the optional-tip overload needs macOS 26).
-    @ViewBuilder
-    func onboardingTip(_ tip: some Tip, when condition: Bool, arrowEdge: Edge = .top) -> some View {
-        if condition { popoverTip(tip, arrowEdge: arrowEdge) } else { self }
-    }
-
     /// Paper-language selection/hover chrome for a sidebar row. The active row
     /// gets a 2px accent (clay) tick on the left edge and no fill; a
     /// hovered-but-inactive row gets a soft full-row ink wash with square

@@ -184,14 +184,19 @@ public enum AtlasTips {
     }
 }
 
-public enum AtlasBuild {
-    /// Beta = a Debug build OR the direct-download/TestFlight beta. Report-a-bug tip
-    /// only fires on beta builds per spec. Refine if a dedicated beta flag is added.
-    public static var isBeta: Bool {
-        #if DEBUG
-        return true
-        #else
-        return true   // current v0.9 distribution is beta across the board; flip when GA ships
-        #endif
+// MARK: - Conditional tip helper
+
+public extension View {
+    /// Attach an onboarding tip only while `condition` holds — the macOS 14 / iOS 17-safe
+    /// form of a conditional `.popoverTip` (the optional-tip overload needs macOS 26 / iOS 26).
+    @ViewBuilder
+    func onboardingTip(_ tip: some Tip, when condition: Bool, arrowEdge: Edge = .top) -> some View {
+        if condition { popoverTip(tip, arrowEdge: arrowEdge) } else { self }
     }
+}
+
+public enum AtlasBuild {
+    /// Beta across the board for v0.9 — the Report-a-bug tip fires on every build. Flip to
+    /// false (or wire a real beta flag) at GA so the tip stops showing.
+    public static var isBeta: Bool { true }
 }
