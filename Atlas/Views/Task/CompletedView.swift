@@ -77,7 +77,7 @@ struct CompletedView: View {
         Button { state.route = .task(task.id) } label: {
             HStack(spacing: 12) {
                 Button {
-                    state.toggleTask(task.id)   // reopen — row returns to pending lists
+                    withAnimation(AtlasTheme.taskCrossOut) { state.toggleTask(task.id) }   // reopen — row returns to pending lists
                 } label: {
                     Image(systemName: "checkmark.square.fill")
                         .atlasFont(size: 17)

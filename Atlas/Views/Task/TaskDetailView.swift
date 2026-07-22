@@ -77,7 +77,7 @@ struct TaskDetailView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
             Button {
-                state.toggleTask(live.id)
+                withAnimation(AtlasTheme.taskCrossOut) { state.toggleTask(live.id) }
             } label: {
                 Image(systemName: live.done ? "checkmark.square.fill" : "square")
                     .atlasFont(size: 24)

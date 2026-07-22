@@ -37,6 +37,11 @@ public enum AtlasTheme {
     /// Wash — the tag/chip background tint for a given color (color at 13%).
     public static func wash(_ color: Color) -> Color { color.opacity(0.13) }
 
+    /// The task strikethrough/complete cross-out animation — a gentle ease-out so
+    /// the strikethrough draws in visibly (not instantly). Used everywhere a task
+    /// can be checked off so the cross-out feels the same on every surface.
+    public static let taskCrossOut: Animation = .easeOut(duration: 0.2)
+
     public enum Colors {
         // One flat paper surface. Every level collapses to a single #f2efe6 —
         // no card/elevated tints; separation is 1px ink hairlines, never fills.

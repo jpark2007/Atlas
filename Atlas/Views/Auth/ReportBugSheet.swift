@@ -29,7 +29,7 @@ struct ReportBugSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 18) {
             HStack {
                 Text("Report a bug")
                     .atlasFont(size: 18, weight: .semibold, design: .rounded)
@@ -54,7 +54,7 @@ struct ReportBugSheet: View {
                     .atlasFont(size: 14, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .tint(AtlasTheme.Colors.accent)
-                    .padding(8)
+                    .padding(10)
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(AtlasTheme.Colors.border, lineWidth: 1))
 
@@ -68,8 +68,8 @@ struct ReportBugSheet: View {
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .tint(AtlasTheme.Colors.accent)
                     .scrollContentBackground(.hidden)
-                    .frame(height: 110)
-                    .padding(8)
+                    .frame(height: 130)
+                    .padding(10)
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(AtlasTheme.Colors.border, lineWidth: 1))
 
@@ -83,7 +83,7 @@ struct ReportBugSheet: View {
                     .atlasFont(size: 14, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .tint(AtlasTheme.Colors.accent)
-                    .padding(8)
+                    .padding(10)
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(AtlasTheme.Colors.border, lineWidth: 1))
 
@@ -107,8 +107,8 @@ struct ReportBugSheet: View {
                 }
             }
         }
-        .padding(24)
-        .frame(width: 380)
+        .padding(28)
+        .frame(width: 460)
         .background(AtlasTheme.Colors.bgBase)
         .onAppear { if title.isEmpty, let prefillTitle { title = prefillTitle } }
     }

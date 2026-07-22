@@ -195,7 +195,7 @@ struct DashboardView: View {
     private func focusRow(_ task: TaskItem) -> some View {
         HStack(spacing: 10) {
             Button {
-                withAnimation(.easeOut(duration: 0.2)) { state.toggleTask(task.id) }
+                withAnimation(AtlasTheme.taskCrossOut) { state.toggleTask(task.id) }
             } label: {
                 Image(systemName: task.done ? "checkmark.square.fill" : "square")
                     .atlasFont(size: 15)

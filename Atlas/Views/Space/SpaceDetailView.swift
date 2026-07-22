@@ -203,7 +203,7 @@ struct SpaceDetailView: View {
         Button { state.route = .task(task.id) } label: {
             HStack(spacing: 12) {
                 Button {
-                    state.toggleTask(task.id)
+                    withAnimation(AtlasTheme.taskCrossOut) { state.toggleTask(task.id) }
                 } label: {
                     Image(systemName: task.done ? "checkmark.square.fill" : "square")
                         .atlasFont(size: 17)
