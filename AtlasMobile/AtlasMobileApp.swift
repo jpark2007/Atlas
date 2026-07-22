@@ -1,4 +1,5 @@
 import SwiftUI
+import AtlasCore
 
 @main
 struct AtlasMobileApp: App {
@@ -20,6 +21,7 @@ struct AtlasMobileApp: App {
                 } else {
                     RootTabView()
                         .task {
+                            AtlasTips.configureOnce()
                             scheduler.onDeepLink = { url in
                                 if let link = DeepLink(url: url) { store.handle(link) }
                             }

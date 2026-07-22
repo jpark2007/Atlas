@@ -233,6 +233,7 @@ private struct GlobalHotkeyInstaller: View {
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
             .onAppear {
+                AtlasTips.configureOnce()
                 // ⌘⇧K summons a floating, non-activating capture panel OVER the current
                 // app — it no longer activates Atlas or uses the in-window overlay.
                 CapturePanelController.shared.configure(state: state, auth: auth)
