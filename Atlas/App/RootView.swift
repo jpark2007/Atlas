@@ -22,7 +22,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general:      return "General"
-        case .integrations: return "Integrations"
+        case .integrations: return "Connections"
         case .history:      return "History"
         case .metrics:      return "Metrics"
         }

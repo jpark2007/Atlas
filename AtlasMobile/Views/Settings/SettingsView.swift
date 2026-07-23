@@ -62,6 +62,7 @@ struct SettingsView: View {
     @State private var icsSpaceName = ""
     @State private var icsWorking = false
     @State private var icsError: String?
+    @State private var showICSHelp = false        // "Not sure if your app has one?" disclosure
     @State private var feedRowWorking: UUID?
     @State private var feedRowError: String?
     /// The feed the disconnect confirmation dialog is armed for.
@@ -85,7 +86,7 @@ struct SettingsView: View {
         List {
             Section {
                 navRow("Account") { accountPage }
-                navRow("Integrations") { integrationsPage }
+                navRow("Connections") { integrationsPage }
                 navRow("Notifications") { notificationsPage }
                 navRow("General") { generalPage }
                 navRow("Help & Tips") { helpPage }
@@ -136,7 +137,7 @@ struct SettingsView: View {
             integrationsSection
         }
         .settingsListChrome()
-        .navigationTitle("Integrations")
+        .navigationTitle("Connections")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("Disconnect calendar?",
                             isPresented: Binding(get: { feedToDisconnect != nil },
@@ -343,7 +344,7 @@ struct SettingsView: View {
     private var integrationsSection: some View {
         Section {
             notesDocsRow
-        } header: { header("Integrations") }
+        } header: { header("Connections") }
     }
 
     /// Load the server-owned connection rows. On any error (offline / not signed in /
@@ -496,7 +497,7 @@ struct SettingsView: View {
                     .rowStyle()
             }
         } header: { header("Calendar feeds") } footer: {
-            footer("Add any calendar by link — Canvas, Schoology, and more. These calendars are read-only in Atlas.")
+            footer("Add calendars from Canvas, Schoology, and other apps by link. These are read-only in Atlas.")
         }
     }
 
@@ -572,10 +573,29 @@ struct SettingsView: View {
         .disabled(icsWorking)
         .rowStyle()
 
-        Text("Most apps share a calendar as a private ‘ICS’ or ‘iCal’ link (it usually ends in .ics). In Schoology: Calendar → iCal/Calendar Feed. Atlas checks it for updates automatically.")
+        Text("Paste a calendar link (ICS) from another app.")
             .font(.system(size: 13, weight: .medium, design: .rounded))
             .foregroundStyle(MobileTheme.faint)
             .rowStyle()
+
+        Button { withAnimation { showICSHelp.toggle() } } label: {
+            HStack(spacing: 4) {
+                Text("Not sure if your app has one?")
+                Image(systemName: showICSHelp ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .foregroundStyle(MobileTheme.accent)
+        }
+        .buttonStyle(.plain)
+        .rowStyle()
+
+        if showICSHelp {
+            Text("Search Google for ‘[app name] ICS calendar link’ to see if it does and how to copy it. In Schoology: Calendar, then iCal or Calendar Feed. These calendars are read-only in Atlas.")
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(MobileTheme.faint)
+                .rowStyle()
+        }
     }
 
     /// One connected feed (Canvas or ICS): name + type badge + status, an inline space

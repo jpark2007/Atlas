@@ -4,7 +4,7 @@ import AppKit
 import EventKit
 import TipKit
 
-/// Full-page Settings route (General / Integrations / Metrics). Opened by the sidebar gear.
+/// Full-page Settings route (General / Connections / History / Metrics). Opened by the sidebar gear.
 struct SettingsView: View {
     @EnvironmentObject private var auth: AuthService
     /// Multi-feed connect client (`calendar_feeds`) — Canvas + generic ICS feeds.
@@ -397,9 +397,15 @@ struct SettingsView: View {
             .buttonStyle(.plain)
             .disabled(icsWorking)
 
-            Text("Add any calendar by link. Most apps can share one as a private ‘ICS’ or ‘iCal’ link (it usually ends in .ics). In Schoology: Calendar → iCal/Calendar Feed. Paste the link and pick which space its items land in — Atlas checks it for updates automatically. These calendars are read-only in Atlas.")
-                .atlasFont(size: 11, weight: .medium, design: .rounded)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
+            HStack(spacing: 6) {
+                Text("Paste a calendar link (ICS) from another app.")
+                    .atlasFont(size: 11, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                Image(systemName: "questionmark.circle")
+                    .atlasFont(size: 11, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .help("Not sure if your app has one? Search Google for '[app name] ICS calendar link' to see if it does and how to copy it. In Schoology: Calendar, then iCal or Calendar Feed. These calendars are read-only in Atlas.")
+            }
         }
     }
 
@@ -649,7 +655,7 @@ struct SettingsView: View {
 
     private var integrations: some View {
         VStack(alignment: .leading, spacing: 10) {
-            label("INTEGRATIONS")
+            label("CONNECTIONS")
             row(icon: "calendar", tint: AtlasTheme.Colors.school, title: "Google Calendar / Drive",
                 subtitle: "Manage accounts in Calendars; Drive & Docs in Notes & Docs")
             googleConnectionBadge
@@ -1751,7 +1757,7 @@ struct SettingsView: View {
         ("Drag to schedule",
          "Drag a task onto the calendar grid to block time for it. Drop sets the start; drag its edge to resize."),
         ("Canvas sync",
-         "Connect your Canvas feed in Integrations to import assignments and events. Link a course to a class so its items file there."),
+         "Connect your Canvas feed in Connections to import assignments and events. Link a course to a class so its items file there."),
         ("Google Calendar",
          "Add accounts under Calendars, then link each to a space so its events sync out. An unlinked space stays in Atlas only."),
         ("Menu-bar agenda",
