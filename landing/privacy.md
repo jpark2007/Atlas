@@ -1,6 +1,6 @@
 # Atlas Privacy Policy
 
-**Effective date: July 3, 2026**
+**Effective date: July 23, 2026**
 
 Atlas is built by Andrew Khalil and Jonah Park. Questions or requests: **lets.flowstate@gmail.com**.
 
@@ -27,11 +27,19 @@ Atlas works fine on its own. These integrations are optional, and each is only a
 
 ### Google API Services User Data Policy
 
-Atlas's use and transfer to any other app of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements. Data from your connected Google account is used only to power the sync features described below, is stored in your own account's rows in Supabase (with tokens further protected in Vault, as noted throughout), is never sold, is never shared with third parties beyond what's needed to run those features, and is never used for advertising.
+Atlas's use and transfer of information received from Google APIs to any other app will adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements. Data from your connected Google account is used only to power the sync and sign-in features described below, and is stored in your own account's rows in Supabase, with tokens further protected in Vault. We do not sell Google user data, we do not use it for advertising, and no human reads it except with your consent, to provide support you ask for, to keep the service secure, or to comply with the law.
 
 ### Google Calendar (two-way sync)
 
-If you connect Google Calendar, Atlas keeps your events in sync in both directions — including while the app is closed — using a server-side sync runner. To do that, your Google **refresh token** is stored **encrypted in Supabase Vault, reachable only by our server, and never returned to any app or client**. We use it only to read and write your calendar events for the sync. The permission we request is limited to your Google Calendar. You can disconnect at any time; disconnecting deletes the stored token.
+If you connect Google Calendar, Atlas keeps your events in sync in both directions — including while the app is closed — using a server-side sync runner. Atlas reads your Google Calendar events and writes back the events you create or edit in Atlas, so the two stay matched. To do that, your Google **refresh token** is stored **encrypted in Supabase Vault, reachable only by our server, and never returned to any app or client**. We use it only to read and write your calendar events for the sync. You can disconnect at any time; disconnecting deletes the stored token.
+
+### Choosing which calendars sync
+
+When you connect Google Calendar, Atlas also lists the calendars in your account so you can pick which ones to sync with per-calendar checkboxes. This uses a read-only calendar-list permission, and it shows only the names of your calendars so you stay in control of what syncs.
+
+### Your Google account
+
+When you connect Google, Atlas reads your account's basic profile, meaning your name and email address, so it can identify the connected account and label it in the app. That is the only thing this sign-in permission gives us.
 
 ### Google Docs (two-way note sync)
 
@@ -51,7 +59,7 @@ Atlas has a capture box: you type or paste free text ("essay due Friday, gym 3x 
 
 ### Google Drive (linking and importing files)
 
-Atlas uses Google's `drive.file` permission when you pick a file yourself through Google's file picker — for example, choosing which Doc to link to a note. This permission only ever gives Atlas access to the specific files **you select**; Atlas never receives blanket access to your Drive, and never sees files you haven't explicitly picked.
+Atlas uses Google's `drive.file` permission for the two places where you choose or create files yourself: importing a file through Google's file picker, and linking a Google Doc to a note. It only ever gives Atlas access to the specific files you pick or that Atlas creates for you. Atlas never receives blanket access to your Drive, and never sees files you haven't explicitly picked.
 
 ## Who processes your data
 
