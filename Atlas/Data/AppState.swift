@@ -32,6 +32,11 @@ final class AppState: ObservableObject {
     @Published var notes: [Note] = MockData.notes
     @Published var goals: [Goal] = MockData.goals
 
+    /// Quick-capture history for the signed-in user (newest first, capped). Loaded
+    /// from Application Support on bootstrap; see `CaptureHistory.swift` (which owns
+    /// the record / undo / persistence logic in an extension).
+    @Published var captureHistory: [CaptureHistoryEntry] = []
+
     /// Docs → Notes import: the project-scoped reference pool. Empty until the
     /// notes-import migration (0013) is live and references are imported; the
     /// write-through CRUD lives in `AppState+References.swift`.
@@ -257,7 +262,7 @@ final class AppState: ObservableObject {
         presentBugReport = true
     }
 
-    /// Which section the full-page Settings route shows (General / Integrations / Metrics).
+    /// Which section the full-page Settings route shows (General / Connections / History / Metrics).
     @Published var settingsSection: SettingsSection = .general
 
     /// Obsidian-style relationship graph overlay (opened from the Metrics logo button).
@@ -416,6 +421,9 @@ final class AppState: ObservableObject {
             bootstrappedUser = nil
         }
 
+        // Load this user's client-side quick-capture history (Application Support).
+        loadCaptureHistory(userID: userID)
+
         // Bootstrap tail: profile, collab, Google, and Canvas are independent
         // loads — kick them off concurrently (was four serial awaits) so their
         // network round-trips overlap. Realtime sync reads collab's
@@ -459,6 +467,7 @@ final class AppState: ObservableObject {
         events = []
         notes = []
         goals = []
+        captureHistory = []
         references = []
         referenceAttachments = []
         externalEvents = []

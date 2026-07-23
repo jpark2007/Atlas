@@ -1863,6 +1863,14 @@ public final class AtlasDB {
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
     }
 
+    public func deleteNote(id: UUID) async throws {
+        let sess = try await requireSession()
+        try await send(method: "DELETE", table: "notes",
+                       query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                       extraHeaders: ["Prefer": "return=minimal"],
+                       sess: sess)
+    }
+
     public func upsertGoal(_ g: Goal) async throws {
         let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {

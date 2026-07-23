@@ -9,34 +9,37 @@ import AtlasCore
 
 extension AppState {
     /// Create the task / event / note described by `result` and return the
-    /// user-facing outcome. Never throws — an event missing a start time, or an
+    /// user-facing outcome plus a snapshot of the created item (for capture
+    /// history / undo). Never throws — an event missing a start time, or an
     /// unrecognized kind, degrades to a plain task so capture never loses data.
     @discardableResult
-    func applyCapture(_ result: CaptureResult) -> CaptureOutcome {
+    func applyCapture(_ result: CaptureResult) -> AppliedCapture {
         switch result.kind {
         case "event":
             return applyEvent(result)
 
         case "note":
-            addNote(title: result.title,
-                    body: result.notes ?? "",
-                    spaceName: result.spaceName,
-                    isExternal: false)
-            return .note
+            let note = addNote(title: result.title,
+                               body: result.notes ?? "",
+                               spaceName: result.spaceName,
+                               isExternal: false)
+            return AppliedCapture(outcome: .note, item: CaptureHistoryItem(note: note))
 
         case "task":
             let due = CaptureDateParser.date(from: result.dueISO)
-            addTask(title: result.title,
-                    dueDate: due,
-                    durationMin: result.durationMin,
-                    spaceName: result.spaceName,
-                    projectName: result.projectName ?? "")
-            return .task(hasDate: due != nil)
+            let task = addTask(title: result.title,
+                               dueDate: due,
+                               durationMin: result.durationMin,
+                               spaceName: result.spaceName,
+                               projectName: result.projectName ?? "")
+            return AppliedCapture(outcome: .task(hasDate: due != nil),
+                                  item: CaptureHistoryItem(task: task))
 
         default:
             // Unknown kind — keep the parsed title, save as a plain task.
-            addTask(title: result.title)
-            return .task(hasDate: false)
+            let task = addTask(title: result.title)
+            return AppliedCapture(outcome: .task(hasDate: false),
+                                  item: CaptureHistoryItem(task: task))
         }
     }
 
@@ -47,10 +50,11 @@ extension AppState {
     /// runs `durationMin` (default 60). An `isAllDay` event spans one calendar day
     /// — midnight → next midnight — matching EventEditorSheet's convention.
     /// Source stays the `.atlas` default (rule 5 — never mislabel origin).
-    private func applyEvent(_ result: CaptureResult) -> CaptureOutcome {
+    private func applyEvent(_ result: CaptureResult) -> AppliedCapture {
         guard let start = CaptureDateParser.date(from: result.startISO) else {
-            addTask(title: result.title)
-            return .task(hasDate: false)
+            let task = addTask(title: result.title)
+            return AppliedCapture(outcome: .task(hasDate: false),
+                                  item: CaptureHistoryItem(task: task))
         }
 
         let isAllDay = result.isAllDay ?? false
@@ -80,7 +84,7 @@ extension AppState {
         )
         event.spaceID = spaceID(named: result.spaceName)
         addEvent(event)
-        return .event
+        return AppliedCapture(outcome: .event, item: CaptureHistoryItem(event: event))
     }
 
     /// Create a plain task carrying `notes` — used by the quick-capture

@@ -43,7 +43,7 @@ final class AppStateCaptureTests: XCTestCase {
         let before = state.tasks.count
         let outcome = state.applyCapture(
             result(kind: "task", title: "Essay", space: "School",
-                   dueISO: "2026-07-02T23:59:00Z"))
+                   dueISO: "2026-07-02T23:59:00Z")).outcome
         XCTAssertEqual(outcome, .task(hasDate: true))
         XCTAssertEqual(state.tasks.count, before + 1)
         XCTAssertNotNil(state.tasks.last?.dueDate)
@@ -51,7 +51,7 @@ final class AppStateCaptureTests: XCTestCase {
 
     func testApplyCaptureTaskWithoutDate() {
         let state = AppState()
-        let outcome = state.applyCapture(result(kind: "task", title: "Call dentist"))
+        let outcome = state.applyCapture(result(kind: "task", title: "Call dentist")).outcome
         XCTAssertEqual(outcome, .task(hasDate: false))
         XCTAssertNil(state.tasks.last?.dueDate)
     }
@@ -60,7 +60,7 @@ final class AppStateCaptureTests: XCTestCase {
         let state = AppState()
         let before = state.notes.count
         let outcome = state.applyCapture(
-            result(kind: "note", title: "Idea", notes: "remember this"))
+            result(kind: "note", title: "Idea", notes: "remember this")).outcome
         XCTAssertEqual(outcome, .note)
         XCTAssertEqual(state.notes.count, before + 1)
     }
@@ -70,7 +70,7 @@ final class AppStateCaptureTests: XCTestCase {
         let before = state.events.count
         let outcome = state.applyCapture(
             result(kind: "event", title: "Gym", space: "Health",
-                   startISO: "2026-06-28T15:00:00Z", durationMin: 45))
+                   startISO: "2026-06-28T15:00:00Z", durationMin: 45)).outcome
         XCTAssertEqual(outcome, .event)
         XCTAssertEqual(state.events.count, before + 1)
         let added = try XCTUnwrap(state.events.last)
@@ -82,7 +82,7 @@ final class AppStateCaptureTests: XCTestCase {
         let state = AppState()
         let eventsBefore = state.events.count
         let tasksBefore = state.tasks.count
-        let outcome = state.applyCapture(result(kind: "event", title: "Mystery meeting"))
+        let outcome = state.applyCapture(result(kind: "event", title: "Mystery meeting")).outcome
         XCTAssertEqual(outcome, .task(hasDate: false))
         XCTAssertEqual(state.events.count, eventsBefore)        // no event
         XCTAssertEqual(state.tasks.count, tasksBefore + 1)      // saved as task
@@ -90,7 +90,7 @@ final class AppStateCaptureTests: XCTestCase {
 
     func testApplyCaptureUnknownKindBecomesTask() {
         let state = AppState()
-        let outcome = state.applyCapture(result(kind: "wat", title: "Strange"))
+        let outcome = state.applyCapture(result(kind: "wat", title: "Strange")).outcome
         XCTAssertEqual(outcome, .task(hasDate: false))
         XCTAssertEqual(state.tasks.last?.title, "Strange")
     }
@@ -102,13 +102,13 @@ final class AppStateCaptureTests: XCTestCase {
             result(kind: "note", title: "B"),
             result(kind: "event", title: "C", startISO: "2026-06-28T15:00:00Z"),
         ]
-        let outcomes = results.map { state.applyCapture($0) }
+        let outcomes = results.map { state.applyCapture($0).outcome }
         XCTAssertEqual(CaptureOutcome.confirmation(for: outcomes), "✓ Added 3 items")
     }
 
     func testSingleItemCaptureKeepsPerKindConfirmation() {
         let state = AppState()
-        let outcomes = [state.applyCapture(result(kind: "note", title: "Solo"))]
+        let outcomes = [state.applyCapture(result(kind: "note", title: "Solo")).outcome]
         XCTAssertEqual(CaptureOutcome.confirmation(for: outcomes),
                        CaptureOutcome.note.confirmation)
     }

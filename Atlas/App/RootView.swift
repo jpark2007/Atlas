@@ -17,12 +17,13 @@ enum Route: Hashable {
 /// Sections within the full-page Settings route. Metrics lives here now — it is no
 /// longer a sidebar item or a popup sheet.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, integrations, metrics
+    case general, integrations, history, metrics
     var id: String { rawValue }
     var title: String {
         switch self {
         case .general:      return "General"
         case .integrations: return "Integrations"
+        case .history:      return "History"
         case .metrics:      return "Metrics"
         }
     }

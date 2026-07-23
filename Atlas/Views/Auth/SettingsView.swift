@@ -175,6 +175,8 @@ struct SettingsView: View {
                 }
                 .padding(28)
             }
+        case .history:
+            CaptureHistorySection()
         case .metrics:
             MetricsView()
         }

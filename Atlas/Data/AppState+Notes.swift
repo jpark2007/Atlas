@@ -49,4 +49,10 @@ extension AppState {
         }
         Task { try? await self.db?.upsertNote(updated) }
     }
+
+    /// Permanently delete a note (memory + DB). Used by capture-history undo.
+    func deleteNote(id: UUID) {
+        notes.removeAll { $0.id == id }
+        Task { try? await self.db?.deleteNote(id: id) }
+    }
 }

@@ -348,7 +348,9 @@ struct CaptureCommandBar: View {
                     await showConfirmation(CaptureOutcome.degraded.confirmation)
                     return
                 }
-                let outcomes = results.map { state.applyCapture($0) }
+                let applied = results.map { state.applyCapture($0) }
+                let outcomes = applied.map(\.outcome)
+                state.recordCapture(rawText: rawText, items: applied.map(\.item))
                 if response.truncated {
                     // Server capped the paste at 50 — the items were still added.
                     await showConfirmation(Self.truncatedMessage, duration: 3)
