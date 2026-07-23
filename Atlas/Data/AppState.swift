@@ -133,10 +133,17 @@ final class AppState: ObservableObject {
     /// `serverSyncEnabled`, which gates the Mac's live Google writers).
     @Published var canvasConnection: CanvasConnectionRow?
 
-    /// True when at least one external source is connected (any Google account or a
-    /// Canvas feed). Gates the "connect a source" onboarding tip.
+    /// The user's subscribed calendar feeds (`calendar_feeds`) — Canvas + generic ICS,
+    /// managed via `FeedService`. Drives Settings' Calendars feed list. Loaded at launch
+    /// and refreshed after every feed connect / space-change / disconnect.
+    @Published var calendarFeeds: [CalendarFeedRow] = []
+
+    /// True when at least one external source is connected (any Google account, a legacy
+    /// Canvas connection, or a subscribed calendar feed). Gates the "connect a source" tip.
     var hasAnyConnection: Bool {
-        !googleConnections.isEmpty || canvasConnection != nil
+        !googleConnections.isEmpty
+            || canvasConnection != nil
+            || calendarFeeds.contains { $0.isServerOwned }
     }
 
     /// The signed-in user's public identity (collab). Nil until loaded.
@@ -198,6 +205,20 @@ final class AppState: ObservableObject {
         } catch {
             print("[AtlasDB] canvas_connections read failed — keeping current state. Error: \(error.localizedDescription)")
             AtlasLog.append("canvas_connections read failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Re-reads the subscribed calendar feeds (`calendar_feeds`) for Settings. Never throws
+    /// to the caller; on a read failure the current snapshot is left untouched. Mirrors
+    /// `refreshCanvasConnection()`.
+    func refreshCalendarFeeds() async {
+        guard let db else { return }
+        do {
+            self.calendarFeeds = try await db.loadCalendarFeeds()
+            AtlasTips.ConnectSource.hasConnection = hasAnyConnection
+        } catch {
+            print("[AtlasDB] calendar_feeds read failed — keeping current state. Error: \(error.localizedDescription)")
+            AtlasLog.append("calendar_feeds read failed: \(error.localizedDescription)")
         }
     }
 
@@ -405,12 +426,14 @@ final class AppState: ObservableObject {
         async let collabDone: Void = self.loadCollabState()
         async let googleDone: Void = self.refreshGoogleConnections()  // Google sync mode from the cloud connections
         async let canvasDone: Void = self.refreshCanvasConnection()   // Canvas status for Settings from launch
+        async let feedsDone: Void = self.refreshCalendarFeeds()       // subscribed calendar feeds (Canvas + ICS)
 
         self.profile = try? await profileRow
         await collabDone
         await startRealtimeSync(supabaseURL: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey)
         await googleDone
         await canvasDone
+        await feedsDone
 
         // Pull cross-device preferences (server wins). Best-effort: no-ops until the
         // user_settings table is deployed.
@@ -441,6 +464,7 @@ final class AppState: ObservableObject {
         externalEvents = []
         googleConnections = []
         canvasConnection = nil
+        calendarFeeds = []
         profile = nil
         pendingInvites = []
         projectMembers = [:]

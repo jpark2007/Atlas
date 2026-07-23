@@ -34,7 +34,9 @@ struct CalendarEventDetailView: View {
     /// Work-block whose backing task is a Canvas assignment — Canvas owns the title
     /// (re-sync overwrites it), so the title locks while scheduling stays fully editable.
     private var isCanvasBackedBlock: Bool {
-        isWorkBlock && state.tasks.first(where: { $0.id == item.id })?.canvasUID != nil
+        guard isWorkBlock, let task = state.tasks.first(where: { $0.id == item.id }) else { return false }
+        // A generic-ICS-origin task (feedType "ics") is never Canvas, even if it carries a UID.
+        return task.canvasUID != nil && task.feedType != "ics"
     }
     /// Note-linking has a durable home only for Atlas events + work-blocks (external events
     /// are rebuilt every sync and never persisted).

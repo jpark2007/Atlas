@@ -10,6 +10,9 @@ struct AtlasApp: App {
     /// Server-side Canvas ICS connect client (AtlasCore) — distinct from the local
     /// token-based `CanvasService` above; Settings' feed-URL section uses this one.
     @StateObject private var canvasFeed = AtlasCore.CanvasService()
+    /// Multi-feed connect client (`calendar_feeds`) — Canvas + generic ICS calendar
+    /// feeds. Settings' Calendars section connects / re-spaces / disconnects through this.
+    @StateObject private var feeds = FeedService()
     @StateObject private var shortcuts = ShortcutStore()
     @StateObject private var googleAuth = GoogleAuthService()
     /// Focus-session + Pomodoro state. Owned here (not inside FocusView) so the
@@ -29,6 +32,7 @@ struct AtlasApp: App {
                 .environmentObject(auth)
                 .environmentObject(canvas)
                 .environmentObject(canvasFeed)
+                .environmentObject(feeds)
                 .environmentObject(shortcuts)
                 .environmentObject(googleAuth)
                 .environmentObject(focus)

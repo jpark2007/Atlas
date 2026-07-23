@@ -185,6 +185,7 @@ struct DayTimelineView: View {
         case .apple:  return "Apple"
         case .google: return "Google"
         case .canvas: return "Canvas"
+        case .icsFeed: return source.displayName   // the feed's own name — never "Canvas"
         }
     }
 

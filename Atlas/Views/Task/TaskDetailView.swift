@@ -57,7 +57,7 @@ struct TaskDetailView: View {
     /// A Canvas-synced assignment: its title and due date are server-owned (re-sync
     /// overwrites only those two fields), so we lock them while leaving notes,
     /// scheduling, done/complete, and space/project fully user-editable.
-    private var isCanvasTask: Bool { live.canvasUID != nil }
+    private var isCanvasTask: Bool { live.canvasUID != nil && live.feedType != "ics" }
 
     /// Same lock-banner style as `CalendarEventDetailView`, above the title.
     private var canvasBanner: some View {

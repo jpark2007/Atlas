@@ -45,17 +45,27 @@ struct SettingsView: View {
     // read-only here (accounts are managed on the Mac); Canvas is fully manageable.
     @State private var googleConns: [GoogleConnection] = []
     @State private var docsConn: AtlasDB.GoogleDocsConnection?
-    @State private var canvasConn: CanvasConnectionRow?
 
-    /// Shared Canvas connect client (AtlasCore, platform-neutral) — full manage from
-    /// the phone: connect / change destination space / disconnect.
-    @StateObject private var canvas = CanvasService()
+    /// Shared multi-feed connect client (AtlasCore, platform-neutral) — full manage from
+    /// the phone: connect Canvas / add an ICS calendar / re-space / disconnect.
+    @StateObject private var feeds = FeedService()
+    /// Subscribed calendar feeds (`calendar_feeds`) — Canvas + generic ICS.
+    @State private var calendarFeeds: [CalendarFeedRow] = []
     @State private var canvasFeedURL = ""
-    @State private var canvasSpaceName = ""        // connect-form destination space
-    @State private var canvasConnectedSpace = ""   // connected-row picker (PATCHes on change)
+    @State private var canvasSpaceName = ""        // Canvas connect-form destination space
     @State private var canvasWorking = false
     @State private var canvasError: String?
-    @State private var showCanvasDisconnectConfirm = false
+
+    // Generic ICS feed connect + per-row edit state.
+    @State private var icsName = ""
+    @State private var icsURL = ""
+    @State private var icsSpaceName = ""
+    @State private var icsWorking = false
+    @State private var icsError: String?
+    @State private var feedRowWorking: UUID?
+    @State private var feedRowError: String?
+    /// The feed the disconnect confirmation dialog is armed for.
+    @State private var feedToDisconnect: CalendarFeedRow?
 
     // Delete-account state (mirrors the Mac SettingsView pattern).
     @State private var showDeleteConfirm = false
@@ -122,16 +132,23 @@ struct SettingsView: View {
     private var integrationsPage: some View {
         List {
             calendarsSection
+            calendarFeedsSection
             integrationsSection
         }
         .settingsListChrome()
         .navigationTitle("Integrations")
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("Disconnect Canvas?", isPresented: $showCanvasDisconnectConfirm, titleVisibility: .visible) {
-            Button("Disconnect", role: .destructive) { disconnectCanvas() }
-            Button("Cancel", role: .cancel) {}
+        .confirmationDialog("Disconnect calendar?",
+                            isPresented: Binding(get: { feedToDisconnect != nil },
+                                                 set: { if !$0 { feedToDisconnect = nil } }),
+                            titleVisibility: .visible) {
+            Button("Disconnect", role: .destructive) {
+                if let feed = feedToDisconnect { disconnectFeed(feed) }
+                feedToDisconnect = nil
+            }
+            Button("Cancel", role: .cancel) { feedToDisconnect = nil }
         } message: {
-            Text("Atlas will stop importing your Canvas assignments and events. You can reconnect anytime with your feed link.")
+            Text("Atlas will stop importing this calendar's items. You can reconnect anytime with its link.")
         }
     }
 
@@ -326,17 +343,16 @@ struct SettingsView: View {
     private var integrationsSection: some View {
         Section {
             notesDocsRow
-            canvasRows
         } header: { header("Integrations") }
     }
 
     /// Load the server-owned connection rows. On any error (offline / not signed in /
     /// no row) they stay empty/nil → the honest "not connected" copy. Re-run after every
-    /// Canvas connect / disconnect / space change so the status refreshes.
+    /// feed connect / disconnect / space change so the status refreshes.
     private func loadConnections() async {
-        googleConns = (try? await store.db.loadGoogleConnections()) ?? []
-        docsConn    = try? await store.db.loadGoogleDocsConnection()
-        canvasConn  = try? await store.db.loadCanvasConnection()
+        googleConns   = (try? await store.db.loadGoogleConnections()) ?? []
+        docsConn      = try? await store.db.loadGoogleDocsConnection()
+        calendarFeeds = (try? await store.db.loadCalendarFeeds()) ?? []
     }
 
     // MARK: Notes & Docs — read-only status (the dedicated Drive/Docs Google login)
@@ -458,31 +474,132 @@ struct SettingsView: View {
         conn.status == "active" ? MobileTheme.green : MobileTheme.warning
     }
 
-    // MARK: Canvas — full manage (connect / change destination space / disconnect)
+    // MARK: - Calendar feeds (Canvas + generic ICS — full manage)
 
-    @ViewBuilder
-    private var canvasRows: some View {
-        if let conn = canvasConn, conn.isServerOwned {
-            canvasConnectedRows(conn)
-        } else {
-            canvasConnectForm(repaste: canvasConn?.status == "revoked")
+    private var calendarFeedsSection: some View {
+        Section {
+            // Canvas — the suggested first-class feed (connect card when none active).
+            if !hasActiveCanvasFeed {
+                Text("Canvas").rowLabel().rowStyle()
+                canvasConnectForm(repaste: canvasFeedRow?.status == "revoked")
+            }
+            // Add any calendar by ICS link.
+            icsConnectForm
+            // Connected feeds (Canvas + ICS).
+            ForEach(connectedFeeds) { feed in
+                feedRows(feed)
+            }
+            if let feedRowError {
+                Text(feedRowError)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(MobileTheme.danger)
+                    .rowStyle()
+            }
+        } header: { header("Calendar feeds") } footer: {
+            footer("Add any calendar by link — Canvas, Schoology, and more. These calendars are read-only in Atlas.")
         }
     }
 
+    private var canvasFeedRow: CalendarFeedRow? {
+        calendarFeeds.first { $0.feedType == "canvas" }
+    }
+    private var hasActiveCanvasFeed: Bool {
+        calendarFeeds.contains { $0.feedType == "canvas" && $0.isServerOwned }
+    }
+    private var connectedFeeds: [CalendarFeedRow] {
+        calendarFeeds.filter { $0.isServerOwned }
+    }
+
+    /// "Add calendar (ICS link)" — name + ICS URL + destination space, mirroring the
+    /// Canvas connect form. Connects a generic `ics`-type feed (read-only events only).
     @ViewBuilder
-    private func canvasConnectedRows(_ conn: CanvasConnectionRow) -> some View {
+    private var icsConnectForm: some View {
+        Text("Add calendar (ICS link)").rowLabel().rowStyle()
+
+        TextField("Calendar name (e.g. Schoology)", text: $icsName)
+            .textFieldStyle(.plain)
+            .font(.system(size: 15, weight: .regular, design: .rounded))
+            .foregroundStyle(MobileTheme.ink)
+            .tint(MobileTheme.accent)
+            .rowStyle()
+
+        TextField("https://…/calendar.ics", text: $icsURL)
+            .textFieldStyle(.plain)
+            .font(.system(size: 15, weight: .regular, design: .rounded))
+            .foregroundStyle(MobileTheme.ink)
+            .tint(MobileTheme.accent)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+            .keyboardType(.URL)
+            .rowStyle()
+
+        if !store.snapshot.spaces.isEmpty {
+            Menu {
+                ForEach(store.snapshot.spaces) { space in
+                    Button(space.name) { icsSpaceName = space.name }
+                }
+            } label: {
+                HStack {
+                    Text("Items land in").rowLabel()
+                    Spacer()
+                    Text(icsSpaceName).rowValue()
+                    chevron
+                }
+            }
+            .rowStyle()
+            .onAppear {
+                if !store.snapshot.spaces.contains(where: { $0.name == icsSpaceName }) {
+                    icsSpaceName = store.snapshot.spaces.first?.name ?? ""
+                }
+            }
+        }
+
+        if let icsError {
+            Text(icsError)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(MobileTheme.danger)
+                .rowStyle()
+        }
+
+        Button { connectICS() } label: {
+            Text(icsWorking ? "Adding…" : "Add calendar")
+                .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(MobileTheme.ink)
+                .frame(maxWidth: .infinity)
+                .edOutlineControl()
+        }
+        .buttonStyle(.plain)
+        .disabled(icsWorking)
+        .rowStyle()
+
+        Text("Most apps share a calendar as a private ‘ICS’ or ‘iCal’ link (it usually ends in .ics). In Schoology: Calendar → iCal/Calendar Feed. Atlas checks it for updates automatically.")
+            .font(.system(size: 13, weight: .medium, design: .rounded))
+            .foregroundStyle(MobileTheme.faint)
+            .rowStyle()
+    }
+
+    /// One connected feed (Canvas or ICS): name + type badge + status, an inline space
+    /// picker (PATCH), and Disconnect (DELETE, via the confirmation dialog).
+    @ViewBuilder
+    private func feedRows(_ feed: CalendarFeedRow) -> some View {
+        let isCanvas = feed.feedType == "canvas"
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Canvas").rowLabel()
-                Text(canvasStatusText(conn))
+                HStack(spacing: 6) {
+                    Text(feed.displayName).rowLabel()
+                    Text(isCanvas ? "CANVAS" : "ICS")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(MobileTheme.faint)
+                }
+                Text(feedStatusText(feed))
                     .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(canvasStatusColor(conn))
+                    .foregroundStyle(feedStatusColor(feed))
             }
             Spacer()
-            if canvasWorking {
+            if feedRowWorking == feed.id {
                 ProgressView().controlSize(.small)
             } else {
-                Button("Disconnect") { showCanvasDisconnectConfirm = true }
+                Button("Disconnect") { feedToDisconnect = feed }
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundStyle(MobileTheme.danger)
                     .buttonStyle(.plain)
@@ -490,37 +607,32 @@ struct SettingsView: View {
         }
         .rowStyle()
 
-        // Destination space — editable after connect; changing it PATCHes canvas-connect.
         if !store.snapshot.spaces.isEmpty {
             Menu {
                 ForEach(store.snapshot.spaces) { space in
-                    Button(space.name) { canvasConnectedSpace = space.name }
+                    Button(space.name) { updateFeedSpace(feed, to: space.name) }
                 }
             } label: {
                 HStack {
                     Text("Items land in").rowLabel()
                     Spacer()
-                    Text(canvasConnectedSpace).rowValue()
+                    Text(feed.spaceName ?? "").rowValue()
                     chevron
                 }
             }
             .rowStyle()
-            .disabled(canvasWorking)
-            // Seed the picker to the live space when the connected row appears (also
-            // re-seeds after a disconnect→reconnect). No PATCH fires: updateCanvasSpace
-            // no-ops when the new value equals the committed one.
-            .onAppear { canvasConnectedSpace = conn.spaceName ?? "" }
-            .onChange(of: canvasConnectedSpace) { old, new in
-                updateCanvasSpace(current: conn.spaceName, from: old, to: new)
-            }
+            .disabled(feedRowWorking == feed.id)
         }
+    }
 
-        if let canvasError {
-            Text(canvasError)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(MobileTheme.danger)
-                .rowStyle()
-        }
+    private func feedStatusText(_ feed: CalendarFeedRow) -> String {
+        if feed.status == "error" { return feed.lastError ?? "Sync paused — Atlas will retry automatically." }
+        if let synced = feed.lastSyncedDate { return "Last synced \(Self.relativeSync(from: synced))." }
+        return "Connected — first sync runs shortly."
+    }
+
+    private func feedStatusColor(_ feed: CalendarFeedRow) -> Color {
+        feed.status == "error" ? MobileTheme.warning : MobileTheme.green
     }
 
     @ViewBuilder
@@ -591,22 +703,10 @@ struct SettingsView: View {
             .rowStyle()
     }
 
-    private func canvasStatusText(_ conn: CanvasConnectionRow) -> String {
-        if conn.status == "error" {
-            return "Sync paused — Atlas will retry automatically."
-        }
-        if let synced = conn.lastSyncedDate {
-            return "Last synced \(Self.relativeSync(from: synced))."
-        }
-        return "Connected — first sync runs shortly."
-    }
+    // MARK: Feed actions (shared AtlasCore FeedService; refresh status on success)
 
-    private func canvasStatusColor(_ conn: CanvasConnectionRow) -> Color {
-        conn.status == "error" ? MobileTheme.warning : MobileTheme.green
-    }
-
-    // MARK: Canvas actions (shared AtlasCore CanvasService; refresh status on success)
-
+    /// Connects Canvas as a `canvas`-type feed (`feeds-connect`), preserving the paste-feed
+    /// UX. The server keeps Canvas's assignment→task + course routing for canvas-type feeds.
     private func connectCanvas() {
         let feed = canvasFeedURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard CanvasService.isValidFeedURL(feed) else {
@@ -622,7 +722,8 @@ struct SettingsView: View {
                 return
             }
             do {
-                try await canvas.connect(feedUrl: feed, spaceName: canvasSpaceName, jwt: jwt)
+                try await feeds.connect(feedUrl: feed, feedType: "canvas",
+                                        displayName: "Canvas", spaceName: canvasSpaceName, jwt: jwt)
                 await AtlasTipEvents.connectedSource.donate()
                 UserDefaults.standard.set(true, forKey: "checklist.connected")
                 AtlasTips.ConnectSource.hasConnection = true
@@ -635,47 +736,78 @@ struct SettingsView: View {
         }
     }
 
-    /// Changes where unmatched Canvas items land (PATCH canvas-connect). `current` is
-    /// the committed space, so the initial seed and the failure-revert are no-ops
-    /// (both re-select `current`). On failure the picker reverts to `oldValue`.
-    private func updateCanvasSpace(current: String?, from oldValue: String, to newValue: String) {
-        guard newValue != (current ?? ""), !newValue.isEmpty else { return }
-        canvasError = nil
-        canvasWorking = true
+    /// Connects a generic ICS calendar as an `ics`-type feed (read-only events only).
+    private func connectICS() {
+        let name = icsName.trimmingCharacters(in: .whitespaces)
+        let url = icsURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            icsError = "Give this calendar a name so you can tell it apart."
+            return
+        }
+        guard FeedService.isValidICSURL(url) else {
+            icsError = "That doesn't look like a calendar link. It should start with https and usually ends in .ics."
+            return
+        }
+        icsError = nil
+        icsWorking = true
         Task {
             guard let jwt = await store.validAccessToken() else {
-                canvasError = "Sign in to Atlas to change the Canvas space."
-                canvasConnectedSpace = oldValue
-                canvasWorking = false
+                icsError = "Sign in to Atlas to add a calendar."
+                icsWorking = false
                 return
             }
             do {
-                try await canvas.updateSpace(spaceName: newValue, jwt: jwt)
+                try await feeds.connect(feedUrl: url, feedType: "ics",
+                                        displayName: name, spaceName: icsSpaceName, jwt: jwt)
+                await AtlasTipEvents.connectedSource.donate()
+                AtlasTips.ConnectSource.hasConnection = true
                 await loadConnections()
+                icsName = ""; icsURL = ""   // don't retain the capability URL
             } catch {
-                canvasError = "Couldn't change the Canvas space. Check your connection and try again."
-                canvasConnectedSpace = oldValue   // revert the picker to the committed space
+                icsError = "Couldn't add that calendar. Check the link and your connection, then try again."
             }
-            canvasWorking = false
+            icsWorking = false
         }
     }
 
-    private func disconnectCanvas() {
-        canvasError = nil
-        canvasWorking = true
+    /// Re-routes a feed's unmatched items to a new space (PATCH `feeds-connect`).
+    private func updateFeedSpace(_ feed: CalendarFeedRow, to newName: String) {
+        guard newName != (feed.spaceName ?? ""), !newName.isEmpty else { return }
+        feedRowError = nil
+        feedRowWorking = feed.id
         Task {
             guard let jwt = await store.validAccessToken() else {
-                canvasError = "Sign in to Atlas to change Canvas sync."
-                canvasWorking = false
+                feedRowError = "Sign in to Atlas to change where this calendar lands."
+                feedRowWorking = nil
                 return
             }
             do {
-                try await canvas.disconnect(jwt: jwt)
-                canvasConn = nil   // clean disconnect: back to the paste form
+                try await feeds.updateFeed(id: feed.id, spaceName: newName, jwt: jwt)
+                await loadConnections()
             } catch {
-                canvasError = "Couldn't disconnect Canvas. Check your connection and try again."
+                feedRowError = "Couldn't change the space. Check your connection and try again."
             }
-            canvasWorking = false
+            feedRowWorking = nil
+        }
+    }
+
+    /// Disconnects a feed (DELETE `feeds-connect`) → revoked server-side, dropped locally.
+    private func disconnectFeed(_ feed: CalendarFeedRow) {
+        feedRowError = nil
+        feedRowWorking = feed.id
+        Task {
+            guard let jwt = await store.validAccessToken() else {
+                feedRowError = "Sign in to Atlas to disconnect this calendar."
+                feedRowWorking = nil
+                return
+            }
+            do {
+                try await feeds.disconnect(id: feed.id, jwt: jwt)
+                await loadConnections()
+            } catch {
+                feedRowError = "Couldn't disconnect. Check your connection and try again."
+            }
+            feedRowWorking = nil
         }
     }
 
