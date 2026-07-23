@@ -16,6 +16,8 @@ struct CalendarView: View {
     @State private var searchText: String = ""
     /// Space names hidden via the color/category filter row. Empty = show all.
     @State private var hiddenSpaces: Set<String> = []
+    /// Whether the unscheduled tray is folded into its thin rail (persists across launches).
+    @AppStorage("calendar.unscheduledTray.collapsed") private var unscheduledCollapsed: Bool = false
 
     // MARK: - Drag-to-schedule (custom pointer drag)
     /// The task currently being dragged from the tray (nil = no drag in progress).
@@ -47,28 +49,39 @@ struct CalendarView: View {
                 grid
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                UnscheduledTray(
-                    tasks: state.unscheduledTasks,
-                    now: state.now,
-                    hiddenSpaces: hiddenSpaces,
-                    spaceOrder: state.spaces.map(\.name),
-                    onSchedule: { taskID, hour in
-                        schedule(taskID: taskID, on: selectedDate, hour: Double(hour))
-                    },
-                    onSuggest: suggestSlot(for:),
-                    onSetDueDate: { taskID, date in
-                        state.setDueDate(taskId: taskID, date: date)
-                    },
-                    onToggleDone: { state.toggleTask($0) },
-                    onDragChanged: { id, point in
-                        dragTaskID = id
-                        dragLocation = point
-                    },
-                    onDragEnded: { id, point in
-                        performTaskDrop(taskID: id, at: point)
-                        dragTaskID = nil
+                Group {
+                    if unscheduledCollapsed {
+                        UnscheduledRail(
+                            count: state.unscheduledTasks.filter { !hiddenSpaces.contains($0.spaceName) }.count,
+                            onExpand: { toggleUnscheduledTray() }
+                        )
+                    } else {
+                        UnscheduledTray(
+                            tasks: state.unscheduledTasks,
+                            now: state.now,
+                            hiddenSpaces: hiddenSpaces,
+                            spaceOrder: state.spaces.map(\.name),
+                            onSchedule: { taskID, hour in
+                                schedule(taskID: taskID, on: selectedDate, hour: Double(hour))
+                            },
+                            onSuggest: suggestSlot(for:),
+                            onSetDueDate: { taskID, date in
+                                state.setDueDate(taskId: taskID, date: date)
+                            },
+                            onToggleDone: { state.toggleTask($0) },
+                            onDragChanged: { id, point in
+                                dragTaskID = id
+                                dragLocation = point
+                            },
+                            onDragEnded: { id, point in
+                                performTaskDrop(taskID: id, at: point)
+                                dragTaskID = nil
+                            },
+                            onCollapse: { toggleUnscheduledTray() }
+                        )
+                        .frame(width: 250)
                     }
-                )
+                }
                 .popoverTip(dragTip, arrowEdge: .leading)
                 .onAppear { AtlasTips.DragToSchedule.hasUnscheduled = !state.unscheduledTasks.isEmpty }
                 .onChange(of: state.unscheduledTasks.count) { _, count in
@@ -125,6 +138,14 @@ struct CalendarView: View {
                 EventEditorSheet(seed: seed)
                     .environmentObject(state)
             }
+        }
+    }
+
+    /// Fold/unfold the unscheduled tray with the house spring; the grid reclaims the
+    /// panel's width when it collapses.
+    private func toggleUnscheduledTray() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            unscheduledCollapsed.toggle()
         }
     }
 

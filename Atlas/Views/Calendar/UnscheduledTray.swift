@@ -26,6 +26,8 @@ struct UnscheduledTray: View {
     var onDragChanged: (UUID, CGPoint) -> Void = { _, _ in }
     /// Drag released at this point (in `calendarDragSpace`) — CalendarView maps it to a slot.
     var onDragEnded: (UUID, CGPoint) -> Void = { _, _ in }
+    /// Collapse the tray into the thin rail (the parent owns the collapsed state).
+    var onCollapse: () -> Void = {}
 
     /// Which chip's due-date popover is open.
     @State private var editingTaskID: UUID?
@@ -54,6 +56,17 @@ struct UnscheduledTray: View {
                     Text("\(displayedTasks.count)")
                         .atlasMono(size: 11, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    Spacer(minLength: 0)
+                    // Collapse into the rail. chevron.right points toward the right
+                    // edge the panel folds into (the rail's chevron.left brings it back).
+                    Button(action: onCollapse) {
+                        Image(systemName: "chevron.right")
+                            .atlasFont(size: 11, weight: .semibold)
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Collapse")
                 }
 
                 Text("Drag onto the grid, or use Suggest a time")
@@ -82,7 +95,6 @@ struct UnscheduledTray: View {
                 Spacer(minLength: 0)
             }
         }
-        .frame(width: 250)
         .onAppear { expandedSpaces = Set(groups.map(\.spaceName)) }
     }
 
@@ -218,6 +230,42 @@ struct UnscheduledTray: View {
     private func hourLabel(_ hour: Int) -> String {
         let date = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
         return CalendarFormat.hour.string(from: date)
+    }
+}
+
+/// The collapsed form of the tray: a thin vertical rail that reclaims the panel's
+/// width for the grid. A chevron expands it; the tray icon + count badge keep the
+/// unscheduled total glanceable. Tapping anywhere on the rail expands.
+struct UnscheduledRail: View {
+    let count: Int
+    let onExpand: () -> Void
+
+    var body: some View {
+        Button(action: onExpand) {
+            VStack(spacing: 12) {
+                Image(systemName: "chevron.left")
+                    .atlasFont(size: 11, weight: .semibold)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                Image(systemName: "tray.full")
+                    .atlasFont(size: 14, weight: .medium)
+                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                if count > 0 {
+                    Text("\(count)")
+                        .atlasMono(size: 10, weight: .semibold)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(AtlasTheme.wash(AtlasTheme.Colors.accent), in: Capsule())
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 4)
+            .frame(width: 34)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Show unscheduled tasks")
     }
 }
 
