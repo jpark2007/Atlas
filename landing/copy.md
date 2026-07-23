@@ -114,7 +114,7 @@ Waitlist first, apps next.
 
 - Atlas — a life manager for Mac and iPhone.
 - Made by Andrew Khalil and Jonah Park.
-- lets.flowstate@gmail.com
+- drewkhalil@gmail.com
 - Privacy · Terms   (relative links: /privacy, /terms)
 - In beta. Built in the open.
 - © 2026 Atlas

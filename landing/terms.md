@@ -2,7 +2,7 @@
 
 **Effective date: July 3, 2026**
 
-Atlas is built by Andrew Khalil and Jonah Park. Contact: **lets.flowstate@gmail.com**.
+Atlas is built by Andrew Khalil and Jonah Park. Contact: **drewkhalil@gmail.com**.
 
 ## What Atlas is
 
@@ -32,7 +32,7 @@ This is a free prelaunch beta. We may add, change, or remove features, pause the
 
 ## Ending use
 
-You can stop using Atlas at any time and ask us to delete your data (**lets.flowstate@gmail.com**). We may suspend or end access if you misuse the service or where needed to protect Atlas and its users.
+You can stop using Atlas at any time and ask us to delete your data (**drewkhalil@gmail.com**). We may suspend or end access if you misuse the service or where needed to protect Atlas and its users.
 
 ## Liability
 
@@ -44,4 +44,4 @@ We'll update the effective date when these terms change. Continuing to use Atlas
 
 ## Contact
 
-Andrew Khalil and Jonah Park — **lets.flowstate@gmail.com**
+Andrew Khalil and Jonah Park — **drewkhalil@gmail.com**
