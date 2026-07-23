@@ -756,6 +756,21 @@ h1, h2, .display {
 .anim .is-visible .kicker__label,
 .anim .kicker.is-visible .kicker__label { opacity: 1; transform: none; }
 
+/* --- hero is fully painted at t=0 -----------------------------------
+   Automated branding crawlers (Google OAuth verification) screenshot the
+   page the instant it loads. The above-the-fold hero must therefore never
+   animate in from hidden: force every hero element to its rest state under
+   .anim, overriding the generic reveal, the split-word masks, and the
+   kicker dash/label. Below-fold sections keep their scroll-reveal. */
+.anim .hero [data-reveal],
+.anim .hero .split .w-in,
+.anim .hero .kicker__label {
+  opacity: 1;
+  transform: none;
+}
+.anim .hero [data-reveal] { transition: none; }
+.anim .hero .kicker::before { transform: scaleX(1); }
+
 /* --- calendar: events cascade, then the clay NOW line draws --------- */
 .anim [data-anim="cal"] .evt {
   opacity: 0;
