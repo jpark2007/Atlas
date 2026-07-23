@@ -412,7 +412,6 @@ final class AtlasDBMappingTests: XCTestCase {
             userId: uid,
             defaultSpaceName: "School",
             appleCalendarDefaultSpace: "Personal",
-            googleTwoWaySync: true,
             textScale: 1.25,
             sidebarMode: "hover",
             tasksGrouping: "space",
@@ -446,12 +445,11 @@ final class AtlasDBMappingTests: XCTestCase {
         let uid = UUID()
         let serverJSON = """
         {"user_id":"\(uid.uuidString)","default_space_name":"School",\
-        "google_two_way_sync":true,"notification_prefs":{"morningDigest":true}}
+        "notification_prefs":{"morningDigest":true}}
         """
         let decoded = try decoder.decode(UserSettingsRow.self, from: Data(serverJSON.utf8))
         XCTAssertEqual(decoded.userId, uid)
         XCTAssertEqual(decoded.defaultSpaceName, "School")
-        XCTAssertEqual(decoded.googleTwoWaySync, true)
         XCTAssertEqual(decoded.notificationPrefsJSON, "{\"morningDigest\":true}")
     }
 
@@ -462,7 +460,6 @@ final class AtlasDBMappingTests: XCTestCase {
         XCTAssertEqual(decoded.userId, uid)
         XCTAssertNil(decoded.defaultSpaceName)
         XCTAssertNil(decoded.appleCalendarDefaultSpace)
-        XCTAssertNil(decoded.googleTwoWaySync)
         XCTAssertNil(decoded.textScale)
         XCTAssertNil(decoded.sidebarMode)
         XCTAssertNil(decoded.tasksGrouping)

@@ -24,7 +24,6 @@ final class SettingsSyncServiceTests: XCTestCase {
             userId: uid,
             defaultSpaceName: "Work",
             appleCalendarDefaultSpace: "School",
-            googleTwoWaySync: true,
             textScale: 1.15,
             sidebarMode: "hover",
             tasksGrouping: "dueDate",   // phone-owned: must NOT map to a local key
@@ -36,14 +35,13 @@ final class SettingsSyncServiceTests: XCTestCase {
 
         XCTAssertEqual(byKey["tasks.defaultSpaceName"], .string("Work"))
         XCTAssertEqual(byKey["calendar.apple.defaultSpace"], .string("School"))
-        XCTAssertEqual(byKey["calendar.google.enabled"], .bool(true))
         XCTAssertEqual(byKey["appearance.textScale"], .double(1.15))
         XCTAssertEqual(byKey["sidebar.mode"], .string("hover"))
         XCTAssertEqual(byKey["notes.perTabDocsSync.enabled"], .bool(true))
         XCTAssertEqual(byKey["notificationPrefs"], .string("{\"a\":1}"),
                        "notificationPrefs IS applied locally — the Mac-notifications task consumes it")
         XCTAssertNil(byKey["tasksGrouping"], "tasksGrouping has no Mac consumer — no local mapping")
-        XCTAssertEqual(byKey.count, 7)
+        XCTAssertEqual(byKey.count, 6)
     }
 
     func testAppliesSkipsNilColumns() {
@@ -57,12 +55,10 @@ final class SettingsSyncServiceTests: XCTestCase {
     func testReadLocalDistinguishesAbsentFromPresent() {
         let d = makeDefaults()
         d.set("Work", forKey: "tasks.defaultSpaceName")
-        d.set(false, forKey: "calendar.google.enabled")   // present + false
         d.set("", forKey: "calendar.apple.defaultSpace")   // present + empty string
 
         let snap = SettingsSyncService.readLocal(from: d)
         XCTAssertEqual(snap.defaultSpaceName, "Work")
-        XCTAssertEqual(snap.googleTwoWaySync, false)        // present false ≠ nil
         XCTAssertEqual(snap.appleCalendarDefaultSpace, "")  // present empty ≠ nil
         XCTAssertNil(snap.textScale)                        // absent, NOT 0.0
         XCTAssertNil(snap.perTabDocsSync)                   // absent, NOT false
@@ -92,11 +88,10 @@ final class SettingsSyncServiceTests: XCTestCase {
     }
 
     func testMergedRowLocalWinsOverBase() {
-        let base = UserSettingsRow(userId: uid, googleTwoWaySync: false, textScale: 1.0)
-        let local = SettingsSyncService.LocalSnapshot(googleTwoWaySync: true, textScale: 1.3)
+        let base = UserSettingsRow(userId: uid, textScale: 1.0)
+        let local = SettingsSyncService.LocalSnapshot(textScale: 1.3)
         let out = SettingsSyncService.mergedRow(base: base, local: local, userId: uid)
         XCTAssertEqual(out.textScale, 1.3)
-        XCTAssertEqual(out.googleTwoWaySync, true)
     }
 
     func testMergedRowWithNilBaseUsesOnlyLocal() {
@@ -117,7 +112,6 @@ final class SettingsSyncServiceTests: XCTestCase {
             userId: uid,
             defaultSpaceName: "Work",
             appleCalendarDefaultSpace: "School",
-            googleTwoWaySync: true,
             textScale: 1.15,
             sidebarMode: "hover",
             tasksGrouping: "project",
@@ -140,7 +134,6 @@ final class SettingsSyncServiceTests: XCTestCase {
         var server = UserSettingsRow(
             userId: uid,
             defaultSpaceName: "Work",
-            googleTwoWaySync: true,
             textScale: 1.15,
             sidebarMode: "hover",
             tasksGrouping: "project"    // phone-owned; survives via mergedRow's base
