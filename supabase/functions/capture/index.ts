@@ -25,16 +25,26 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkRateLimit, tooManyRequests } from "../_shared/rate_limit.ts";
+import { chunkText, dedupeItems, userContentForChunk } from "../_shared/capture_chunking.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  // Let browser callers read the truncation signal (URLSession ignores CORS).
+  "Access-Control-Expose-Headers": "X-Atlas-Capture-Truncated",
 };
 
 // A capture is a short free-text jot; a few thousand chars is generous. Anything
 // larger is abuse/accident — reject with 413 before spending an OpenRouter call.
 const MAX_TEXT_LEN = 20000;
+
+// Long captures fan out into parallel chunk calls (see _shared/capture_chunking.ts)
+// so a big paste "just works" without a user-visible item cap. MAX_ITEMS is a
+// defensive abuse bound ONLY — when it actually trims, the client is told via the
+// "X-Atlas-Capture-Truncated" header (the body stays a bare JSON array so old
+// shipped clients decode it unchanged).
+const MAX_ITEMS = 200;
 
 // A project is either a bare name (legacy clients) or an object carrying an
 // optional short code and description used for description-aware routing.
@@ -156,9 +166,15 @@ Rules:
 - STATED TIMES ARE SACRED. If the user states a clock time ("at 5:30", "by noon",
   "8pm"), it MUST appear in dueISO (tasks) or startISO (events), converted from the
   user's LOCAL time to UTC. NEVER return a date-only/midnight value when a time was stated.
+- PRESERVE STATED MINUTES EXACTLY. "3:30" means minute 30 — NEVER round to the hour and
+  NEVER alter a stated start or end time. A time range may be written compactly ("3:30-6",
+  "3:30–6pm", "2-3"): parse BOTH endpoints, and a single am/pm suffix applies to BOTH
+  endpoints (so "3:30-6pm" = 3:30 PM start, 6:00 PM end).
 - If a bare clock time has no AM/PM ("at 5:30", "pick up at 7"), pick the reading a
   person plausibly means: when the AM reading falls earlier today than the current LOCAL
   time above, use PM (e.g. if it is already 7 AM local, "5:30 today" and "at 7" mean PM).
+- For a bare time with NO AM/PM on a FUTURE date, prefer the daytime reading (roughly
+  7 AM–9 PM) unless context clearly indicates otherwise.
 - Convert to UTC by ADDING the user's offset from UTC, and let the CALENDAR DATE roll
   forward when the local time is afternoon/evening. For a UTC-behind zone like the
   Americas, a PM local time usually lands on the NEXT UTC day: e.g. 5:30 PM local on
@@ -176,9 +192,10 @@ Rules:
 - An event on a DATE with NO stated clock time ("game on Saturday", "trip July 5") is
   all-day: set "isAllDay": true and put that LOCAL day's midnight (UTC-converted) in startISO.
 - A pasted SCHEDULE listing several dated sessions (a season, syllabus, itinerary, class
-  list) becomes ONE event per listed session — each with its own date/time. Emit at most 20
-  items; if there are more, keep the 20 EARLIEST. Only make items for sessions that carry an
-  actual date; never invent dates or times for unlisted ones.
+  list) becomes ONE event per listed session — each with its own date/time. Only make items
+  for sessions that carry an actual date; never invent dates or times for unlisted ones.
+- Whenever a capture would produce many items, emit at most 50; if there are more, keep the
+  50 EARLIEST (earliest date/time first).
 - TITLES ARE CLEAN. The title must NOT contain the date/time words you parsed into
   dueISO/startISO — strip phrases like "due next friday", "on friday", "at 5:30",
   "tomorrow", "tonight" and leave a bare noun/verb phrase: "essay due next friday" →
@@ -210,6 +227,64 @@ function normalizeItems(parsed: unknown): Record<string, unknown>[] {
     }
   }
   return [];
+}
+
+type ChunkOutcome =
+  | { ok: true; items: Record<string, unknown>[] }
+  | { ok: false; response: Response };
+
+/**
+ * One OpenRouter call for a single chunk. Returns the normalized items on success,
+ * or an error Response (the same 502 taxonomy as before) the caller returns as-is
+ * — so ANY chunk failure fails the whole request, never a silent partial result.
+ */
+async function callModel(
+  userContent: string,
+  systemPrompt: string,
+  openRouterKey: string,
+): Promise<ChunkOutcome> {
+  const errorBody = (error: string, detail: string): Response =>
+    new Response(
+      JSON.stringify({ error, detail }),
+      { status: 502, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+    );
+
+  let res: Response;
+  try {
+    res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openRouterKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://atlas.app",
+        "X-Title": "Atlas Life Manager",
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+        max_tokens: 8192,
+      }),
+    });
+  } catch (err) {
+    return { ok: false, response: errorBody("Failed to reach OpenRouter", String(err)) };
+  }
+
+  if (!res.ok) {
+    return { ok: false, response: errorBody("OpenRouter error", await res.text()) };
+  }
+
+  try {
+    const completion = await res.json();
+    const content: string = completion?.choices?.[0]?.message?.content ?? "{}";
+    return { ok: true, items: normalizeItems(JSON.parse(content)) };
+  } catch (err) {
+    return { ok: false, response: errorBody("Could not parse model output as JSON", String(err)) };
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -297,59 +372,37 @@ Deno.serve(async (req: Request) => {
     );
   }
 
-  // Call OpenRouter
-  let openRouterResponse: Response;
-  try {
-    openRouterResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${openRouterKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://atlas.app",
-        "X-Title": "Atlas Life Manager",
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-4o-mini",
-        messages: [
-          { role: "system", content: buildSystemPrompt(spaces, timezone) },
-          { role: "user", content: text },
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.2,
-        max_tokens: 4096,
-      }),
-    });
-  } catch (err) {
-    return new Response(
-      JSON.stringify({ error: "Failed to reach OpenRouter", detail: String(err) }),
-      { status: 502, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
-    );
-  }
+  // Fan out: a normal input is a single call; a long paste is split into chunks
+  // parsed in PARALLEL, each later chunk carrying a read-only tail of the prior
+  // text as context. Any chunk failure fails the whole request with the existing
+  // error taxonomy — no silent partial results.
+  const systemPrompt = buildSystemPrompt(spaces, timezone);
+  const chunks = chunkText(text);
+  const outcomes = await Promise.all(
+    chunks.map((_, i) =>
+      callModel(userContentForChunk(chunks, i), systemPrompt, openRouterKey)
+    ),
+  );
+  const failed = outcomes.find(
+    (o): o is { ok: false; response: Response } => !o.ok,
+  );
+  if (failed) return failed.response;
 
-  if (!openRouterResponse.ok) {
-    const errorText = await openRouterResponse.text();
-    return new Response(
-      JSON.stringify({ error: "OpenRouter error", detail: errorText }),
-      { status: 502, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
-    );
-  }
+  // Concatenate in chunk order, then drop any dated event a boundary caused two
+  // chunks to emit (identical title + startISO).
+  let items = dedupeItems(outcomes.flatMap((o) => (o.ok ? o.items : [])));
 
-  // Parse the model's JSON content → a flat array of capture items.
-  let items: Record<string, unknown>[];
-  try {
-    const completion = await openRouterResponse.json();
-    const content: string = completion?.choices?.[0]?.message?.content ?? "{}";
-    items = normalizeItems(JSON.parse(content));
-  } catch (err) {
-    return new Response(
-      JSON.stringify({ error: "Could not parse model output as JSON", detail: String(err) }),
-      { status: 502, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
-    );
-  }
+  // Defensive abuse bound ONLY (chunking already removes any normal cap). When it
+  // actually trims, flag it via a response header; the body stays a bare array.
+  const truncated = items.length > MAX_ITEMS;
+  if (truncated) items = items.slice(0, MAX_ITEMS);
+
+  const headers: Record<string, string> = {
+    ...CORS_HEADERS,
+    "Content-Type": "application/json",
+  };
+  if (truncated) headers["X-Atlas-Capture-Truncated"] = "1";
 
   // Always return a JSON ARRAY (possibly empty) so the client can decode uniformly.
-  return new Response(
-    JSON.stringify(items),
-    { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
-  );
+  return new Response(JSON.stringify(items), { status: 200, headers });
 });

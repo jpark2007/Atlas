@@ -12,12 +12,12 @@ import TipKit
 //         .atlasCaptureOverlay()
 //
 // The modifier:
-//   • Installs a hidden keyboard shortcut (⌘⇧K) that flips `state.presentCapture = true`.
+//   • Installs a hidden keyboard shortcut (⌥Space) that flips `state.presentCapture = true`.
 //   • Overlays a centered-near-top command bar whenever `state.presentCapture == true`.
 //   • Dismisses on Esc and on click-outside.
 //   • On Return: calls the AI edge function to auto-sort the text into the right Space.
 //     Falls back to a plain task on ANY error (offline, 404, timeout, bad JSON, etc.)
-//     so ⌘⇧K ALWAYS works even when the edge function is not yet deployed.
+//     so ⌥Space ALWAYS works even when the edge function is not yet deployed.
 
 extension View {
     /// Overlays the Atlas quick-capture command bar and installs its keyboard shortcut.
@@ -36,7 +36,7 @@ struct AtlasCaptureOverlayModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            // ⌘⇧K is owned by the global Carbon hotkey → floating CapturePanelController,
+            // ⌥Space is owned by the global Carbon hotkey → floating CapturePanelController,
             // so there's no in-app keyboard shortcut here (it would double-fire when Atlas
             // is focused). This overlay still renders for the menu-bar "Quick Capture".
             .overlay(alignment: .top) {
@@ -337,10 +337,11 @@ struct CaptureCommandBar: View {
             // Try the AI edge function. It returns an ARRAY — a multi-item
             // paragraph splits into several captures, each routed individually.
             do {
-                let results = try await atlasAI.parse(
+                let response = try await atlasAI.parse(
                     rawText,
                     spaces: AtlasAI.context(from: state.spaces)
                 )
+                let results = response.results
                 guard !results.isEmpty else {
                     // Parsed OK but nothing actionable — never lose the text.
                     fallbackTask(rawText)
@@ -348,7 +349,12 @@ struct CaptureCommandBar: View {
                     return
                 }
                 let outcomes = results.map { state.applyCapture($0) }
-                await showConfirmation(CaptureOutcome.confirmation(for: outcomes))
+                if response.truncated {
+                    // Server capped the paste at 50 — the items were still added.
+                    await showConfirmation(Self.truncatedMessage, duration: 3)
+                } else {
+                    await showConfirmation(CaptureOutcome.confirmation(for: outcomes))
+                }
             } catch AtlasAIError.tooLong {
                 // Server rejected the size (413) — surface it, keep the text.
                 showError(Self.tooLongMessage, restoring: rawText)
@@ -387,6 +393,10 @@ struct CaptureCommandBar: View {
     // The two user-facing failure strings (kept verbatim, shared with iOS).
     static let tooLongMessage = "Sorry — that message is too long to sort"
     static let serverDownMessage = "Servers are down — please try again later"
+    // Rare: the server's defensive item bound trimmed an enormous paste. Most items
+    // WERE added; suggest splitting the remainder. (Normal long pastes fan out and
+    // are not capped.)
+    static let truncatedMessage = "That was a lot — some items may not have been added. Try splitting it up"
 
     /// Surface a failure inline WITHOUT committing anything: stop the spinner,
     /// restore the user's text into the field, and show `message` in danger color.
@@ -401,13 +411,15 @@ struct CaptureCommandBar: View {
         fieldFocused = true
     }
 
-    /// Displays `message` for ~1 second then dismisses the capture bar.
+    /// Displays `message` for `duration` seconds (default 1) then dismisses the
+    /// capture bar. The longer window is for the truncation notice, which the user
+    /// needs a moment to read.
     @MainActor
-    private func showConfirmation(_ message: String) async {
+    private func showConfirmation(_ message: String, duration: TimeInterval = 1) async {
         // Every path that reaches here has committed at least one item — donate once.
         Task { await AtlasTipEvents.captured.donate() }
         withAnimation { confirmation = message }
-        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 s
+        try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
         withAnimation { confirmation = nil }
         dismiss()
     }

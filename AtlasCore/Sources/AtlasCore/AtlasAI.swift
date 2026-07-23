@@ -18,6 +18,16 @@ public struct CaptureResult: Codable {
     public let notes: String?
 }
 
+/// Outcome of a capture parse: the decoded items plus whether the server capped
+/// an oversized capture (signalled by the `X-Atlas-Capture-Truncated` response
+/// header). Call sites read `.results`; `.truncated` drives the "added the first
+/// 50" notice. The wire body is still a bare JSON array, so `decodeResults` and
+/// old deploys are unaffected.
+public struct CaptureParseResult {
+    public let results: [CaptureResult]
+    public let truncated: Bool
+}
+
 // MARK: - Context payload
 
 /// A single project inside a context space — name plus the routing hints the
@@ -115,13 +125,14 @@ public final class AtlasAI {
     }
 
     /// POST `SupabaseConfig.functionsBase/capture` with `{ text, spaces? }`.
-    /// Returns an ARRAY of results (a multi-item paragraph splits into several).
+    /// Returns the decoded results (a multi-item paragraph splits into several)
+    /// plus a `truncated` flag set when the server capped the response at 50.
     /// Throws `AtlasAIError.notAuthenticated` if `session()` is nil.
     /// Throws a typed `AtlasAIError` on non-2xx (see `AtlasAIError.from`).
     /// Throws `AtlasAIError.parseFailed` if the JSON can't be decoded.
     /// Connectivity failures throw `URLError` unchanged (for the offline queue).
     public func parse(_ text: String,
-               spaces: [CaptureContextSpace] = []) async throws -> [CaptureResult] {
+               spaces: [CaptureContextSpace] = []) async throws -> CaptureParseResult {
         guard let session = sessionProvider() else {
             throw AtlasAIError.notAuthenticated
         }
@@ -145,8 +156,12 @@ public final class AtlasAI {
             throw AtlasAIError.from(status: http.statusCode, body: body)
         }
 
+        // Server caps an oversized capture at 50 items and flags it here (header
+        // lookup is case-insensitive). The body stays a bare array either way.
+        let truncated = http.value(forHTTPHeaderField: "X-Atlas-Capture-Truncated") == "1"
         do {
-            return try AtlasAI.decodeResults(from: data)
+            return CaptureParseResult(results: try AtlasAI.decodeResults(from: data),
+                                      truncated: truncated)
         } catch {
             throw AtlasAIError.parseFailed
         }

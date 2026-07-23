@@ -21,6 +21,7 @@ struct CaptureView: View {
     @State private var drafts: [DraftItem] = []
     @State private var showManualAdd = false
     @State private var note: String?
+    @State private var truncated = false
     @State private var isDraining = false
     @State private var thinkingText = ""
     @State private var dissolve = false
@@ -352,13 +353,14 @@ struct CaptureView: View {
         Task {
             do {
                 let ctx = AtlasAI.context(from: store.contextSpaces)
-                let results = try await store.ai.parse(raw, spaces: ctx)
+                let response = try await store.ai.parse(raw, spaces: ctx)
                 text = ""
-                if results.isEmpty {
+                truncated = response.truncated
+                if response.results.isEmpty {
                     phase = .empty
                     note = "Nothing to add"
                 } else {
-                    drafts = results.map(DraftItem.init)
+                    drafts = response.results.map(DraftItem.init)
                     phase = .result
                 }
             } catch let error as URLError where error.isConnectivity {
@@ -383,9 +385,14 @@ struct CaptureView: View {
 
     private func commitAll() {
         MobileTheme.Haptic.success()
-        note = commitSummary(drafts)
+        // Rare: the server's defensive item bound trimmed an enormous paste (normal
+        // long pastes fan out and are not capped). Most items were still added.
+        note = truncated
+            ? "That was a lot — some items may not have been added. Try splitting it up"
+            : commitSummary(drafts)
         for draft in drafts { commit(draft) }
         drafts = []
+        truncated = false
         phase = .empty
     }
 
@@ -479,8 +486,8 @@ struct CaptureView: View {
         for item in pending.items {
             pending.remove(item.id)
             do {
-                let results = try await store.ai.parse(item.text, spaces: ctx)
-                for r in results { commit(DraftItem(r)) }
+                let response = try await store.ai.parse(item.text, spaces: ctx)
+                for r in response.results { commit(DraftItem(r)) }
             } catch {
                 pending.enqueue(item.text)
                 break
