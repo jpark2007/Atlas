@@ -377,6 +377,13 @@ public struct TaskRow: Codable {
     /// Canvas course label (migration 0032) — the SUMMARY bracket this assignment came
     /// from. Round-tripped so a client edit never nulls it; decode drives the class picker.
     public var canvasCourse: String?
+    /// The `calendar_feeds` row this task was ingested from (multi-ICS feeds). Optional so
+    /// decoding survives rows/DBs that predate the migration. Round-tripped so a client
+    /// edit of a feed task never nulls the origin column.
+    public var feedId: UUID?
+    /// The feed's type — "canvas" or "ics". Optional (migration window). Round-tripped so
+    /// a client edit never nulls it; decode drives the domain's source label.
+    public var feedType: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
@@ -399,6 +406,8 @@ public struct TaskRow: Codable {
         case createdBy   = "created_by"
         case canvasUid   = "canvas_uid"
         case canvasCourse = "canvas_course"
+        case feedId      = "feed_id"
+        case feedType    = "feed_type"
     }
 
     public init(domain t: TaskItem) {
@@ -421,6 +430,8 @@ public struct TaskRow: Codable {
         self.createdBy   = t.createdByID
         self.canvasUid   = t.canvasUID
         self.canvasCourse = t.canvasCourse
+        self.feedId      = t.feedID
+        self.feedType    = t.feedType
     }
 
     public func toDomain() -> TaskItem {
@@ -443,6 +454,8 @@ public struct TaskRow: Codable {
         task.createdByID = createdBy
         task.canvasUID = canvasUid
         task.canvasCourse = canvasCourse
+        task.feedID = feedId
+        task.feedType = feedType
         return task
     }
 
@@ -503,6 +516,14 @@ public struct EventRow: Codable {
     /// Stamped from the event's space at write time; nil ⇒ the space is linked to no
     /// account, so the event stays in Atlas. The server's per-connection push reads it.
     public var googleConnectionId: UUID?
+    /// The `calendar_feeds` row this event was ingested from (multi-ICS feeds). Non-nil
+    /// for any feed-sourced row (Canvas OR generic ICS) and drives read-only. Optional so
+    /// decoding survives rows/DBs that predate the migration (null until backfill).
+    public var feedId: UUID?
+    /// The feed's type — "canvas" or "ics" (multi-ICS feeds). Drives source derivation:
+    /// takes precedence over `canvasUid`/`googleEventId`. Optional for the same
+    /// migration-window reason; null falls back to the legacy `canvasUid` rule.
+    public var feedType: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
@@ -522,6 +543,8 @@ public struct EventRow: Codable {
         case canvasUid = "canvas_uid"
         case canvasCourse = "canvas_course"
         case googleConnectionId = "google_connection_id"
+        case feedId    = "feed_id"
+        case feedType  = "feed_type"
     }
 
     public init(domain e: CalendarEvent) {
@@ -543,16 +566,36 @@ public struct EventRow: Codable {
         self.canvasUid = nil
         self.canvasCourse = nil
         self.googleConnectionId = e.googleConnectionId
+        // Feed columns are decode-only (feed events are read-only, never upserted back).
+        self.feedId = nil
+        self.feedType = nil
     }
 
-    public func toDomain() -> CalendarEvent {
-        // Source is derived at ingest, never guessed: a canvas_uid means the row came
-        // from a Canvas ICS feed; canvas-sync also stamps those rows google_origin (a
-        // google id), so canvas MUST take precedence over google. Everything else is
-        // google (a google id) or Atlas-native.
-        let derivedSource: EventSource =
-            canvasUid != nil ? .canvas :
-            (googleEventId != nil ? .google : .atlas)
+    /// - Parameter feedNames: `calendar_feeds.id → display_name`, used to label a generic
+    ///   ICS feed event (`.icsFeed(name:)`). Empty by default so callers that don't ingest
+    ///   feed events (and tests) can decode without wiring the lookup; an unresolved id
+    ///   falls back to "Calendar" rather than mislabeling the source.
+    public func toDomain(feedNames: [UUID: String] = [:]) -> CalendarEvent {
+        // Source is derived at ingest, never guessed. `feed_type` (multi-ICS feeds) is the
+        // authority when present: "canvas" → .canvas, "ics" → the named feed (rule 5: a
+        // Schoology feed labels as itself, never "Canvas"). Feed rows also carry a google
+        // id (google_origin), so feed_type MUST win over google. When feed_type is null
+        // (rows predating the migration), fall back to the legacy canvas_uid rule.
+        let derivedSource: EventSource
+        switch feedType {
+        case "canvas":
+            derivedSource = .canvas
+        case "ics":
+            let name = feedId.flatMap { feedNames[$0] } ?? "Calendar"
+            derivedSource = .icsFeed(name: name)
+        default:
+            derivedSource =
+                canvasUid != nil ? .canvas :
+                (googleEventId != nil ? .google : .atlas)
+        }
+        // Every feed-sourced row is server-owned → read-only. `feed_id` covers all feeds;
+        // `canvas_uid` preserves the pre-migration invariant for un-backfilled Canvas rows.
+        let readOnly = feedId != nil || canvasUid != nil
         // CalendarEvent has `var id: UUID = UUID()` — memberwise init exposes `id`
         // as an overridable parameter, so the DB UUID IS preserved here.
         var event = CalendarEvent(id: id,
@@ -571,7 +614,7 @@ public struct EventRow: Codable {
                       // mirrored TO Google also carries a googleEventId, so it loads as
                       // .google — accepted trade-off; only affects Mac reap eligibility
                       // for that edge, the fail-safe direction.)
-                      isReadOnly: canvasUid != nil,
+                      isReadOnly: readOnly,
                       source: derivedSource,
                       googleEventId: googleEventId,
                       appleEventId: appleEventId)
@@ -978,6 +1021,52 @@ public struct CanvasConnectionRow: Codable {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CalendarFeedRow — one subscribed calendar feed (multi-ICS feeds)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A row from `calendar_feeds` — the user's subscribed calendar feeds (Canvas OR a
+/// generic ICS feed). Generalizes `canvas_connections` to N feeds. The client reads
+/// only the owner-granted, non-secret columns (the feed-URL Vault pointer is NOT
+/// granted, so a `select=*` would 403); `loadCalendarFeeds()` selects them explicitly.
+///
+/// `lastSyncedAt` is a String because the server writes it with microsecond precision
+/// the plain `.iso8601` decoder can't parse; `lastSyncedDate` parses it leniently.
+public struct CalendarFeedRow: Codable, Identifiable {
+    public var id: UUID
+    public var feedType: String          // "canvas" | "ics"
+    public var displayName: String       // the feed's label (never "Canvas" for an ICS feed)
+    public var spaceName: String?        // Atlas space unmatched feed items land in
+    public var status: String            // active | error | revoked
+    public var lastSyncedAt: String?
+    public var lastError: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case feedType     = "feed_type"
+        case displayName  = "display_name"
+        case spaceName    = "space_name"
+        case status
+        case lastSyncedAt = "last_synced_at"
+        case lastError    = "last_error"
+    }
+
+    /// The server owns this feed's sync whenever it exists and hasn't been revoked;
+    /// `error` still counts as server-owned (the server keeps retrying). Mirrors
+    /// `CanvasConnectionRow.isServerOwned`.
+    public var isServerOwned: Bool { status != "revoked" }
+
+    /// `lastSyncedAt` parsed leniently (with or without fractional seconds).
+    public var lastSyncedDate: Date? {
+        guard let s = lastSyncedAt else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: s) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: s)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ProfileRow — public identity (collab phase 1). Row is created server-side by
 // the signup trigger; the client reads it and may update display_name.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1241,11 +1330,20 @@ public final class AtlasDB {
         let refRows:    [ReferenceRow]           = (try? await refRowsAsync)    ?? []
         let attachRows: [ReferenceAttachmentRow] = (try? await attachRowsAsync) ?? []
 
+        // Feed names label generic-ICS events (`.icsFeed(name:)`). Best-effort: if the
+        // multi-ICS-feeds migration isn't deployed yet, `calendar_feeds` 404s — degrade to
+        // an empty map (unresolved ICS events fall back to "Calendar") rather than failing
+        // the whole load. A `[feedId: display_name]` lookup keeps `toDomain` decoupled from
+        // the feeds fetch, and never mislabels a feed as another (rule 5).
+        let feedRows: [CalendarFeedRow] = (try? await loadCalendarFeeds()) ?? []
+        let feedNames = Dictionary(feedRows.map { ($0.id, $0.displayName) },
+                                   uniquingKeysWith: { first, _ in first })
+
         return AtlasSnapshot(
             spaces:   sr.map { $0.toDomain() },
             projects: pr.map { $0.toDomain() },
             tasks:    tr.map { $0.toDomain() },
-            events:   er.map { $0.toDomain() },
+            events:   er.map { $0.toDomain(feedNames: feedNames) },
             notes:    nr.map { $0.toDomain() },
             goals:    gr.map { $0.toDomain() },
             references:           refRows.map    { $0.toDomain() },
@@ -1357,6 +1455,17 @@ public final class AtlasDB {
             "canvas_connections",
             columns: "status,last_synced_at,last_error,space_name")
         return rows.first
+    }
+
+    /// Reads ALL of the caller's `calendar_feeds` rows (multi-ICS feeds — Canvas + generic
+    /// ICS). Selects only the owner-granted, non-secret columns; RLS scopes the query to
+    /// the signed-in user. Sorted by id for a list order that's stable across launches.
+    /// Mirrors `loadGoogleConnections` / `loadCanvasConnection`.
+    public func loadCalendarFeeds() async throws -> [CalendarFeedRow] {
+        let rows: [CalendarFeedRow] = try await getColumns(
+            "calendar_feeds",
+            columns: "id,feed_type,display_name,space_name,status,last_synced_at,last_error")
+        return rows.sorted { $0.id.uuidString < $1.id.uuidString }
     }
 
     /// The caller's profile row, or nil if migration 0015 isn't deployed yet

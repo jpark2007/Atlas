@@ -51,6 +51,63 @@ final class EventRowSourceTests: XCTestCase {
         XCTAssertFalse(ev.isReadOnly)
     }
 
+    // MARK: - Multi-ICS calendar feeds — feed_type precedence (Phase 3)
+
+    /// `feed_type = "ics"` derives a named generic-feed source (rule 5: a Schoology feed
+    /// labels as ITSELF, never "Canvas") and is read-only (any feed row is server-owned).
+    func test_toDomain_icsFeedType_derivesNamedIcsSourceAndReadOnly() {
+        let feedID = UUID()
+        var row = EventRow(domain: event(googleEventId: nil))
+        row.feedId = feedID
+        row.feedType = "ics"
+        let ev = row.toDomain(feedNames: [feedID: "Schoology"])
+        XCTAssertEqual(ev.source, .icsFeed(name: "Schoology"))
+        XCTAssertEqual(ev.source.displayName, "Schoology")
+        XCTAssertNotEqual(ev.source, .canvas, "an ICS feed must never resolve to Canvas")
+        XCTAssertTrue(ev.isReadOnly, "feed rows are server-owned → read-only")
+    }
+
+    /// An `ics` row whose feed id isn't in the name map falls back to "Calendar" rather
+    /// than mislabeling the source.
+    func test_toDomain_icsFeedType_unresolvedName_fallsBackToCalendar() {
+        var row = EventRow(domain: event(googleEventId: nil))
+        row.feedId = UUID()
+        row.feedType = "ics"
+        XCTAssertEqual(row.toDomain().source, .icsFeed(name: "Calendar"))
+    }
+
+    /// `feed_type = "canvas"` derives `.canvas` (the display name stays "Canvas").
+    func test_toDomain_canvasFeedType_derivesCanvasSource() {
+        var row = EventRow(domain: event(googleEventId: nil))
+        row.feedId = UUID()
+        row.feedType = "canvas"
+        let ev = row.toDomain()
+        XCTAssertEqual(ev.source, .canvas)
+        XCTAssertTrue(ev.isReadOnly)
+    }
+
+    /// Feed rows also carry a google id (google_origin), so `feed_type` MUST win over
+    /// google — an "ics" feed event with a googleEventId still resolves to the ICS feed.
+    func test_toDomain_icsFeedTypeBeatsGoogle() {
+        let feedID = UUID()
+        var row = EventRow(domain: event(googleEventId: "g-9"))
+        row.feedId = feedID
+        row.feedType = "ics"
+        XCTAssertEqual(row.toDomain(feedNames: [feedID: "Outlook"]).source,
+                       .icsFeed(name: "Outlook"))
+    }
+
+    /// Migration-window fallback: a row with a null `feed_type` but a `canvas_uid` (not yet
+    /// backfilled) still derives `.canvas`.
+    func test_toDomain_nullFeedTypeWithCanvasUid_fallsBackToCanvas() {
+        var row = EventRow(domain: event(googleEventId: "g-3"))
+        row.canvasUid = "canvas-legacy"
+        // feedType stays nil (pre-migration row)
+        let ev = row.toDomain()
+        XCTAssertEqual(ev.source, .canvas)
+        XCTAssertTrue(ev.isReadOnly)
+    }
+
     /// The wire mapping: PostgREST returns `canvas_uid` as a plain column; decoding
     /// must surface it (silent-drop guard — the bug being fixed). Unknown extra
     /// columns like `google_origin` are tolerated/ignored.
@@ -66,5 +123,40 @@ final class EventRowSourceTests: XCTestCase {
         let ev = row.toDomain()
         XCTAssertEqual(ev.source, .canvas)
         XCTAssertTrue(ev.isReadOnly)
+    }
+
+    /// The wire mapping for the multi-ICS columns: `feed_id` / `feed_type` decode as
+    /// plain snake_case columns and drive the named source through the feeds lookup.
+    func test_toDomain_decodesFeedColumnsFromServerJSON() throws {
+        let feedID = UUID()
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+        let json = """
+        {"id":"\(UUID().uuidString)","space_name":"School","title":"Chorus","subtitle":"",\
+        "start_at":"2026-07-11T17:00:00Z","end_at":"2026-07-11T18:00:00Z","is_all_day":false,\
+        "canvas_uid":"ics-uid-7","feed_id":"\(feedID.uuidString)","feed_type":"ics",\
+        "google_origin":true}
+        """
+        let row = try dec.decode(EventRow.self, from: Data(json.utf8))
+        XCTAssertEqual(row.feedId, feedID)
+        XCTAssertEqual(row.feedType, "ics")
+        let ev = row.toDomain(feedNames: [feedID: "Schoology"])
+        XCTAssertEqual(ev.source, .icsFeed(name: "Schoology"))
+        XCTAssertTrue(ev.isReadOnly)
+    }
+
+    /// Rows predating the migration have no `feed_id` / `feed_type` columns at all — the
+    /// decode must not break (optional columns → nil) and derivation falls back to the
+    /// legacy rules.
+    func test_toDomain_decodesWithoutFeedColumns() throws {
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+        let json = """
+        {"id":"\(UUID().uuidString)","space_name":"Work","title":"Standup","subtitle":"",\
+        "start_at":"2026-07-11T17:00:00Z","end_at":"2026-07-11T18:00:00Z","is_all_day":false,\
+        "google_event_id":"g-x"}
+        """
+        let row = try dec.decode(EventRow.self, from: Data(json.utf8))
+        XCTAssertNil(row.feedId)
+        XCTAssertNil(row.feedType)
+        XCTAssertEqual(row.toDomain().source, .google)
     }
 }

@@ -71,11 +71,14 @@ public struct Project: Identifiable {
 
 /// Where a `CalendarEvent` originated. Drives the source label and edit affordances —
 /// attribution is set ONCE at ingest, never guessed from other fields.
-public enum EventSource {
-    case atlas      // app-owned, writable
-    case apple      // Apple Calendar (EventKit)
-    case google     // Google Calendar
-    case canvas     // Canvas LMS (ICS feed) — server-owned, read-only in Atlas
+public enum EventSource: Equatable {
+    case atlas               // app-owned, writable
+    case apple               // Apple Calendar (EventKit)
+    case google              // Google Calendar
+    case canvas              // Canvas LMS (ICS feed) — server-owned, read-only in Atlas
+    case icsFeed(name: String) // a generic subscribed ICS calendar feed — server-owned, read-only
+                               // in Atlas. `name` is the feed's display name (never "Canvas" — a
+                               // Schoology feed must label as itself, rule 5).
 
     /// Human label for the source (e.g. the read-only menu row).
     public var displayName: String {
@@ -84,6 +87,7 @@ public enum EventSource {
         case .apple:  return "Apple Calendar"
         case .google: return "Google Calendar"
         case .canvas: return "Canvas"
+        case .icsFeed(let name): return name
         }
     }
 }
@@ -251,6 +255,14 @@ public struct TaskItem: Identifiable {
     /// Drives the class-link picker and the course→class remap. Round-trips through
     /// `TaskRow` so a client edit never nulls it.
     public var canvasCourse: String? = nil
+    /// The `calendar_feeds` row this task was ingested from (multi-ICS feeds), or nil for
+    /// Atlas-native tasks. Round-trips through `TaskRow` so a client edit never nulls it.
+    public var feedID: UUID? = nil
+    /// The feed's type — "canvas" or "ics" (multi-ICS feeds), or nil for Atlas-native
+    /// tasks. Lets the UI label the source correctly: `canvasUID` alone no longer implies
+    /// Canvas (it now doubles as the generic ICS UID), so an "ics" task must NOT read as
+    /// "Canvas" (rule 5). Round-trips through `TaskRow`.
+    public var feedType: String? = nil
 
     public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, completedAt: Date? = nil, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, appleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectName: String = "", notes: String = "", spaceID: UUID? = nil, assigneeID: UUID? = nil, createdByID: UUID? = nil, canvasUID: String? = nil) {
         self.id = id

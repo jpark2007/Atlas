@@ -21,6 +21,7 @@ public enum AvailabilityDerivation {
         case .google: return "google"
         case .atlas:  return "atlas"
         case .canvas: return "canvas"
+        case .icsFeed: return "ics"
         }
     }
 }
