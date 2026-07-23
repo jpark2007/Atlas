@@ -1738,31 +1738,26 @@ struct SettingsView: View {
             let candidate = ShortcutBinding(key: first, modifiers: swiftMods)
 
             DispatchQueue.main.async {
-                // Reject bare keys — require at least ⌘, ⌃, or ⌥.
+                // Reject bare keys — require at least ⌘, ⌃, or ⌥. Warning persists
+                // until the next recording attempt (startRecording clears it).
                 guard swiftMods.contains(.command) || swiftMods.contains(.control) || swiftMods.contains(.option) else {
                     conflictWarning = "Add ⌘, ⌥, or ⌃"
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { conflictWarning = nil }
                     stopRecording()
                     return
                 }
 
+                // In-app duplicate is a hard block — the two actions can't share a combo.
                 if let conflicting = shortcuts.conflict(candidate, excluding: action) {
                     conflictWarning = "Conflicts with \"\(conflicting.title)\" — not saved."
-                    // Auto-clear warning after 2 s.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        conflictWarning = nil
-                    }
                 } else if action == .capture {
-                    if let owner = CaptureShortcutSync.systemConflict(candidate) {
-                        conflictWarning = "macOS uses that for \(owner)."
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { conflictWarning = nil }
+                    // Warn-but-allow: a commonly-claimed combo still applies; only a real
+                    // Carbon registration failure blocks. Warnings do NOT auto-dismiss —
+                    // they clear when the next combo registers successfully.
+                    let status = CaptureShortcutSync.apply(candidate, to: shortcuts)
+                    if status != noErr {
+                        conflictWarning = "Couldn't register \(candidate.displayString) — another app owns it. Pick a different shortcut."
                     } else {
-                        conflictWarning = nil
-                        let status = CaptureShortcutSync.apply(candidate, to: shortcuts)
-                        if status != noErr {
-                            conflictWarning = "Something else owns that combo — pick another."
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { conflictWarning = nil }
-                        }
+                        conflictWarning = CaptureShortcutSync.claimWarning(candidate)
                     }
                 } else {
                     conflictWarning = nil

@@ -26,13 +26,13 @@ final class ShortcutStoreTests: XCTestCase {
 
     // MARK: - Default values
 
-    func testDefaultCaptureIsCommandShiftK() {
+    func testDefaultCaptureIsOptionSpace() {
         let store = ShortcutStore(defaults: defaults)
         let b = store.binding(for: .capture)
-        XCTAssertEqual(b.key, "k")
-        XCTAssertTrue(b.modifiers.contains(.command))
-        XCTAssertTrue(b.modifiers.contains(.shift))
-        XCTAssertFalse(b.modifiers.contains(.option))
+        XCTAssertEqual(b.key, " ")
+        XCTAssertTrue(b.modifiers.contains(.option))
+        XCTAssertFalse(b.modifiers.contains(.command))
+        XCTAssertFalse(b.modifiers.contains(.shift))
     }
 
     func testDefaultSearchIsCommandK() {
@@ -80,9 +80,9 @@ final class ShortcutStoreTests: XCTestCase {
 
         let store2 = ShortcutStore(defaults: defaults)
         let cap = store2.binding(for: .capture)
-        XCTAssertEqual(cap.key, "k")
-        XCTAssertTrue(cap.modifiers.contains(.command))
-        XCTAssertTrue(cap.modifiers.contains(.shift))
+        XCTAssertEqual(cap.key, " ")
+        XCTAssertTrue(cap.modifiers.contains(.option))
+        XCTAssertFalse(cap.modifiers.contains(.command))
     }
 
     // MARK: - KeyEquivalent
@@ -105,6 +105,12 @@ final class ShortcutStoreTests: XCTestCase {
         XCTAssertTrue(b.displayString.contains("⌘"))
         XCTAssertTrue(b.displayString.contains("⇧"))
         XCTAssertTrue(b.displayString.contains("K") || b.displayString.contains("k"))
+    }
+
+    func testDisplayStringOptionSpaceShowsSpaceLabel() {
+        let b = ShortcutBinding(key: " ", modifiers: [.option])
+        XCTAssertTrue(b.displayString.contains("⌥"))
+        XCTAssertTrue(b.displayString.contains("Space"))
     }
 
     func testDisplayStringCommandOptionJ() {
@@ -137,7 +143,7 @@ final class ShortcutStoreTests: XCTestCase {
 
     func testNoConflictForDistinctCombos() {
         let store = ShortcutStore(defaults: defaults)
-        // ⌘⇧J doesn't match any default (⌘K / ⌘⇧K).
+        // ⌘⇧J doesn't match any default (⌘K / ⌥Space).
         let candidate = ShortcutBinding(key: "j", modifiers: [.command, .shift])
         let conflict = store.conflict(candidate, excluding: .search)
         XCTAssertNil(conflict)

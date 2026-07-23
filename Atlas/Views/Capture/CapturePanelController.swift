@@ -2,7 +2,7 @@ import AppKit
 import AtlasCore
 import SwiftUI
 
-/// Hosts the quick-capture command bar in a floating NSPanel summoned by ⌘⇧K.
+/// Hosts the quick-capture command bar in a floating NSPanel summoned by ⌥Space.
 ///
 /// macOS only routes keyboard events to the active application's key window, so
 /// Atlas must become the active app for the text field to accept typing. The panel
@@ -40,7 +40,11 @@ final class CapturePanelController {
     }
 
     func show() {
-        guard let state, let auth else { return }
+        guard let state, let auth else {
+            AtlasLog.append("Capture panel show() skipped — app objects not configured")
+            return
+        }
+        AtlasLog.append("Capture panel show()")
         previousApp = NSWorkspace.shared.frontmostApplication
 
         let p = self.panel ?? makePanel(state: state, auth: auth)

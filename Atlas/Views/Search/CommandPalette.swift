@@ -72,6 +72,8 @@ struct CommandPaletteOverlay: View {
     /// App-wide focus model — when a session is active, the palette runs in
     /// notes scope and routes picks to the Focus corner card.
     @EnvironmentObject private var focus: FocusViewModel
+    /// Source of truth for the capture combo shown in the footer hint (live-rebindable).
+    @EnvironmentObject private var shortcuts: ShortcutStore
 
     @State private var query = ""
     @State private var selection = 0
@@ -217,11 +219,11 @@ struct CommandPaletteOverlay: View {
         }
     }
 
-    /// Bottom hint row disambiguating ⌘K (find/create) from ⌘⇧K (braindump).
+    /// Bottom hint row disambiguating ⌘K (find/create) from the capture combo (braindump).
     private var footer: some View {
         HStack(spacing: 12) {
             shortcutHint("⌘K", "find or create")
-            shortcutHint("⌘⇧K", "braindump")
+            shortcutHint(shortcuts.binding(for: .capture).displayString, "braindump")
             Spacer()
         }
         .padding(.horizontal, 16)

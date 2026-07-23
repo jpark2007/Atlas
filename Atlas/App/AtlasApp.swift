@@ -169,9 +169,9 @@ struct AtlasMenuBarContent: View {
     }
 
     /// Open / capture / quit — the old menu rows as quiet mono buttons.
-    // No ⌘⇧K equivalent here on purpose: a MenuBarExtra key-equivalent shadows BOTH
-    // the Carbon global hotkey and the in-app capture shortcut whenever Atlas is the
-    // active app, breaking ⌘⇧K. The global hotkey + in-app shortcut own that combo.
+    // No capture key-equivalent here on purpose: a MenuBarExtra key-equivalent shadows
+    // BOTH the Carbon global hotkey and the in-app capture shortcut whenever Atlas is the
+    // active app, breaking the capture combo. The global hotkey owns that combo.
     private var footerRow: some View {
         HStack(spacing: 14) {
             footerButton("Open Atlas") {
@@ -217,7 +217,7 @@ struct AtlasMenuBarContent: View {
     }
 }
 
-/// Registers the system-wide ⌘⇧K capture hotkey (Carbon, fires even when Atlas is
+/// Registers the system-wide ⌥Space capture hotkey (Carbon, fires even when Atlas is
 /// unfocused) and routes it to the same capture overlay the in-app shortcut opens.
 /// The in-app ShortcutStore binding (`.atlasCaptureOverlay()`) stays in place for
 /// when the app is already focused.
@@ -235,7 +235,7 @@ private struct GlobalHotkeyInstaller: View {
             .accessibilityHidden(true)
             .onAppear {
                 AtlasTips.configureOnce()
-                // ⌘⇧K summons a floating, non-activating capture panel OVER the current
+                // ⌥Space summons a floating, non-activating capture panel OVER the current
                 // app — it no longer activates Atlas or uses the in-window overlay.
                 CapturePanelController.shared.configure(state: state, auth: auth)
                 HotkeyService.shared.register {

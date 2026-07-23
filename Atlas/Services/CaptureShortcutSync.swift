@@ -64,23 +64,36 @@ enum CaptureShortcutSync {
         HotkeyService.shared.update(keyCode: keyCode, modifiers: carbonModifiers(from: binding.modifiers))
     }
 
-    /// Best-effort match against well-known macOS system defaults. Returns a
-    /// human-readable owner string, or nil. Not exhaustive — there is no API to
-    /// enumerate other apps' custom binds (e.g. Raycast); Carbon registration
-    /// failure in `apply` covers those.
-    static func systemConflict(_ binding: ShortcutBinding) -> String? {
+    /// Soft warning for combos commonly claimed by macOS or other apps. A non-nil
+    /// result means "warn the user this may not reach Atlas" — callers should still
+    /// APPLY the binding (these are warnings, not blocks). Returns nil for combos with
+    /// no known claim. Not exhaustive — there is no API to enumerate other apps' custom
+    /// binds (e.g. Raycast); Carbon registration failure in `apply` covers those.
+    static func claimWarning(_ binding: ShortcutBinding) -> String? {
         let k = Character(String(binding.key).lowercased())
         let m = binding.modifiers
-        if m == [.command] && k == " " { return "Spotlight" }
-        if m == [.command] && k == "q" { return "Quit" }
-        if m == [.command] && k == "w" { return "Close window" }
-        if m == [.command] && k == "h" { return "Hide" }
-        if m == [.command] && k == "m" { return "Minimize" }
-        if m == [.command] && k == "," { return "Settings" }
-        if m == [.command] && k == "\t" { return "App switcher" }
-        if m == [.command, .shift] && k == "3" { return "Screenshot" }
-        if m == [.command, .shift] && k == "4" { return "Screenshot" }
-        if m == [.command, .shift] && k == "5" { return "Screenshot" }
+        let combo = binding.displayString
+
+        // Named macOS system owners → call them out specifically.
+        var owner: String?
+        if m == [.command] && k == " " { owner = "Spotlight" }
+        else if m == [.command] && k == "q" { owner = "Quit" }
+        else if m == [.command] && k == "w" { owner = "Close window" }
+        else if m == [.command] && k == "h" { owner = "Hide" }
+        else if m == [.command] && k == "m" { owner = "Minimize" }
+        else if m == [.command] && k == "," { owner = "Settings" }
+        else if m == [.command] && k == "\t" { owner = "App switcher" }
+        else if m == [.command, .shift] && (k == "3" || k == "4" || k == "5") { owner = "Screenshot" }
+
+        if let owner {
+            return "\(combo) is used by macOS for \(owner) — it may not reach Atlas. You can keep it or pick another."
+        }
+
+        // Broad heuristic: bare ⌘ + a single letter or digit (⌘0–⌘9, ⌘A–⌘Z) is
+        // commonly claimed by apps (tab switching, menu items).
+        if m == [.command], k.isLetter || k.isNumber {
+            return "\(combo) is often used by other apps or macOS — it may not reach Atlas. You can keep it or pick another."
+        }
         return nil
     }
 }

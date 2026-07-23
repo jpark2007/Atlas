@@ -124,7 +124,7 @@ struct RootView: View {
         // the real cause of the missing buttons. The gray toolbar strip is instead
         // suppressed by WindowConfigurator (window.toolbar = nil), which is button-safe.
         .background(WindowConfigurator())
-        .atlasCaptureOverlay()   // ⌘⇧K quick-capture pill
+        .atlasCaptureOverlay()   // ⌥Space quick-capture pill
         .atlasCommandPalette()   // ⌘K search / command palette
         // App-wide "Report a bug" sheet — opened from the palette, the sidebar, or
         // an error's "Report this" affordance (via `state.reportBug(...)`).

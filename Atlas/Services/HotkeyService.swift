@@ -5,13 +5,13 @@ import AppKit
 
 // MARK: - Hotkey defaults
 //
-// Global capture combo. Defaults to ⌘⇧K so the system-wide hotkey matches the
+// Global capture combo. Defaults to ⌥Space so the system-wide hotkey matches the
 // in-app ShortcutStore binding for Quick Capture. Persisted in UserDefaults so a
 // future Settings rebind can override it.
 
 enum HotkeyDefaults {
-    static let defaultCaptureKeyCode: UInt32 = UInt32(kVK_ANSI_K) // 40 = "K"
-    static let defaultCaptureModifiers: UInt32 = UInt32(cmdKey | shiftKey)
+    static let defaultCaptureKeyCode: UInt32 = UInt32(kVK_Space)
+    static let defaultCaptureModifiers: UInt32 = UInt32(optionKey)
     static let captureKeyCodeKey = "captureHotkeyKeyCode"
     static let captureModifiersKey = "captureHotkeyModifiersRaw"
 }
@@ -45,7 +45,7 @@ final class HotkeyService {
 
     /// Press-only registration: `onPress` fires each time the global combo is
     /// pressed. Idempotent — calling twice keeps a single handler. Reads the
-    /// stored shortcut (or the ⌘⇧K default) and arms it.
+    /// stored shortcut (or the ⌥Space default) and arms it.
     func register(onPress: @escaping () -> Void) {
         self.onPress = onPress
         guard !isRegistered else { return }
@@ -76,6 +76,7 @@ final class HotkeyService {
     }
 
     private func handleHotKeyPressed() {
+        AtlasLog.append("Hotkey fired: \(Self.displayString(keyCode: currentKeyCode, modifiers: currentModifiers))")
         onPress?()
     }
 

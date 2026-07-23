@@ -17,11 +17,16 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         }
     }
 
-    var defaultKey: Character { "k" }
+    var defaultKey: Character {
+        switch self {
+        case .capture: return " " // Space
+        case .search:  return "k"
+        }
+    }
 
     var defaultModifiers: EventModifiers {
         switch self {
-        case .capture: return [.command, .shift]
+        case .capture: return [.option]
         case .search:  return [.command]
         }
     }
@@ -44,7 +49,7 @@ struct ShortcutBinding: Equatable {
         if modifiers.contains(.option)   { s += "⌥" }
         if modifiers.contains(.shift)    { s += "⇧" }
         if modifiers.contains(.command)  { s += "⌘" }
-        s += String(key).uppercased()
+        s += key == " " ? "Space" : String(key).uppercased()
         return s
     }
 }
