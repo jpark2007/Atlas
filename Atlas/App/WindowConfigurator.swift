@@ -8,9 +8,18 @@ import AppKit
 ///
 /// NavigationSplitView re-adds its toolbar after our first pass, so we re-assert
 /// the configuration a few times to win the race.
+///
+/// Entering/leaving true macOS fullscreen re-materializes the titlebar region and
+/// lets NavigationSplitView re-attach its toolbar (a white strip across the top,
+/// breaking the edge-to-edge paper look). SwiftUI doesn't drive `updateNSView` on
+/// that AppKit transition, so the Coordinator observes the fullscreen notifications
+/// and re-asserts `configure` across the transition.
 struct WindowConfigurator: NSViewRepresentable {
+    func makeCoordinator() -> Coordinator { Coordinator(configure: configure) }
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
+        context.coordinator.observe(view)
         for delay in [0.0, 0.15, 0.4, 1.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak view] in
                 guard let window = view?.window else { return }
@@ -47,6 +56,38 @@ struct WindowConfigurator: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         if let window = nsView.window { configure(window) }
+    }
+
+    /// Re-asserts the window chrome across fullscreen transitions. macOS re-shows the
+    /// titlebar and NavigationSplitView re-attaches its toolbar when entering/leaving
+    /// fullscreen; without this the top of the window flashes an opaque white bar.
+    final class Coordinator {
+        private let configure: (NSWindow) -> Void
+        private weak var view: NSView?
+        private var tokens: [NSObjectProtocol] = []
+
+        init(configure: @escaping (NSWindow) -> Void) { self.configure = configure }
+
+        func observe(_ view: NSView) {
+            self.view = view
+            let center = NotificationCenter.default
+            // willEnter fires before the transition paints; did* fires after the
+            // toolbar has been re-attached. Re-configure on both to keep the strip
+            // paper-colored and toolbar-free throughout the animation.
+            for name in [NSWindow.willEnterFullScreenNotification,
+                         NSWindow.didEnterFullScreenNotification,
+                         NSWindow.willExitFullScreenNotification,
+                         NSWindow.didExitFullScreenNotification] {
+                let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                    guard let self, let window = self.view?.window,
+                          note.object as? NSWindow == window else { return }
+                    self.configure(window)
+                }
+                tokens.append(token)
+            }
+        }
+
+        deinit { tokens.forEach(NotificationCenter.default.removeObserver) }
     }
 }
 
