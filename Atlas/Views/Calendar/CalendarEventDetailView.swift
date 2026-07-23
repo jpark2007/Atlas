@@ -13,6 +13,7 @@ struct CalendarEventDetailView: View {
     @State private var start: Date
     @State private var end: Date
     @State private var descriptionText: String
+    @State private var selectedSpaceName: String
     @State private var noteID: UUID?
     @State private var editingNote: Note?
     @State private var showRefPicker = false
@@ -24,6 +25,7 @@ struct CalendarEventDetailView: View {
         _start = State(initialValue: item.start)
         _end = State(initialValue: item.end)
         _descriptionText = State(initialValue: item.notes ?? "")
+        _selectedSpaceName = State(initialValue: item.spaceName)
         _noteID = State(initialValue: item.noteID)
     }
 
@@ -45,6 +47,10 @@ struct CalendarEventDetailView: View {
     /// external items are rebuilt each sync (unstable ids) and a work-block's id lives
     /// in `tasks`, not `events` (manage those on the task's detail page).
     private var canAttachReferences: Bool { !isReadOnly && !isWorkBlock && item.source == .atlas }
+    /// Space is a property of the `events` row (or its Google/Apple mirror), so only a
+    /// writable event can move between spaces. A work-block's space lives on its backing
+    /// task (manage it on the task's detail page), and read-only feed items are locked.
+    private var canEditSpace: Bool { !isReadOnly && !isWorkBlock }
 
     var body: some View {
         ScrollView {
@@ -144,10 +150,7 @@ struct CalendarEventDetailView: View {
                 if isReadOnly {
                     readOnlyDate(start)
                 } else {
-                    DatePicker("", selection: $start,
-                               displayedComponents: item.isAllDay ? [.date] : [.date, .hourAndMinute])
-                        .labelsHidden().datePickerStyle(.field)
-                        .tint(AtlasTheme.Colors.accentText)
+                    AtlasDateField(date: $start, includesTime: !item.isAllDay)
                 }
             }
             if !item.isAllDay {
@@ -155,9 +158,23 @@ struct CalendarEventDetailView: View {
                     if isReadOnly {
                         readOnlyDate(end)
                     } else {
-                        DatePicker("", selection: $end, displayedComponents: [.date, .hourAndMinute])
-                            .labelsHidden().datePickerStyle(.field)
-                            .tint(AtlasTheme.Colors.accentText)
+                        AtlasDateField(date: $end, includesTime: true, minDate: start)
+                    }
+                }
+            }
+            if canEditSpace {
+                fieldGroup("SPACE") {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(state.calendarSpaceColor(named: selectedSpaceName))
+                            .frame(width: 9, height: 9)
+                        Picker("Space", selection: $selectedSpaceName) {
+                            ForEach(state.spaces) { space in
+                                Text(space.name).tag(space.name)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }
@@ -366,6 +383,11 @@ struct CalendarEventDetailView: View {
             updated.end = finalEnd
             updated.notes = desc
             updated.noteID = noteID
+            // Move between spaces — recolor and re-resolve the space id so `updateEvent`
+            // can re-route the event (and its Google/Apple mirror) to the new connection.
+            updated.spaceName = selectedSpaceName
+            updated.color = state.calendarSpaceColor(named: selectedSpaceName)
+            updated.spaceID = state.spaceID(named: selectedSpaceName)
             state.updateEvent(updated)
         }
         close()

@@ -140,30 +140,13 @@ struct EventEditorSheet: View {
 
                 // ── Start date / time ─────────────────────────────────────
                 field("Starts") {
-                    DatePicker(
-                        "",
-                        selection: $startDate,
-                        displayedComponents: isAllDay ? .date : [.date, .hourAndMinute]
-                    )
-                    .labelsHidden()
-                    .datePickerStyle(.field)
-                    .tint(AtlasTheme.Colors.accentText)
-                    .atlasDateFieldChrome()
+                    AtlasDateField(date: $startDate, includesTime: !isAllDay)
                 }
 
                 // ── End date / time (timed events only) ───────────────────
                 if !isAllDay {
                     field("Ends") {
-                        DatePicker(
-                            "",
-                            selection: $endDate,
-                            in: startDate...,
-                            displayedComponents: [.date, .hourAndMinute]
-                        )
-                        .labelsHidden()
-                        .datePickerStyle(.field)
-                        .tint(AtlasTheme.Colors.accentText)
-                        .atlasDateFieldChrome()
+                        AtlasDateField(date: $endDate, includesTime: true, minDate: startDate)
                     }
                 }
 
@@ -289,25 +272,5 @@ struct EventEditorSheet: View {
         }
 
         state.presentEventEditor = false
-    }
-}
-
-private extension View {
-    /// Frames a native `.field` DatePicker in the Atlas paper idiom: a faint wash
-    /// fill, a 1 pt ink hairline, and a rounded (chip-radius) corner — so the
-    /// STARTS/ENDS fields read as inset paper controls instead of sharp white
-    /// system boxes. Native interaction (typing / stepping the field) is untouched.
-    func atlasDateFieldChrome() -> some View {
-        self
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                AtlasTheme.Colors.textPrimary.opacity(0.04),
-                in: RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
-                    .strokeBorder(AtlasTheme.Colors.border, lineWidth: AtlasTheme.hairlineWidth)
-            )
     }
 }
