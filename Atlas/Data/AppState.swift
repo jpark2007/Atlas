@@ -288,6 +288,15 @@ final class AppState: ObservableObject {
     /// pattern. Invalidated in `deinit` alongside `clockTimer`.
     private var availabilityPublishTimer: Timer?
 
+    /// Periodic timer that re-pulls the full snapshot every 5 min so the running app
+    /// surfaces what the server crons wrote (Google every 5 min, feeds every 15) instead
+    /// of staying stale until relaunch. Invalidated in `deinit` alongside `clockTimer`.
+    private var backgroundRefreshTimer: Timer?
+
+    /// Serializes background re-pulls so an overlapping tick (e.g. a foreground trigger
+    /// firing while the timer's pull is still in flight) can't race a second `loadAll`.
+    private var isRefreshingFromServer = false
+
     /// Pending debounced `publishAvailability()` call, restarted by `schedulePublish()`
     /// on every local calendar/task mutation so a burst of edits collapses into one publish.
     private var publishDebounceTask: Task<Void, Never>?
@@ -301,6 +310,7 @@ final class AppState: ObservableObject {
     deinit {
         clockTimer?.invalidate()
         availabilityPublishTimer?.invalidate()
+        backgroundRefreshTimer?.invalidate()
         publishDebounceTask?.cancel()
     }
 
@@ -319,6 +329,63 @@ final class AppState: ObservableObject {
         availabilityPublishTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.publishAvailability() }
         }
+    }
+
+    /// Starts (or restarts) the 5-min timer that re-pulls the server snapshot so
+    /// cron-written changes (Google sync every 5 min, feeds every 15) surface in the
+    /// running app instead of waiting for a relaunch. Idempotent; mirrors
+    /// `startAvailabilityPublishTimer`. Each tick no-ops when signed out / mid-bootstrap
+    /// or when an editor is open (see `refreshFromServer`).
+    func startBackgroundRefreshTimer() {
+        backgroundRefreshTimer?.invalidate()
+        backgroundRefreshTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.refreshFromServer() }
+        }
+    }
+
+    /// True while the user has an editor / edit-bearing sheet open, so a background
+    /// re-pull would swap the model arrays out from under in-flight work. Uses the
+    /// existing presentation flags (least invasive check — no new tracking). The note
+    /// editor is intentionally excluded: it edits a `@State` draft and self-reconciles
+    /// against newer synced versions (`isDirty` / newer-version banner), so a snapshot
+    /// swap never clobbers it.
+    private var isEditInFlight: Bool {
+        presentCapture           // typing a quick-capture task
+            || presentEventEditor    // editing an event
+            || presentBugReport      // typing a bug report
+            || presentSearch         // command palette open (avoid list churn under it)
+            || calendarDetailItem != nil  // event detail open
+    }
+
+    /// Re-pulls the full server snapshot (`loadAll` → `applySnapshot`, the same path
+    /// bootstrap uses) plus the connection/feed metadata, surfacing whatever the server
+    /// crons wrote to Supabase. Driven by `backgroundRefreshTimer` and by
+    /// `didBecomeActive`. Quiet by design: no UI, logs only on failure.
+    ///
+    /// SAFETY: `applySnapshot` replaces the model arrays wholesale, so this DEFERS while
+    /// an editor is open (`isEditInFlight`) rather than merging — a skipped tick simply
+    /// runs at the next interval. It also:
+    ///   • no-ops unless a user's snapshot is loaded (`loadedUserID != nil`), which is
+    ///     false while signed out AND during the initial bootstrap `loadAll`, covering
+    ///     the mid-bootstrap case; and
+    ///   • serializes on `isRefreshingFromServer` so overlapping pulls can't race.
+    /// Local edits already push up optimistically, so the re-pull returns what the client
+    /// has plus any cron-written changes.
+    func refreshFromServer() async {
+        guard let db, loadedUserID != nil else { return }  // signed in and past bootstrap
+        guard !isRefreshingFromServer else { return }      // one pull at a time
+        guard !isEditInFlight else { return }              // don't stomp open editors
+        isRefreshingFromServer = true
+        defer { isRefreshingFromServer = false }
+        do {
+            let snapshot = try await db.loadAll()
+            applySnapshot(snapshot)
+        } catch {
+            AtlasLog.append("background refresh loadAll failed: \(error.localizedDescription)")
+        }
+        // Keep Settings' connection/feed metadata fresh too (both degrade silently).
+        await refreshCalendarFeeds()
+        await refreshCanvasConnection()
     }
 
     /// Debounces `publishAvailability()` so a burst of local calendar/task edits
@@ -451,6 +518,10 @@ final class AppState: ObservableObject {
         // fresh on an hourly timer (local edits also trigger a debounced publish).
         await publishAvailability()
         startAvailabilityPublishTimer()
+
+        // Keep the running app fresh: re-pull the server snapshot every 5 min so cron
+        // writes (Google/feeds) surface without a relaunch. Defers while an editor is open.
+        startBackgroundRefreshTimer()
 
         // Fire-and-forget launch ping so the owner dashboard can count Mac
         // actives. Best-effort: silent on any failure (offline / pre-migration).

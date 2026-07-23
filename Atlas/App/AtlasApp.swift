@@ -290,7 +290,13 @@ struct AppGate: View {
                             // before it lands, in which case this no-ops.
                             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                                 guard let db = state.db else { return }
-                                Task { await state.settingsSync.pullAndApply(db: db) }
+                                Task {
+                                    await state.settingsSync.pullAndApply(db: db)
+                                    // Re-pull server data too, so returning to Atlas shows
+                                    // cron-written changes immediately (no-ops if an editor
+                                    // is open or a pull is already in flight).
+                                    await state.refreshFromServer()
+                                }
                             }
                     } else {
                         ProgressView().controlSize(.large)
