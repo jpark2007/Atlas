@@ -1,10 +1,10 @@
 import SwiftUI
 
 enum MobileTab: Hashable {
-    case schedule, capture, tasks
+    case schedule, capture, tasks, notes
 }
 
-/// The signed-in shell: Schedule / Capture / Tasks tabs. Each screen carries its
+/// The signed-in shell: Schedule / Capture / Tasks / Notes tabs. Each screen carries its
 /// own inline gear (→ Settings sheet), so no per-tab NavigationStack. A top error
 /// banner surfaces `store.lastError`. Opens on Schedule. Deep links switch tabs.
 struct RootTabView: View {
@@ -19,6 +19,8 @@ struct RootTabView: View {
                 tag: .capture, label: "Capture", symbol: "mic")
             tab(TasksView(),
                 tag: .tasks, label: "Tasks", symbol: "checklist")
+            tab(NotesView(),
+                tag: .notes, label: "Notes", symbol: "note.text")
         }
         .tint(MobileTheme.ink)
         .overlay(alignment: .top) { errorBanner }

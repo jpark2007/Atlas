@@ -320,6 +320,31 @@ final class MobileStore: ObservableObject {
                       rollback: { if let prior { self.snapshot.events.append(prior) } })
     }
 
+    func addNote(_ n: Note) async {
+        snapshot.notes.append(n)
+        await persist({ try await self.db.upsertNote(n) },
+                      rollback: { self.snapshot.notes.removeAll { $0.id == n.id } })
+    }
+
+    func updateNote(_ n: Note) async {
+        let prior = snapshot.notes.first { $0.id == n.id }
+        if let i = snapshot.notes.firstIndex(where: { $0.id == n.id }) {
+            snapshot.notes[i] = n
+        }
+        await persist({ try await self.db.upsertNote(n) },
+                      rollback: {
+                          guard let prior, let i = self.snapshot.notes.firstIndex(where: { $0.id == n.id }) else { return }
+                          self.snapshot.notes[i] = prior
+                      })
+    }
+
+    func deleteNote(id: UUID) async {
+        let prior = snapshot.notes.first { $0.id == id }
+        snapshot.notes.removeAll { $0.id == id }
+        await persist({ try await self.db.deleteNote(id: id) },
+                      rollback: { if let prior { self.snapshot.notes.append(prior) } })
+    }
+
     /// Run a persist call for an already-applied optimistic mutation: on a 401 do one
     /// forced token refresh + retry; on final failure roll the local change back and
     /// publish a calm `lastError`. Counted in `mutationsInFlight` so `refresh()` waits.
