@@ -42,7 +42,9 @@ struct ItemDetailSheet: View {
 
     @State private var showDeleteConfirm = false
 
-    private let durations = [15, 30, 45, 60, 90, 120]
+    /// Includes the event's own length even when it's off the ladder, so a synced
+    /// 3h event stays selectable instead of being truncated by the first tap.
+    private var durations: [Int] { EventDuration.options(including: durationMin) }
 
     init(detail: Detail) {
         self.detail = detail
@@ -242,15 +244,15 @@ struct ItemDetailSheet: View {
             ForEach(durations, id: \.self) { m in
                 Button { durationMin = m } label: {
                     if m == durationMin {
-                        Label("\(m) min", systemImage: "checkmark")
+                        Label(EventDuration.label(m), systemImage: "checkmark")
                     } else {
-                        Text("\(m) min")
+                        Text(EventDuration.label(m))
                     }
                 }
             }
         } label: {
             HStack(spacing: 8) {
-                Text("\(durationMin) min")
+                Text(EventDuration.label(durationMin))
                     .font(.system(size: 17, weight: .regular, design: .rounded))
                     .foregroundStyle(MobileTheme.ink)
                 Spacer()

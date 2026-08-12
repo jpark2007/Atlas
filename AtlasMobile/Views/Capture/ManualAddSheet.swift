@@ -22,7 +22,7 @@ struct ManualAddSheet: View {
     @State private var startTime = Date()
     @State private var durationMin = 60
 
-    private let durations = [15, 30, 45, 60, 90, 120]
+    private var durations: [Int] { EventDuration.options(including: durationMin) }
 
     /// Optional slot-press prefill (Wave-3 §w5): a preselected kind, the shown
     /// schedule day, and a pressed slot time. `nil` ⇒ a blank sheet, so the plain
@@ -174,15 +174,15 @@ struct ManualAddSheet: View {
             ForEach(durations, id: \.self) { m in
                 Button { durationMin = m } label: {
                     if m == durationMin {
-                        Label("\(m) min", systemImage: "checkmark")
+                        Label(EventDuration.label(m), systemImage: "checkmark")
                     } else {
-                        Text("\(m) min")
+                        Text(EventDuration.label(m))
                     }
                 }
             }
         } label: {
             HStack(spacing: 8) {
-                Text("\(durationMin) min")
+                Text(EventDuration.label(durationMin))
                     .font(.system(size: 17, weight: .regular, design: .rounded))
                     .foregroundStyle(MobileTheme.ink)
                 Spacer()
