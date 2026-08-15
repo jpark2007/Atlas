@@ -32,7 +32,9 @@ The consent screen on camera must show the current scopes. An old build still as
 4. Record from that build: `open "$D"`. Not an installed copy, not the DMG — both are
    older than the scope change.
 
-Needs `Config/Secrets.xcconfig` (gitignored, Drew sends it) or Google sign-in won't start.
+Build it however he normally does — his local `Config/Secrets.xcconfig` is already set up,
+so Google sign-in works as usual. If sign-in somehow doesn't start, that file is missing
+and Drew needs to send it.
 
 ---
 
