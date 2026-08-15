@@ -1,37 +1,24 @@
-# OAuth verification demo video — recording handoff (Jonah)
+# Google OAuth demo video — recording instructions (Jonah)
 
-**Status 2026-08-15:** Google has bounced our OAuth verification twice. Everything is
-resolved except one deliverable: **a re-recorded demo video.** Jonah records it, Drew
-does the final submission (the verification thread is on Drew's Google account).
+Google bounced our OAuth verification. One thing left: re-record the demo video.
+Jonah records and uploads, Drew submits.
 
 ---
 
-## If you are Claude reading this: what Jonah needs from you first
+## Claude: get his build right first
 
-Jonah's checkout must be built **with the current scope list** before he records. The
-consent screen in the video has to show exactly the scopes we submitted — if his build
-still requests the old `documents` scope, the video is unusable.
+The consent screen on camera must show the current scopes. An old build still asks for
+`documents`, which is the scope Google made us drop — that video would be unusable.
 
-1. `git pull` on `main`. The scope list lives in `Atlas/Services/GoogleAuthService.swift`
-   (`GoogleOAuthConfig.scopes`). It must be exactly these five, and **no `documents`**:
-
-   ```
-   https://www.googleapis.com/auth/calendar.events
-   https://www.googleapis.com/auth/calendar.readonly
-   https://www.googleapis.com/auth/drive.file
-   openid
-   email
-   ```
+1. **`git pull` on main first.**
 
 2. Build:
-
    ```
    xcodebuild -project Atlas.xcodeproj -scheme Atlas -configuration Debug \
      -destination 'platform=macOS' build CODE_SIGNING_ALLOWED=NO
    ```
 
-3. Verify the built bundle before he records — this is the check that matters:
-
+3. Verify the built bundle — this is the check that matters:
    ```
    D="$(xcodebuild -project Atlas.xcodeproj -scheme Atlas -showBuildSettings 2>/dev/null \
      | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/Atlas.app"
@@ -39,96 +26,75 @@ still requests the old `documents` scope, the video is unusable.
      printf "%-20s %s hits\n" "$s" "$(grep -ra "$s" "$D" | wc -l | tr -d ' ')"
    done
    ```
+   Need: first three >0, **`auth/documents` = 0**. If it's not 0, the pull didn't take —
+   stop and fix before recording.
 
-   Expected: `calendar.events` >0, `calendar.readonly` >0, `drive.file` >0,
-   **`auth/documents` = 0**. If `auth/documents` is non-zero, stop — the pull didn't take.
+4. Record from that build: `open "$D"`. Not an installed copy, not the DMG — both are
+   older than the scope change.
 
-4. He records from *that* build (`open "$D"`), not any installed copy or DMG. The DMG on
-   the site is older than the scope change.
-
-Notes: he needs `Config/Secrets.xcconfig` (gitignored — Drew sends it) or Google sign-in
-won't start.
-
-One thing to watch on camera: `fix/google-sync-connection-health` is now merged into
-main, and it surfaces stalled/errored badges on the **Connections screen** — the exact
-screen shots 1 and 2 are filmed on. If a red "⚠ Reconnect needed" badge is showing on
-any account, clear it before recording. A visible error state next to the account being
-demoed reads badly to a reviewer.
+Needs `Config/Secrets.xcconfig` (gitignored, Drew sends it) or Google sign-in won't start.
 
 ---
 
-## What Google actually asked for
+## Setup
 
-Their four criteria, verbatim in intent:
-
-1. **Consent screen** shown with all scopes fully expanded and readable — click
-   "Show all services" if anything is collapsed.
-2. **Full functional demo of every requested scope** — specifically
-   `calendar.events` and `calendar.readonly`.
-3. **Source-account impact** — for write/delete, show the change reflected in the
-   user's actual Google account, not just in Atlas.
-4. **Scope matching** — the scopes the app requests must exactly match the Cloud
-   Console config.
-
-The previous video failed #2 and #3. It never showed the calendar list (so
-`calendar.readonly` looked unjustified) and never cut to Google Calendar to prove the
-writes landed.
+- **Make a brand-new Google account** for this. Don't use your personal one — it's going
+  to a reviewer.
+- Give that account **a second calendar** (Google Calendar → Other calendars → + →
+  Create new calendar, name it "Work"). Required — one of the shots is proving we can
+  list multiple calendars, and with only a primary there's nothing to show.
+- Make a **fresh Atlas account** too. Clean screen.
+- In Atlas: Settings → Connections → if a Google account is connected, **Disconnect** it,
+  so the consent screen shows up fresh on camera.
+- If any account shows a red "⚠ Reconnect needed" badge, clear it first.
+- Open `calendar.google.com` in a browser signed into the new account. Atlas and browser
+  side by side — you'll be switching constantly.
+- ⌘⇧5, full screen, **one continuous take**. Don't stitch clips together.
 
 ---
 
-## Setup before recording
+## The shots
 
-- Use the **reviewer test Google account** — Drew will text the login. Do not use a
-  personal account: whatever account is on camera must be the one whose credentials
-  Drew sends the reviewer, or they can't reproduce it.
-- That account needs **at least two calendars** (primary + one secondary, e.g. "Work").
-  With only a primary there is nothing for the calendar-picker shot to show, and
-  `calendar.readonly` is exactly the scope under question.
-- Create a **fresh Atlas account** — clean onboarding, no half-built spaces on screen.
-- In Atlas: Settings → Connections → the Google account → **Disconnect**, so the
-  consent screen appears fresh on camera.
-- Open `calendar.google.com` in a browser logged into the same test account. Put Atlas
-  and the browser side by side — you'll switch constantly.
-- Record with ⌘⇧5, full screen, one continuous take. Stitched clips that skip the
-  consent screen get rejected.
+Narration is optional but helps. Lines below are what to say if you want to talk over it.
 
----
+**1. Consent screen** (~30s)
+Settings → Connections → **Add Google account** → browser opens → pick the new account →
+on the permissions screen click **"Show all services"** and expand everything →
+**hold still 5+ seconds** so every scope is readable → Allow.
 
-## Shot list
+> "Atlas requests calendar events, calendar read-only, and Drive file access. Here is the
+> full consent screen with all scopes expanded."
 
-**1 — Consent screen (~30s)**
-Settings → Connections → under GOOGLE, **Add Google account** → browser opens → pick the
-test account → on the permissions screen click **"Show all services"** and expand every
-collapsed row → **hold still on it 5+ seconds** so all five scopes are readable →
-Continue/Allow.
+**2. Calendar list** (~20s)
+Back in Atlas: Settings → Connections → click the Google account. The sheet shows
+**"Choose which calendars sync into Atlas"** with both calendars listed — pause on it.
+Switch to the browser, show the same two calendars in Google Calendar's sidebar. Toggle
+the second calendar on in Atlas, show its events load.
 
-**2 — `calendar.readonly` (~20s)**
-Back in Atlas: Settings → Connections → click the Google account. The detail sheet shows
-**"Choose which calendars sync into Atlas"** with the account's calendar list — pause
-here. Switch to the browser and show the *same* list in Google Calendar's sidebar. Then
-toggle a secondary calendar on and show its events appear in Atlas.
+> "Calendar read-only is what lets Atlas list the account's calendars so the user can
+> choose which ones sync. Without it we can only see the primary calendar."
 
-Why this shot exists: `calendar.events` alone cannot enumerate calendars —
-`calendarList.list` 403s without a `calendar.readonly` grant, so the picker silently
-falls back to primary-only. This shot is the visible justification for the scope.
+**3. Create, edit, delete** (~60s) — the important one
+Show the Google side after every single step:
 
-**3 — `calendar.events` write + source-account impact (~60s)**
-This is the part the last video was missing. Every step shows the Google side.
+- Atlas: create an event called "OAuth Review Test 1", save.
+- Browser: refresh Google Calendar → it's there.
+- Atlas: change the title and move the time.
+- Browser: refresh → shows the edit.
+- Atlas: delete it.
+- Browser: refresh → **it's gone.** Stay on this until it's clearly gone.
 
-- Create an event in Atlas named "OAuth Review Test 1" → save.
-- Browser → refresh Google Calendar → show it exists there.
-- Atlas → edit it (change title and move the time).
-- Browser → refresh → show the edited title and new time.
-- Atlas → delete it.
-- Browser → refresh → show it is **gone**. Don't cut away before it's visibly gone.
+> "Changes made in Atlas are written to the user's Google Calendar — created here,
+> edited here, and deleted here."
 
-**4 — Read direction (~15s)**
-Create an event in Google Calendar → sync/refresh Atlas → show it appear.
+**4. Reverse direction** (~15s)
+Create an event in Google Calendar → refresh Atlas → it appears.
+
+> "And events created in Google Calendar sync back into Atlas."
 
 ---
 
-## Handoff back to Drew
+## Then
 
-Upload to YouTube as **Unlisted** (not Private — reviewers can't open Private). Title it
-something like "Atlas — Google OAuth scope demo", and add the scopes in the description.
-Send Drew the link; he replies on the verification thread and submits.
+Upload to YouTube as **Unlisted** — not Private, reviewers can't open Private. Send Drew
+the link. That's it.
