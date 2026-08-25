@@ -8,6 +8,12 @@ options:
 packages:
   AtlasCore:
     path: AtlasCore
+  # Sparkle 2 — auto-updates for the direct-download DMG channel only.
+  # macOS-only by design: it is wired into the Atlas target and MUST NOT be added
+  # to AtlasMobile / AtlasMobileWidgets / AtlasCore (AtlasCore is shared with iOS).
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.9.6
 # Project-wide per-developer settings (DEVELOPMENT_TEAM) live in the gitignored
 # Config/Secrets.xcconfig — never hardcode a team id here; each dev builds with
 # their own team. See Config/Secrets.example.xcconfig.
@@ -17,7 +23,7 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.10.0"
+    MARKETING_VERSION: "0.10.1"
     CURRENT_PROJECT_VERSION: "1"
     GENERATE_INFOPLIST_FILE: YES
     INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
@@ -42,6 +48,10 @@ targets:
         buildPhase: none
     dependencies:
       - package: AtlasCore
+      # Embedded + signed into Atlas.app; carries Sparkle's own Updater.app and
+      # Autoupdate helper, which the hardened runtime signs along with the framework.
+      - package: Sparkle
+        product: Sparkle
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.atlaslm.Atlas
@@ -70,7 +80,13 @@ targets:
       properties:
         ITSAppUsesNonExemptEncryption: false
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
-        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        # Sparkle compares the appcast's <sparkle:version> against THIS key. The
+        # project-wide CURRENT_PROJECT_VERSION is pinned at "1" and never bumped, so
+        # leaving it here would make every release look identical to the updater and
+        # no update would ever be offered. The Mac app therefore versions its bundle
+        # by the marketing version. (AtlasMobile keeps CURRENT_PROJECT_VERSION — the
+        # App Store wants a monotonic integer build number there.)
+        CFBundleVersion: "$(MARKETING_VERSION)"
         LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
         LSApplicationCategoryType: "public.app-category.productivity"
         NSHumanReadableCopyright: "© 2026 Atlas"
@@ -81,6 +97,16 @@ targets:
         GoogleOAuthClientID: "$(GOOGLE_OAUTH_CLIENT_ID)"
         GoogleOAuthClientSecret: "$(GOOGLE_OAUTH_CLIENT_SECRET)"
         DriveOnePickRedirectURI: "$(DRIVE_ONEPICK_REDIRECT_URI)"
+        # ── Sparkle 2 (direct-download DMG auto-updates) ─────────────────────
+        # The app is NOT sandboxed (see Atlas.entitlements), so Sparkle needs no
+        # XPC installer-service keys — the standard, non-sandboxed setup applies.
+        SUFeedURL: "https://www.atlaslm.net/appcast.xml"
+        # REPLACE ME. Drew runs Sparkle's `generate_keys` ONCE: it stores the private
+        # key in his login keychain and prints the public key — paste that value here.
+        # Until then the app cannot verify any update (Sparkle refuses to install), and
+        # scripts/release-dmg.sh refuses to build a release. See UpdaterService.swift.
+        SUPublicEDKey: "PLACEHOLDER_ED_PUBLIC_KEY"
+        SUEnableAutomaticChecks: true
         # Registers atlas:// so the Supabase OAuth callback (atlas://auth-callback)
         # opened in the system default browser routes back into the app via
         # .onOpenURL — Xcode's INFOPLIST_KEY_* mechanism can't emit CFBundleURLTypes.

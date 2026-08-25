@@ -18,6 +18,10 @@ struct AtlasApp: App {
     /// Focus-session + Pomodoro state. Owned here (not inside FocusView) so the
     /// MenuBarExtra — a separate Scene — can bind to the same live countdown.
     @StateObject private var focus = FocusViewModel()
+    /// Sparkle auto-updates (direct-download DMG channel). Starting the updater here
+    /// means background checks run for the whole app lifetime, not just while some
+    /// view is on screen; Settings binds to the same instance.
+    @StateObject private var updater = UpdaterService()
     /// User-adjustable global text scale (Settings → App & Help → Appearance).
     /// 1.0 = default; see `AtlasTextScaleKey` in AtlasCore/Theme.swift.
     @AppStorage("appearance.textScale") private var textScale: Double = 1.0
@@ -44,6 +48,7 @@ struct AtlasApp: App {
                 .environmentObject(shortcuts)
                 .environmentObject(googleAuth)
                 .environmentObject(focus)
+                .environmentObject(updater)
                 // Two-way Google-Doc write-back for linked Doc-notes: the concrete
                 // edge-function client, minting a valid Supabase JWT on each save.
                 .environment(\.docNoteWriteBack,

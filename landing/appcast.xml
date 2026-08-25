@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>Atlas</title>
+    <link>https://www.atlaslm.net/appcast.xml</link>
+    <description>Updates for Atlas, the Mac life manager.</description>
+    <language>en</language>
+    <!--
+      Sparkle appcast for the Atlas direct-download DMG channel, served at
+      https://www.atlaslm.net/appcast.xml (Atlas.app's SUFeedURL).
+
+      Do NOT hand-edit the <item> blocks: scripts/release-dmg.sh writes the newest
+      entry after it staples the DMG, filling in the version, pubDate, enclosure
+      length and the ed25519 signature produced by Sparkle's `sign_update`.
+      Newest release first; older items may stay so users on very old builds
+      still find a path forward.
+
+      The 0.10.1 item below is a PLACEHOLDER — length 0 and an unreal signature,
+      so no client will install it. The first run of the release script replaces
+      it with the genuine values.
+    -->
+    <item>
+      <title>0.10.1</title>
+      <pubDate>Tue, 25 Aug 2026 00:00:00 +0000</pubDate>
+      <sparkle:version>0.10.1</sparkle:version>
+      <sparkle:shortVersionString>0.10.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://www.atlaslm.net/downloads/Atlas-0.10.1.dmg" length="0" type="application/x-apple-diskimage" sparkle:edSignature="PLACEHOLDER_ED_SIGNATURE" />
+    </item>
+  </channel>
+</rss>

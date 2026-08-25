@@ -13,6 +13,8 @@ struct SettingsView: View {
     @EnvironmentObject private var shortcuts: ShortcutStore
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var googleAuth: GoogleAuthService
+    /// Sparkle auto-updates — the App section's two update rows drive this.
+    @EnvironmentObject private var updater: UpdaterService
 
     /// Space new / quick-captured tasks fall into when none is inferred.
     @AppStorage("tasks.defaultSpaceName") private var defaultTaskSpace: String = "Personal"
@@ -1893,6 +1895,26 @@ struct SettingsView: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .tint(AtlasTheme.Colors.textPrimary)
+            }
+
+            // Sparkle checks in the background on its own; these two rows are the
+            // manual nudge and the "don't ask, just do it" preference.
+            settingsRow(icon: "arrow.triangle.2.circlepath",
+                        name: "Install updates automatically",
+                        detail: "New versions download and install in the background. Off means Atlas asks first.") {
+                Toggle("", isOn: $updater.automaticallyDownloadsUpdates)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(AtlasTheme.Colors.textPrimary)
+            }
+
+            settingsRow(icon: "arrow.down.circle",
+                        name: "Check for updates now",
+                        detail: "Atlas already checks on its own — this asks right away.") {
+                Button("Check") { updater.checkForUpdates() }
+                    .buttonStyle(.plain)
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
             }
         }
     }
