@@ -10,14 +10,22 @@
  *
  * POST /functions/v1/delete-account
  *      → verifies the caller's Supabase JWT (auth.getUser — REAL verification,
- *        not presence-only), purges Vault secrets, deletes the auth user.
+ *        not presence-only), revokes the Sign in with Apple token (best-effort),
+ *        purges Vault secrets, deletes the auth user.
  *        →  200 { ok: true }
+ *      Body (optional, JSON): { apple_authorization_code, apple_client_id }
+ *        — a FRESH ASAuthorization code the client re-obtained at delete time.
+ *        Supabase never stores an Apple refresh token for the native id_token
+ *        sign-in, so the token to revoke can only come from the client.
  *
  * Auth:  Authorization: Bearer <Supabase user JWT>  (verified — this destroys the
  *        account, so presence-only like `capture` is not enough).
  *
  * Env (auto-injected by the platform):
  *   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+ * Env (set by hand, for Apple token revocation — guideline 5.1.1(v)):
+ *   APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY (the .p8 PKCS#8 PEM),
+ *   APPLE_CLIENT_IDS (comma-separated bundle ids: Mac app, iOS app)
  *
  * Deploy: supabase functions deploy delete-account --project-ref jxrmozhgsebwtbdleyxp
  */
@@ -36,6 +44,107 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
   });
+}
+
+// ── Sign in with Apple revocation (App Store guideline 5.1.1(v)) ────────────
+//
+// Apple's /auth/revoke needs (a) a client secret — an ES256 JWT signed with the
+// team's .p8 key — and (b) a refresh or access token. We hold neither: the apps
+// sign in with `signInWithIdToken`, so Supabase stores no Apple refresh token and
+// the id_token itself isn't revocable. The client therefore re-runs the Apple
+// authorization at delete time and passes the one-shot `authorization_code`,
+// which we exchange for a refresh token here and immediately revoke.
+
+function base64url(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** ES256 client secret for appleid.apple.com, signed with the .p8 private key. */
+async function appleClientSecret(clientId: string, teamId: string, keyId: string,
+                                 privateKeyPem: string): Promise<string> {
+  const pkcs8 = privateKeyPem
+    .replace(/\\n/g, "\n")                          // survives single-line env vars
+    .replace(/-----(BEGIN|END) PRIVATE KEY-----/g, "")
+    .replace(/\s+/g, "");
+  const der = Uint8Array.from(atob(pkcs8), (ch) => ch.charCodeAt(0));
+  const key = await crypto.subtle.importKey(
+    "pkcs8", der, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: "ES256", kid: keyId };
+  const claims = {
+    iss: teamId, iat: now, exp: now + 300,
+    aud: "https://appleid.apple.com", sub: clientId,
+  };
+  const encode = (o: unknown) => base64url(new TextEncoder().encode(JSON.stringify(o)));
+  const signingInput = `${encode(header)}.${encode(claims)}`;
+  // ECDSA signatures from WebCrypto are already raw r||s — exactly JWS form.
+  const sig = new Uint8Array(await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(signingInput)));
+  return `${signingInput}.${base64url(sig)}`;
+}
+
+/**
+ * Best-effort: exchange the client's fresh authorization code for an Apple refresh
+ * token and revoke it. Never throws — a failed revocation must not block deletion.
+ */
+async function revokeAppleToken(authCode: string, clientId: string): Promise<void> {
+  const teamId = Deno.env.get("APPLE_TEAM_ID");
+  const keyId = Deno.env.get("APPLE_KEY_ID");
+  const privateKey = Deno.env.get("APPLE_PRIVATE_KEY");
+  const allowedIds = (Deno.env.get("APPLE_CLIENT_IDS") ?? "")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  if (!teamId || !keyId || !privateKey || allowedIds.length === 0) {
+    console.error("delete-account: Apple revocation not configured — skipping");
+    return;
+  }
+  if (!allowedIds.includes(clientId)) {
+    console.error("delete-account: unknown apple_client_id — skipping revocation");
+    return;
+  }
+
+  try {
+    const clientSecret = await appleClientSecret(clientId, teamId, keyId, privateKey);
+
+    const tokenRes = await fetch("https://appleid.apple.com/auth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: "authorization_code",
+        code: authCode,
+      }),
+    });
+    if (!tokenRes.ok) {
+      console.error("delete-account: Apple code exchange failed", tokenRes.status,
+        await tokenRes.text());
+      return;
+    }
+    const { refresh_token } = await tokenRes.json() as { refresh_token?: string };
+    if (!refresh_token) {
+      console.error("delete-account: Apple code exchange returned no refresh_token");
+      return;
+    }
+
+    const revokeRes = await fetch("https://appleid.apple.com/auth/revoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        token: refresh_token,
+        token_type_hint: "refresh_token",
+      }),
+    });
+    if (!revokeRes.ok) {
+      console.error("delete-account: Apple revoke failed", revokeRes.status,
+        await revokeRes.text());
+    }
+  } catch (e) {
+    console.error("delete-account: Apple revocation error", e);
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -75,6 +184,18 @@ Deno.serve(async (req: Request) => {
   // retry after a transient failure while blocking scripted abuse.
   const rl = await checkRateLimit(admin, userId, "delete-account", 3, 86400);
   if (!rl.allowed) return tooManyRequests(rl.retryAfter, CORS_HEADERS);
+
+  // Revoke the Apple token BEFORE the delete — afterwards the client has no way
+  // to retry, and Apple keeps the app authorized. Best-effort throughout: a
+  // missing code (email/password user, or the user dismissed the Apple sheet)
+  // and any Apple-side failure both fall through to the deletion below.
+  const body = await req.json().catch(() => ({})) as {
+    apple_authorization_code?: string;
+    apple_client_id?: string;
+  };
+  if (body.apple_authorization_code && body.apple_client_id) {
+    await revokeAppleToken(body.apple_authorization_code, body.apple_client_id);
+  }
 
   // Vault secrets are pointed at by *_connections.vault_secret_id but are NOT
   // FKs to auth.users, so the cascade won't remove them. Capture the ids now,

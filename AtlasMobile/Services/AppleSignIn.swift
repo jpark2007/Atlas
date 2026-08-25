@@ -8,13 +8,21 @@ import AtlasCore
 /// runs the native ASAuthorization flow and returns the Apple identity token, which
 /// `MobileStore.signInWithApple()` exchanges for a Supabase session. Presents from
 /// the foreground scene's key window (the iOS `ASPresentationAnchor`).
+/// One successful Apple authorization: the identity token that becomes a Supabase
+/// session, plus the one-shot authorization code the delete-account function
+/// exchanges for a refresh token to revoke.
+struct AppleCredential {
+    let idToken: String
+    let authorizationCode: String?
+}
+
 final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate,
                                     ASAuthorizationControllerPresentationContextProviding {
-    private var continuation: CheckedContinuation<String, Error>?
+    private var continuation: CheckedContinuation<AppleCredential, Error>?
 
     /// Runs the Apple flow and returns the identity token (JWT) on success.
     /// Throws `CancellationError` when the user dismisses the Apple sheet.
-    func signIn(hashedNonce: String) async throws -> String {
+    func signIn(hashedNonce: String) async throws -> AppleCredential {
         try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
             let request = ASAuthorizationAppleIDProvider().createRequest()
@@ -35,7 +43,9 @@ final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate,
             continuation?.resume(throwing: SupabaseAuthError(message: "Apple returned no identity token."))
             return
         }
-        continuation?.resume(returning: token)
+        continuation?.resume(returning: AppleCredential(
+            idToken: token,
+            authorizationCode: credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }))
     }
 
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {

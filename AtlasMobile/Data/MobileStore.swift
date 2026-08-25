@@ -119,8 +119,8 @@ final class MobileStore: ObservableObject {
     /// users during the exchange), landing exactly like a password sign-in.
     func signInWithApple() async throws {
         let nonce = AppleNonce.random()
-        let idToken = try await AppleSignInCoordinator().signIn(hashedNonce: AppleNonce.sha256(nonce))
-        let s = try await auth.signInWithIdToken(provider: "apple", idToken: idToken, nonce: nonce)
+        let credential = try await AppleSignInCoordinator().signIn(hashedNonce: AppleNonce.sha256(nonce))
+        let s = try await auth.signInWithIdToken(provider: "apple", idToken: credential.idToken, nonce: nonce)
         sessionStore.save(s)
         session = s
         authNotice = nil
@@ -162,6 +162,8 @@ final class MobileStore: ObservableObject {
         request.httpMethod = "POST"
         request.setValue(SupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: await appleRevocationBody())
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -175,8 +177,24 @@ final class MobileStore: ObservableObject {
         session = nil
         snapshot = MobileStore.emptySnapshot
         spaceFilter = nil
-        settingsSync.reset()   // same clean-slate as signOut
+        settingsSync.reset()           // same clean-slate as signOut
+        PendingCaptureQueue.clearStorage()   // undrained dumps must not outlive the account
         return nil
+    }
+
+    /// The optional Apple-revocation fields of the delete-account request body.
+    /// App Store guideline 5.1.1(v) requires revoking the Apple token, and Apple
+    /// only accepts a refresh/access token — neither of which Supabase keeps for the
+    /// native id_token sign-in. So we re-run the Apple authorization here to get a
+    /// fresh one-shot code for the server to exchange and revoke. Best-effort: a
+    /// dismissed sheet returns an empty body and the account still deletes.
+    private func appleRevocationBody() async -> [String: String] {
+        guard session?.user.signedInWithApple == true,
+              let clientID = Bundle.main.bundleIdentifier,
+              let credential = try? await AppleSignInCoordinator()
+                  .signIn(hashedNonce: AppleNonce.sha256(AppleNonce.random())),
+              let code = credential.authorizationCode else { return [:] }
+        return ["apple_authorization_code": code, "apple_client_id": clientID]
     }
 
     // MARK: - Data

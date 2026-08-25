@@ -6,12 +6,21 @@ public struct SupabaseUser: Codable, Equatable {
     public let id: String
     public let email: String?
     public let userMetadata: [String: AnyCodable]?
+    public let appMetadata: [String: AnyCodable]?
     public let createdAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id, email
         case userMetadata = "user_metadata"
+        case appMetadata = "app_metadata"
         case createdAt = "created_at"
+    }
+
+    /// True when this account signs in through Sign in with Apple — GoTrue reports the
+    /// sign-up provider as `app_metadata.provider`. Drives the Apple token revocation
+    /// the App Store requires on account deletion (guideline 5.1.1(v)).
+    public var signedInWithApple: Bool {
+        appMetadata?["provider"]?.value as? String == "apple"
     }
 
     public var displayName: String {

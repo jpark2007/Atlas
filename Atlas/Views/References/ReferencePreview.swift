@@ -32,6 +32,12 @@ enum ReferencePreviewLoader {
         return dir
     }
 
+    /// Removes every cached download — called when the account is deleted, so the
+    /// user's Drive file copies don't outlive it.
+    static func clearCache() {
+        try? FileManager.default.removeItem(at: cacheDir)
+    }
+
     /// An already-downloaded copy for this reference, if one is cached. Files are
     /// named `<driveFileId>.<ext>`, so we match on the base name.
     static func cachedURL(for reference: Reference) -> URL? {
