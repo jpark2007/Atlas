@@ -283,21 +283,8 @@ struct TaskDetailView: View {
             Text("Due date")
                 .atlasFont(size: 18, weight: .bold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
-            DatePicker("", selection: Binding(
-                get: { dueDateDraft ?? Date() },
-                set: { dueDateDraft = $0 }
-            ), displayedComponents: [.date, .hourAndMinute])
-            .datePickerStyle(.graphical)
-            .labelsHidden()
-            .tint(AtlasTheme.Colors.accentText)
+            AtlasDatePicker(date: $dueDateDraft)
             HStack {
-                Button("Clear") {
-                    state.setDueDate(taskId: task.id, date: nil)
-                    isEditingDueDate = false
-                }
-                .buttonStyle(.plain)
-                .atlasFont(size: 13, weight: .medium, design: .rounded)
-                .foregroundStyle(AtlasTheme.Colors.danger)
                 Spacer()
                 Button("Cancel") { isEditingDueDate = false }
                     .buttonStyle(.plain)

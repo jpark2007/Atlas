@@ -34,7 +34,7 @@ struct CaptureResultCards: View {
 
     /// The card whose "Pick a date…" popover is open.
     @State private var pickingDateFor: UUID?
-    @State private var pickedDate = Date()
+    @State private var pickedDate: Date? = nil
 
     /// Roughly one laid-out row. Only used to give the rows a positive minimum
     /// height: `NSHostingController`'s `.intrinsicContentSize` bridge (the panel)
@@ -278,9 +278,10 @@ struct CaptureResultCards: View {
         .disabled(entry.item.kind == .note)
         .popover(isPresented: datePopover(entry.id), arrowEdge: .bottom) {
             VStack(spacing: 12) {
-                DatePicker("", selection: $pickedDate)
-                    .datePickerStyle(.graphical)
-                    .labelsHidden()
+                // Events must keep a date, so only a task gets the "No date"
+                // row — mirroring the menu above.
+                AtlasDatePicker(date: $pickedDate,
+                                clearLabel: entry.item.kind == .task ? "No date" : nil)
                 Button("Set") {
                     setDue(entry, pickedDate)
                     pickingDateFor = nil
