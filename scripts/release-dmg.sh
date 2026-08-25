@@ -13,16 +13,38 @@
 #   5. hdiutil                     — build the DMG (app + /Applications alias)
 #   6. notarytool submit --wait    — notarize the DMG  (skippable / resumable)
 #   7. stapler + gatekeeper check  — staple the ticket, assess with spctl
+#   8. sign_update + appcast       — sign the stapled DMG for Sparkle and write the
+#                                    landing/appcast.xml entry (skippable / resumable)
 #
 # Usage:
 #   scripts/release-dmg.sh                 full pipeline (needs atlas-notary profile)
 #   scripts/release-dmg.sh --skip-notarize stop after the DMG (steps 1–5)
+#   scripts/release-dmg.sh --skip-appcast  stop after stapling (steps 1–7)
 #   scripts/release-dmg.sh --notarize-only dist/Atlas-0.9.0.dmg
-#                                          run only steps 6–7 on an existing DMG
+#                                          run only steps 6–8 on an existing DMG
+#   scripts/release-dmg.sh --appcast-only  dist/Atlas-0.10.1.dmg
+#                                          run only step 8 on an already-stapled DMG
 #
 # Notarization uses the keychain profile named "atlas-notary". Create it once:
 #   xcrun notarytool store-credentials atlas-notary \
 #     --apple-id <apple-id> --team-id 2WA54D67Y8 --password <app-specific-pw>
+#
+# ── ONE-TIME SPARKLE SETUP (do this before the first auto-update release) ─────
+# Sparkle signs every update with an ed25519 key that lives in YOUR login keychain.
+# This script never generates it — run Sparkle's own tool once:
+#
+#   generate_keys
+#
+# It stores the private key in the login keychain and PRINTS the public key. Paste
+# that public key into project.yml → targets → Atlas → info → properties →
+# SUPublicEDKey (replacing PLACEHOLDER_ED_PUBLIC_KEY), then `xcodegen generate`.
+#
+# `generate_keys` and `sign_update` both ship with the resolved Swift Package —
+# after one build of the Atlas scheme they are at:
+#   ~/Library/Developer/Xcode/DerivedData/Atlas-*/SourcePackages/artifacts/sparkle/Sparkle/bin/
+# (`brew install --cask sparkle` is the alternative.)
+#
+# Back the private key up: lose it and existing installs can never be updated again.
 #
 set -euo pipefail
 
@@ -41,6 +63,12 @@ VOL_NAME="Atlas Installer"
 TEAM_ID="2WA54D67Y8"
 NOTARY_PROFILE="atlas-notary"
 
+APPCAST="$ROOT/landing/appcast.xml"
+# Where the appcast tells Sparkle to fetch the update from. Versioned on purpose:
+# the site's own download button keeps pointing at the stable /downloads/Atlas.dmg,
+# but the updater needs a URL whose bytes can never be a stale cached build.
+DOWNLOAD_BASE="https://www.atlaslm.net/downloads"
+
 DIST="$ROOT/dist"
 ARCHIVE="$DIST/Atlas.xcarchive"
 EXPORT_DIR="$DIST/export"
@@ -50,12 +78,16 @@ XCODEGEN="${XCODEGEN:-/opt/homebrew/bin/xcodegen}"
 
 # ── flags ────────────────────────────────────────────────────────────────────
 SKIP_NOTARIZE=0
+SKIP_APPCAST=0
 NOTARIZE_ONLY=""
+APPCAST_ONLY=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-notarize) SKIP_NOTARIZE=1; shift ;;
+    --skip-appcast)  SKIP_APPCAST=1; shift ;;
     --notarize-only) NOTARIZE_ONLY="${2:-}"; shift 2 ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    --appcast-only)  APPCAST_ONLY="${2:-}"; shift 2 ;;
+    -h|--help) sed -n '2,48p' "$0"; exit 0 ;;
     *) echo "error: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
@@ -70,12 +102,133 @@ version() {
   awk -F'"' '/MARKETING_VERSION:/ {print $2; exit}' "$ROOT/project.yml"
 }
 
+# ── Sparkle helpers (step 8) ─────────────────────────────────────────────────
+
+# The public key must be real before we cut a release: with the placeholder still
+# in project.yml the shipped app can verify nothing and would reject every update.
+require_public_key() {
+  local key
+  key="$(awk -F'"' '/SUPublicEDKey:/ {print $2; exit}' "$ROOT/project.yml")"
+  [[ -n "$key" ]] || die "SUPublicEDKey is missing from project.yml"
+  [[ "$key" != "PLACEHOLDER_ED_PUBLIC_KEY" ]] || die "SUPublicEDKey is still PLACEHOLDER_ED_PUBLIC_KEY.
+     Sparkle cannot verify updates until a real key is in place. Once:
+       generate_keys              # stores the private key in your login keychain
+     then paste the printed public key into project.yml (targets → Atlas → info →
+     properties → SUPublicEDKey) and re-run:  xcodegen generate
+     Cutting a DMG without updates is still fine:  scripts/release-dmg.sh --skip-appcast"
+}
+
+# Sparkle's sign_update. The Swift Package artifact ships it (alongside
+# generate_keys) under DerivedData, so a resolved checkout usually has it already;
+# fall back to PATH and a Homebrew cask install.
+find_sign_update() {
+  local candidate
+  if candidate="$(command -v sign_update 2>/dev/null)"; then
+    echo "$candidate"; return 0
+  fi
+  for candidate in \
+    "$HOME"/Library/Developer/Xcode/DerivedData/Atlas-*/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update \
+    /opt/homebrew/Caskroom/sparkle/*/bin/sign_update \
+    /usr/local/Caskroom/sparkle/*/bin/sign_update
+  do
+    [[ -x "$candidate" ]] && { echo "$candidate"; return 0; }
+  done
+  return 1
+}
+
+# ── 8. sign the DMG for Sparkle + write the appcast entry ────────────────────
+sign_and_appcast() {
+  local dmg="$1"
+  [[ -f "$dmg" ]] || die "DMG not found: $dmg"
+  [[ -f "$APPCAST" ]] || die "appcast not found at $APPCAST"
+  require_public_key
+
+  step "8/8  Sparkle signature + appcast entry"
+
+  local tool
+  tool="$(find_sign_update)" || die "Sparkle's sign_update not found.
+     It normally ships with the resolved Swift Package, at
+       ~/Library/Developer/Xcode/DerivedData/Atlas-*/SourcePackages/artifacts/sparkle/Sparkle/bin/
+     Build the Atlas scheme once to fetch it, or install the tools separately:
+       brew install --cask sparkle
+     Then resume with:  scripts/release-dmg.sh --appcast-only \"$dmg\""
+
+  # sign_update prints an attribute fragment, e.g.
+  #   sparkle:edSignature="…" length="…"
+  local fragment signature
+  fragment="$("$tool" "$dmg")" || die "sign_update failed — is the private key in your login keychain? (run generate_keys once)"
+  signature="$(printf '%s' "$fragment" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
+  [[ -n "$signature" ]] || die "could not read a signature out of sign_update's output: $fragment"
+  ok "DMG signed for Sparkle"
+
+  local ver length pubdate url
+  ver="$(version)"
+  length="$(stat -f%z "$dmg")"
+  pubdate="$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S +0000')"
+  url="$DOWNLOAD_BASE/Atlas-$ver.dmg"
+
+  APPCAST="$APPCAST" VER="$ver" LENGTH="$length" PUBDATE="$pubdate" \
+  URL="$url" SIGNATURE="$signature" MIN_OS="$(awk -F'"' '/macOS:/ {print $2; exit}' "$ROOT/project.yml")" \
+  python3 - <<'PY' || die "failed to update the appcast"
+import os, xml.etree.ElementTree as ET
+
+SPARKLE = "http://www.andymatuschak.org/xml-namespaces/sparkle"
+ET.register_namespace("sparkle", SPARKLE)
+path = os.environ["APPCAST"]
+ver  = os.environ["VER"]
+
+# insert_comments keeps the file's "don't hand-edit this" header through a rewrite.
+tree = ET.parse(path, ET.XMLParser(target=ET.TreeBuilder(insert_comments=True)))
+channel = tree.getroot().find("channel")
+
+def sp(tag): return f"{{{SPARKLE}}}{tag}"
+
+# Re-running a release rewrites that version's entry rather than duplicating it.
+for old in [i for i in channel.findall("item")
+            if (i.findtext(sp("shortVersionString")) or i.findtext("title")) == ver]:
+    channel.remove(old)
+
+# Newest first: sit ahead of the existing items.
+existing = channel.findall("item")
+position = list(channel).index(existing[0]) if existing else len(list(channel))
+item = ET.Element("item")
+channel.insert(position, item)
+
+def child(tag, text):
+    ET.SubElement(item, tag).text = text
+
+child("title", ver)
+child("pubDate", os.environ["PUBDATE"])
+child(sp("version"), ver)
+child(sp("shortVersionString"), ver)
+child(sp("minimumSystemVersion"), os.environ["MIN_OS"] or "14.0")
+ET.SubElement(item, "enclosure", {
+    "url": os.environ["URL"],
+    "length": os.environ["LENGTH"],
+    "type": "application/x-apple-diskimage",
+    sp("edSignature"): os.environ["SIGNATURE"],
+})
+
+ET.indent(tree, space="  ")
+tree.write(path, encoding="utf-8", xml_declaration=True)
+PY
+  ok "Appcast updated → $APPCAST (version $ver, $length bytes)"
+
+  echo
+  printf '\033[1mPublish this release:\033[0m\n'
+  echo "   1. cp \"$dmg\" landing/downloads/Atlas-$ver.dmg   # the URL Sparkle fetches"
+  echo "   2. cp \"$dmg\" landing/downloads/Atlas.dmg         # the site's download button"
+  echo "   3. commit landing/appcast.xml and deploy the site"
+  echo "   Sparkle only sees the release once $url and"
+  echo "   https://www.atlaslm.net/appcast.xml are both live."
+}
+
 # ── notarize + staple (steps 6–7), reused by --notarize-only ─────────────────
 notarize_and_staple() {
   local dmg="$1"
   [[ -f "$dmg" ]] || die "DMG not found: $dmg"
 
-  step "6/7  Notarizing $dmg (this can take a few minutes)…"
+  step "6/8  Notarizing $dmg (this can take a few minutes)…"
   if ! xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
     die "notarytool keychain profile '$NOTARY_PROFILE' not found.
      Create it with:  xcrun notarytool store-credentials $NOTARY_PROFILE \\
@@ -86,7 +239,7 @@ notarize_and_staple() {
     || die "notarization failed — inspect with: xcrun notarytool log <submission-id> --keychain-profile $NOTARY_PROFILE"
   ok "Notarization accepted"
 
-  step "7/7  Stapling + Gatekeeper assessment"
+  step "7/8  Stapling + Gatekeeper assessment"
   xcrun stapler staple "$dmg" || die "stapler failed"
   xcrun stapler validate "$dmg" || die "stapler validate failed"
   # Assess the notarized DMG as Gatekeeper will on a clean Mac.
@@ -95,9 +248,22 @@ notarize_and_staple() {
   ok "DMG notarized, stapled, and Gatekeeper-approved"
 }
 
+# ── resume path: sign + appcast an already-stapled DMG ───────────────────────
+if [[ -n "$APPCAST_ONLY" ]]; then
+  sign_and_appcast "$APPCAST_ONLY"
+  echo; ok "Done. Ship: $APPCAST_ONLY"
+  exit 0
+fi
+
 # ── resume path: notarize an already-built DMG ───────────────────────────────
 if [[ -n "$NOTARIZE_ONLY" ]]; then
   notarize_and_staple "$NOTARIZE_ONLY"
+  if [[ "$SKIP_APPCAST" -eq 1 ]]; then
+    echo; ok "Stopped before the appcast (--skip-appcast)."
+    echo "   Finish later with:  scripts/release-dmg.sh --appcast-only \"$NOTARIZE_ONLY\""
+  else
+    sign_and_appcast "$NOTARIZE_ONLY"
+  fi
   echo; ok "Done. Ship: $NOTARIZE_ONLY"
   exit 0
 fi
@@ -107,14 +273,17 @@ VERSION="$(version)"
 DMG_PATH="$DIST/Atlas-$VERSION.dmg"
 mkdir -p "$DIST"
 
+# Catch a placeholder signing key NOW rather than after a long archive+notarize.
+[[ "$SKIP_APPCAST" -eq 1 ]] || require_public_key
+
 # ── 1. regenerate project ────────────────────────────────────────────────────
-step "1/7  xcodegen generate"
+step "1/8  xcodegen generate"
 [[ -x "$XCODEGEN" ]] || command -v xcodegen >/dev/null || die "xcodegen not found (set XCODEGEN=/path)"
 "${XCODEGEN}" generate >/dev/null || die "xcodegen generate failed — fix project.yml"
 ok "Project regenerated"
 
 # ── 2. archive ───────────────────────────────────────────────────────────────
-step "2/7  xcodebuild archive (Release)"
+step "2/8  xcodebuild archive (Release)"
 rm -rf "$ARCHIVE"
 # NOTE: The Release config signs against Atlas/Atlas-DeveloperID.entitlements,
 # which omits com.apple.developer.applesignin (Apple does not allow Sign In with
@@ -138,7 +307,7 @@ ok "Archived → $ARCHIVE"
 # (Xcode signs during archive using the Release config). exportArchive would
 # re-sign against a provisioning profile. Direct copy keeps the exact bytes that
 # were signed and notarizes fine. See release notes / task report.
-step "3/7  Stage the .app from the archive"
+step "3/8  Stage the .app from the archive"
 rm -rf "$EXPORT_DIR"
 mkdir -p "$EXPORT_DIR"
 ARCHIVED_APP="$ARCHIVE/Products/Applications/$APP_NAME"
@@ -148,7 +317,7 @@ cp -R "$ARCHIVED_APP" "$APP_PATH"
 ok "Staged → $APP_PATH"
 
 # ── 4. verify signature + hardened runtime ───────────────────────────────────
-step "4/7  codesign verify + hardened runtime"
+step "4/8  codesign verify + hardened runtime"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH" || die "codesign --verify failed"
 codesign -dv --verbose=4 "$APP_PATH" 2>&1 | tee "$DIST/codesign.txt"
 grep -q "flags=.*runtime" "$DIST/codesign.txt" || die "hardened runtime flag missing on $APP_PATH"
@@ -156,7 +325,7 @@ grep -q "Authority=Developer ID Application" "$DIST/codesign.txt" || die "not si
 ok "Signature valid, hardened runtime present"
 
 # ── 5. build the DMG ─────────────────────────────────────────────────────────
-step "5/7  Build DMG"
+step "5/8  Build DMG"
 STAGE="$(mktemp -d)"
 cp -R "$APP_PATH" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
@@ -184,6 +353,18 @@ fi
 
 notarize_and_staple "$DMG_PATH"
 
+# ── 8. Sparkle signature + appcast ───────────────────────────────────────────
+if [[ "$SKIP_APPCAST" -eq 1 ]]; then
+  echo
+  ok "Stopped before the appcast (--skip-appcast)."
+  echo "   Finish later with:  scripts/release-dmg.sh --appcast-only \"$DMG_PATH\""
+  echo
+  ok "Release complete → $DMG_PATH ($DMG_SIZE)"
+  echo "   Publish: copy to landing/downloads/Atlas.dmg and deploy the site."
+  exit 0
+fi
+
+sign_and_appcast "$DMG_PATH"
+
 echo
 ok "Release complete → $DMG_PATH ($DMG_SIZE)"
-echo "   Publish: copy to landing/downloads/Atlas.dmg and deploy the site."
