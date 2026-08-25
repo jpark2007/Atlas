@@ -68,11 +68,12 @@ targets:
     info:
       path: Atlas/Info.plist
       properties:
+        ITSAppUsesNonExemptEncryption: false
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
         LSApplicationCategoryType: "public.app-category.productivity"
-        NSHumanReadableCopyright: ""
+        NSHumanReadableCopyright: "© 2026 Atlas"
         NSCalendarsUsageDescription: "Atlas reads your Apple Calendar events to display them alongside your Atlas schedule. No events are modified."
         NSCalendarsFullAccessUsageDescription: "Atlas reads your Apple Calendar events to show them alongside your schedule. Atlas never modifies your calendars."
         NSMicrophoneUsageDescription: "Atlas uses the microphone for click-to-talk capture, transcribing what you say into the capture bar. Recording only starts when you tap the mic."
@@ -127,6 +128,8 @@ targets:
       path: AtlasMobile/Info.plist
       properties:
         ITSAppUsesNonExemptEncryption: false
+        CFBundleDisplayName: Atlas
+        CFBundleName: Atlas
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleIconName: AppIcon

@@ -1,5 +1,35 @@
 import SwiftUI
+import AuthenticationServices
 import AtlasCore
+
+/// Apple's approved Sign in with Apple control. Wrapping `ASAuthorizationAppleIDButton`
+/// (rather than SwiftUI's `SignInWithAppleButton`) keeps the tap on the existing
+/// action, which still picks native SIWA vs. the web fallback at press time —
+/// `SignInWithAppleButton` can only drive the native flow.
+private struct AppleSignInButton: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(action: action) }
+
+    func makeNSView(context: Context) -> ASAuthorizationAppleIDButton {
+        let button = ASAuthorizationAppleIDButton(authorizationButtonType: .signIn,
+                                                  authorizationButtonStyle: .whiteOutline)
+        button.cornerRadius = AtlasTheme.Radius.control
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.tapped)
+        return button
+    }
+
+    func updateNSView(_ nsView: ASAuthorizationAppleIDButton, context: Context) {
+        context.coordinator.action = action
+    }
+
+    final class Coordinator: NSObject {
+        var action: () -> Void
+        init(action: @escaping () -> Void) { self.action = action }
+        @objc func tapped() { action() }
+    }
+}
 
 struct SignInView: View {
     @EnvironmentObject private var auth: AuthService
@@ -119,29 +149,13 @@ struct SignInView: View {
     /// otherwise the web-based Apple OAuth flow (Developer ID direct-download builds
     /// can't ship the entitlement). Same button, same resulting session either way.
     private var appleButton: some View {
-        providerButton(title: "Sign in with Apple", system: "apple.logo") {
+        AppleSignInButton {
             Task {
                 if AuthService.appleSignInAvailable { await auth.signInWithApple() }
                 else { await auth.signInWithAppleWeb() }
             }
         }
-    }
-
-    /// Outlined ink control — the editorial system never fills a button.
-    private func providerButton(title: String, system: String,
-                                action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: system).atlasFont(size: 17)
-                Text(title).atlasFont(size: 14, weight: .medium, design: .rounded)
-            }
-            .foregroundStyle(AtlasTheme.Colors.textPrimary)
-            .frame(maxWidth: .infinity).padding(.vertical, 12)
-            .overlay(RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
-                .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule))
-            .contentShape(Rectangle())   // whole area clickable, not just the text
-        }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, minHeight: 44)
         .disabled(auth.isWorking)
     }
 

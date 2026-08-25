@@ -373,10 +373,10 @@ struct SettingsView: View {
     /// "Not connected". The phone never runs the Google OAuth (a Desktop-loopback flow,
     /// Mac-only today), so this is informational.
     private var notesDocsStatusText: String {
-        guard let docs = docsConn else { return "Not connected — set up on your Mac" }
+        guard let docs = docsConn else { return "Not connected — Drive accounts are managed in Atlas for Mac and sync here" }
         return docs.status == "active"
             ? "Connected · \(docs.googleEmail)"
-            : (docs.lastError ?? "Reconnect needed — open Atlas on your Mac")
+            : (docs.lastError ?? "Reconnect needed — reconnect once in Atlas for Mac and it syncs here")
     }
 
     private var notesDocsStatusColor: Color {
@@ -406,13 +406,13 @@ struct SettingsView: View {
         ("Quick capture",
          "Tap + to jot a task or event by voice or text. Atlas files it into the right space — or your Default space when it can’t tell."),
         ("Spaces vs. projects",
-         "Spaces are the big areas of your life; projects and classes live inside them. Capture picks a space — organize the rest on Mac or web."),
+         "Spaces are the big areas of your life; projects and classes live inside them. Atlas on your phone is built for capture and review — the deeper reorganizing lives in Atlas for Mac and on the web, and everything stays in sync."),
         ("Schedule views",
          "Switch between the list and the hour grid. On the grid, long-press a block and drag to move it to a new time."),
         ("Canvas sync",
          "Canvas assignments come in read-only. Connect or change where they land here; manage the feed on Mac or web."),
         ("Google Calendar",
-         "Connected Google calendars are read-only on your phone. Add or manage accounts in Atlas on your Mac — they sync here."),
+         "Connected Google calendars are read-only on your phone. Accounts are managed in Atlas for Mac — everything syncs here automatically."),
         ("Notifications",
          "Choose what nudges you — events, tasks due, a daily digest, overdue reminders — under Notifications above."),
     ]
@@ -425,7 +425,7 @@ struct SettingsView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text("Google Calendar").rowLabel()
                     Spacer()
-                    Text("Not connected — set up on your Mac")
+                    Text("Not connected — calendar accounts are managed in Atlas for Mac and sync here")
                         .font(.system(size: 15, weight: .regular, design: .rounded))
                         .foregroundStyle(MobileTheme.muted)
                         .multilineTextAlignment(.trailing)
@@ -437,7 +437,7 @@ struct SettingsView: View {
                 }
             }
         } header: { header("Calendars") } footer: {
-            footer("Add or manage Google accounts in Atlas on your Mac — they sync here automatically.")
+            footer("Google accounts are managed in Atlas for Mac — everything syncs here automatically.")
         }
     }
 
@@ -461,7 +461,7 @@ struct SettingsView: View {
     private func googleAccountStatus(_ conn: GoogleConnection) -> String {
         switch conn.status {
         case "error", "revoked":
-            return "Reconnect needed — open Atlas on your Mac"
+            return "Reconnect needed — reconnect once in Atlas for Mac and it syncs here"
         default:
             if conn.spaceId == nil { return "Connected — read-in only" }
             if let synced = conn.lastSyncedDate {
