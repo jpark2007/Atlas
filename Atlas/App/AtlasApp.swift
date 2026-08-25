@@ -25,9 +25,17 @@ struct AtlasApp: App {
     var body: some Scene {
         WindowGroup {
             AppGate()
-                // OAuth redirect (atlas://auth-callback) opened in the default browser
-                // routes back here — hand it to the suspended web-auth continuation.
-                .onOpenURL { auth.handleAuthCallback($0) }
+                // Two things arrive here. A file URL is an .ics the user opened with
+                // Atlas (CFBundleDocumentTypes) — it goes to the class importer. Anything
+                // else is the OAuth redirect (atlas://auth-callback) opened in the default
+                // browser, handed to the suspended web-auth continuation.
+                .onOpenURL { url in
+                    if url.isFileURL {
+                        state.pendingICSImport = url
+                    } else {
+                        auth.handleAuthCallback(url)
+                    }
+                }
                 .environmentObject(state)
                 .environmentObject(auth)
                 .environmentObject(canvas)

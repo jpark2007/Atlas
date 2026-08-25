@@ -88,6 +88,16 @@ targets:
           - CFBundleURLName: com.atlaslm.Atlas
             CFBundleURLSchemes:
               - atlas
+        # "Open with Atlas" for a downloaded .ics — most registrars hand students a
+        # FILE ("export course schedule"), not a subscribable link. Viewer/Alternate:
+        # Atlas reads the file once into the class importer and never claims to own it,
+        # so Calendar.app stays the default handler.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: "Calendar file"
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - com.apple.ical.ics
   AtlasTests:
     type: bundle.unit-test
     platform: macOS

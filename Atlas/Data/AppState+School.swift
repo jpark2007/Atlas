@@ -62,6 +62,18 @@ extension AppState {
         return activeTerm
     }
 
+    /// The term classes get filed under, created silently from today's date if there
+    /// isn't one. Semesters are plumbing: the user adds classes, Atlas works out which
+    /// semester that is (see `SchoolCalendar.autoTerm`) and never asks. The dates it
+    /// picks stay editable from School → Edit term.
+    @discardableResult
+    func ensureActiveTerm() -> Term {
+        if let active = activeTerm { return active }
+        let created = SchoolCalendar.autoTerm(on: now)
+        saveTerm(created)
+        return created
+    }
+
     /// Every class in `term`, archived ones included — the archive prompt counts these.
     func allClasses(in term: Term) -> [Project] {
         allProjects.filter { $0.isClass && $0.termID == term.id }
@@ -99,15 +111,17 @@ extension AppState {
         return addSpace(name: "School", color: AtlasTheme.Colors.school)?.name ?? "School"
     }
 
-    /// Creates a class in `term`. Returns the new project so the caller can link it to a
-    /// Canvas course or navigate to it.
+    /// Creates a class in `term` — or, with no term named and none active, in the one
+    /// Atlas silently creates from today's date. A class never waits on a semester.
+    /// Returns the new project so the caller can link it to a Canvas course or navigate.
     @discardableResult
     func addClass(name: String, code: String?, termID: UUID?, colorToken: String? = nil) -> Project? {
+        let resolvedTermID = termID ?? ensureActiveTerm().id
         let spaceName = schoolSpaceName()
         guard var created = addProject(toSpaceNamed: spaceName, name: name, code: code, isClass: true) else {
             return nil
         }
-        created.termID = termID
+        created.termID = resolvedTermID
         created.colorToken = colorToken
         applyClassEdit(created)
         return created
@@ -175,6 +189,24 @@ extension AppState {
         for klass in classes(in: source) {
             addClass(name: klass.name, code: klass.code, termID: target.id, colorToken: klass.colorToken)
         }
+    }
+
+    // MARK: - The legacy "School" space
+
+    /// The spaces the sidebar lists. With the framework on, a leftover "School" space
+    /// that holds nothing is folded away: a School space sitting under a School section
+    /// reads as two Schools. Folded, never deleted — the moment anything lands in it, it
+    /// is back, and no account ever loses a bucket it was using.
+    var visibleSpaces: [Space] {
+        guard schoolEnabled else { return spaces }
+        return spaces.filter { !isEmptyLegacySchoolSpace($0) }
+    }
+
+    private func isEmptyLegacySchoolSpace(_ space: Space) -> Bool {
+        guard space.name.caseInsensitiveCompare("School") == .orderedSame,
+              space.projects.isEmpty else { return false }
+        let holds = { (name: String) in name.caseInsensitiveCompare(space.name) == .orderedSame }
+        return !events.contains { holds($0.spaceName) } && !tasks.contains { holds($0.spaceName) }
     }
 
     // MARK: - Canvas courses without a class

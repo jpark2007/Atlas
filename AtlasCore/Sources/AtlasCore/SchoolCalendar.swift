@@ -148,6 +148,31 @@ public enum SchoolCalendar {
 
     // MARK: - Term lifecycle
 
+    /// The term Atlas creates for itself the first time a class appears and no term is
+    /// active. Semesters are plumbing, not ceremony: nobody is asked to "set up a
+    /// semester" — the calendar month says which one it is, and the dates stay editable.
+    ///
+    /// Aug–Dec ⇒ Fall, ending Dec 20; Jan–May ⇒ Spring, ending May 20;
+    /// Jun–Jul ⇒ Summer, ending Aug 10. The term starts on the first of its window so
+    /// today always falls inside it.
+    public static func autoTerm(on date: Date = Date(), calendar: Calendar = .current) -> Term {
+        let year = calendar.component(.year, from: date)
+        let month = calendar.component(.month, from: date)
+
+        let name: String, startMonth: Int, endMonth: Int, endDay: Int
+        switch month {
+        case 1...5:  (name, startMonth, endMonth, endDay) = ("Spring \(year)", 1, 5, 20)
+        case 6...7:  (name, startMonth, endMonth, endDay) = ("Summer \(year)", 6, 8, 10)
+        default:     (name, startMonth, endMonth, endDay) = ("Fall \(year)",   8, 12, 20)
+        }
+
+        var start = DateComponents(); start.year = year; start.month = startMonth; start.day = 1
+        var end = DateComponents(); end.year = year; end.month = endMonth; end.day = endDay
+        return Term(name: name,
+                    startsOn: calendar.date(from: start),
+                    endsOn: calendar.date(from: end))
+    }
+
     /// The suggested next term after `term` — "Fall 2026" → "Spring 2027", and so on
     /// around the Fall → Spring → Summer cycle. Dates are deliberately NOT guessed:
     /// the new-semester flow asks for them.

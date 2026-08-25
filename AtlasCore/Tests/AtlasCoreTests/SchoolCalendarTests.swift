@@ -176,6 +176,30 @@ final class SchoolCalendarTests: XCTestCase {
         XCTAssertEqual(SchoolCalendar.nextTermName(after: "Michaelmas"), "")
     }
 
+    // MARK: - Auto term (the semester the user is never asked to set up)
+
+    func testAutoTermNamesTheSemesterFromTheMonth() {
+        XCTAssertEqual(SchoolCalendar.autoTerm(on: day("2026-09-01")).name, "Fall 2026")
+        XCTAssertEqual(SchoolCalendar.autoTerm(on: day("2026-08-25")).name, "Fall 2026")
+        XCTAssertEqual(SchoolCalendar.autoTerm(on: day("2026-12-02")).name, "Fall 2026")
+        XCTAssertEqual(SchoolCalendar.autoTerm(on: day("2027-02-10")).name, "Spring 2027")
+        XCTAssertEqual(SchoolCalendar.autoTerm(on: day("2027-06-15")).name, "Summer 2027")
+    }
+
+    func testAutoTermEndsOnTheAgreedDates() {
+        XCTAssertEqual(SchoolCalendar.autoTerm(on: day("2026-09-01")).endsOn, day("2026-12-20"))
+        XCTAssertEqual(SchoolCalendar.autoTerm(on: day("2027-02-10")).endsOn, day("2027-05-20"))
+        XCTAssertEqual(SchoolCalendar.autoTerm(on: day("2027-06-15")).endsOn, day("2027-08-10"))
+    }
+
+    /// The whole point of auto-creating: it must be the ACTIVE term the moment it exists,
+    /// or the sidebar would still show nothing.
+    func testAutoTermContainsTheDayItWasCreatedOn() {
+        for d in ["2026-08-25", "2026-12-02", "2027-01-05", "2027-05-19", "2027-07-04"] {
+            XCTAssertTrue(SchoolCalendar.autoTerm(on: day(d)).contains(day(d)), "\(d)")
+        }
+    }
+
     // MARK: - Meeting pattern formatting (shared by the Mac class page and the iOS hub)
 
     func testDescribeRunsWeekdayInitialsTogetherBeforeTheTimeRange() {
