@@ -1,9 +1,9 @@
 import Foundation
 import AtlasCore
 
-/// iOS twin of the Mac `SettingsSyncService`: syncs the three preferences the phone
-/// owns/consumes — the capture default space, the Tasks grouping, and notification
-/// prefs — through the `user_settings` row (migration 0025), mirroring the Mac merge
+/// iOS twin of the Mac `SettingsSyncService`: syncs the four preferences the phone
+/// owns/consumes — the capture default space, the Tasks grouping, notification prefs,
+/// and the School on/off switch — through the `user_settings` row, mirroring the Mac merge
 /// policy verbatim. The platform-neutral overlay + redundant-push guard live in
 /// `AtlasCore.UserSettingsMerge`; this type holds only the iOS key map and wiring.
 ///
@@ -44,11 +44,12 @@ final class SettingsSyncService {
     /// of settings changes collapses into a single upsert.
     private var pushTask: Task<Void, Never>?
 
-    /// UserDefaults keys ↔ synced columns (the three the phone owns/consumes).
+    /// UserDefaults keys ↔ synced columns (the four the phone owns/consumes).
     private enum Key {
         static let defaultSpaceName  = "defaultSpaceName"    // default_space_name
         static let tasksGrouping     = "tasksGrouping"       // tasks_grouping
         static let notificationPrefs = "notificationPrefs"   // notification_prefs (opaque JSON string)
+        static let schoolEnabled     = "school.enabled"      // school_enabled (0042)
     }
 
     // MARK: - Pull (server wins)
@@ -67,6 +68,7 @@ final class SettingsSyncService {
             if let v = row.defaultSpaceName      { d.set(v, forKey: Key.defaultSpaceName) }
             if let v = row.tasksGrouping         { d.set(v, forKey: Key.tasksGrouping) }
             if let v = row.notificationPrefsJSON { d.set(v, forKey: Key.notificationPrefs) }
+            if let v = row.schoolEnabled         { d.set(v, forKey: Key.schoolEnabled) }
         } catch {
             // Table not yet deployed / offline — swallow; pushes stay gated.
         }
@@ -74,7 +76,7 @@ final class SettingsSyncService {
 
     // MARK: - Reset (sign-out / account deletion)
 
-    /// Drops the session cache, closes the push gate, and removes the three synced
+    /// Drops the session cache, closes the push gate, and removes the four synced
     /// keys so a next sign-in on a shared device starts clean (its pull repopulates
     /// them). The removals fire the synced keys' `.onChange` handlers, but the
     /// closed gate swallows the resulting push.
@@ -83,7 +85,7 @@ final class SettingsSyncService {
         pushTask = nil
         lastPulledRow = nil
         hasPulledThisSession = false
-        for key in [Key.defaultSpaceName, Key.tasksGrouping, Key.notificationPrefs] {
+        for key in [Key.defaultSpaceName, Key.tasksGrouping, Key.notificationPrefs, Key.schoolEnabled] {
             Self.syncedDefaults.removeObject(forKey: key)
         }
     }
@@ -107,13 +109,15 @@ final class SettingsSyncService {
         guard hasPulledThisSession else { return }
         guard let userId = try? await db.currentUserId() else { return }
         let d = Self.syncedDefaults
-        // Local overlay row: the three phone-owned columns from UserDefaults (an absent
+        // Local overlay row: the four phone-owned columns from UserDefaults (an absent
         // key ⇒ nil ⇒ keep the last-pulled value); Mac-owned columns stay nil so the
         // shared `overlay` preserves them from the base.
         let local = UserSettingsRow(
             userId: userId,
             defaultSpaceName:      d.string(forKey: Key.defaultSpaceName),
             tasksGrouping:         d.string(forKey: Key.tasksGrouping),
+            // Absent ⇒ nil ⇒ keep the server's value: "never set" must not push `false`.
+            schoolEnabled: d.object(forKey: Key.schoolEnabled) == nil ? nil : d.bool(forKey: Key.schoolEnabled),
             notificationPrefsJSON: d.string(forKey: Key.notificationPrefs))
         let row = UserSettingsMerge.overlay(base: lastPulledRow, local: local, userId: userId)
         // A pull writes server values into UserDefaults, which fires the synced keys'

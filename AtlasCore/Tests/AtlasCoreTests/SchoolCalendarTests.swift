@@ -132,4 +132,34 @@ final class SchoolCalendarTests: XCTestCase {
         // Anything Atlas can't read leaves the field blank rather than guessing wrong.
         XCTAssertEqual(SchoolCalendar.nextTermName(after: "Michaelmas"), "")
     }
+
+    // MARK: - Meeting pattern formatting (shared by the Mac class page and the iOS hub)
+
+    func testDescribeRunsWeekdayInitialsTogetherBeforeTheTimeRange() {
+        let block = MeetingBlock(weekdays: [2, 4, 6], start: "10:00", end: "10:50")
+        XCTAssertEqual(MeetingPatternFormat.describe(block), "MWF · 10 AM–10:50 AM")
+    }
+
+    /// Weekdays are stored unordered; the label must still read Mon→Fri.
+    func testDescribeSortsWeekdaysRegardlessOfStoredOrder() {
+        let block = MeetingBlock(weekdays: [6, 2, 4], start: "10:00", end: "10:50")
+        XCTAssertEqual(MeetingPatternFormat.describe(block), "MWF · 10 AM–10:50 AM")
+    }
+
+    /// A block with no usable weekday is still worth showing — as the bare time, not "· ".
+    func testDescribeWithoutWeekdaysShowsOnlyTheTime() {
+        XCTAssertEqual(MeetingPatternFormat.describe(
+            MeetingBlock(weekdays: [], start: "14:00", end: "15:15")), "2 PM–3:15 PM")
+        XCTAssertEqual(MeetingPatternFormat.describe(
+            MeetingBlock(weekdays: [0, 9], start: "14:00", end: "15:15")), "2 PM–3:15 PM")
+    }
+
+    /// An on-the-hour time drops ":00"; a malformed one is shown verbatim rather than guessed at.
+    func testDisplayDropsZeroMinutesAndPassesThroughGarbage() {
+        XCTAssertEqual(MeetingPatternFormat.display("09:00"), "9 AM")
+        XCTAssertEqual(MeetingPatternFormat.display("09:05"), "9:05 AM")
+        XCTAssertEqual(MeetingPatternFormat.display("23:59"), "11:59 PM")
+        XCTAssertEqual(MeetingPatternFormat.display("noon"), "noon")
+        XCTAssertEqual(MeetingPatternFormat.display("25:00"), "25:00")
+    }
 }

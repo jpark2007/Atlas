@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum MobileTab: Hashable {
-    case schedule, capture, tasks, notes
+    case schedule, capture, tasks, school, notes
 }
 
 /// The signed-in shell: Schedule / Capture / Tasks / Notes tabs. Each screen carries its
@@ -19,6 +19,12 @@ struct RootTabView: View {
                 tag: .capture, label: "Capture", symbol: "mic")
             tab(TasksView(),
                 tag: .tasks, label: "Tasks", symbol: "checklist")
+            // School is a top-level destination (the Mac's sidebar section), and it hides
+            // wholesale when the user turns it off — absent ⇒ shown, per `schoolEnabled`.
+            if store.schoolEnabled {
+                tab(SchoolView(),
+                    tag: .school, label: "School", symbol: "graduationcap")
+            }
             tab(NotesView(),
                 tag: .notes, label: "Notes", symbol: "note.text")
         }
@@ -43,6 +49,11 @@ struct RootTabView: View {
         // ScheduleView consumes `pendingPlacement`. TaskItem isn't Equatable → key on id.
         .onChange(of: store.pendingPlacement?.id) { _, id in
             if id != nil { selection = .schedule }
+        }
+        // Turning School off from Settings removes its tab; a stale selection would
+        // otherwise leave the shell on a tab that no longer exists.
+        .onChange(of: store.schoolEnabled) { _, enabled in
+            if !enabled && selection == .school { selection = .schedule }
         }
     }
 
