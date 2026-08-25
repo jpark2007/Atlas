@@ -108,7 +108,15 @@ struct ScheduleView: View {
         .sheet(item: $detail) { detail in
             ItemDetailSheet(detail: detail).environmentObject(store)
         }
+        // Apple Calendar is an on-device read, so it's refreshed rather than synced:
+        // on appear, when the shown day moves out of the loaded window, and whenever
+        // EventKit says the on-device store changed.
+        .onReceive(store.eventKit.changeNotification) { _ in
+            store.refreshAppleEvents(around: selectedDay)
+        }
+        .onChange(of: selectedDay) { _, day in store.refreshAppleEvents(around: day) }
         .onAppear {
+            store.refreshAppleEvents(around: selectedDay)
             consumeFocusToday(); consumePlacement()
             AtlasTips.DragToSchedule.hasUnscheduled = !needsTime.isEmpty
             if !spotlightDone { spotlightActive = true }   // first Schedule visit only
@@ -256,6 +264,19 @@ struct ScheduleView: View {
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                 }
+                // Late is pinned above today's work — never scrolled past, never rolled.
+                if cal.isDateInToday(selectedDay) {
+                    LateGroup(items: lateItems,
+                              onToggle: toggleByID,
+                              onOpen: { id in
+                                  if let task = store.snapshot.tasks.first(where: { $0.id == id }) {
+                                      detail = .task(task)
+                                  }
+                              },
+                              onReschedule: { date in
+                                  Task { await store.rescheduleLateItems(to: date) }
+                              })
+                }
                 NeedsTimeSection(tasks: needsTime,
                                  onSetTime: { timing = $0 },
                                  onOpen: { detail = .task($0) },
@@ -273,6 +294,16 @@ struct ScheduleView: View {
                     onOpen: { detail = $0 },
                     onDeleteEvent: deleteEvent
                 )
+                // Apple Calendar lives on the phone, not the server, so it's connected
+                // per-device. Shown until it is — the permanent toggle belongs in the
+                // Settings calendar list (see AppleCalendarConnectRow).
+                if !store.appleCalendarEnabled {
+                    AppleCalendarConnectRow(day: selectedDay)
+                        .environmentObject(store)
+                        .listRowInsets(EdgeInsets(top: 14, leading: 28, bottom: 14, trailing: 28))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -336,7 +367,12 @@ struct ScheduleView: View {
         return spaceName.caseInsensitiveCompare(name) == .orderedSame
     }
 
-    private var filteredEvents: [CalendarEvent] { store.snapshot.events.filter { inFilter($0.spaceName) } }
+    /// The day's display pool: Atlas events + synthesized class meetings + read-only Apple
+    /// events, already collapsed by the shared dedup (`MobileStore.displayEvents`), then
+    /// space-filtered here.
+    private var filteredEvents: [CalendarEvent] {
+        store.displayEvents(on: selectedDay).filter { inFilter($0.spaceName) }
+    }
     private var filteredTasks: [TaskItem] { store.snapshot.tasks.filter { inFilter($0.spaceName) } }
 
     /// Tasks due on the shown day that truly need a time — date-only due, unscheduled.
@@ -350,6 +386,12 @@ struct ScheduleView: View {
                 return (c.hour ?? 0) == 0 && (c.minute ?? 0) == 0
             }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    /// Overdue open tasks, from the shared `TimeModel` rule (day-granular, oldest first) —
+    /// the Late group's contents. Space-filtered like everything else on the screen.
+    private var lateItems: [TimeModel.LateItem] {
+        TimeModel.lateItems(tasks: filteredTasks)
     }
 
     /// "N left" — what's still ahead on the shown day: open tasks landing on it
@@ -391,6 +433,13 @@ struct ScheduleView: View {
         updated.done.toggle()
         updated.completedAt = updated.done ? Date() : nil
         Task { await store.setTaskDone(updated) }
+    }
+
+    /// Check off a task by id — the Late group's checkbox, which is the task's own.
+    private func toggleByID(_ id: UUID) {
+        guard let task = store.snapshot.tasks.first(where: { $0.id == id }) else { return }
+        MobileTheme.Haptic.tap()
+        toggle(task)
     }
 
     private func delete(_ task: TaskItem) {

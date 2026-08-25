@@ -123,6 +123,49 @@ final class SchoolCalendarTests: XCTestCase {
         XCTAssertEqual(CalendarSync.collapsingDuplicates([a, b]).count, 2)
     }
 
+    // MARK: - Calendar tiles (the shared Mac + iOS synthesis)
+
+    /// A meeting becomes a solid, read-only, class-colored block tagged to its class —
+    /// and its id is stable, so a re-render doesn't flicker or lose selection.
+    func testMeetingEventsRenderAsReadOnlyClassBlocks() {
+        let klass = bio([mwf])
+        let events = SchoolCalendar.meetingEvents(on: day("2026-09-02"), classes: [klass], term: fall)
+        XCTAssertEqual(events.count, 1)
+        let event = events[0]
+        XCTAssertEqual(event.title, "Bio 201")
+        XCTAssertEqual(event.subtitle, "Tech 204")
+        XCTAssertEqual(event.projectID, klass.id)
+        XCTAssertFalse(event.isAllDay)
+        XCTAssertTrue(event.isReadOnly)
+        XCTAssertEqual(event.source, .atlas)
+
+        let again = SchoolCalendar.meetingEvents(on: day("2026-09-02"), classes: [klass], term: fall)
+        XCTAssertEqual(again.first?.id, event.id)
+    }
+
+    /// Break days suppress the tiles too — the rule lives in `meetings`, so both platforms
+    /// inherit it for free.
+    func testMeetingEventsAreSuppressedOnABreakDay() {
+        var term = fall
+        term.keyDates.append(TermKeyDate(label: "Fall break", date: day("2026-09-02"), kind: .breakPeriod))
+        XCTAssertTrue(SchoolCalendar.meetingEvents(on: day("2026-09-02"), classes: [bio([mwf])], term: term).isEmpty)
+    }
+
+    /// A Key Date is an all-day FLAG, never a deadline: it must not carry `isDeadline`,
+    /// or "Spring break" would land in the day's due count.
+    func testKeyDateFlagEventsAreAllDayFlagsNotDeadlines() {
+        let flags = SchoolCalendar.keyDateFlagEvents(on: day("2026-09-11"), in: fall, spaceName: "School")
+        XCTAssertEqual(flags.map(\.title), ["Add/drop ends"])
+        XCTAssertTrue(flags[0].isAllDay)
+        XCTAssertFalse(flags[0].isDeadline)
+        XCTAssertTrue(flags[0].isReadOnly)
+        XCTAssertEqual(flags[0].spaceName, "School")
+    }
+
+    func testKeyDateFlagEventsAreEmptyOnAnOrdinaryDay() {
+        XCTAssertTrue(SchoolCalendar.keyDateFlagEvents(on: day("2026-09-10"), in: fall, spaceName: "School").isEmpty)
+    }
+
     // MARK: - Next term name
 
     func testNextTermNameFollowsTheAcademicCycle() {

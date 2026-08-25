@@ -35,6 +35,29 @@ public enum CalendarSync {
         }
     }
 
+    /// Deterministic UUID (FNV-1a) from an external/synthesized event key, so a re-fetch or
+    /// re-render reuses the same id instead of flickering. Byte-identical to
+    /// `GoogleCalendarMapper.stableUUID` / `EventKitService.stableUUID` — the same key must
+    /// always give the same id, on every platform.
+    public static func stableUUID(from identifier: String) -> UUID {
+        var h: UInt64 = 14695981039346656037
+        for byte in identifier.utf8 {
+            h ^= UInt64(byte)
+            h = h &* 1099511628211
+        }
+        let h2 = h.byteSwapped
+        return UUID(uuid: (
+            UInt8((h >> 56) & 0xFF), UInt8((h >> 48) & 0xFF),
+            UInt8((h >> 40) & 0xFF), UInt8((h >> 32) & 0xFF),
+            UInt8((h >> 24) & 0xFF), UInt8((h >> 16) & 0xFF),
+            UInt8((h >>  8) & 0xFF), UInt8( h         & 0xFF),
+            UInt8((h2 >> 56) & 0xFF), UInt8((h2 >> 48) & 0xFF),
+            UInt8((h2 >> 40) & 0xFF), UInt8((h2 >> 32) & 0xFF),
+            UInt8((h2 >> 24) & 0xFF), UInt8((h2 >> 16) & 0xFF),
+            UInt8((h2 >>  8) & 0xFF), UInt8( h2         & 0xFF)
+        ))
+    }
+
     // MARK: - Outbound push rules
 
     /// The default mirror prefix put on work sessions pushed to Google/Apple, and the

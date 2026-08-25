@@ -1,8 +1,10 @@
 import Foundation
+import SwiftUI
 
 /// Pure synthesis of what a term puts on the calendar: recurring class meetings and
-/// Key Date flags. Kept free of SwiftUI and `AppState` so every rule (term bounds,
-/// break skipping, weekday matching, wall-clock parsing) is unit-testable.
+/// Key Date flags. Kept free of `AppState` and of any view so every rule (term bounds,
+/// break skipping, weekday matching, wall-clock parsing) is unit-testable, and so Mac
+/// and iOS synthesize byte-identical tiles.
 ///
 /// Whichever door a schedule came through — school ICS, an existing Google/Apple
 /// calendar, a screenshot scan, manual entry — it lands in `Project.meetingPattern`,
@@ -79,6 +81,69 @@ public enum SchoolCalendar {
     /// The term's Key Dates falling on `day` — what the calendar draws as flags.
     public static func keyDates(on day: Date, in term: Term, calendar: Calendar = .current) -> [TermKeyDate] {
         term.keyDates.filter { calendar.isDate($0.date, inSameDayAs: day) }
+    }
+
+    // MARK: - Calendar tiles (shared by Mac and iOS)
+
+    /// `meetings(on:)` rendered as solid, class-colored calendar blocks (Phase 2 language:
+    /// a class meeting is an EVENT). Shared so both platforms synthesize the identical
+    /// tiles — including their ids, so dedup and selection agree across devices.
+    ///
+    /// These go through cross-calendar dedup like any other event: when the same lecture
+    /// also arrives from Google/Apple/school ICS, the titles and times match and this
+    /// synthesized Atlas copy wins, carrying the imported copy's source as "also in …".
+    public static func meetingEvents(
+        on day: Date,
+        classes: [Project],
+        term: Term,
+        calendar: Calendar = .current
+    ) -> [CalendarEvent] {
+        guard !classes.isEmpty else { return [] }
+        return meetings(on: day, classes: classes, term: term, calendar: calendar).map { meeting in
+            let project = classes.first { $0.id == meeting.classID }
+            let color = project?.colorToken.map { ColorToken.color(for: $0) }
+                ?? project?.spaceColor
+                ?? AtlasTheme.Colors.school
+            return CalendarEvent(
+                id: CalendarSync.stableUUID(from: "class-meeting-\(meeting.classID.uuidString)-\(meeting.start.timeIntervalSince1970)"),
+                title: meeting.className,
+                subtitle: meeting.location ?? meeting.code ?? "Class",
+                start: meeting.start,
+                end: meeting.end,
+                color: color,
+                spaceName: project?.spaceName ?? "School",
+                isAllDay: false,
+                projectID: meeting.classID,
+                // Synthesized from the class's pattern — edited on the class, not the tile.
+                isReadOnly: true,
+                spaceID: project?.spaceID
+            )
+        }
+    }
+
+    /// The term's Key Dates on `day`, as all-day flags. Deliberately NOT deadline markers:
+    /// "Spring break" is not something you owe anybody, so it must never land in the day's
+    /// due count. `spaceName` is the caller's School space, so the space filter treats a
+    /// flag like the rest of School.
+    public static func keyDateFlagEvents(
+        on day: Date,
+        in term: Term,
+        spaceName: String,
+        calendar: Calendar = .current
+    ) -> [CalendarEvent] {
+        keyDates(on: day, in: term, calendar: calendar).map { keyDate in
+            CalendarEvent(
+                id: CalendarSync.stableUUID(from: "key-date-\(term.id.uuidString)-\(keyDate.label)-\(TermDay.string(from: keyDate.date))"),
+                title: keyDate.label,
+                subtitle: term.name,
+                start: calendar.startOfDay(for: keyDate.date),
+                end: calendar.startOfDay(for: keyDate.date),
+                color: AtlasTheme.Colors.textSecondary,
+                spaceName: spaceName,
+                isAllDay: true,
+                isReadOnly: true
+            )
+        }
     }
 
     // MARK: - Term lifecycle

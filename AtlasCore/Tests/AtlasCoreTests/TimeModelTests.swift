@@ -137,4 +137,32 @@ final class TimeModelTests: XCTestCase {
         XCTAssertEqual(cal.component(.hour, from: next), 14)
         XCTAssertEqual(cal.component(.minute, from: next), 0)
     }
+    // MARK: - Late-bar triage (shared by Mac + iOS)
+
+    /// "Reschedule N late items" moves only the late ones, and stamps the ORIGINAL due
+    /// date exactly once so it survives any number of reschedules.
+    func test_rescheduleLate_movesOnlyLateItemsAndKeepsTheOriginalDate() {
+        let missed = daysFromToday(-3)
+        let target = daysFromToday(2)
+        let updated = TimeModel.rescheduleLate(tasks: [
+            task("Missed essay", due: missed),
+            task("Due today", due: daysFromToday(0)),
+            task("Already done", due: daysFromToday(-5), done: true)
+        ], to: target, now: now, calendar: cal)
+
+        XCTAssertEqual(updated.map(\.title), ["Missed essay"])
+        XCTAssertEqual(updated.first?.dueDate, target)
+        XCTAssertEqual(updated.first?.originalDueDate, missed)
+    }
+
+    /// A second reschedule must not overwrite the first stamp — "you missed this on the
+    /// 3rd" has to keep saying the 3rd.
+    func test_rescheduleLate_neverRewritesAnExistingOriginalDate() {
+        let trueOriginal = daysFromToday(-9)
+        let updated = TimeModel.rescheduleLate(
+            tasks: [task("Essay", due: daysFromToday(-1), originalDue: trueOriginal)],
+            to: daysFromToday(3), now: now, calendar: cal)
+
+        XCTAssertEqual(updated.first?.originalDueDate, trueOriginal)
+    }
 }

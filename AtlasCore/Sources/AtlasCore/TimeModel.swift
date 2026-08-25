@@ -62,6 +62,27 @@ public enum TimeModel {
         days == 1 ? "1 day late" : "\(days) days late"
     }
 
+    /// Late-bar triage, as data: every overdue open task moved to `date`, with
+    /// `originalDueDate` stamped once so the ORIGINAL date survives as a faded marker in
+    /// the past. Returns only the tasks that changed, for the caller to apply + persist.
+    /// Never automatic — this only ever runs from an explicit "Reschedule N late items".
+    /// Shared so Mac and iOS reschedule identically.
+    public static func rescheduleLate(
+        tasks: [TaskItem],
+        to date: Date,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [TaskItem] {
+        let lateIDs = Set(lateItems(tasks: tasks, now: now, calendar: calendar).map(\.id))
+        return tasks.filter { lateIDs.contains($0.id) }.map { task in
+            var updated = task
+            if updated.originalDueDate == nil { updated.originalDueDate = updated.dueDate }
+            updated.dueDate = date
+            updated.dueLabel = TaskItem.dueLabel(for: date)
+            return updated
+        }
+    }
+
     // MARK: - Red state
 
     /// The ONE place red is earned: the task is due today and no work time is planned for
