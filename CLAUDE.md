@@ -33,3 +33,19 @@ An event's **source** (Apple / Google / Canvas / Atlas-native) and its **read-on
 - `.toolbar(.hidden, for: .windowToolbar)` strips the traffic-light buttons. For an edge-to-edge transparent title bar that KEEPS them, use `.windowStyle(.hiddenTitleBar)` (macOS 11+).
 - Native `.draggable`/`.dropDestination` forces a green "+" copy badge and is unreliable inside scrolling grids. The calendar drag-to-schedule uses a custom `DragGesture` + coordinate math instead (mirrors the working prototype).
 - Stale `build/` DerivedData can cause phantom entitlement errors — `rm -rf build` if that appears.
+
+## Releasing a Mac update (Sparkle flow)
+Direct-download DMG is the primary channel; updates ship via **Sparkle** — never tell users to redownload manually.
+1. Verify first: full gates green (Mac + iOS builds, AtlasCore `swift test`) AND Drew's visual pass on anything UI. Nothing ships untested.
+2. Bump `MARKETING_VERSION` in project.yml → `scripts/release-dmg.sh` (archives, signs, notarizes, Sparkle-signs, updates `landing/appcast.xml`).
+3. Copy the versioned DMG into `landing/downloads/`, deploy landing (`vercel --prod` in landing/). Existing users auto-update via the appcast; the site serves new downloads.
+Sparkle private key lives in Drew's login keychain (never in the repo); public key in project.yml.
+
+## Disk hygiene — agent worktrees
+- Each worktree in `.claude/worktrees/` gets its own `AtlasCore/.build`. SwiftPM does NOT share build artifacts between worktrees, so N worktrees = N × ~770 MB of duplicated Swift build output.
+- `.build/` and `.claude/worktrees/` are gitignored, so this NEVER shows up in `git status`. It is invisible until the disk is full. (Aug 2026: 30 worktrees = 19 GB.)
+- When finishing work in a worktree, clean its build output:
+  `rm -rf .claude/worktrees/*/AtlasCore/.build`
+  Safe anytime no build is running — it only forces a recompile. Branches and uncommitted work are untouched.
+- Prefer reusing an existing worktree over creating a new one. Remove worktrees whose branch is merged:
+  `git worktree remove .claude/worktrees/<name>`
