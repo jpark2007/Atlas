@@ -191,6 +191,24 @@ extension AppState {
         }
     }
 
+    // MARK: - The legacy "School" space
+
+    /// The spaces the sidebar lists. With the framework on, a leftover "School" space
+    /// that holds nothing is folded away: a School space sitting under a School section
+    /// reads as two Schools. Folded, never deleted — the moment anything lands in it, it
+    /// is back, and no account ever loses a bucket it was using.
+    var visibleSpaces: [Space] {
+        guard schoolEnabled else { return spaces }
+        return spaces.filter { !isEmptyLegacySchoolSpace($0) }
+    }
+
+    private func isEmptyLegacySchoolSpace(_ space: Space) -> Bool {
+        guard space.name.caseInsensitiveCompare("School") == .orderedSame,
+              space.projects.isEmpty else { return false }
+        let holds = { (name: String) in name.caseInsensitiveCompare(space.name) == .orderedSame }
+        return !events.contains { holds($0.spaceName) } && !tasks.contains { holds($0.spaceName) }
+    }
+
     // MARK: - Canvas courses without a class
 
     /// Canvas course labels present in the feed that no class is linked to yet — the

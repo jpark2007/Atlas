@@ -155,16 +155,21 @@ struct SchoolSidebarSection: View {
                 Circle()
                     .fill(klass.colorToken.map { ColorToken.color(for: $0) } ?? klass.spaceColor)
                     .frame(width: 8, height: 8)
+                // "Introduction to Organic Chemistry II" has to survive a 232pt sidebar:
+                // the name gives way first, middle-truncated, and the course code keeps
+                // its intrinsic width instead of being squeezed to an ellipsis.
                 Text(klass.name)
                     .atlasFont(size: 14, weight: selected ? .semibold : .regular, design: .rounded)
                     .foregroundStyle(selected ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                     .lineLimit(1)
-                Spacer()
+                    .truncationMode(.middle)
+                Spacer(minLength: 6)
                 if let code = klass.code, !code.isEmpty {
                     Text(code)
                         .atlasMono(size: 10, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .lineLimit(1)
+                        .fixedSize()
                 }
             }
             .padding(.leading, 20)
@@ -205,7 +210,7 @@ struct SchoolSidebarSection: View {
     private var zeroState: some View {
         Button { presentWizard = true } label: {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Set up your semester")
+                Text("Add your classes")
                     .atlasFont(size: 13, weight: .semibold, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Text("Your classes already exist somewhere — Canvas, your school's calendar. Bring them in once.")

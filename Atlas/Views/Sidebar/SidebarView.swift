@@ -75,10 +75,12 @@ struct SidebarView: View {
                 .padding(.top, 10)
                 .padding(.bottom, 6)
 
-                if state.spaces.isEmpty {
+                // `visibleSpaces`, not `spaces`: an empty leftover "School" space is
+                // folded away while the School section owns school (see AppState+School).
+                if state.visibleSpaces.isEmpty {
                     spacesZeroState
                 } else {
-                    ForEach(state.spaces) { space in
+                    ForEach(state.visibleSpaces) { space in
                         spaceSection(space)
                     }
                 }
