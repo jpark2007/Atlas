@@ -8,7 +8,8 @@
 # Steps (each fails loudly and can be resumed):
 #   1. xcodegen generate           — regenerate Atlas.xcodeproj from project.yml
 #   2. xcodebuild archive          — Release archive of the Atlas scheme
-#   3. export .app                 — Developer ID export from the archive
+#   3. export .app                 — Developer ID export from the archive, then
+#                                    deep re-sign Sparkle's nested helpers (3b)
 #   4. codesign --verify + runtime — confirm the .app is signed + hardened
 #   5. hdiutil                     — build the DMG (app + /Applications alias)
 #   6. notarytool submit --wait    — notarize the DMG  (skippable / resumable)
@@ -62,6 +63,8 @@ APP_NAME="Atlas.app"
 VOL_NAME="Atlas Installer"
 TEAM_ID="2WA54D67Y8"
 NOTARY_PROFILE="atlas-notary"
+SIGN_ID="Developer ID Application"
+ENTITLEMENTS="Atlas/Atlas-DeveloperID.entitlements"
 
 APPCAST="$ROOT/landing/appcast.xml"
 # Where the appcast tells Sparkle to fetch the update from. Versioned on purpose:
@@ -87,7 +90,7 @@ while [[ $# -gt 0 ]]; do
     --skip-appcast)  SKIP_APPCAST=1; shift ;;
     --notarize-only) NOTARIZE_ONLY="${2:-}"; shift 2 ;;
     --appcast-only)  APPCAST_ONLY="${2:-}"; shift 2 ;;
-    -h|--help) sed -n '2,48p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,49p' "$0"; exit 0 ;;
     *) echo "error: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
@@ -235,8 +238,18 @@ notarize_and_staple() {
        --apple-id <apple-id> --team-id $TEAM_ID --password <app-specific-pw>
      Then re-run:     scripts/release-dmg.sh --notarize-only \"$dmg\""
   fi
-  xcrun notarytool submit "$dmg" --keychain-profile "$NOTARY_PROFILE" --wait \
-    || die "notarization failed — inspect with: xcrun notarytool log <submission-id> --keychain-profile $NOTARY_PROFILE"
+  # notarytool exits 0 even when the submission comes back Invalid, so the real
+  # status has to be read out of its output (0.10.1 printed "✓ accepted" over an
+  # Invalid result).
+  local notary_out status submission_id
+  notary_out="$(xcrun notarytool submit "$dmg" --keychain-profile "$NOTARY_PROFILE" --wait 2>&1)" || true
+  printf '%s\n' "$notary_out"
+  submission_id="$(printf '%s\n' "$notary_out" | sed -n 's/^ *id: *\([0-9a-f-]*\).*/\1/p' | head -1)"
+  status="$(printf '%s\n' "$notary_out" | sed -n 's/^ *status: *//p' | tail -1)"
+  [[ -n "$status" ]] || die "could not read a status out of notarytool's output — treat this as a failure.
+     Inspect with: xcrun notarytool log ${submission_id:-<submission-id>} --keychain-profile $NOTARY_PROFILE"
+  [[ "$status" == "Accepted" ]] || die "notarization returned status '$status' (not Accepted).
+     Inspect with: xcrun notarytool log ${submission_id:-<submission-id>} --keychain-profile $NOTARY_PROFILE"
   ok "Notarization accepted"
 
   step "7/8  Stapling + Gatekeeper assessment"
@@ -316,6 +329,43 @@ cp -R "$ARCHIVED_APP" "$APP_PATH"
 [[ -d "$APP_PATH" ]] || die "failed to stage $APP_PATH"
 ok "Staged → $APP_PATH"
 
+# ── 3b. deep re-sign Sparkle's nested helpers ────────────────────────────────
+# Xcode signs the app and the Sparkle framework binary, but leaves the helpers
+# embedded in the SPM-built Sparkle.framework ad-hoc signed. Notarization then
+# rejects the whole DMG: "not signed with a valid Developer ID certificate" +
+# "signature does not include a secure timestamp" for Autoupdate, Updater.app
+# and the XPC services. Re-sign them here, inside-out — each nested seal must be
+# final before the enclosing bundle is sealed over it.
+#
+# No --entitlements on the helpers: Atlas is not sandboxed, so Sparkle's helpers
+# need none, and the ad-hoc com.apple.application-identifier Sparkle ships on
+# Autoupdate would not match our team prefix.
+step "3b/8  Re-sign Sparkle's nested helpers (Developer ID + timestamp)"
+SPARKLE_VERSION_DIR="$APP_PATH/Contents/Frameworks/Sparkle.framework/Versions/B"
+if [[ -d "$SPARKLE_VERSION_DIR" ]]; then
+  sign_nested() {
+    codesign --force --options runtime --timestamp --sign "$SIGN_ID" "$1" \
+      || die "failed to re-sign $1"
+    echo "   signed $(basename "$1")"
+  }
+  # innermost first
+  for xpc in "$SPARKLE_VERSION_DIR"/XPCServices/*.xpc; do
+    if [[ -d "$xpc" ]]; then sign_nested "$xpc"; fi
+  done
+  if [[ -f "$SPARKLE_VERSION_DIR/Autoupdate" ]];  then sign_nested "$SPARKLE_VERSION_DIR/Autoupdate"; fi
+  if [[ -d "$SPARKLE_VERSION_DIR/Updater.app" ]]; then sign_nested "$SPARKLE_VERSION_DIR/Updater.app"; fi
+  # then the framework itself (sign the versioned directory, per Apple's rule for
+  # versioned bundles), which re-seals over the helpers above
+  sign_nested "$SPARKLE_VERSION_DIR"
+  # …and finally the app, whose seal the nested re-signing just invalidated.
+  codesign --force --options runtime --timestamp \
+    --entitlements "$ROOT/$ENTITLEMENTS" \
+    --sign "$SIGN_ID" "$APP_PATH" || die "failed to re-sign $APP_PATH"
+  ok "Sparkle helpers + Atlas.app re-signed"
+else
+  ok "No Sparkle.framework embedded — nothing to re-sign"
+fi
+
 # ── 4. verify signature + hardened runtime ───────────────────────────────────
 step "4/8  codesign verify + hardened runtime"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH" || die "codesign --verify failed"
@@ -338,7 +388,7 @@ hdiutil create \
 rm -rf "$STAGE"
 [[ -f "$DMG_PATH" ]] || die "DMG not created"
 # The DMG itself must also carry the Developer ID signature.
-codesign --force --sign "Developer ID Application" "$DMG_PATH" || die "signing the DMG failed"
+codesign --force --timestamp --sign "$SIGN_ID" "$DMG_PATH" || die "signing the DMG failed"
 codesign --verify --verbose=2 "$DMG_PATH" || die "DMG signature verify failed"
 DMG_SIZE="$(du -h "$DMG_PATH" | cut -f1 | tr -d ' ')"
 ok "DMG built + signed → $DMG_PATH ($DMG_SIZE)"
