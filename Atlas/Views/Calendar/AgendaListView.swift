@@ -1,23 +1,15 @@
 import SwiftUI
 import AtlasCore
 
-/// The List (agenda) view: a chronological, day-grouped list of upcoming events
-/// and scheduled/dated tasks. Ordering comes from the pure, unit-tested
-/// `AgendaBuilder`; this view only renders the resulting sections. Tapping a row
-/// hands the item back to the parent (event → open source, task → Day view).
+/// The List (agenda) view: events and dated tasks in four fixed buckets —
+/// **Late · Due today · Tomorrow · This week**, mirroring the iOS Schedule list.
+/// Bucketing and ordering come from the pure, unit-tested `AgendaBuilder`; this view
+/// only renders. Tapping a row hands the item back to the parent (event → open source,
+/// task → Day view).
 struct AgendaListView: View {
-    let sections: [AgendaSection]
-    /// Observed "now" for Today / Tomorrow header labels.
-    let now: Date
+    let buckets: [AgendaBucket]
     let onSelect: (AgendaItem) -> Void
 
-    private let calendar = Calendar.current
-
-    private static let dayHeaderFormat: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "EEEE, MMM d"
-        return f
-    }()
     private static let timeFormat: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "h:mm a"
@@ -26,13 +18,13 @@ struct AgendaListView: View {
 
     var body: some View {
         Group {
-            if sections.isEmpty {
+            if buckets.isEmpty {
                 emptyState
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 22) {
-                        ForEach(sections) { section in
-                            sectionView(section)
+                        ForEach(buckets) { bucket in
+                            bucketView(bucket)
                         }
                     }
                     .padding(.vertical, 4)
@@ -59,40 +51,41 @@ struct AgendaListView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Section
+    // MARK: - Bucket
 
-    private func sectionView(_ section: AgendaSection) -> some View {
+    private func bucketView(_ bucket: AgendaBucket) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                if let tag = relativeTag(for: section.day) {
-                    Text(tag.uppercased())
-                        .atlasMono(size: 10, weight: .bold)
-                        .tracking(0.8)
-                        .foregroundStyle(AtlasTheme.Colors.accentText)
-                }
-                Text(Self.dayHeaderFormat.string(from: section.day))
-                    .atlasMono(size: 13, weight: .semibold)
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                Text(bucket.kind.title.uppercased())
+                    .atlasMono(size: 12, weight: .bold)
+                    .tracking(1.2)
+                    // Late wears the amber state colour; every other bucket is plain ink —
+                    // "this week" is not a warning.
+                    .foregroundStyle(bucket.kind == .late
+                                     ? AtlasTheme.Colors.late
+                                     : AtlasTheme.Colors.textPrimary)
                 Spacer()
-                Text("\(section.items.count)")
+                Text("\(bucket.items.count)")
                     .atlasMono(size: 11, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
-            Divider().overlay(AtlasTheme.Colors.border)
+            Divider().overlay(bucket.kind == .late
+                              ? AtlasTheme.Colors.late.opacity(0.4)
+                              : AtlasTheme.Colors.border)
 
             VStack(spacing: 0) {
-                ForEach(section.items) { item in
-                    row(item)
+                ForEach(bucket.items) { item in
+                    row(item, late: bucket.kind == .late)
                 }
             }
         }
     }
 
-    private func row(_ item: AgendaItem) -> some View {
+    private func row(_ item: AgendaItem, late: Bool) -> some View {
         HStack(spacing: 12) {
-            Text(timeLabel(item))
+            Text(timeLabel(item, late: late))
                 .atlasMono(size: 11, weight: .medium)
-                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                .foregroundStyle(late ? AtlasTheme.Colors.late : AtlasTheme.Colors.textSecondary)
                 .frame(width: 70, alignment: .trailing)
 
             RoundedRectangle(cornerRadius: 2)
@@ -135,16 +128,18 @@ struct AgendaListView: View {
 
     // MARK: - Labels
 
-    private func relativeTag(for day: Date) -> String? {
-        if calendar.isDate(day, inSameDayAs: now) { return "Today" }
-        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
-           calendar.isDate(day, inSameDayAs: tomorrow) { return "Tomorrow" }
-        return nil
+    /// A late row states the date it was due ("Mar 3") rather than a meaningless "All day" —
+    /// the original date is the point.
+    private func timeLabel(_ item: AgendaItem, late: Bool) -> String {
+        if late { return Self.lateDateFormat.string(from: item.date) }
+        return item.allDay ? "All day" : Self.timeFormat.string(from: item.date)
     }
 
-    private func timeLabel(_ item: AgendaItem) -> String {
-        item.allDay ? "All day" : Self.timeFormat.string(from: item.date)
-    }
+    private static let lateDateFormat: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return f
+    }()
 
     private func durationLabel(from start: Date, to end: Date) -> String {
         let minutes = max(0, Int(end.timeIntervalSince(start) / 60))

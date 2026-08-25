@@ -72,6 +72,14 @@ public enum AtlasTheme {
         public static let warning  = Color(hex: "febc2e") // warm amber
         public static let danger   = Color(hex: "ff5c5c") // warm red
 
+        /// LATE state amber. Deliberately NOT `warning` (#febc2e): that value is byte-identical
+        /// to the `yellow` SPACE color, so a Late bar painted with it reads as "an item in the
+        /// yellow space" rather than "an overdue item" — a channel collision (color = space,
+        /// never state). This deeper burnt amber stays unmistakably amber, has AA contrast on
+        /// the cream paper bg, and is not in the space palette. Late = this; red is reserved
+        /// for "due today with no work time planned".
+        public static let late     = Color(hex: "c2710b")
+
         // Space identity colors — hue kept; used as dots/fills on cream.
         public static let school   = Color(hex: "5b9bd5")
         public static let personal = Color(hex: "5fb98e")

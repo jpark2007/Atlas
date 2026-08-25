@@ -15,6 +15,7 @@ struct TaskDetailView: View {
     @State private var isEditingDueDate = false
     @State private var dueDateDraft: Date? = nil
     @State private var dueHover = false
+    @State private var showEstimatePicker = false
     @State private var showRefPicker = false
     @State private var referenceSelection: Set<UUID> = []
     /// Note currently open in the corner-card editor (nil = closed). Same overlay
@@ -156,6 +157,7 @@ struct TaskDetailView: View {
             if let at = live.scheduledAt {
                 metaChip(icon: "clock", label: "Scheduled \(shortDate(at))")
             }
+            estimateChip
             if live.done {
                 atlasTag(text: "Completed", color: AtlasTheme.Colors.accent)
             }
@@ -163,6 +165,52 @@ struct TaskDetailView: View {
             Spacer()
         }
     }
+
+    /// Optional TIME ESTIMATE — how much total time this task needs. Entirely opt-in: with
+    /// no estimate the task's due marker reads "N sessions planned" instead of an hours fill
+    /// ("2.5h of 4h planned"). Nothing is ever auto-scheduled from it.
+    private var estimateChip: some View {
+        Button { showEstimatePicker = true } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "hourglass").atlasFont(size: 12)
+                Text(live.estimateMin.map { "Needs \(TimeModel.hoursLabel($0))" } ?? "Add estimate")
+                    .atlasMono(size: 12, weight: .medium)
+            }
+            .foregroundStyle(AtlasTheme.Colors.textSecondary)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+        .help("How much total time this task needs")
+        .popover(isPresented: $showEstimatePicker, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Time estimate")
+                    .atlasFont(size: 13, weight: .semibold, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                ForEach(Self.estimateChoices, id: \.self) { minutes in
+                    Button(TimeModel.hoursLabel(minutes)) {
+                        state.setEstimate(taskId: live.id, minutes: minutes)
+                        showEstimatePicker = false
+                    }
+                    .buttonStyle(.plain)
+                    .atlasFont(size: 13, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                }
+                Divider().overlay(AtlasTheme.Colors.border)
+                Button("No estimate") {
+                    state.setEstimate(taskId: live.id, minutes: nil)
+                    showEstimatePicker = false
+                }
+                .buttonStyle(.plain)
+                .atlasFont(size: 13, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+            }
+            .padding(14)
+            .frame(width: 160, alignment: .leading)
+        }
+    }
+
+    /// Coarse, quick-to-pick estimates — the point is a rough size, not precision.
+    private static let estimateChoices = [30, 60, 90, 120, 180, 240, 360, 480]
 
     /// Claim/assigned state for shared-project tasks — an unclaimed task shows a
     /// "Claim task" affordance; once claimed, an "Assigned" indicator.

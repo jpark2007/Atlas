@@ -29,6 +29,10 @@ struct CalendarView: View {
     /// An already-placed event being dragged to a new slot (nil = not dragging from grid).
     @State private var draggingEvent: CalendarEvent?
 
+    /// The deadline↔work-session link: the task whose due marker is hovered/pinned. Its work
+    /// sessions glow and everything else on the grid dims. `nil` = no link active.
+    @State private var linkedTaskID: UUID?
+
     /// Drag-to-schedule onboarding tip, anchored on the unscheduled tray.
     @State private var dragTip = AtlasTips.DragToSchedule()
 
@@ -44,6 +48,14 @@ struct CalendarView: View {
                 .padding(.top, 20)
                 .padding(.bottom, 14)
             Divider().overlay(AtlasTheme.Colors.border)
+
+            // Late bar pinned above today — spanning the grid AND the side rail, so nothing
+            // overdue can be scrolled past on the way to the day's work. It sits above both
+            // rather than being duplicated in each.
+            LateBar(onOpenTask: { state.route = .task($0) })
+                .environmentObject(state)
+                .padding(.horizontal, 24)
+                .padding(.top, 12)
 
             HStack(alignment: .top, spacing: 18) {
                 grid
@@ -64,7 +76,6 @@ struct CalendarView: View {
                             onSchedule: { taskID, hour in
                                 schedule(taskID: taskID, on: selectedDate, hour: Double(hour))
                             },
-                            onSuggest: suggestSlot(for:),
                             onSetDueDate: { taskID, date in
                                 state.setDueDate(taskId: taskID, date: date)
                             },
@@ -330,7 +341,12 @@ struct CalendarView: View {
                 onDropEvent: { event, point in
                     performEventReschedule(event: event, at: point)
                     draggingEvent = nil
-                }
+                },
+                linkedTaskID: linkedTaskID,
+                onLinkTask: { linkedTaskID = $0 },
+                onToggleTask: { id in withAnimation(AtlasTheme.taskCrossOut) { state.toggleTask(id) } },
+                onMoreTime: { state.addMoreTime(taskId: $0) },
+                plannedLabel: plannedLabel(for:)
             )
         case .week:
             WeekGridView(
@@ -346,6 +362,15 @@ struct CalendarView: View {
                 onDropEvent: { event, point in
                     performEventReschedule(event: event, at: point)
                     draggingEvent = nil
+                },
+                linkedTaskID: linkedTaskID,
+                onLinkTask: { linkedTaskID = $0 },
+                onToggleTask: { id in withAnimation(AtlasTheme.taskCrossOut) { state.toggleTask(id) } },
+                onMoreTime: { state.addMoreTime(taskId: $0) },
+                plannedLabel: plannedLabel(for:),
+                onJumpToDay: { day in
+                    selectedDate = Calendar.current.startOfDay(for: day)
+                    mode = .day
                 }
             )
         case .month:
@@ -360,8 +385,7 @@ struct CalendarView: View {
             )
         case .list:
             AgendaListView(
-                sections: agendaSections,
-                now: state.now,
+                buckets: agendaBuckets,
                 onSelect: handleAgendaSelect
             )
         }
@@ -387,27 +411,63 @@ struct CalendarView: View {
         state.gridColored(filteredEvents(on: date))
     }
 
-    /// Deadline markers for `date`: one per open task whose `dueDate` falls on that day.
-    /// Rendered as flag-pills in the deadline strip (never time blocks), red once the due
-    /// day has passed. Deadlines stay in Atlas — they are never pushed to Google.
+    /// Deadline markers for `date`: one per open task whose `dueDate` falls on that day,
+    /// plus a faded HISTORY marker at the original due date of anything rescheduled off the
+    /// Late bar (so a missed date never silently vanishes).
+    ///
+    /// Deadlines are never blocks — `DueMarkerRow` draws them as hairlines. Colour is the
+    /// task's own space/class colour (colour = whose, never what); the ONE state override is
+    /// red for "due today and no work time planned", the single place red is earned. Overdue
+    /// stays in its own colour here and is surfaced in amber by the Late bar instead.
+    /// Deadlines stay in Atlas — they are never pushed to Google.
     private func deadlineEvents(on date: Date) -> [CalendarEvent] {
         let cal = Calendar.current
-        return state.tasks.compactMap { task in
-            guard !task.done, let due = task.dueDate,
-                  cal.isDate(due, inSameDayAs: date) else { return nil }
-            let overdue = cal.startOfDay(for: due) < cal.startOfDay(for: state.now)
-            return CalendarEvent(
-                id: GoogleCalendarMapper.stableUUID(from: "deadline-" + task.id.uuidString),
-                title: task.title,
-                subtitle: "Due",
-                start: due,
-                end: due,
-                color: overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.accent,
-                spaceName: task.spaceName,
-                isAllDay: true,        // excluded from time-block packing; shown in the strip
-                isDeadline: true
-            )
+        var markers: [CalendarEvent] = []
+        for task in state.tasks {
+            guard !task.done else { continue }
+            if let due = task.dueDate, cal.isDate(due, inSameDayAs: date) {
+                let red = TimeModel.isDueTodayUnplanned(task, now: state.now)
+                markers.append(CalendarEvent(
+                    id: GoogleCalendarMapper.stableUUID(from: "deadline-" + task.id.uuidString),
+                    title: task.title,
+                    subtitle: "Due",
+                    start: due,
+                    end: due,
+                    color: red ? AtlasTheme.Colors.danger : task.spaceColor,
+                    spaceName: task.spaceName,
+                    isAllDay: true,        // never packed as a time block — drawn as a hairline
+                    isDeadline: true,
+                    deadlineTaskID: task.id
+                ))
+            }
+            // The original date keeps a faded marker in the past after a late-reschedule.
+            if let original = task.originalDueDate, original != task.dueDate,
+               cal.isDate(original, inSameDayAs: date) {
+                markers.append(CalendarEvent(
+                    id: GoogleCalendarMapper.stableUUID(from: "was-due-" + task.id.uuidString),
+                    title: "Was due · " + task.title,
+                    subtitle: "Originally due",
+                    start: original,
+                    end: original,
+                    color: AtlasTheme.Colors.textMuted,
+                    spaceName: task.spaceName,
+                    isAllDay: true,
+                    isDeadline: true,
+                    isHistory: true
+                ))
+            }
         }
+        return markers
+    }
+
+    /// The planned-time readout a due marker carries: a fill against the task's optional
+    /// estimate ("2.5h of 4h planned"), or a session count when it has none.
+    /// Atlas persists one session per task today (`TaskItem.scheduledAt`), so the session
+    /// array is 0- or 1-length; the math itself is written over many.
+    private func plannedLabel(for taskID: UUID) -> String {
+        guard let task = state.tasks.first(where: { $0.id == taskID }) else { return "" }
+        let sessions = task.scheduledAt == nil ? [] : [task.durationMin ?? 60]
+        return TimeModel.plannedLabel(estimateMin: task.estimateMin, sessionMinutes: sessions)
     }
 
     /// Shared filter gate for both events and tasks: the single-space dropdown,
@@ -421,20 +481,15 @@ struct CalendarView: View {
 
     // MARK: - Agenda (List mode)
 
-    /// Filtered, day-grouped agenda for the List view. Pulls the store's events +
-    /// read-only external events + dated tasks, applies the same filters as the
-    /// grid, then orders them via the pure `AgendaBuilder`.
-    private var agendaSections: [AgendaSection] {
+    /// Filtered agenda for the List view, bucketed Late / Due today / Tomorrow / This week.
+    /// Pulls the store's events + read-only external events + dated tasks, applies the same
+    /// filters as the grid, then buckets them via the pure `AgendaBuilder`.
+    private var agendaBuckets: [AgendaBucket] {
         let events = (state.events + state.externalEvents)
             .filter { passesFilters($0.spaceName, title: $0.title) }
         let tasks = state.tasks
             .filter { !$0.done && passesFilters($0.spaceName, title: $0.title) }
-        return AgendaBuilder.build(
-            events: events,
-            tasks: tasks,
-            from: selectedDate,
-            now: state.now
-        )
+        return AgendaBuilder.buckets(events: events, tasks: tasks, now: state.now)
     }
 
     /// Tapping an agenda row: events open their source; tasks jump to the Day
@@ -572,16 +627,6 @@ struct CalendarView: View {
                 updated.end = newStart.addingTimeInterval(duration)
                 state.updateEvent(updated)
             }
-        }
-    }
-
-    /// Auto-find-a-slot: scan the selected day for the first free gap that fits
-    /// the task and schedule it there. No-op if the task is gone or the day's full.
-    private func suggestSlot(for taskID: UUID) {
-        guard let task = state.tasks.first(where: { $0.id == taskID }),
-              let slot = state.suggestSlot(for: task, on: selectedDate, now: Date()) else { return }
-        withAnimation(.easeOut(duration: 0.2)) {
-            state.schedule(taskId: taskID, at: slot)
         }
     }
 

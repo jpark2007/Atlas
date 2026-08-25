@@ -364,6 +364,13 @@ public struct TaskRow: Codable {
     public var notes: String?
     public var noteId: UUID?
     public var durationMin: Int?
+    /// Optional total time estimate for the task (migration 0041). Optional so decoding
+    /// survives rows written before the migration; round-tripped so a client edit never
+    /// nulls it.
+    public var estimateMin: Int?
+    /// The due date this task carried before a late-reschedule (migration 0041). Set once
+    /// and round-tripped, so the original miss keeps its faded marker in the past.
+    public var originalDueDate: Date?
     public var workBlockGoogleEventId: String?
     /// Apple Calendar mirror id for this task's work-block (migration 0026). Round-tripped
     /// so a client edit never nulls the linkage. Best-effort — Mac is the only EventKit device.
@@ -399,6 +406,8 @@ public struct TaskRow: Codable {
         case notes
         case noteId      = "note_id"
         case durationMin = "duration_min"
+        case estimateMin = "estimate_min"
+        case originalDueDate = "original_due_date"
         case workBlockGoogleEventId = "work_block_google_event_id"
         case appleEventId = "apple_event_id"
         case spaceId     = "space_id"
@@ -423,6 +432,8 @@ public struct TaskRow: Codable {
         self.notes       = t.notes
         self.noteId      = t.noteID
         self.durationMin = t.durationMin
+        self.estimateMin = t.estimateMin
+        self.originalDueDate = t.originalDueDate
         self.workBlockGoogleEventId = t.workBlockGoogleEventId
         self.appleEventId = t.appleEventId
         self.spaceId     = t.spaceID
@@ -449,6 +460,8 @@ public struct TaskRow: Codable {
                  appleEventId: appleEventId,
                  spaceName: spaceName,
                  notes: notes ?? "")
+        task.estimateMin = estimateMin
+        task.originalDueDate = originalDueDate
         task.spaceID = spaceId
         task.assigneeID = assigneeId
         task.createdByID = createdBy
