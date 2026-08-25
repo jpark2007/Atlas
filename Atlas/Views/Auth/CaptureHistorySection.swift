@@ -1,10 +1,11 @@
 import SwiftUI
 import AtlasCore
 
-/// Settings → History. Lists past quick-captures newest first — each shows its
-/// text snippet and when it ran, expands (RevealRow idiom) to the items it
-/// created, and offers a single Undo that deletes those items. Undo is enabled
-/// only while every item still matches its capture-time snapshot.
+/// Settings → Capture & Tasks → "Recent captures". Lists past quick-captures newest
+/// first — each shows its text snippet and when it ran, expands (RevealRow idiom) to
+/// the items it created, and offers a single Undo that deletes those items. Undo is
+/// enabled only while every item still matches its capture-time snapshot.
+/// Renders inside the Settings scroll stack, so it brings no ScrollView of its own.
 struct CaptureHistorySection: View {
     @EnvironmentObject private var state: AppState
 
@@ -14,20 +15,17 @@ struct CaptureHistorySection: View {
     @State private var confirmingUndo: CaptureHistoryEntry? = nil
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                header
-                if state.captureHistory.isEmpty {
-                    emptyState
-                } else {
-                    ForEach(state.captureHistory) { entry in
-                        entryRow(entry)
-                    }
+        VStack(alignment: .leading, spacing: 18) {
+            header
+            if state.captureHistory.isEmpty {
+                emptyState
+            } else {
+                ForEach(state.captureHistory) { entry in
+                    entryRow(entry)
                 }
-                Spacer(minLength: 8)
             }
-            .padding(28)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .confirmationDialog(
             "Undo this capture?",
             isPresented: Binding(get: { confirmingUndo != nil },
@@ -49,8 +47,8 @@ struct CaptureHistorySection: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
-            label("CAPTURE HISTORY")
-            Text("Recent quick-captures and the items they created. Undo removes a capture's items, and stays available only while they haven't changed.")
+            label("RECENT CAPTURES")
+            Text("What you captured lately and what it turned into. Undo deletes a capture's items, and works only while they haven't changed.")
                 .atlasFont(size: 11, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
         }

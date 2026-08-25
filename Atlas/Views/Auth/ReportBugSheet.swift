@@ -1,7 +1,7 @@
 import SwiftUI
 import AtlasCore
 
-/// The "Report a bug" sheet — opened from Settings → Help & Tips, the ⌘K command
+/// The "Report a bug" sheet — opened from Settings → App & Help, the ⌘K command
 /// palette, the sidebar, or an error's "Report this" affordance. A short title, a
 /// description, and an optional contact email; recent in-app logs (`AtlasLog`) are
 /// attached automatically. Inserts into `bug_reports` via `AtlasDB` with the

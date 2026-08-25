@@ -130,7 +130,7 @@ struct CalendarEventDetailView: View {
         } else if item.isRecurring {
             msg = "Recurring event — edit the series in \(item.source.displayName)."
         } else {
-            msg = "Read-only — from \(item.source.displayName)."
+            msg = "From \(item.source.displayName) — shown, not editable."
         }
         return HStack(spacing: 8) {
             Image(systemName: "lock.fill").atlasFont(size: 12)

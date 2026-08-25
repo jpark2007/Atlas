@@ -913,7 +913,7 @@ struct ProjectDetailView: View {
             HStack(spacing: 6) {
                 Image(systemName: "link").atlasFont(size: 12, weight: .medium)
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
-                Text("LINKED REFERENCES").atlasCapsLabel()
+                Text("Mentioned in").atlasCapsLabel()
                 Text("\(project.backlinks.count)")
                     .atlasMono(size: 11)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)

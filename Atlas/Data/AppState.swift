@@ -156,7 +156,7 @@ final class AppState: ObservableObject {
 
     /// The user's chosen first name / nickname for greetings, stored in the
     /// profile's `display_name` (empty ⇒ never set). Set by the post-signup name
-    /// prompt and Settings → Profile; read by the dashboard greeting.
+    /// prompt and Settings → Account; read by the dashboard greeting.
     var nickname: String { profile?.displayName ?? "" }
 
     /// Persists a nickname to the profile's `display_name` (server + local).
@@ -263,7 +263,7 @@ final class AppState: ObservableObject {
     }
 
     /// Which section the full-page Settings route shows (General / Connections / History / Metrics).
-    @Published var settingsSection: SettingsSection = .general
+    @Published var settingsSection: SettingsSection = .account
 
     /// Obsidian-style relationship graph overlay (opened from the Metrics logo button).
     @Published var presentGraph: Bool = false
@@ -1168,6 +1168,7 @@ final class AppState: ObservableObject {
             let updated = tasks[i]
             Task { try? await self.db?.upsertTask(updated) }
             schedulePublish()
+            AtlasChecklist.mark(AtlasChecklist.scheduled)   // Get-started card
         }
     }
 
@@ -1234,6 +1235,7 @@ final class AppState: ObservableObject {
         // Atlas). The server's per-connection push reads this to mirror to the right account.
         event.googleConnectionId = connectionId(forSpaceId: event.spaceID)
         events.append(event)
+        AtlasChecklist.mark(AtlasChecklist.scheduled)   // Get-started card
         // Optimistic in-memory attachments (dedup against any already present).
         var newAttachments: [ReferenceAttachment] = []
         for rid in refIDs

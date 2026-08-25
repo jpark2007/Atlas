@@ -138,6 +138,7 @@ extension AppState {
             captureHistory = Array(captureHistory.prefix(CaptureHistoryStore.cap))
         }
         persistCaptureHistory()
+        AtlasChecklist.mark(AtlasChecklist.captured)   // Get-started card
     }
 
     /// Loads a user's history from disk (or clears it when signed out / switched).

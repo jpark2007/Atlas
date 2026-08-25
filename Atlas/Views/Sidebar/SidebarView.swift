@@ -65,8 +65,12 @@ struct SidebarView: View {
                 .padding(.top, 10)
                 .padding(.bottom, 6)
 
-                ForEach(state.spaces) { space in
-                    spaceSection(space)
+                if state.spaces.isEmpty {
+                    spacesZeroState
+                } else {
+                    ForEach(state.spaces) { space in
+                        spaceSection(space)
+                    }
                 }
 
                 if !state.sharedWithMeProjects.isEmpty {
@@ -125,6 +129,35 @@ struct SidebarView: View {
         }
     }
 
+    // MARK: - Zero state
+
+    /// Shown only when the account has no spaces yet (a fresh sign-in that hasn't
+    /// received the server seed, or one whose spaces were all deleted). Names the
+    /// first move in plain words instead of leaving an empty column.
+    private var spacesZeroState: some View {
+        Button { presentNewSpace = true } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Start with a Space")
+                    .atlasFont(size: 13, weight: .semibold, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                Text("School, Personal — a bucket for one part of your life. Classes and projects live inside it.")
+                    .atlasFont(size: 11, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .overlay(
+                RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
+                    .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 6)
+        .padding(.bottom, 4)
+    }
+
     // MARK: - Editorial primitives
 
     /// The black-8% section separator.
@@ -142,7 +175,7 @@ struct SidebarView: View {
     // MARK: - Profile / settings
 
     private var profileRow: some View {
-        Button { state.settingsSection = .general; state.route = .settings } label: {
+        Button { state.settingsSection = .account; state.route = .settings } label: {
             HStack(spacing: 9) {
                 Circle().fill(AtlasTheme.Colors.textPrimary.opacity(0.06))
                     .frame(width: 24, height: 24)

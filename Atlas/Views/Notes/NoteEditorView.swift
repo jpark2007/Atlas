@@ -171,9 +171,9 @@ struct NoteEditorView: View {
         .alert("This Doc has multiple tabs", isPresented: $showMultitabNotice) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text("Atlas kept your local copy but didn't push it — enable per-tab sync in Settings → General, or edit this Doc in Google Docs.")
+            Text("Atlas kept your local copy but didn't push it — turn on \"Edit multi-tab Google Docs\" in Settings → Notes & Files, or edit this Doc in Google Docs.")
         }
-        .alert("Tab is read-only", isPresented: $showTabReadOnlyNotice) {
+        .alert("This tab is shown, not editable", isPresented: $showTabReadOnlyNotice) {
             Button("OK", role: .cancel) { }
         } message: {
             Text("This tab's content (table, image, or rich formatting) can only be edited in Google Docs.")
@@ -434,7 +434,7 @@ struct NoteEditorView: View {
             Image(systemName: "lock.doc")
                 .atlasFont(size: 12)
                 .foregroundStyle(AtlasTheme.Colors.accentText)
-            Text("This tab has content Atlas can't safely edit\(tab.readonlyReason.map { " (\($0))" } ?? "") — read-only here.")
+            Text("This tab has content Atlas can't safely edit\(tab.readonlyReason.map { " (\($0))" } ?? "") — it's shown here, not editable.")
                 .atlasFont(size: 12)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)   // wrap, never force width

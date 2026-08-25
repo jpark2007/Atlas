@@ -29,6 +29,8 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: 26) {
                 titleBar
 
+                GetStartedCard()
+
                 HStack(alignment: .top, spacing: 26) {
                     VStack(alignment: .leading, spacing: 26) {
                         clockBlock

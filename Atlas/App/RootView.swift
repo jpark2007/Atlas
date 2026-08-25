@@ -14,17 +14,19 @@ enum Route: Hashable {
     case settings
 }
 
-/// Sections within the full-page Settings route. Metrics lives here now — it is no
-/// longer a sidebar item or a popup sheet.
+/// Sections within the full-page Settings route — five plain-language headings
+/// (Phase 5 IA). Metrics stays here for now; it is not a sidebar item or a popup.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, integrations, history, metrics
+    case account, calendars, capture, notes, app, metrics
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .general:      return "General"
-        case .integrations: return "Connections"
-        case .history:      return "History"
-        case .metrics:      return "Metrics"
+        case .account:   return "Account"
+        case .calendars: return "Calendars"
+        case .capture:   return "Capture & Tasks"
+        case .notes:     return "Notes & Files"
+        case .app:       return "App & Help"
+        case .metrics:   return "Metrics"
         }
     }
 }
@@ -40,7 +42,7 @@ struct RootView: View {
 
     /// Arc-style sidebar behavior — "always" pins the split-view column (default);
     /// "hover" hides it and slides an overlay in from the left screen edge.
-    /// Chosen in Settings → General.
+    /// Chosen in Settings → App & Help.
     @AppStorage("sidebar.mode") private var sidebarMode = "always"
     /// Whether the hover-mode overlay sidebar is currently slid out.
     @State private var hoverSidebarVisible = false

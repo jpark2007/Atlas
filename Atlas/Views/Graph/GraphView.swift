@@ -426,7 +426,7 @@ struct GraphView: View {
                 Text("Graph")
                     .atlasFont(size: 17, weight: .semibold, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                Text("\(engine.nodes.count) nodes")
+                Text("\(engine.nodes.count) items")
                     .atlasMono(size: 11)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
