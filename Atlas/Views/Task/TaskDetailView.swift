@@ -33,8 +33,15 @@ struct TaskDetailView: View {
                     UnassignedClassChip(course: course)
                 }
                 metaRow
-                spacePicker
-                projectPicker
+                // School tasks get class-first anatomy: one CLASS picker, with the
+                // School affiliation shown as a tag in the header rather than a
+                // second and third thing to choose.
+                if isSchoolTask {
+                    classPicker
+                } else {
+                    spacePicker
+                    projectPicker
+                }
                 notesSection
                 linkedNoteSection
                 referencesSection
@@ -101,7 +108,11 @@ struct TaskDetailView: View {
                     .foregroundStyle(live.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if !live.spaceName.isEmpty {
+                // School is a framework, not a space the student picks — it reads as an
+                // automatic tag here, and the class it belongs to is the one real choice.
+                if isSchoolTask {
+                    atlasTag(text: "School", color: AtlasTheme.Colors.school)
+                } else if !live.spaceName.isEmpty {
                     HStack(spacing: 5) {
                         Circle()
                             .fill(live.spaceColor)
@@ -131,8 +142,9 @@ struct TaskDetailView: View {
 
     private var metaRow: some View {
         HStack(spacing: 16) {
-            // Space the task belongs to.
-            if !live.spaceName.isEmpty {
+            // Space the task belongs to. A school task already wears its School tag in
+            // the header, so repeating it here is the duplication this row drops.
+            if !isSchoolTask, !live.spaceName.isEmpty {
                 HStack(spacing: 5) {
                     Circle().fill(live.spaceColor).frame(width: 7, height: 7)
                     Text(live.spaceName).atlasFont(size: 13, weight: .medium, design: .rounded)
@@ -217,11 +229,33 @@ struct TaskDetailView: View {
     /// Coarse, quick-to-pick estimates — the point is a rough size, not precision.
     private static let estimateChoices = [30, 60, 90, 120, 180, 240, 360, 480]
 
+    /// The task's space, resolved by name — `TaskItem` links to its space and project by
+    /// display name, not by id (see `taskProjectID`).
+    private var taskSpace: Space? {
+        state.spaces.first { $0.name == live.spaceName }
+    }
+
+    /// True when this task actually lives somewhere shared — its space or its project has
+    /// a second member. Claiming is a collaboration affordance: on a private task there is
+    /// nobody to claim it from, so it must not appear at all.
+    ///
+    /// Read straight off the rosters `loadCollabState()` already loaded at launch
+    /// (`spaceMembers` / `projectMembers`, both `@Published`), so this costs no fetch and
+    /// re-renders when a membership arrives.
+    private var isSharedTask: Bool {
+        if let space = taskSpace, state.isSharedSpace(space) { return true }
+        if let project = taskSpace?.projects.first(where: { $0.name == live.projectName }),
+           state.isShared(project) { return true }
+        return false
+    }
+
     /// Claim/assigned state for shared-project tasks — an unclaimed task shows a
     /// "Claim task" affordance; once claimed, an "Assigned" indicator.
     @ViewBuilder
     private var assigneeChip: some View {
-        if live.isClaimable {
+        if !isSharedTask {
+            EmptyView()
+        } else if live.isClaimable {
             Button {
                 Task { await state.claimTask(live.id) }
             } label: {
@@ -291,6 +325,109 @@ struct TaskDetailView: View {
                 .atlasMono(size: 12)
         }
         .foregroundStyle(AtlasTheme.Colors.textSecondary)
+    }
+
+    // MARK: Class picker (School framework)
+
+    /// The class this task is filed under, if it is filed under one. Resolved by name for
+    /// the same reason `taskProjectID` is: a class IS a project row, and `TaskItem` links
+    /// to its project by name.
+    private var taskClass: Project? {
+        taskSpace?.projects.first { $0.name == live.projectName && $0.isClass }
+    }
+
+    /// School anatomy applies when the task is filed under a class, or sits in the space
+    /// this user's classes live in. Derived from the class rows themselves rather than
+    /// from a space named "School", so a renamed School space still reads as School.
+    private var isSchoolTask: Bool {
+        guard state.schoolEnabled else { return false }
+        if taskClass != nil { return true }
+        guard let space = taskSpace else { return false }
+        return space.projects.contains { $0.isClass && $0.archivedAt == nil }
+    }
+
+    /// What the picker offers: the active term's live classes, plus whatever class this
+    /// task already wears — a task carried over from a past term must not lose its class
+    /// just because that class is archived.
+    private var pickableClasses: [Project] {
+        var list = state.activeTerm.map { state.classes(in: $0) }
+            ?? state.allProjects.filter { $0.isClass && $0.archivedAt == nil }
+        if let current = taskClass, !list.contains(where: { $0.id == current.id }) {
+            list.append(current)
+        }
+        return list.sorted { $0.name < $1.name }
+    }
+
+    /// A class's own hue — classes are told apart by color all over the app, and a class
+    /// never inherits the space color (see `AppState.nextClassColorToken`).
+    private func classColor(_ klass: Project) -> Color {
+        klass.colorToken.map { ColorToken.color(for: $0) } ?? klass.spaceColor
+    }
+
+    /// The single picker a school task gets. Its space is School by definition, so that
+    /// is a tag in the header, not a third control.
+    private var classPicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("CLASS").atlasCapsLabel()
+
+            Menu {
+                Button("No class") {
+                    state.setTaskProject(taskId: live.id, projectName: "")
+                }
+                if !pickableClasses.isEmpty {
+                    Divider()
+                    ForEach(pickableClasses) { klass in
+                        Button(klass.name) { fileUnder(klass) }
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(taskClass.map(classColor) ?? AtlasTheme.Colors.textMuted)
+                        .frame(width: 8, height: 8)
+                    Text(taskClass?.name ?? "No class")
+                        .atlasFont(size: 14, weight: .medium, design: .rounded)
+                    Image(systemName: "chevron.down")
+                        .atlasFont(size: 10, weight: .semibold)
+                }
+                .foregroundStyle(taskClass.map(classColor) ?? AtlasTheme.Colors.textMuted)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            moveOutOfSchool
+        }
+    }
+
+    /// Files the task under `klass`, moving it into the class's space first when the two
+    /// differ — `setTaskSpace` drops a project the new space doesn't hold, so the space
+    /// has to land before the project name does. Both are the existing setters, so the
+    /// change propagates exactly the way the old PROJECT picker's did.
+    private func fileUnder(_ klass: Project) {
+        if klass.spaceName != live.spaceName {
+            state.setTaskSpace(taskId: live.id, spaceName: klass.spaceName)
+        }
+        state.setTaskProject(taskId: live.id, projectName: klass.name)
+    }
+
+    /// The escape hatch: a school task can still leave School entirely. Kept quiet and
+    /// secondary — which space a class lives in is not a choice students make daily.
+    private var moveOutOfSchool: some View {
+        Menu {
+            ForEach(state.spaces.filter { $0.name != live.spaceName }) { space in
+                Button(space.name) {
+                    state.setTaskSpace(taskId: live.id, spaceName: space.name)
+                }
+            }
+        } label: {
+            Text("Move to another space…")
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Move this task out of School")
     }
 
     // MARK: Space picker
