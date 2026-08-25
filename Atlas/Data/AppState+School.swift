@@ -188,7 +188,7 @@ extension AppState {
             counts[token, default: 0] += 1
         }
         // `min(by:)` keeps the first minimal element, so palette order breaks the ties and
-        // the first six classes of a semester are six different hues.
+        // the first twelve classes of a semester are twelve different hues.
         let palette = AtlasTheme.Colors.classPalette.map { ColorToken.token(for: $0) }
         return palette.min { (counts[$0] ?? 0) < (counts[$1] ?? 0) } ?? "school"
     }

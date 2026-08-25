@@ -89,8 +89,10 @@ public enum AtlasTheme {
 
         /// The rotation a new class takes its color from, so a five-class semester never
         /// arrives as five identical dots. Starts on the space identity hues (blue, green,
-        /// purple, amber) and continues through four more of the same weight and warmth on
-        /// cream. Defined once here; `AppState.nextClassColorToken` cycles it.
+        /// purple, amber) and continues through eight more of the same weight and warmth on
+        /// cream. Twelve entries, spread around the hue circle so the tie-break in
+        /// `AppState.nextClassColorToken` has to reuse a hue only past a twelfth live class.
+        /// Defined once here; `AppState.nextClassColorToken` cycles it.
         public static let classPalette: [Color] = [
             school,                 // blue
             personal,               // green
@@ -99,7 +101,11 @@ public enum AtlasTheme {
             Color(hex: "d9736b"),   // terracotta
             Color(hex: "4fa8a0"),   // teal
             Color(hex: "8a94d6"),   // periwinkle
-            Color(hex: "c07fb0")    // mauve
+            Color(hex: "c07fb0"),   // mauve
+            Color(hex: "d0708f"),   // rose
+            Color(hex: "8f9b52"),   // moss
+            Color(hex: "5fa055"),   // fern
+            Color(hex: "5f7a99")    // slate blue
         ]
     }
 
