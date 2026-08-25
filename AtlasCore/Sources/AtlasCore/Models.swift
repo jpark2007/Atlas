@@ -184,6 +184,12 @@ public struct CalendarEvent: Identifiable {
     /// picker and the retroactive course→class remap.
     public var canvasCourse: String? = nil
 
+    /// The sources of the duplicate copies hidden behind this event by
+    /// `CalendarSync.collapsingDuplicates` — empty for every event that wasn't a dedup
+    /// winner. Display-time only (never persisted); drives the detail view's "also in …"
+    /// note. Each entry is the loser's own ingest-stamped source, never a guessed label.
+    public var duplicateSources: [EventSource] = []
+
     public init(id: UUID = UUID(), title: String, subtitle: String, start: Date, end: Date, color: Color, spaceName: String, notes: String? = nil, isAllDay: Bool = false, projectID: UUID? = nil, noteID: UUID? = nil, isReadOnly: Bool = false, source: EventSource = .atlas, googleEventId: String? = nil, appleEventId: String? = nil, isRecurring: Bool = false, isWorkBlock: Bool = false, isDeadline: Bool = false, spaceID: UUID? = nil, googleConnectionId: UUID? = nil) {
         self.id = id
         self.title = title

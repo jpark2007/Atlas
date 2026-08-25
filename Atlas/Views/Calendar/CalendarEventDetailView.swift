@@ -56,6 +56,7 @@ struct CalendarEventDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header
+                duplicateSourceNote
                 if isReadOnly || isCanvasBackedBlock { lockBanner }
                 fields
                 if canLinkNote { linkedNoteSection }
@@ -106,6 +107,20 @@ struct CalendarEventDetailView: View {
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .tint(AtlasTheme.Colors.accent)
             }
+        }
+    }
+
+    /// The other calendars this same block also lives on — copies collapsed behind this one
+    /// by display-time dedup, so the user knows the duplicate wasn't lost. Every label is the
+    /// hidden copy's OWN ingest-stamped source; nothing here is inferred.
+    @ViewBuilder private var duplicateSourceNote: some View {
+        if !item.duplicateSources.isEmpty {
+            HStack(spacing: 6) {
+                Image(systemName: "square.on.square").atlasFont(size: 11)
+                Text("Also in \(item.duplicateSources.map(\.displayName).joined(separator: ", "))")
+                    .atlasFont(size: 12, weight: .medium, design: .rounded)
+            }
+            .foregroundStyle(AtlasTheme.Colors.textMuted)
         }
     }
 

@@ -26,6 +26,11 @@
  * feed_id + feed_type; the event subtitle is the FEED's display_name (not a
  * hardcoded "Canvas").
  *
+ * Cross-FEED dedup: the per-feed key can't see across feeds, so before inserting a NEW
+ * event we check the user's other feeds for the same VEVENT (same UID, or same
+ * normalized title at the same start) and skip the insert rather than create a second
+ * row for one real block. Existing rows are never modified or deleted.
+ *
  * Cross-function guard: every EVENT insert carries google_origin=true so the
  * google-sync runner (0006–0010) NEVER exports it to the user's Google Calendar
  * (a feed row also has a null google_event_id so no google-sync patch/delete path
@@ -55,6 +60,19 @@ import {
 } from "../_shared/ics.ts";
 
 const BATCH_LIMIT = 20; // feeds processed per invocation (oldest first)
+
+// Cross-feed dedup key. The same real VEVENT often arrives on two subscribed feeds
+// (a school ICS republished in a department feed), and the per-feed upsert key
+// (user_id, feed_id, canvas_uid) can't see across feeds — so it would create a second
+// row for the same block. Normalization is deliberately blunt: case/punctuation/space
+// folded title + exact start instant. Conservative — a near-miss keeps both rows and
+// the client-side display dedup (AtlasCore.collapsingDuplicates) still collapses it.
+function normalizeTitleForDedup(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+function crossFeedKey(title: string, startAtISO: string): string {
+  return `${normalizeTitleForDedup(title)}|${new Date(startAtISO).getTime()}`;
+}
 
 // Bounds on ONE feed per tick so a pathological/hostile feed can't blow the
 // function's memory or time budget. A real student's semester feed is well under
@@ -103,6 +121,7 @@ interface FeedResult {
   tasksUpdated: number;
   eventsInserted: number;
   eventsUpdated: number;
+  eventsSkippedDuplicate: number; // already present from ANOTHER feed (cross-feed dedup)
   error?: string;
 }
 
@@ -122,6 +141,7 @@ async function syncFeed(admin: SupabaseClient, feed: Feed, dryRun: boolean): Pro
     tasksUpdated: 0,
     eventsInserted: 0,
     eventsUpdated: 0,
+    eventsSkippedDuplicate: 0,
   };
 
   if (!feed.vault_secret_id) throw new Error("feed has no vault_secret_id");
@@ -287,6 +307,26 @@ async function syncFeed(admin: SupabaseClient, feed: Feed, dryRun: boolean): Pro
     const existingEventUids = new Set<string>();
     for (const r of (rows ?? []) as { id: string; canvas_uid: string }[]) existingEventUids.add(r.canvas_uid);
 
+    // Cross-feed dedup: what the user's OTHER feeds already put on the calendar in this
+    // batch's time window. A NEW uid whose VEVENT is already there (same UID, or same
+    // normalized title at the same start) is skipped instead of inserted — never
+    // deleted, and rows owned by this feed are unaffected.
+    const batchStarts = [...eventByUid.values()].map((e) => e.start_at).sort();
+    const { data: sibRows, error: sibErr } = await admin
+      .from("events")
+      .select("canvas_uid, title, start_at")
+      .eq("user_id", userId)
+      .neq("feed_id", feedId)
+      .gte("start_at", batchStarts[0])
+      .lte("start_at", batchStarts[batchStarts.length - 1]);
+    if (sibErr) throw new Error(`sibling feed events select failed: ${sibErr.message}`);
+    const siblingUids = new Set<string>();
+    const siblingTitleTimes = new Set<string>();
+    for (const r of (sibRows ?? []) as { canvas_uid: string | null; title: string; start_at: string }[]) {
+      if (r.canvas_uid) siblingUids.add(r.canvas_uid);
+      siblingTitleTimes.add(crossFeedKey(r.title, r.start_at));
+    }
+
     const eventInserts: Record<string, unknown>[] = [];
     for (const [uid, e] of eventByUid) {
       if (existingEventUids.has(uid)) {
@@ -304,7 +344,13 @@ async function syncFeed(admin: SupabaseClient, feed: Feed, dryRun: boolean): Pro
             .eq("canvas_uid", uid);
           if (uErr) itemErrors.push(`event ${uid}: ${uErr.message}`.slice(0, 160));
         }
+      } else if (
+        siblingUids.has(uid) ||
+        siblingTitleTimes.has(crossFeedKey(e.title, e.start_at))
+      ) {
+        result.eventsSkippedDuplicate++;
       } else {
+        siblingTitleTimes.add(crossFeedKey(e.title, e.start_at)); // also collapses same-title/time dupes within this feed
         eventInserts.push({
           id: crypto.randomUUID(),
           user_id: userId,
@@ -423,7 +469,7 @@ Deno.serve(async (req: Request) => {
         feedType: feed.feed_type,
         status: revoked ? "revoked" : "error",
         notModified: false,
-        tasksInserted: 0, tasksUpdated: 0, eventsInserted: 0, eventsUpdated: 0,
+        tasksInserted: 0, tasksUpdated: 0, eventsInserted: 0, eventsUpdated: 0, eventsSkippedDuplicate: 0,
         error: msg,
       });
     }
