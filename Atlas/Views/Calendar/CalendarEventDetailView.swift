@@ -97,6 +97,7 @@ struct CalendarEventDetailView: View {
                 }
                 .buttonStyle(.plain)
                 Spacer()
+                examBadge
                 sourceBadge
             }
             if isReadOnly || isCanvasBackedBlock {
@@ -126,6 +127,14 @@ struct CalendarEventDetailView: View {
                     .atlasFont(size: 12, weight: .medium, design: .rounded)
             }
             .foregroundStyle(AtlasTheme.Colors.textMuted)
+        }
+    }
+
+    /// "EXAM" when the title reads like one — the same rule the `.ics` import sorts by
+    /// (`ICSFile.isExamTitle`), so a final looks like a final wherever it came from.
+    @ViewBuilder private var examBadge: some View {
+        if ICSFile.isExamTitle(item.title) {
+            atlasTag(text: "Exam", color: AtlasTheme.Colors.danger)
         }
     }
 

@@ -23,6 +23,9 @@ public enum ICSFile {
         /// Weekdays a WEEKLY RRULE repeats on, in `Calendar` numbering (1 = Sunday).
         /// Empty when the event carries no weekly rule — it happens once.
         public let weekdays: [Int]
+        /// The weekly rule's UNTIL, when it named one — the last day the series runs.
+        /// Nil for a rule with no bound (and for COUNT, which is not expanded here).
+        public let until: Date?
     }
 
     /// What an item in the file turned out to be. The review list shows this as a chip the
@@ -209,10 +212,18 @@ public enum ICSFile {
     /// Folds occurrences into blocks: one per distinct start/end/location, carrying every
     /// weekday it was seen on. An event with no end time has no duration to draw, so it
     /// is dropped rather than guessed at.
+    ///
+    /// Each block also keeps WHEN it runs, not only what time of day. Dropping that was
+    /// what drew a September timetable across all of August: a pattern with no dates is
+    /// bounded only by the term, so the term's first Monday became the first lecture.
+    /// `firstDate` is the earliest DTSTART folded in. `lastDate` is the latest occurrence
+    /// a spelled-out file listed, or the weekly rule's UNTIL — and stays nil for an
+    /// unbounded rule, whose one VEVENT says nothing about when the series stops.
     private static func meetingBlocks(from events: [Event], calendar: Calendar) -> [MeetingBlock] {
         var order: [String] = []
         var days: [String: Set<Int>] = [:]
         var shape: [String: (start: String, end: String, location: String?)] = [:]
+        var span: [String: (first: Date, last: Date, until: Date?, recurring: Bool)] = [:]
 
         for event in events {
             guard let end = event.end else { continue }
@@ -227,11 +238,19 @@ public enum ICSFile {
                 ? [calendar.component(.weekday, from: event.start)]
                 : event.weekdays
             days[key, default: []].formUnion(weekdays)
+
+            let seen = span[key]
+            span[key] = (first: min(seen?.first ?? event.start, event.start),
+                         last: max(seen?.last ?? event.start, event.start),
+                         until: [seen?.until, event.until].compactMap { $0 }.max(),
+                         recurring: (seen?.recurring ?? false) || !event.weekdays.isEmpty)
         }
 
         return order.compactMap { key in
-            guard let s = shape[key], let d = days[key] else { return nil }
-            return MeetingBlock(weekdays: d.sorted(), start: s.start, end: s.end, location: s.location)
+            guard let s = shape[key], let d = days[key], let range = span[key] else { return nil }
+            return MeetingBlock(weekdays: d.sorted(), start: s.start, end: s.end, location: s.location,
+                                firstDate: range.first,
+                                lastDate: range.recurring ? range.until : range.last)
         }
         .sorted { $0.start < $1.start }
     }
@@ -259,7 +278,8 @@ public enum ICSFile {
             case "END" where prop.value == "VEVENT":
                 if inEvent, let summary, let start, !summary.isEmpty {
                     result.append(Event(summary: summary, start: start, end: end, location: location,
-                                        weekdays: weeklyDays(rrule)))
+                                        weekdays: weeklyDays(rrule),
+                                        until: weeklyUntil(rrule, calendar: calendar)))
                 }
                 inEvent = false
             case "SUMMARY"  where inEvent: summary = unescape(prop.value)
@@ -276,18 +296,36 @@ public enum ICSFile {
     /// The weekdays of a `FREQ=WEEKLY` rule, in `Calendar` numbering. Any other frequency
     /// (or a weekly rule with no BYDAY) yields none — the event's own day is used instead.
     private static func weeklyDays(_ rrule: String?) -> [Int] {
-        guard let rrule else { return [] }
-        var parts: [String: String] = [:]
-        for pair in rrule.split(separator: ";") {
-            let kv = pair.split(separator: "=", maxSplits: 1)
-            if kv.count == 2 { parts[kv[0].uppercased()] = String(kv[1]) }
-        }
+        let parts = ruleParts(rrule)
         guard parts["FREQ"]?.uppercased() == "WEEKLY", let byDay = parts["BYDAY"] else { return [] }
         let numbers = ["SU": 1, "MO": 2, "TU": 3, "WE": 4, "TH": 5, "FR": 6, "SA": 7]
         return byDay.split(separator: ",").compactMap { token in
             // BYDAY entries may be ordinal-prefixed ("2MO"); the day is the last two chars.
             numbers[String(token.suffix(2)).uppercased()]
         }.sorted()
+    }
+
+    /// The last day a WEEKLY rule runs, from its UNTIL. `20261211T235959Z` and the bare
+    /// `20261211` date form are both read; COUNT is deliberately not expanded — an
+    /// unbounded-looking rule stays bounded by the term, which is the safe direction.
+    private static func weeklyUntil(_ rrule: String?, calendar: Calendar) -> Date? {
+        let parts = ruleParts(rrule)
+        guard parts["FREQ"]?.uppercased() == "WEEKLY", let until = parts["UNTIL"] else { return nil }
+        return date(Property(name: "UNTIL",
+                             params: until.count == 8 ? ["VALUE": "DATE"] : [:],
+                             value: until),
+                    calendar: calendar)
+    }
+
+    /// `FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=…` → a dictionary keyed by upper-cased name.
+    private static func ruleParts(_ rrule: String?) -> [String: String] {
+        guard let rrule else { return [:] }
+        var parts: [String: String] = [:]
+        for pair in rrule.split(separator: ";") {
+            let kv = pair.split(separator: "=", maxSplits: 1)
+            if kv.count == 2 { parts[kv[0].uppercased()] = String(kv[1]) }
+        }
+        return parts
     }
 
     // MARK: - Lines

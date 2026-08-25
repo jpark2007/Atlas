@@ -38,6 +38,11 @@ public enum SchoolCalendar {
     /// on break — a lecture must not be drawn over Thanksgiving because the pattern
     /// says "Thursday". A pattern block whose clock times don't parse is skipped
     /// rather than guessed at.
+    ///
+    /// A block that knows its own dates narrows the window further: classes that begin
+    /// Sept 1 must not be drawn from the term's start in August, and a series the file
+    /// bounded with UNTIL stops there. So the drawn range is
+    /// `[max(term start, firstDate), min(term end, lastDate)]`.
     public static func meetings(
         on day: Date,
         classes: [Project],
@@ -49,7 +54,8 @@ public enum SchoolCalendar {
         var out: [Meeting] = []
         for klass in classes where klass.archivedAt == nil {
             for block in klass.meetingPattern where block.weekdays.contains(weekday) {
-                guard let start = time(block.start, on: day, calendar: calendar),
+                guard covers(day, block, calendar: calendar),
+                      let start = time(block.start, on: day, calendar: calendar),
                       let end = time(block.end, on: day, calendar: calendar),
                       end > start else { continue }
                 out.append(Meeting(classID: klass.id, className: klass.name, code: klass.code,
@@ -57,6 +63,16 @@ public enum SchoolCalendar {
             }
         }
         return out.sorted { $0.start < $1.start }
+    }
+
+    /// True when `day` falls inside the block's own dated window. A block that carries
+    /// neither date (typed by hand, or scanned from a syllabus that gave no dates) has no
+    /// window of its own and is bounded only by the term — unchanged behavior.
+    public static func covers(_ day: Date, _ block: MeetingBlock, calendar: Calendar = .current) -> Bool {
+        let d = calendar.startOfDay(for: day)
+        if let first = block.firstDate, d < calendar.startOfDay(for: first) { return false }
+        if let last = block.lastDate, d > calendar.startOfDay(for: last) { return false }
+        return true
     }
 
     /// A local wall-clock "HH:mm" resolved against `day`. A meeting is 10:00 in the

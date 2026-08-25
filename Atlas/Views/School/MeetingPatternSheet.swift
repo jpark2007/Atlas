@@ -25,6 +25,11 @@ struct MeetingPatternSheet: View {
         var start = Date()
         var end = Date()
         var location = ""
+        /// The dated window an imported block carries (`MeetingBlock.firstDate` /
+        /// `lastDate`). Editing the times must not widen a September class back across
+        /// the whole term, so the window rides along untouched; a row added here has none.
+        var firstDate: Date?
+        var lastDate: Date?
     }
 
     var body: some View {
@@ -156,6 +161,8 @@ struct MeetingPatternSheet: View {
             b.start = SchoolCalendar.time(stored.start, on: Date()) ?? Date()
             b.end = SchoolCalendar.time(stored.end, on: Date()) ?? Date()
             b.location = stored.location ?? ""
+            b.firstDate = stored.firstDate
+            b.lastDate = stored.lastDate
             return b
         }
         if blocks.isEmpty { blocks = [defaultBlock()] }
@@ -170,7 +177,9 @@ struct MeetingPatternSheet: View {
             return MeetingBlock(weekdays: draft.weekdays.sorted(),
                                 start: Self.hhmm(draft.start),
                                 end: Self.hhmm(draft.end),
-                                location: location.isEmpty ? nil : location)
+                                location: location.isEmpty ? nil : location,
+                                firstDate: draft.firstDate,
+                                lastDate: draft.lastDate)
         }
         state.setMeetingPattern(projectID: project.id, blocks: stored,
                                 meetingInfo: meetingNote.trimmingCharacters(in: .whitespaces))

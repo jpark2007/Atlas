@@ -54,6 +54,30 @@ final class SchoolCalendarTests: XCTestCase {
         XCTAssertTrue(SchoolCalendar.meetings(on: day("2026-12-16"), classes: [bio([mwf])], term: fall).isEmpty)
     }
 
+    /// The Sept-1 bug: a term Atlas auto-dated from August must not draw a class that the
+    /// imported file says begins Sept 1. The block's own dates narrow the term's window.
+    func testBlockDatesNarrowTheTermWindow() {
+        var dated = mwf
+        dated.firstDate = day("2026-09-07")
+        dated.lastDate  = day("2026-11-13")
+        let august = Term(name: "Fall 2026", startsOn: day("2026-08-01"), endsOn: day("2026-12-20"))
+
+        // 2026-08-26 and 2026-09-02 are Wednesdays inside the term but before the class begins.
+        XCTAssertTrue(SchoolCalendar.meetings(on: day("2026-08-26"), classes: [bio([dated])], term: august).isEmpty)
+        XCTAssertTrue(SchoolCalendar.meetings(on: day("2026-09-02"), classes: [bio([dated])], term: august).isEmpty)
+        // 2026-09-09 is the first Wednesday on or after the first meeting.
+        XCTAssertEqual(SchoolCalendar.meetings(on: day("2026-09-09"), classes: [bio([dated])], term: august).count, 1)
+        // 2026-11-18 is a Wednesday after the block's last date, still inside the term.
+        XCTAssertTrue(SchoolCalendar.meetings(on: day("2026-11-18"), classes: [bio([dated])], term: august).isEmpty)
+    }
+
+    /// A pattern typed by hand carries no dates and stays bounded by the term alone —
+    /// already-created classes keep working with nothing to migrate.
+    func testUndatedBlockIsStillTermBounded() {
+        let august = Term(name: "Fall 2026", startsOn: day("2026-08-01"), endsOn: day("2026-12-20"))
+        XCTAssertEqual(SchoolCalendar.meetings(on: day("2026-08-26"), classes: [bio([mwf])], term: august).count, 1)
+    }
+
     func testHolidayKeyDateStopsMeetings() {
         // 2026-11-26 is a Thursday… but Thanksgiving is a holiday, and the class doesn't
         // meet Thursdays anyway — so use a holiday landing on a Wednesday to be sure.
