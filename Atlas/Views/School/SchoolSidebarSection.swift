@@ -90,12 +90,27 @@ struct SchoolSidebarSection: View {
 
     // MARK: - Header
 
-    /// "SCHOOL" plus the term switcher. The switcher is deliberately tucked behind the
-    /// term name — switching semesters is rare, so it earns a menu, not a row.
+    /// "SCHOOL", the term stated quietly in mono, and an overflow menu. The term is
+    /// reported, never asked about: with no term yet the label is simply absent — the
+    /// section never says "No semester yet". Editing dates, switching terms and starting
+    /// the next one all live behind the ellipsis, out of the way of the daily path.
+    ///
+    /// Layout: the caps label is `fixedSize`d so "SCHOOL" can never wrap to "SCHOO L",
+    /// and the term label truncates instead of pushing the menu off the 232pt sidebar.
     private var header: some View {
         HStack(spacing: 6) {
-            Text("SCHOOL").atlasCapsLabel()
-            Spacer()
+            Text("SCHOOL")
+                .atlasCapsLabel()
+                .fixedSize()
+            Spacer(minLength: 4)
+            if let term {
+                Text(term.name)
+                    .atlasMono(size: 10, weight: .medium)
+                    .textCase(.uppercase)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
             Menu {
                 if let term {
                     Button("Edit \(term.name)…") { editingTerm = term }
@@ -114,18 +129,14 @@ struct SchoolSidebarSection: View {
                 Button("Start a new semester…") { presentNewSemester = true }
                 Button("Add a class…") { presentWizard = true }
             } label: {
-                HStack(spacing: 4) {
-                    Text(term?.name ?? "No semester yet")
-                        .atlasFont(size: 12, weight: .semibold, design: .rounded)
-                        .lineLimit(1)
-                    Image(systemName: "chevron.down").atlasFont(size: 8, weight: .semibold)
-                }
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                Image(systemName: "ellipsis")
+                    .atlasFont(size: 11, weight: .semibold)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help("Switch semester or start a new one")
+            .help("Edit term dates, switch or start a semester")
         }
         .padding(.horizontal, 10)
         .padding(.top, 12)

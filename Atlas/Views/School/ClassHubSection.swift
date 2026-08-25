@@ -41,11 +41,10 @@ struct ClassHubSection: View {
 
     private var chips: some View {
         HStack(spacing: 8) {
+            // The term is shown when there is one and never demanded when there isn't:
+            // a class that predates the term model is still just a class.
             if let term {
                 atlasTag(text: term.name, color: AtlasTheme.Colors.textSecondary)
-            } else {
-                // A class with no term is the migration case — say so instead of hiding it.
-                atlasTag(text: "No semester", color: AtlasTheme.Colors.late)
             }
             if project.archivedAt != nil {
                 atlasTag(text: "Put away", color: AtlasTheme.Colors.textMuted)

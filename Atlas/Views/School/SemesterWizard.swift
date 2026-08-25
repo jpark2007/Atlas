@@ -1,15 +1,15 @@
 import SwiftUI
 import AtlasCore
 
-/// "Set up your semester" — the School zero state, in place of the fake seeded class
-/// the server used to create.
+/// "Add your classes" — the School zero state, in place of the fake seeded class the
+/// server used to create.
 ///
 /// Order is the agreed one: *are you a student?* → **add your classes** (the doors,
-/// school calendar link first) → done. Classes are the point; term dates are optional and
-/// never gate — an undated term is created silently, and dates can be filled in later
-/// from School → Edit term. The premise throughout is that the schedule already exists
-/// somewhere and Atlas's job is to go get it, not to make the student build a timetable
-/// by hand.
+/// school calendar link first) → done. The word "semester" never appears: the term is
+/// created silently from today's date the moment a class exists (`AppState.ensureActiveTerm`)
+/// and its dates stay editable from School → Edit term. The premise throughout is that
+/// the schedule already exists somewhere and Atlas's job is to go get it, not to make the
+/// student build a timetable by hand.
 struct SemesterWizard: View {
     @EnvironmentObject var state: AppState
     @EnvironmentObject var auth: AuthService
@@ -84,7 +84,7 @@ struct SemesterWizard: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Text("Set up your semester")
+            Text("Add your classes")
                 .atlasFont(size: 19, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Spacer()
@@ -102,8 +102,8 @@ struct SemesterWizard: View {
     private var studentStep: some View {
         VStack(alignment: .leading, spacing: 14) {
             prompt("Are you a student?",
-                   "School in Atlas is a semester, your classes, and the work that hangs off them.")
-            choice("Yes — set up my classes", "It takes about a minute.") { step = .door }
+                   "School in Atlas is your classes and the work that hangs off them.")
+            choice("Yes — add my classes", "It takes about a minute.") { step = .door }
             choice("Not right now", "Hides the School section. Turn it back on in Settings → App & Help.") {
                 state.schoolEnabled = false
                 dismiss()
@@ -354,16 +354,14 @@ struct SemesterWizard: View {
 
     // MARK: - Actions
 
-    /// The term new classes go under: the one this wizard already made, else the active
-    /// one, else a freshly named undated one ("Fall 2026"). Created silently — dates come
-    /// later from School → Edit term, and never gate the classes.
+    /// The term new classes go under. The wizard never mentions it: `ensureActiveTerm`
+    /// makes one from today's date if there isn't one, and the dates stay editable from
+    /// School → Edit term.
     private func ensureTerm() -> Term {
         if let term { return term }
-        if let active = state.activeTerm { term = active; return active }
-        let created = Term(name: suggestedTermName())
-        state.saveTerm(created)
-        term = created
-        return created
+        let resolved = state.ensureActiveTerm()
+        term = resolved
+        return resolved
     }
 
     private func connect(type: String) {
@@ -424,16 +422,6 @@ struct SemesterWizard: View {
         dismiss()
     }
 
-    private func suggestedTermName() -> String {
-        let cal = Calendar.current
-        let month = cal.component(.month, from: Date())
-        let year = cal.component(.year, from: Date())
-        switch month {
-        case 1...5: return "Spring \(year)"
-        case 6...7: return "Summer \(year)"
-        default:    return "Fall \(year)"
-        }
-    }
 }
 
 /// The checklist body without its own sheet chrome, so the wizard can host it inline and
