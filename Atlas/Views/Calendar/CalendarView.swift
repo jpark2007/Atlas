@@ -83,7 +83,10 @@ struct CalendarView: View {
                             onSetDueDate: { taskID, date in
                                 state.setDueDate(taskId: taskID, date: date)
                             },
-                            onToggleDone: { state.toggleTask($0) },
+                            onToggleDone: { id in
+                                withAnimation(AtlasTheme.taskCrossOut) { state.toggleTask(id) }
+                            },
+                            onOpenTask: { state.route = .task($0) },
                             onDragChanged: { id, point in
                                 dragTaskID = id
                                 dragLocation = point
