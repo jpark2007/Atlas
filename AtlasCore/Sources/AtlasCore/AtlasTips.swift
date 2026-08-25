@@ -105,7 +105,7 @@ public enum AtlasTips {
         @Parameter public static var appOpens: Int = 0
         public init() {}
         public var title: Text { Text("Capture from any app") }
-        public var message: Text? { Text("Press ⌘⇧K from anywhere to jot a task or speak it") }
+        public var message: Text? { Text("Press ⌥Space from anywhere to jot a task or speak it") }
         public var image: Image? { Image(systemName: "bolt") }
         public var rules: [Rule] {
             #Rule(Self.$appOpens) { $0 >= 3 }

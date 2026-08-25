@@ -19,6 +19,6 @@
 		<string>Default</string>
 	</array>
 	<!-- NOTE: App Sandbox is intentionally NOT enabled. The Carbon global hotkey
-	     (system-wide ⌘⇧K) requires the sandbox to be off. -->
+	     (system-wide ⌥Space) requires the sandbox to be off. -->
 </dict>
 </plist>
