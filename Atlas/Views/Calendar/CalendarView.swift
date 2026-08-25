@@ -455,7 +455,10 @@ struct CalendarView: View {
                     end: due,
                     color: red ? AtlasTheme.Colors.danger : task.spaceColor,
                     spaceName: task.spaceName,
-                    isAllDay: true,        // never packed as a time block — drawn as a hairline
+                    // Never packed as a time block either way — drawn as a rule on the grid.
+                    // A due date carrying a real clock time is NOT all-day, so it draws only
+                    // as its rule; a date-only due stays all-day and rides the pinned strip.
+                    isAllDay: !hasClockTime(due),
                     isDeadline: true,
                     deadlineTaskID: task.id
                 ))
@@ -471,13 +474,20 @@ struct CalendarView: View {
                     end: original,
                     color: AtlasTheme.Colors.textMuted,
                     spaceName: task.spaceName,
-                    isAllDay: true,
+                    isAllDay: !hasClockTime(original),
                     isDeadline: true,
                     isHistory: true
                 ))
             }
         }
         return markers
+    }
+
+    /// Whether a due date carries a real clock time (not bare-date midnight). Mirrors
+    /// `CalendarEvent.hasSpecificTime`, but has to be answered before the event is built.
+    private func hasClockTime(_ date: Date) -> Bool {
+        let cal = Calendar.current
+        return cal.component(.hour, from: date) != 0 || cal.component(.minute, from: date) != 0
     }
 
     /// The planned-time readout a due marker carries: a fill against the task's optional
