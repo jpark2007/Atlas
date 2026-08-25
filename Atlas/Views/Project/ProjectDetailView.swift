@@ -42,10 +42,13 @@ struct ProjectDetailView: View {
     @State private var showCompleted = false
     @State private var showPast = false
 
-    /// All tasks tagged to this project, deadline-ordered.
+    /// All tasks tagged to this project, deadline-ordered. Resolved through the one
+    /// shared `state.project(for:)` — the same call the dashboard chip, the rail and the
+    /// late bar make — so a task can never read as this class on one surface and be
+    /// missing from this list on another.
     private var allTasks: [TaskItem] {
         state.tasks
-            .filter { $0.projectName == project.name && $0.spaceName == project.spaceName }
+            .filter { state.project(for: $0)?.id == project.id }
             .sorted {
                 switch ($0.dueDate, $1.dueDate) {
                 case let (a?, b?): return a < b

@@ -110,8 +110,15 @@ struct TaskDetailView: View {
 
                 // School is a framework, not a space the student picks — it reads as an
                 // automatic tag here, and the class it belongs to is the one real choice.
+                // The class sits right beside it in its OWN color, so the header says
+                // which class at a glance instead of only "School".
                 if isSchoolTask {
-                    atlasTag(text: "School", color: AtlasTheme.Colors.school)
+                    HStack(spacing: 6) {
+                        atlasTag(text: "School", color: AtlasTheme.Colors.school)
+                        if let klass = taskClass {
+                            atlasTag(text: klass.name, color: classColor(klass))
+                        }
+                    }
                 } else if !live.spaceName.isEmpty {
                     HStack(spacing: 5) {
                         Circle()
@@ -329,11 +336,12 @@ struct TaskDetailView: View {
 
     // MARK: Class picker (School framework)
 
-    /// The class this task is filed under, if it is filed under one. Resolved by name for
-    /// the same reason `taskProjectID` is: a class IS a project row, and `TaskItem` links
-    /// to its project by name.
+    /// The class this task is filed under, if it is filed under one. Goes through the one
+    /// shared `state.project(for:)` so this page, the dashboard chip and the class page
+    /// always agree about which class a task belongs to.
     private var taskClass: Project? {
-        taskSpace?.projects.first { $0.name == live.projectName && $0.isClass }
+        guard let project = state.project(for: live), project.isClass else { return nil }
+        return project
     }
 
     /// School anatomy applies when the task is filed under a class, or sits in the space
@@ -676,11 +684,9 @@ struct TaskDetailView: View {
 
     // MARK: References
 
-    /// The task's project UUID — resolved from its space + project names, since
-    /// `TaskItem` links to a project by name. References are project-scoped.
+    /// The task's project UUID, via the one shared resolver. References are project-scoped.
     private var taskProjectID: UUID? {
-        state.spaces.first { $0.name == live.spaceName }?
-            .projects.first { $0.name == live.projectName }?.id
+        state.project(for: live)?.id
     }
 
     private var referencesSection: some View {

@@ -495,6 +495,11 @@ public struct TaskItem: Identifiable {
     public var appleEventId: String? = nil
     public var spaceColor: Color = AtlasTheme.Colors.accent
     public var spaceName: String = ""
+    /// The project (a CLASS, in School) this task is filed under — the AUTHORITATIVE
+    /// link, persisted as `tasks.project_id`. `projectName` below is the denormalized
+    /// display copy, re-derived from this id on every snapshot load; before this id
+    /// existed the name lived only in memory and every save silently dropped the class.
+    public var projectID: UUID? = nil
     public var projectName: String = ""
     public var notes: String = ""
     /// The parent space's id — authoritative once set; the name remains for display.

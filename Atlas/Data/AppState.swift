@@ -629,8 +629,17 @@ final class AppState: ObservableObject {
         for i in events.indices {
             events[i].color = calendarSpaceColor(named: events[i].spaceName)
         }
+        // A task's project link persists as `projectID`; `projectName` is the display
+        // copy, so re-derive it from the id here. Without this pass a snapshot re-pull
+        // (bootstrap, the 5-min background refresh, a realtime tick) blanks the name and
+        // every class chip silently degrades to the space tag.
+        let projectsByID = Dictionary(spaces.flatMap(\.projects).map { ($0.id, $0) },
+                                      uniquingKeysWith: { first, _ in first })
         for i in tasks.indices {
             tasks[i].spaceColor = calendarSpaceColor(named: tasks[i].spaceName)
+            if let pid = tasks[i].projectID, let project = projectsByID[pid] {
+                tasks[i].projectName = project.name
+            }
         }
         for si in spaces.indices {
             let spaceColor = spaces[si].color
@@ -1210,15 +1219,21 @@ final class AppState: ObservableObject {
         task.spaceID = spaceID(named: resolvedSpace)
         task.spaceColor = calendarSpaceColor(named: resolvedSpace)
         task.projectName = projectName
+        task.projectID = project(spaceName: resolvedSpace, projectName: projectName)?.id
         tasks.append(task)
         Task { try? await self.db?.upsertTask(task) }
         return task
     }
 
     /// Reassign a task to a different project (or clear it with "").
+    ///
+    /// Stamps the project's `id` alongside the name: the id is what persists
+    /// (`tasks.project_id`), the name is the display copy. Setting only the name is
+    /// what used to lose a class on the next snapshot load.
     func setTaskProject(taskId: UUID, projectName: String) {
         if let i = tasks.firstIndex(where: { $0.id == taskId }) {
             tasks[i].projectName = projectName
+            tasks[i].projectID = project(spaceName: tasks[i].spaceName, projectName: projectName)?.id
             let updated = tasks[i]
             Task { try? await self.db?.upsertTask(updated) }
         }
@@ -1242,8 +1257,11 @@ final class AppState: ObservableObject {
         tasks[i].spaceID = spaceID(named: spaceName)
         tasks[i].spaceColor = calendarSpaceColor(named: spaceName)
         let projects = spaces.first { $0.name == spaceName }?.projects ?? []
-        if !projects.contains(where: { $0.name == tasks[i].projectName }) {
+        if let kept = projects.first(where: { $0.name == tasks[i].projectName }) {
+            tasks[i].projectID = kept.id
+        } else {
             tasks[i].projectName = ""
+            tasks[i].projectID = nil
         }
         let updated = tasks[i]
         Task { try? await self.db?.upsertTask(updated) }
