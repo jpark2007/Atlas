@@ -195,13 +195,22 @@ struct SettingsView: View {
     }
 
     private var account: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 18) {
             columnHeader("Account", note: "Who you're signed in as on this Mac.")
 
-            settingsRow(icon: "person.crop.circle",
-                        tint: AtlasTheme.Colors.accent,
-                        name: identityTitle,
-                        detail: identitySubtitle) {
+            // An account reads as an identity header — avatar + who you are — not as
+            // another settings row.
+            HStack(spacing: 12) {
+                Circle().fill(AtlasTheme.Colors.accent.opacity(0.15))
+                    .frame(width: 40, height: 40)
+                    .overlay(Image(systemName: "person.fill").foregroundStyle(AtlasTheme.Colors.accent))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(identityTitle).atlasFont(size: 15, weight: .semibold, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text(identitySubtitle).atlasFont(size: 13, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                Spacer()
                 if case .offline = auth.state {
                     Button("Sign in") { auth.signOut() } // returns to gate
                         .buttonStyle(.plain)
@@ -224,34 +233,33 @@ struct SettingsView: View {
 
             // Editable first name / nickname — feeds the dashboard greeting. Persists
             // to profiles.display_name (server-synced). Seeded once from the profile;
-            // saved on submit and when Settings closes if changed. The field IS the
-            // row's trailing control, so nothing sits open on the page.
+            // saved on submit and when Settings closes if changed.
             if auth.state != .offline {
-                settingsRow(icon: "textformat",
-                            name: "Your name",
-                            detail: "Used to greet you on the dashboard. Leave it blank for a plain greeting.") {
+                VStack(alignment: .leading, spacing: 6) {
+                    label("YOUR NAME")
                     input("First name or nickname", text: $nicknameField)
-                        .frame(width: 200)
+                        .frame(maxWidth: 280)
                         .onSubmit { commitNickname() }
+                    Text("Used to greet you on the dashboard. Leave it blank for a plain greeting.")
+                        .atlasFont(size: 11, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 .onAppear {
                     if !nicknameSeeded { nicknameField = state.nickname; nicknameSeeded = true }
                 }
 
-                settingsRow(icon: "trash",
-                            tint: AtlasTheme.Colors.danger,
-                            name: "Delete account",
-                            detail: "Erases your account and everything in it. This can't be undone.") {
+                VStack(alignment: .leading, spacing: 6) {
                     Button { showDeleteAccountConfirm = true } label: {
-                        Text(deletingAccount ? "Deleting…" : "Delete…")
-                            .atlasFont(size: 13, weight: .medium, design: .rounded)
+                        Text(deletingAccount ? "Deleting account…" : "Delete account…")
+                            .atlasFont(size: 12, weight: .medium, design: .rounded)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(AtlasTheme.Colors.danger)
                     .disabled(deletingAccount)
-                }
-                if let err = deleteAccountError {
-                    errorRow(err).padding(.vertical, 8)
+                    Text("Erases your account and everything in it. This can't be undone.")
+                        .atlasFont(size: 11, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    if let err = deleteAccountError { errorRow(err) }
                 }
             }
         }
