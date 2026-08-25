@@ -6,6 +6,17 @@ import AtlasCore
 /// `CalendarEvent`/`TaskItem` so events show their true source and read-only
 /// sources get no destructive actions. Due-but-untimed tasks are excluded here —
 /// they live in `NeedsTimeSection`.
+///
+/// Phase-2 calendar language, in list form:
+/// • **Deadlines are boundaries, not blocks** — they leave the timeline and gather in
+///   their own compact "Due today / Due tomorrow / Due Mar 3" header group, each row a
+///   flag marker at its due time.
+/// • **Work sessions read as the plan, not the commitment** — where the grid uses a
+///   dashed outline, the list uses a dashed spine plus the shared `TimeModel` planned
+///   label. An event's spine stays solid.
+/// • **Red is earned, once**: a deadline goes red only when it's due today with no work
+///   time planned (`TimeModel.isDueTodayUnplanned`). Everything overdue is amber, in the
+///   `LateGroup` above — a red overdue graveyard causes avoidance.
 struct DayTimelineView: View {
     let day: Date
     let now: Date
@@ -32,16 +43,64 @@ struct DayTimelineView: View {
         }
     }
 
+    /// Deadline markers for the day — due-only tasks carrying a clock time.
+    private var dueItems: [AgendaItem] { items.filter { $0.kind == .task && $0.allDay } }
+    /// Everything that actually occupies time: events, class meetings, work sessions.
+    private var timelineItems: [AgendaItem] { items.filter { !($0.kind == .task && $0.allDay) } }
+
     var body: some View {
+        dueSection
+        timelineSection
+    }
+
+    // MARK: - Due group
+
+    @ViewBuilder
+    private var dueSection: some View {
+        if !dueItems.isEmpty {
+            Section {
+                ForEach(dueItems) { item in
+                    row(for: item)
+                        .listRowInsets(EdgeInsets(top: 12, leading: 28, bottom: 12, trailing: 28))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparatorTint(MobileTheme.hairline)
+                }
+            } header: {
+                HStack {
+                    Text("\(dueHeading) · \(dueItems.count)")
+                        .edCapsLabel()
+                        .textCase(nil)
+                    Spacer()
+                }
+                .padding(.horizontal, 28)
+                .padding(.top, 8)
+            }
+        }
+    }
+
+    /// "Due today" / "Due tomorrow" / "Due Mar 3" — the phone's UpAhead-style grouping,
+    /// named by the shown day so paging days keeps the label honest.
+    private var dueHeading: String {
+        let cal = Calendar.current
+        if cal.isDateInToday(day) { return "Due today" }
+        if cal.isDateInTomorrow(day) { return "Due tomorrow" }
+        return "Due \(Self.dueDayFormat.string(from: day))"
+    }
+
+    private static let dueDayFormat: DateFormatter = { let f = DateFormatter(); f.dateFormat = "MMM d"; return f }()
+
+    // MARK: - Timeline
+
+    private var timelineSection: some View {
         Section {
-            if items.isEmpty {
+            if timelineItems.isEmpty {
                 emptyContent
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .listRowInsets(EdgeInsets(top: 20, leading: 28, bottom: 20, trailing: 28))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             } else {
-                ForEach(items) { item in
+                ForEach(timelineItems) { item in
                     row(for: item)
                         .listRowInsets(EdgeInsets(top: 14, leading: 28, bottom: 14, trailing: 28))
                         .listRowBackground(Color.clear)
@@ -73,15 +132,18 @@ struct DayTimelineView: View {
         let event = item.kind == .event ? events.first { $0.id == item.id } : nil
         // A due-only task that survived the filter is a clock-timed deadline.
         let isDeadline = item.kind == .task && item.allDay
-        let overdue = isDeadline && item.date < now
+        // The one place red is earned: due today with no work time planned.
+        let urgent = isDeadline && (task.map { TimeModel.isDueTodayUnplanned($0, now: now) } ?? false)
+        // A timed task IS a work session — planned time, not a commitment.
+        let isWorkSession = item.kind == .task && !item.allDay
 
         HStack(alignment: .top, spacing: 12) {
-            timeColumn(item, isNow: isNow, overdue: overdue)
+            timeColumn(item, isNow: isNow, urgent: urgent)
 
             if isDeadline {
                 Image(systemName: "flag.fill")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(AtlasTheme.Colors.danger)
+                    .foregroundStyle(urgent ? AtlasTheme.Colors.danger : item.color)
                     .padding(.top, 3)
             } else if let task {
                 checkCircle(task)
@@ -89,14 +151,22 @@ struct DayTimelineView: View {
                 Circle().fill(item.color).frame(width: 9, height: 9).padding(.top, 4)
             }
 
+            // Solid spine = something happening; dashed spine = planned work. Same
+            // solid-vs-dashed distinction the Mac's grid tiles make, at list scale.
+            if !isDeadline { spine(color: item.color, dashed: isWorkSession) }
+
             Text(item.title)
                 .font(.system(size: 15.5, weight: .semibold, design: .rounded))
                 .foregroundStyle((task?.done ?? false) ? MobileTheme.faint : MobileTheme.ink)
                 .strikethrough(task?.done ?? false, color: MobileTheme.faint)
+                // Work sessions read as provisional, like their faded tiles on the grid.
+                .opacity(isWorkSession ? 0.75 : 1)
 
             Spacer(minLength: 8)
 
-            trailingTag(item: item, event: event, isNow: isNow, isDeadline: isDeadline, overdue: overdue)
+            trailingTag(item: item, event: event, isNow: isNow,
+                        isDeadline: isDeadline, urgent: urgent,
+                        workSessionTask: isWorkSession ? task : nil)
         }
         .overlay(alignment: .leading) {
             if isNow {
@@ -112,10 +182,24 @@ struct DayTimelineView: View {
         }
     }
 
-    private func timeColumn(_ item: AgendaItem, isNow: Bool, overdue: Bool) -> some View {
+    /// The row's type spine: solid for an event/class meeting, dashed for a work session.
+    private func spine(color: Color, dashed: Bool) -> some View {
+        Group {
+            if dashed {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .strokeBorder(color, style: StrokeStyle(lineWidth: 3, dash: [3, 3]))
+            } else {
+                RoundedRectangle(cornerRadius: 1.5).fill(color)
+            }
+        }
+        .frame(width: 3, height: 20)
+        .padding(.top, 1)
+    }
+
+    private func timeColumn(_ item: AgendaItem, isNow: Bool, urgent: Bool) -> some View {
         // Only genuine all-day events read "all-day"; a clock-timed deadline shows its due time.
         let text = (item.allDay && item.kind == .event) ? "all-day" : clock(item.date)
-        let color: Color = overdue ? AtlasTheme.Colors.danger
+        let color: Color = urgent ? AtlasTheme.Colors.danger
             : isNow ? MobileTheme.accentText : MobileTheme.muted
         return Text(text)
             .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -130,11 +214,19 @@ struct DayTimelineView: View {
     }
 
     private func trailingTag(item: AgendaItem, event: CalendarEvent?, isNow: Bool,
-                             isDeadline: Bool, overdue: Bool) -> some View {
+                             isDeadline: Bool, urgent: Bool,
+                             workSessionTask: TaskItem?) -> some View {
         let text: String
         let color: Color
         if isNow { text = "NOW"; color = MobileTheme.accentText }
-        else if isDeadline { text = "DUE"; color = overdue ? AtlasTheme.Colors.danger : MobileTheme.faint }
+        else if isDeadline { text = "DUE"; color = urgent ? AtlasTheme.Colors.danger : MobileTheme.faint }
+        // A work session states the plan it belongs to ("2.5 of 4h planned"), from the
+        // same shared TimeModel math the Mac's due markers use.
+        else if let task = workSessionTask {
+            text = TimeModel.plannedLabel(estimateMin: task.estimateMin,
+                                          sessionMinutes: [task.durationMin ?? 60])
+            color = MobileTheme.faint
+        }
         else if let event { text = sourceLabel(event.source); color = MobileTheme.faint }
         else { text = item.spaceName; color = MobileTheme.faint }
 

@@ -1144,13 +1144,9 @@ final class AppState: ObservableObject {
     /// `originalDueDate` once so the ORIGINAL date survives as a faded marker in the past.
     /// Never automatic — this only ever runs from an explicit "Reschedule N late items" click.
     func rescheduleLateItems(to date: Date) {
-        let late = TimeModel.lateItems(tasks: tasks, now: now)
-        for item in late {
-            guard let i = tasks.firstIndex(where: { $0.id == item.id }) else { continue }
-            if tasks[i].originalDueDate == nil { tasks[i].originalDueDate = tasks[i].dueDate }
-            tasks[i].dueDate = date
-            tasks[i].dueLabel = TaskItem.dueLabel(for: date)
-            let updated = tasks[i]
+        for updated in TimeModel.rescheduleLate(tasks: tasks, to: date, now: now) {
+            guard let i = tasks.firstIndex(where: { $0.id == updated.id }) else { continue }
+            tasks[i] = updated
             Task { try? await self.db?.upsertTask(updated) }
         }
     }

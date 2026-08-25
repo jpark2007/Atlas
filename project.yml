@@ -140,6 +140,7 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         NSMicrophoneUsageDescription: "Atlas uses the microphone for click-to-talk capture, transcribing what you say into the capture bar. Recording only starts when you tap the mic."
         NSSpeechRecognitionUsageDescription: "Atlas transcribes your speech on-device so you can dictate tasks and notes into the capture bar."
+        NSCalendarsFullAccessUsageDescription: "Atlas reads your Apple Calendar events to show them alongside your schedule. Atlas never modifies your calendars from your phone."
         CFBundleURLTypes:
           - CFBundleURLName: com.atlaslm.AtlasMobile
             CFBundleURLSchemes:

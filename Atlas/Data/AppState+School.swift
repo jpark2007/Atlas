@@ -213,29 +213,7 @@ extension AppState {
     /// That is door 2 — attribution, not duplication — with no new matching code.
     func classMeetingEvents(on day: Date) -> [CalendarEvent] {
         guard let term = activeTerm else { return [] }
-        let classes = meetingClasses
-        guard !classes.isEmpty else { return [] }
-        return SchoolCalendar.meetings(on: day, classes: classes, term: term).map { meeting in
-            let project = classes.first { $0.id == meeting.classID }
-            let color = project?.colorToken.map { ColorToken.color(for: $0) }
-                ?? project?.spaceColor
-                ?? AtlasTheme.Colors.school
-            return CalendarEvent(
-                id: GoogleCalendarMapper.stableUUID(
-                    from: "class-meeting-\(meeting.classID.uuidString)-\(meeting.start.timeIntervalSince1970)"),
-                title: meeting.className,
-                subtitle: meeting.location ?? meeting.code ?? "Class",
-                start: meeting.start,
-                end: meeting.end,
-                color: color,
-                spaceName: project?.spaceName ?? "School",
-                isAllDay: false,
-                projectID: meeting.classID,
-                // Synthesized from the class's pattern — edited on the class, not the tile.
-                isReadOnly: true,
-                spaceID: project?.spaceID
-            )
-        }
+        return SchoolCalendar.meetingEvents(on: day, classes: meetingClasses, term: term)
     }
 
     /// The active term's Key Dates on `day`, as all-day flags. Deliberately NOT deadline
@@ -243,20 +221,7 @@ extension AppState {
     /// the day's due count.
     func keyDateFlags(on day: Date) -> [CalendarEvent] {
         guard schoolEnabled, let term = activeTerm else { return [] }
-        return SchoolCalendar.keyDates(on: day, in: term).map { keyDate in
-            CalendarEvent(
-                id: GoogleCalendarMapper.stableUUID(
-                    from: "key-date-\(term.id.uuidString)-\(keyDate.label)-\(TermDay.string(from: keyDate.date))"),
-                title: keyDate.label,
-                subtitle: term.name,
-                start: Calendar.current.startOfDay(for: keyDate.date),
-                end: Calendar.current.startOfDay(for: keyDate.date),
-                color: AtlasTheme.Colors.textSecondary,
-                spaceName: schoolSpaceNameForDisplay,
-                isAllDay: true,
-                isReadOnly: true
-            )
-        }
+        return SchoolCalendar.keyDateFlagEvents(on: day, in: term, spaceName: schoolSpaceNameForDisplay)
     }
 
     /// The space name Key Date flags wear, so the calendar's space filter treats them like

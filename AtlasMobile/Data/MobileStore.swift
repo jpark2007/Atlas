@@ -25,6 +25,10 @@ final class MobileStore: ObservableObject {
     @Published var pendingPlacement: TaskItem?
     /// Last failed-write message (calm copy). Views may surface it; nil = no error.
     @Published var lastError: String?
+    /// Apple Calendar events for the visible window (Phase 3, "Apple Calendar from
+    /// iPhone"). Read-only, device-local and never persisted — EventKit is per-device, so
+    /// no server pass can see these; `MobileStore+Calendar` merges them at display time.
+    @Published var appleEvents: [CalendarEvent] = []
     /// Set only when a token refresh fails and we force a sign-out; `SignInView`
     /// surfaces it as a muted line. Cleared on the next successful `signIn`.
     @Published var authNotice: String?
@@ -42,6 +46,9 @@ final class MobileStore: ObservableObject {
     /// Read the live session so a token refresh is picked up on the next request.
     lazy var db  = AtlasDB(session: { @MainActor [weak self] in self?.session })
     lazy var ai  = AtlasAI(session: { [weak self] in self?.session })
+
+    /// Apple Calendar read path (`MobileStore+Calendar` drives it).
+    let eventKit = MobileEventKitService()
 
     /// Cross-device preference sync (user_settings, 0025). Mirrors the Mac: bootstrap
     /// + foreground pull is server-wins; a user-initiated change of a synced setting
