@@ -86,6 +86,21 @@ public enum AtlasTheme {
         public static let side     = Color(hex: "b48ad9")
         public static let yellow   = Color(hex: "febc2e")
         public static let green    = Color(hex: "5fb98e")
+
+        /// The rotation a new class takes its color from, so a five-class semester never
+        /// arrives as five identical dots. Starts on the space identity hues (blue, green,
+        /// purple, amber) and continues through four more of the same weight and warmth on
+        /// cream. Defined once here; `AppState.nextClassColorToken` cycles it.
+        public static let classPalette: [Color] = [
+            school,                 // blue
+            personal,               // green
+            side,                   // purple
+            Color(hex: "e0952f"),   // amber
+            Color(hex: "d9736b"),   // terracotta
+            Color(hex: "4fa8a0"),   // teal
+            Color(hex: "8a94d6"),   // periwinkle
+            Color(hex: "c07fb0")    // mauve
+        ]
     }
 
     /// Continuous-corner radii at Mac density.
@@ -211,6 +226,78 @@ extension View {
                 .fill(AtlasTheme.Colors.hairline)
                 .frame(height: 1)
         }
+    }
+}
+
+// MARK: - Editorial controls
+//
+// Stock SwiftUI controls arrive wearing the system accent (a blue switch, a white
+// date field) and break the flat-paper language everywhere they appear. These are
+// the shared replacements — defined ONCE here so a view never re-invents them.
+// Adopt them wherever a Toggle or a DatePicker is shown.
+
+/// The Atlas switch: an ink track that fills when on, a paper thumb, no color.
+/// `Toggle(...).toggleStyle(AtlasToggleStyle())`.
+public struct AtlasToggleStyle: ToggleStyle {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 10) {
+            configuration.label
+            Spacer(minLength: 8)
+            Capsule()
+                .fill(configuration.isOn
+                      ? AtlasTheme.Colors.textPrimary
+                      : AtlasTheme.Colors.textPrimary.opacity(0.10))
+                .overlay(Capsule().strokeBorder(AtlasTheme.Colors.border, lineWidth: 1))
+                .frame(width: 38, height: 22)
+                .overlay(alignment: configuration.isOn ? .trailing : .leading) {
+                    Circle()
+                        .fill(configuration.isOn ? AtlasTheme.Colors.bgBase : AtlasTheme.Colors.textSecondary)
+                        .frame(width: 16, height: 16)
+                        .padding(3)
+                }
+                .animation(.spring(response: 0.25, dampingFraction: 0.85), value: configuration.isOn)
+                .contentShape(Capsule())
+                .onTapGesture { configuration.isOn.toggle() }
+        }
+    }
+}
+
+extension View {
+    /// The Atlas date field — wraps a `DatePicker` (or any compact control) in the
+    /// transparent, ink-outlined, mono-digit chrome the rest of the app uses, and strips
+    /// the system accent off the picker itself.
+    public func atlasDateField() -> some View {
+        #if os(macOS)
+        let styled = self.datePickerStyle(.field)   // the stepper-free text field; no white well
+        #else
+        let styled = self.datePickerStyle(.compact)
+        #endif
+        return styled
+            .labelsHidden()
+            .atlasMono(size: 12, weight: .medium)
+            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+            .tint(AtlasTheme.Colors.textPrimary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(Color.clear)
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(AtlasTheme.Colors.textPrimary.opacity(0.55), lineWidth: AtlasTheme.rule))
+    }
+
+    /// The Atlas text field — same chrome as `atlasDateField`, for the plain
+    /// `TextField`s that sit beside it in a form row.
+    public func atlasTextField(size: CGFloat = 13) -> some View {
+        self
+            .textFieldStyle(.plain)
+            .atlasFont(size: size, weight: .medium, design: .rounded)
+            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+            .tint(AtlasTheme.Colors.textPrimary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(AtlasTheme.Colors.textPrimary.opacity(0.55), lineWidth: AtlasTheme.rule))
     }
 }
 

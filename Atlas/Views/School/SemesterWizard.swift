@@ -51,9 +51,8 @@ struct SemesterWizard: View {
     // Manual entry: a handful of name/code rows.
     @State private var manualRows: [ManualClass] = [ManualClass(), ManualClass(), ManualClass()]
 
-    // File door: what the parsed .ics turned out to hold.
-    @State private var fileCourses: [ICSFile.Course] = []
-    @State private var fileChosen: Set<String> = []
+    // File door: what the parsed .ics turned out to hold, as a review list.
+    @State private var reviewItems: [ReviewItem] = []
     @State private var fileName: String?
     @State private var presentFileChooser = false
     @State private var dropTargeted = false
@@ -62,6 +61,28 @@ struct SemesterWizard: View {
         let id = UUID()
         var name = ""
         var code = ""
+    }
+
+    /// One row of the review list. Carries everything all three landing places need — the
+    /// meeting blocks a class wants AND the time an event wants — so re-typing a row's chip
+    /// never runs out of information.
+    struct ReviewItem: Identifiable {
+        let id = UUID()
+        var kind: ICSFile.Kind
+        var chosen = true
+        let title: String
+        let code: String?
+        let meetings: [MeetingBlock]
+        let start: Date
+        let end: Date?
+        let location: String?
+        /// The imported class this item named, keyed the way `ICSFile.Course.id` is.
+        let courseID: String?
+        /// True when the title itself says exam — the one that earns the EXAM label.
+        let isExam: Bool
+
+        /// How this row would be found by an exam looking for its class.
+        var classKey: String { code ?? title }
     }
 
     var body: some View {
@@ -89,7 +110,10 @@ struct SemesterWizard: View {
                 .padding(24)
             }
         }
-        .frame(width: 500, height: 520, alignment: .topLeading)
+        // Wide on purpose: the option cards read as sentences and the review list carries a
+        // title, a code, a detail line and a type chip on one row. 500pt made all of that
+        // wrap into a column of scraps.
+        .frame(width: 700, height: 600, alignment: .topLeading)
         .background(AtlasTheme.Colors.bgBase)
         .onAppear {
             step = startAt
@@ -105,7 +129,7 @@ struct SemesterWizard: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Text("Add your classes")
+            Text(startAt == .canvas ? "Connect Canvas" : "Add your classes")
                 .atlasFont(size: 19, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
             Spacer()
@@ -151,15 +175,18 @@ struct SemesterWizard: View {
                    "Fastest if you only have a few. Scan a syllabus afterward to fill in times and policies.") {
                 step = .manual
             }
-            choice("Connect Canvas",
-                   "Best for your assignments — they flow in automatically. Atlas finds your courses too; add times from your school calendar or a syllabus scan.") {
-                step = .canvas
-            }
             // The scan commits ONTO a class (times, info card, its work), so it needs one
             // to exist first — inside the wizard there is nothing to file it under yet.
             // Type the classes here, then scan each syllabus from its own page.
             disabledChoice("I have a screenshot or a PDF",
                            "Add the class first, then hit Scan a syllabus on its page — Atlas reads the times, the work and the policies off it.")
+            // Canvas is not a door to classes: it carries assignments, and it files them
+            // under classes that already exist. Saying so once beats a fifth door that
+            // creates thirteen half-named ones.
+            Text("Assignments come from Canvas — connect it from School ⋯ once your classes are in.")
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -181,7 +208,10 @@ struct SemesterWizard: View {
                 .overlay(RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
                     .stroke(AtlasTheme.Colors.border, lineWidth: 1))
             actionButton(working ? "Connecting…" : "Bring in my Canvas") { connect(type: "canvas") }
-            backButton { step = .door }
+            // Opened straight from School ⋯ there is no door step behind this one.
+            if startAt != .canvas {
+                backButton { step = .door }
+            }
         }
     }
 
@@ -220,7 +250,7 @@ struct SemesterWizard: View {
             prompt("Bring in your schedule file",
                    "A link keeps itself updated. A file is a one-time import — drop it in and Atlas reads the classes out of it.")
 
-            if fileCourses.isEmpty {
+            if reviewItems.isEmpty {
                 dropZone
             } else {
                 if let fileName {
@@ -228,20 +258,123 @@ struct SemesterWizard: View {
                         .atlasMono(size: 11, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(fileCourses) { course in
-                        fileCourseRow(course)
-                    }
-                }
-                actionButton(fileChosen.isEmpty
-                             ? "Pick at least one"
-                             : "Add \(fileChosen.count) \(fileChosen.count == 1 ? "class" : "classes")") {
-                    createFromFile()
-                }
+                reviewGroup("CLASSES", .klass)
+                reviewGroup("EXAMS", .exam)
+                reviewGroup("KEY DATES", .keyDate)
+                actionButton(commitLabel) { commitReview() }
             }
 
             backButton { step = .door }
         }
+    }
+
+    /// The count line on the commit button, said in the file's own terms — a student
+    /// should be able to read it back against the list above without counting.
+    private var commitLabel: String {
+        let chosen = reviewItems.filter(\.chosen)
+        guard !chosen.isEmpty else { return "Pick at least one" }
+        let parts = [(ICSFile.Kind.klass, "class", "classes"),
+                     (.exam, "event", "events"),
+                     (.keyDate, "key date", "key dates")]
+            .compactMap { kind, one, many -> String? in
+                let n = chosen.filter { $0.kind == kind }.count
+                return n == 0 ? nil : "\(n) \(n == 1 ? one : many)"
+            }
+        return "Add " + parts.joined(separator: ", ")
+    }
+
+    @ViewBuilder
+    private func reviewGroup(_ label: String, _ kind: ICSFile.Kind) -> some View {
+        let rows = reviewItems.indices.filter { reviewItems[$0].kind == kind }
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label).atlasCapsLabel()
+                    .padding(.bottom, 2)
+                ForEach(rows, id: \.self) { index in
+                    reviewRow(index)
+                }
+            }
+        }
+    }
+
+    private func reviewRow(_ index: Int) -> some View {
+        let item = reviewItems[index]
+        return HStack(alignment: .top, spacing: 10) {
+            Button {
+                reviewItems[index].chosen.toggle()
+            } label: {
+                Image(systemName: item.chosen ? "checkmark.square.fill" : "square")
+                    .atlasFont(size: 14)
+                    .foregroundStyle(item.chosen ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textMuted)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(item.title)
+                        .atlasFont(size: 14, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .lineLimit(1)
+                    if let code = item.code {
+                        Text(code).atlasMono(size: 10, weight: .medium)
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    }
+                }
+                // What Atlas will draw, said out loud before it does it.
+                Text(reviewDetail(item))
+                    .atlasFont(size: 11, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 6)
+            typeChip(index)
+        }
+        .padding(.vertical, 7)
+        .atlasHairlineBelow()
+    }
+
+    private func reviewDetail(_ item: ReviewItem) -> String {
+        switch item.kind {
+        case .klass:
+            return item.meetings.isEmpty
+                ? "No meeting times in the file — add them on the class."
+                : item.meetings.map(MeetingPatternFormat.describe).joined(separator: " · ")
+        case .keyDate:
+            return item.start.formatted(date: .abbreviated, time: .omitted) + " · flagged on the calendar"
+        case .exam:
+            let when = item.start.formatted(date: .abbreviated, time: .shortened)
+            return item.courseID == nil ? when : "\(when) · \(item.courseID!)"
+        }
+    }
+
+    /// The chip that says what Atlas thinks this row is — and re-types it on a click.
+    /// Cycling beats a menu here: three kinds, and the wrong guess is one tap from right.
+    private func typeChip(_ index: Int) -> some View {
+        let kind = reviewItems[index].kind
+        let label: String = {
+            switch kind {
+            case .klass:   return "Class"
+            case .keyDate: return "Key date"
+            case .exam:    return reviewItems[index].isExam ? "Exam" : "Event"
+            }
+        }()
+        return Button {
+            let all = ICSFile.Kind.allCases
+            let next = all[(all.firstIndex(of: kind).map { $0 + 1 } ?? 0) % all.count]
+            reviewItems[index].kind = next
+        } label: {
+            Text(label)
+                .atlasMono(size: 9, weight: .medium)
+                .textCase(.uppercase)
+                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                .padding(.horizontal, 6).padding(.vertical, 3)
+                .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Not right? Click to change what this becomes.")
     }
 
     private var dropZone: some View {
@@ -271,43 +404,6 @@ struct SemesterWizard: View {
             }
             return true
         }
-    }
-
-    private func fileCourseRow(_ course: ICSFile.Course) -> some View {
-        let picked = fileChosen.contains(course.id)
-        return Button {
-            if picked { fileChosen.remove(course.id) } else { fileChosen.insert(course.id) }
-        } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: picked ? "checkmark.square.fill" : "square")
-                    .atlasFont(size: 14)
-                    .foregroundStyle(picked ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textMuted)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(course.name)
-                            .atlasFont(size: 14, weight: .medium, design: .rounded)
-                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                            .lineLimit(1)
-                        if let code = course.code {
-                            Text(code).atlasMono(size: 10, weight: .medium)
-                                .foregroundStyle(AtlasTheme.Colors.textMuted)
-                        }
-                    }
-                    // What Atlas will draw on the calendar, said out loud before it does it.
-                    if !course.meetings.isEmpty {
-                        Text(course.meetings.map(MeetingPatternFormat.describe).joined(separator: " · "))
-                            .atlasFont(size: 11, weight: .medium, design: .rounded)
-                            .foregroundStyle(AtlasTheme.Colors.textMuted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                Spacer()
-            }
-            .padding(.vertical, 7)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .atlasHairlineBelow()
     }
 
     // MARK: - Step 4 · waiting for the first sync
@@ -544,29 +640,57 @@ struct SemesterWizard: View {
             error = "Couldn't read that file."
             return
         }
-        let found = ICSFile.courses(in: raw)
-        guard !found.isEmpty else {
-            error = "Atlas didn't find any classes in that file. Check it's the schedule export and not an empty calendar."
+        let found = ICSFile.classify(in: raw)
+        let items = found.courses.map {
+            ReviewItem(kind: .klass, title: $0.name, code: $0.code, meetings: $0.meetings,
+                       start: $0.start, end: nil, location: nil, courseID: nil, isExam: false)
+        } + found.exams.map {
+            ReviewItem(kind: .exam, title: $0.title, code: $0.code, meetings: [],
+                       start: $0.start, end: $0.end, location: $0.location,
+                       courseID: $0.courseID, isExam: $0.isExam)
+        } + found.keyDates.map {
+            ReviewItem(kind: .keyDate, title: $0.title, code: $0.code, meetings: [],
+                       start: $0.start, end: $0.end, location: $0.location,
+                       courseID: nil, isExam: false)
+        }
+        guard !items.isEmpty else {
+            error = "Atlas didn't find anything in that file. Check it's the schedule export and not an empty calendar."
             return
         }
         error = nil
         fileName = url.lastPathComponent
-        fileCourses = found
-        fileChosen = Set(found.map(\.id))
+        reviewItems = items
     }
 
-    /// Creates the picked classes and gives each the meeting blocks the file described —
-    /// the same place the link door lands, minus the feed.
-    private func createFromFile() {
-        let picked = fileCourses.filter { fileChosen.contains($0.id) }
+    /// Commits the reviewed list. Classes go first so the exams that name them can be tied
+    /// to the class that was just created; an exam whose class was left unchecked lands as
+    /// an unassigned event rather than conjuring a class nobody asked for.
+    private func commitReview() {
+        let picked = reviewItems.filter(\.chosen)
         guard !picked.isEmpty else { return }
         let target = ensureTerm()
-        for course in picked {
-            guard let created = state.addClass(name: course.name, code: course.code, termID: target.id)
+
+        var classIDs: [String: UUID] = [:]
+        for item in picked where item.kind == .klass {
+            guard let created = state.addClass(name: item.title, code: item.code, termID: target.id)
             else { continue }
-            if !course.meetings.isEmpty {
-                state.setMeetingPattern(projectID: created.id, blocks: course.meetings, meetingInfo: nil)
+            classIDs[item.classKey] = created.id
+            if !item.meetings.isEmpty {
+                state.setMeetingPattern(projectID: created.id, blocks: item.meetings, meetingInfo: nil)
             }
+        }
+
+        let keyDates = picked.filter { $0.kind == .keyDate }.map {
+            TermKeyDate(label: $0.title, date: $0.start, kind: ICSFile.keyDateKind($0.title))
+        }
+        if !keyDates.isEmpty {
+            state.addKeyDates(keyDates, to: state.terms.first { $0.id == target.id } ?? target)
+        }
+
+        for item in picked where item.kind == .exam {
+            state.addImportedEvent(title: item.title, start: item.start, end: item.end,
+                                   location: item.location,
+                                   classID: item.courseID.flatMap { classIDs[$0] })
         }
         dismiss()
     }
