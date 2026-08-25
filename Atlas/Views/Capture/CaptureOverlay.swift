@@ -232,11 +232,27 @@ struct CaptureCommandBar: View {
         Binding(
             get: { text },
             set: { newValue in
+                // Refuse past the cap rather than truncating: the words stay whole and
+                // the field simply stops, with one line saying why. Typing or deleting
+                // afterwards clears the note via the field's onChange.
+                guard newValue.count <= Self.maxLength else {
+                    withAnimation { errorMessage = Self.atLimitMessage }
+                    return
+                }
                 text = newValue
                 CaptureDraftStore.save(newValue)
             }
         )
     }
+
+    /// The most text one capture can hold — the same ceiling the capture function
+    /// enforces (it 413s past it), so the field stops instead of letting someone type
+    /// into a guaranteed failure. Long pastes below it still fan out into several
+    /// items, so this is a backstop, not a paste limit.
+    static let maxLength = 20_000
+    /// Where the counter starts showing — the last ~15% of the budget, so it never
+    /// nags during ordinary capture.
+    private static let counterThreshold = Int(Double(maxLength) * 0.85)
 
     private var glassBackground: some View {
         RoundedRectangle(cornerRadius: corner, style: .continuous)
@@ -261,9 +277,20 @@ struct CaptureCommandBar: View {
             statusLabel("Enable mic & speech in Settings", color: AtlasTheme.Colors.danger)
         } else if speech.state == .unavailable {
             statusLabel("Dictation unavailable", color: AtlasTheme.Colors.textMuted)
+        } else if text.count >= Self.counterThreshold {
+            counterLabel
         } else {
             hint
         }
+    }
+
+    /// Quiet mono counter, only in the last stretch of the budget.
+    private var counterLabel: some View {
+        Text("\(text.count)/\(Self.maxLength)")
+            .atlasMono(size: 11, weight: .medium)
+            .foregroundStyle(AtlasTheme.Colors.textMuted)
+            .fixedSize()
+            .transition(.opacity)
     }
 
     private var listeningLabel: some View {
@@ -376,7 +403,7 @@ struct CaptureCommandBar: View {
             // Oversized paste (> server cap): skip the AI round-trip entirely —
             // the function would 413 — and tell the user, restoring their text so
             // nothing is lost. Same message as a server 413 below.
-            guard rawText.count <= 20_000 else {
+            guard rawText.count <= Self.maxLength else {
                 showError(Self.tooLongMessage, restoring: rawText)
                 return
             }
@@ -516,6 +543,9 @@ struct CaptureCommandBar: View {
     // 413 is NOT queued — a retry would 413 forever — so it stays an inline error
     // with the text restored to the field.
     static let tooLongMessage = "Sorry — that message is too long to sort"
+    // Shown while the field is refusing more characters — states the ceiling, blames
+    // nobody, and goes away on the next edit.
+    static let atLimitMessage = "That's as much as one capture can hold"
     // Held-for-later confirmations. A queued dump is SAVED, not lost — say so.
     static let queuedOfflineMessage = "Saved — will sort when you're back online"
     static let queuedServerMessage = "Saved — will sort when servers are back"

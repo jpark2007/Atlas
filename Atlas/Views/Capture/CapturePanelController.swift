@@ -16,13 +16,36 @@ import SwiftUI
 private final class CapturePanelWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    /// The screen centre-x and top-edge y this panel is pinned to, set once per summon.
+    /// Assigning it re-places the panel immediately.
+    var anchor: (centerX: CGFloat, top: CGFloat)? {
+        didSet { setFrame(frame, display: false) }
+    }
+
+    /// Re-derive the origin from `anchor` on EVERY frame change.
+    ///
+    /// `NSHostingController` with `.intrinsicContentSize` collapses the window to 0×0
+    /// the moment it becomes the content view controller and only sizes it once SwiftUI
+    /// has laid out — so the size the panel is *placed* with is never the size it ends
+    /// up at, and whichever corner AppKit keeps during that resize is not ours to pick.
+    /// Pinning here makes placement size-independent: the top edge stays put (result
+    /// cards grow the bar DOWNWARD) and the bar stays centred once its width settles.
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        guard let anchor else { return super.setFrame(frameRect, display: flag) }
+        super.setFrame(NSRect(x: (anchor.centerX - frameRect.width / 2).rounded(),
+                              y: anchor.top - frameRect.height,
+                              width: frameRect.width,
+                              height: frameRect.height),
+                       display: flag)
+    }
 }
 
 @MainActor
 final class CapturePanelController {
     static let shared = CapturePanelController()
 
-    private var panel: NSPanel?
+    private var panel: CapturePanelWindow?
     private var globalClickMonitor: Any?
     private var localKeyMonitor: Any?
     private var state: AppState?
@@ -82,7 +105,7 @@ final class CapturePanelController {
         previousApp = nil
     }
 
-    private func makePanel(state: AppState, auth: AuthService) -> NSPanel {
+    private func makePanel(state: AppState, auth: AuthService) -> CapturePanelWindow {
         let panel = CapturePanelWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 120),
             styleMask: [.nonactivatingPanel, .fullSizeContentView, .borderless],
@@ -116,14 +139,17 @@ final class CapturePanelController {
     }
 
     /// Center horizontally near the top of whichever screen the cursor is on.
-    private func reposition(_ panel: NSPanel) {
+    ///
+    /// This only records the anchor — `CapturePanelWindow.setFrame` applies it, now and
+    /// again on every later resize. It must not compute an origin from `panel.frame.size`:
+    /// at this point the hosting controller has collapsed the panel to 0×0, so the old
+    /// arithmetic put the panel's LEFT edge on the screen's centre line (and its BOTTOM
+    /// edge at the intended top), leaving the bar sitting half a width right of centre.
+    private func reposition(_ panel: CapturePanelWindow) {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
-        let size = panel.frame.size
-        let x = visible.midX - size.width / 2
-        let y = visible.maxY - size.height - 120
-        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        panel.anchor = (centerX: visible.midX, top: visible.maxY - 120)
     }
 
     private func installMonitors(panel: NSPanel) {

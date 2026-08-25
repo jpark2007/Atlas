@@ -21,11 +21,21 @@ struct SchoolSidebarSection: View {
     @State private var confirmRemoveAll = false
     @State private var presentNewSemester = false
     @State private var presentCourseCatchUp = false
+    /// Canvas course labels the catch-up prompt has already been dismissed for.
+    @State private var dismissedCourses: Set<String> = CanvasCatchUpDismissals.labels
     /// The term the editor sheet is editing — drives the sheet directly, so it can never
     /// present with a stale (or missing) term.
     @State private var editingTerm: Term?
 
     private var term: Term? { state.displayedTerm }
+
+    /// Unlinked Canvas courses the sidebar prompt hasn't been dismissed for. Dismissing
+    /// the card remembers the labels it was offering, so it stays away until Canvas sends
+    /// a course Atlas has never offered before. Only this sidebar nudge is gated — School
+    /// ⋯ → Connect Canvas still lists every unlinked course.
+    private var undismissedCanvasCourses: [String] {
+        state.unlinkedCanvasCourses.filter { !dismissedCourses.contains($0) }
+    }
 
     /// The term's classes — or, with no term yet, the ones that predate the term model.
     /// Undated classes are shown, not prompted about: dates are optional now.
@@ -57,10 +67,13 @@ struct SchoolSidebarSection: View {
                     }
                 }
 
-                if !state.unlinkedCanvasCourses.isEmpty && term != nil {
+                if !undismissedCanvasCourses.isEmpty && term != nil {
                     let n = state.unlinkedCanvasCourses.count
                     promptRow(title: n == 1 ? "1 new course found" : "\(n) new courses found",
-                              detail: "Canvas is sending items Atlas has no class for. Create them?") {
+                              detail: "Canvas is sending items Atlas has no class for. Create them?",
+                              onDismiss: {
+                                  dismissedCourses = CanvasCatchUpDismissals.dismiss(state.unlinkedCanvasCourses)
+                              }) {
                         presentCourseCatchUp = true
                     }
                 }
@@ -274,7 +287,10 @@ struct SchoolSidebarSection: View {
 
     /// A one-decision nudge above the class list. Same outlined card as the zero state,
     /// so School has exactly one prompt shape.
-    private func promptRow(title: String, detail: String, action: @escaping () -> Void) -> some View {
+    /// `onDismiss`, when given, adds a small ✕ that puts the prompt away for good.
+    private func promptRow(title: String, detail: String,
+                           onDismiss: (() -> Void)? = nil,
+                           action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -294,7 +310,41 @@ struct SchoolSidebarSection: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .topTrailing) {
+            if let onDismiss {
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .atlasFont(size: 8, weight: .semibold)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Stop asking about these courses")
+            }
+        }
         .padding(.horizontal, 6)
         .padding(.bottom, 6)
+    }
+}
+
+/// Which Canvas course labels the sidebar catch-up prompt has been dismissed for.
+///
+/// Device-local, like Atlas's other "don't show me this again" keys
+/// (`checklist.dismissed`, `calendar.lateBar.dismissedOn`). Keyed by the Canvas course
+/// label itself, so the prompt returns the moment a course Atlas has never offered
+/// shows up — and never for the ones the user already waved off.
+enum CanvasCatchUpDismissals {
+    private static let key = "school.canvasCatchUp.dismissed"
+
+    static var labels: Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+    }
+
+    /// Records `courses` as dismissed and hands back the updated set.
+    static func dismiss(_ courses: [String]) -> Set<String> {
+        let updated = labels.union(courses)
+        UserDefaults.standard.set(updated.sorted(), forKey: key)
+        return updated
     }
 }
