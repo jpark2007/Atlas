@@ -12,6 +12,11 @@ import AtlasCore
 /// fallback that schedules to a chosen hour. The rail hides the same spaces as the
 /// calendar's category chips (`hiddenSpaces`).
 struct UnscheduledTray: View {
+    /// Used only to resolve a task's CLASS color and class name — the task list itself
+    /// still arrives via `tasks` (the parent owns the filtering).
+    @EnvironmentObject var state: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let tasks: [TaskItem]
     /// The shared "now" — drives the overdue (bright-red) treatment for re-planned chips.
     var now: Date = Date()
@@ -25,6 +30,8 @@ struct UnscheduledTray: View {
     var onSetDueDate: (UUID, Date?) -> Void = { _, _ in }
     /// Check a task off — it completes and drops out of the tray.
     var onToggleDone: (UUID) -> Void = { _ in }
+    /// Open a task in Atlas (the expanded card's "Open" affordance).
+    var onOpenTask: (UUID) -> Void = { _ in }
     /// Live drag position (point in `calendarDragSpace`) while a chip is being dragged.
     var onDragChanged: (UUID, CGPoint) -> Void = { _, _ in }
     /// Drag released at this point (in `calendarDragSpace`) — CalendarView maps it to a slot.
@@ -36,6 +43,12 @@ struct UnscheduledTray: View {
     @State private var editingTaskID: UUID?
     /// Which space sections are expanded (all open by default).
     @State private var expandedSpaces: Set<String> = []
+    /// The one chip expanded in place (click to open, click again to fold). At most one
+    /// at a time — clicking another row moves the expansion rather than stacking cards.
+    @State private var expandedTaskID: UUID?
+    /// The chip currently playing its check-off animation. It stays on screen, inked and
+    /// softening, until `onToggleDone` actually completes it.
+    @State private var completingTaskID: UUID?
 
     /// Tasks shown after applying the hidden-space filter.
     private var displayedTasks: [TaskItem] {
@@ -144,26 +157,55 @@ struct UnscheduledTray: View {
         // Overdue tasks that returned to the tray to be re-planned read bright red — the
         // same danger color the overdue deadline pill uses (don't invent a new red).
         let overdue = task.isOverdue(now: now)
-        return HStack(spacing: 9) {
+        // WHOSE work this is: the class's own color when the task's project set one, else
+        // the space color, else the neutral accent. Resolved by AppState so the rail and
+        // the day grid can never disagree (see `taskAccentColor` / `gridColored`).
+        let accent = state.taskAccentColor(for: task)
+        let ink = overdue ? AtlasTheme.Colors.danger : accent
+        let expanded = expandedTaskID == task.id
+        let completing = completingTaskID == task.id
+        return HStack(alignment: .top, spacing: 9) {
             // Check it off — completes the task; it then drops out of the tray.
-            Button { onToggleDone(task.id) } label: {
-                Image(systemName: "square")
+            Button { completeTask(task) } label: {
+                Image(systemName: completing ? "checkmark.square.fill" : "square")
                     .atlasFont(size: 17, weight: .medium)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .foregroundStyle(completing ? ink : AtlasTheme.Colors.textMuted)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Mark done")
             RoundedRectangle(cornerRadius: 2)
-                .fill(overdue ? AtlasTheme.Colors.danger : task.spaceColor)
-                .frame(width: 3, height: 28)
-            VStack(alignment: .leading, spacing: 2) {
+                .fill(ink)
+                .frame(width: 3)
+                .frame(minHeight: 28)
+            VStack(alignment: .leading, spacing: 4) {
                 Text(task.title)
                     .atlasFont(size: 14, weight: .semibold, design: .rounded)
                     .foregroundStyle(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textPrimary)
-                    .lineLimit(1)
+                    .lineLimit(expanded ? nil : 1)
+                    .fixedSize(horizontal: false, vertical: expanded)
+                    .multilineTextAlignment(.leading)
+                if expanded, let className = state.project(for: task)?.name {
+                    Text(className)
+                        .atlasMono(size: 10, weight: .semibold)
+                        .tracking(0.8)
+                        .foregroundStyle(ink)
+                }
                 if !task.dueLabel.isEmpty {
-                    atlasTag(text: "Due \(task.dueLabel)", color: overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textMuted)
+                    atlasTag(text: "Due \(expanded ? fullDueLabel(task) : task.dueLabel)", color: ink)
+                }
+                if expanded {
+                    Button { onOpenTask(task.id) } label: {
+                        HStack(spacing: 4) {
+                            Text("Open")
+                            Image(systemName: "arrow.up.right")
+                        }
+                        .atlasFont(size: 11, weight: .semibold, design: .rounded)
+                        .foregroundStyle(ink)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open this task in Atlas")
                 }
             }
             Spacer(minLength: 0)
@@ -173,6 +215,12 @@ struct UnscheduledTray: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+        // The compact done animation: the box inks in, the row softens and slides toward
+        // the rail's edge on its way out — distinct from the main window's strikethrough,
+        // which has room for a drawn line the chip does not. Reduce motion keeps the fade
+        // and drops the travel.
+        .opacity(completing ? 0.2 : 1)
+        .offset(x: completing && !reduceMotion ? 16 : 0)
         // A grabbable chip: transparent on the cream bg, a hairline outline for the
         // drag affordance (overdue keeps the danger tint + red outline).
         .background(overdue ? AtlasTheme.wash(AtlasTheme.Colors.danger) : Color.clear)
@@ -182,13 +230,16 @@ struct UnscheduledTray: View {
                 .strokeBorder(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.border, lineWidth: 1)
         )
         .contentShape(Rectangle())
+        // A stationary click EXPANDS the chip in place (full title, class, due date, Open).
+        // It never opens a sheet or a popover — the card grows where it already sits.
+        // Setting a due date stays on the context menu ("Set due date…").
+        .onTapGesture { toggleExpanded(task.id) }
         // Custom pointer drag (NOT native `.draggable`): moving the chip ≥6pt schedules it
         // onto the grid via coordinate math in CalendarView. This sidesteps the macOS green
         // "+" copy badge and the unreliable native drop, matching the prototype that worked.
         // `minimumDistance: 6` means a stationary CLICK never engages the drag, so it passes
-        // through to the check-off Button (the checkbox completes instead of mis-firing).
-        // Setting a due date is via the context menu ("Set due date…") — no chip-body tap,
-        // which would otherwise fight both the drag and the checkbox.
+        // through to the check-off Button (the checkbox completes instead of mis-firing) and
+        // to the tap gesture above.
         .gesture(
             DragGesture(minimumDistance: 6, coordinateSpace: .global)
                 .onChanged { value in onDragChanged(task.id, value.location) }
@@ -219,6 +270,38 @@ struct UnscheduledTray: View {
                 }
             )
         }
+    }
+
+    /// Expand this chip in place, folding whichever one was open (only one at a time).
+    private func toggleExpanded(_ id: UUID) {
+        // The house spring the tray itself folds with — the card grows the same way.
+        let animation: Animation = reduceMotion
+            ? .easeOut(duration: 0.12)
+            : .spring(response: 0.3, dampingFraction: 0.85)
+        withAnimation(animation) {
+            expandedTaskID = expandedTaskID == id ? nil : id
+        }
+    }
+
+    /// Ink the checkbox, soften the row out, THEN complete the task — so the chip's own
+    /// done animation reads before the row leaves the rail.
+    private func completeTask(_ task: TaskItem) {
+        guard completingTaskID == nil else { return }
+        withAnimation(AtlasTheme.taskCrossOut) {
+            completingTaskID = task.id
+            expandedTaskID = nil
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            onToggleDone(task.id)
+            completingTaskID = nil
+        }
+    }
+
+    /// The expanded card's fuller due line — "MON AUG 24 · 5 PM", falling back to the
+    /// compact label when the task carries no concrete date.
+    private func fullDueLabel(_ task: TaskItem) -> String {
+        guard let due = task.dueDate else { return task.dueLabel }
+        return "\(CalendarFormat.monoDay.string(from: due)) · \(CalendarFormat.hour.string(from: due))"
     }
 
     private func hourLabel(_ hour: Int) -> String {

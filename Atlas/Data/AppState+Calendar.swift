@@ -48,10 +48,31 @@ extension AppState {
     /// The custom color token of the project matching `projectName` inside `spaceName`
     /// (empty name ⇒ no project). `nil` when nothing matches or the project inherits.
     private func projectColorToken(spaceName: String, projectName: String) -> String? {
+        project(spaceName: spaceName, projectName: projectName)?.colorToken
+    }
+
+    /// The project (a class, when `isClass`) a task belongs to — matched by name inside
+    /// its space. `nil` when the task carries no project link or nothing matches.
+    func project(for task: TaskItem) -> Project? {
+        project(spaceName: task.spaceName, projectName: task.projectName)
+    }
+
+    private func project(spaceName: String, projectName: String) -> Project? {
         guard !projectName.isEmpty else { return nil }
         return spaces.flatMap(\.projects)
-            .first { $0.name == projectName && $0.spaceName == spaceName }?
-            .colorToken
+            .first { $0.name == projectName && $0.spaceName == spaceName }
+    }
+
+    /// The color a TASK should wear on the unscheduled rail: its project's own
+    /// `colorToken` when that project set one (so a class task reads in the class's
+    /// color), else the space color already on the task — which itself falls back to
+    /// the neutral accent. Same resolution `gridColored` uses for day-grid tiles, so
+    /// the rail and the grid can never disagree about a class's color.
+    func taskAccentColor(for task: TaskItem) -> Color {
+        guard let token = projectColorToken(spaceName: task.spaceName, projectName: task.projectName) else {
+            return task.spaceColor
+        }
+        return ColorToken.color(for: token)
     }
 
     /// Resolve a space name to its id for dual-writing `spaceID` alongside
