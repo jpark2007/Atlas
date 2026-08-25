@@ -19,6 +19,25 @@ enum EventKitWriteError: LocalizedError {
     }
 }
 
+/// The user's per-calendar choice for Apple Calendar, stored DEVICE-LOCAL (EKCalendar
+/// identifiers are per-device, so this key is never synced). macOS has no iOS-style
+/// "limited calendars" OS picker; this is Atlas's in-app equivalent.
+///
+/// HIDDEN ids are stored rather than selected ones so the default (empty) means "show
+/// every calendar", a newly-added Apple calendar shows up on its own, and "hide them
+/// all" is still representable — which an empty selected-set could not express.
+enum AppleCalendarSelection {
+    static let hiddenKey = "calendar.apple.hiddenCalendarIds"
+
+    static func decode(_ raw: String) -> Set<String> {
+        Set(raw.split(separator: "\n").map(String.init))
+    }
+
+    static func encode(_ ids: Set<String>) -> String {
+        ids.sorted().joined(separator: "\n")
+    }
+}
+
 /// Thin wrapper around EventKit for reading and writing Apple Calendar events.
 /// Fetched events are tagged `source: .apple`; `isReadOnly` reflects whether the
 /// backing calendar allows edits and the event isn't recurring, so writable one-off
@@ -29,6 +48,11 @@ enum EventKitWriteError: LocalizedError {
 /// • macOS 14+: `requestFullAccessToEvents()` (new entitlement-aware API).
 /// • macOS 13 and below: `requestAccess(to: .event)` (legacy path, gated by
 ///   `if #available(macOS 14, *)`).
+/// • macOS 14 can also land on `.writeOnly` ("Add Only"): the grant permits adding
+///   events but not seeing them. Every surface here — reads AND the write methods —
+///   requires `.fullAccess`, because the mirror needs to read its own events back
+///   (`store.event(withIdentifier:)`) to update or delete them. So write-only is a
+///   non-working state, and Settings says so instead of looking connected.
 /// • On denial / restricted status, all fetch calls return `[]` gracefully —
 ///   this service never throws to its callers.
 final class EventKitService {
@@ -92,12 +116,20 @@ final class EventKitService {
     ///   - end: Range end.
     ///   - defaultSpaceName: The Atlas space name to assign when no better
     ///     mapping exists (driven by `@AppStorage("calendar.apple.defaultSpace")`).
-    /// - Returns: Mapped events, or `[]` when access is denied / unavailable.
-    func fetchEvents(start: Date, end: Date, defaultSpaceName: String) async -> [CalendarEvent] {
+    ///   - hiddenCalendarIds: EKCalendar identifiers the user unchecked in Settings.
+    ///     Empty ⇒ every calendar is read.
+    /// - Returns: Mapped events, or `[]` when access isn't full (write-only can add
+    ///   events but cannot see them) or every calendar is hidden.
+    func fetchEvents(start: Date, end: Date, defaultSpaceName: String,
+                     hiddenCalendarIds: Set<String> = []) async -> [CalendarEvent] {
         let status = authorizationStatus()
         guard status == .fullAccess else { return [] }
 
-        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        let visible = store.calendars(for: .event)
+            .filter { !hiddenCalendarIds.contains($0.calendarIdentifier) }
+        guard !visible.isEmpty else { return [] }
+
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: visible)
         let ekEvents = store.events(matching: predicate)
 
         return ekEvents.map { ekEvent in
@@ -170,6 +202,15 @@ final class EventKitService {
             throw EventKitWriteError.notFound
         }
         try store.remove(ekEvent, span: .thisEvent)
+    }
+
+    /// Every calendar Atlas can READ — the rows behind the per-calendar checkbox list in
+    /// Settings. Empty when access isn't full.
+    func readableCalendars() -> [(id: String, title: String)] {
+        guard authorizationStatus() == .fullAccess else { return [] }
+        return store.calendars(for: .event)
+            .map { (id: $0.calendarIdentifier, title: $0.title) }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
     /// The calendars the user can write to — the pickable destinations for a mirrored
