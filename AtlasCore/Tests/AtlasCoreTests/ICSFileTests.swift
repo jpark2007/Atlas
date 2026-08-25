@@ -17,6 +17,11 @@ final class ICSFileTests: XCTestCase {
         "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n\(body)\r\nEND:VCALENDAR\r\n"
     }
 
+    private func at(_ year: Int, _ month: Int, _ day: Int, _ hour: Int = 0, _ minute: Int = 0) -> Date {
+        calendar.date(from: DateComponents(year: year, month: month, day: day,
+                                           hour: hour, minute: minute))!
+    }
+
     // MARK: - Events
 
     func testReadsSummaryTimesAndLocation() {
@@ -122,7 +127,63 @@ final class ICSFileTests: XCTestCase {
         XCTAssertEqual(courses[0].code, "CHEM 201")
         XCTAssertEqual(courses[0].meetings,
                        [MeetingBlock(weekdays: [2, 4, 6], start: "10:00", end: "10:50",
-                                     location: "Tech Hall 204")])
+                                     location: "Tech Hall 204",
+                                     firstDate: at(2026, 9, 1, 10, 0))])
+    }
+
+    /// The bug Drew hit: a Fall file whose classes start Sept 1, drawn from the term's
+    /// August start because the block knew the weekday and the clock but not the date.
+    /// The block must carry the first occurrence; an unbounded rule keeps no last date,
+    /// so the term's end still stops it.
+    func testBlockCarriesTheFirstOccurrenceDate() {
+        let courses = ICSFile.courses(in: ics("""
+        BEGIN:VEVENT\r
+        SUMMARY:General Psychology [PSY 101]\r
+        DTSTART;TZID=America/New_York:20260901T090000\r
+        DTEND;TZID=America/New_York:20260901T095000\r
+        RRULE:FREQ=WEEKLY;BYDAY=TU,TH\r
+        END:VEVENT
+        """), calendar: calendar)
+
+        XCTAssertEqual(courses[0].meetings.first?.firstDate, at(2026, 9, 1, 9, 0))
+        XCTAssertNil(courses[0].meetings.first?.lastDate)
+    }
+
+    /// A rule the file bounded with UNTIL stops there, even if the term runs longer.
+    func testWeeklyUntilBecomesTheBlocksLastDate() {
+        let courses = ICSFile.courses(in: ics("""
+        BEGIN:VEVENT\r
+        SUMMARY:Organic Chemistry [CHEM 201]\r
+        DTSTART;TZID=America/New_York:20260901T100000\r
+        DTEND;TZID=America/New_York:20260901T105000\r
+        RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;UNTIL=20261211T235959Z\r
+        END:VEVENT
+        """), calendar: calendar)
+
+        XCTAssertEqual(courses[0].meetings.first?.firstDate, at(2026, 9, 1, 10, 0))
+        XCTAssertEqual(calendar.dateComponents([.year, .month, .day],
+                                               from: courses[0].meetings.first!.lastDate!),
+                       DateComponents(year: 2026, month: 12, day: 11))
+    }
+
+    /// A spelled-out file has no rule to read a bound from — its own last occurrence IS
+    /// the bound, so the class stops when the listing stops.
+    func testSpelledOutOccurrencesBoundTheBlockAtBothEnds() {
+        let courses = ICSFile.courses(in: ics("""
+        BEGIN:VEVENT\r
+        SUMMARY:Linear Algebra [MATH 210]\r
+        DTSTART;TZID=America/New_York:20260908T140000\r
+        DTEND;TZID=America/New_York:20260908T151500\r
+        END:VEVENT\r
+        BEGIN:VEVENT\r
+        SUMMARY:Linear Algebra [MATH 210]\r
+        DTSTART;TZID=America/New_York:20261110T140000\r
+        DTEND;TZID=America/New_York:20261110T151500\r
+        END:VEVENT
+        """), calendar: calendar)
+
+        XCTAssertEqual(courses[0].meetings.first?.firstDate, at(2026, 9, 8, 14, 0))
+        XCTAssertEqual(courses[0].meetings.first?.lastDate, at(2026, 11, 10, 14, 0))
     }
 
     /// Plenty of exports spell every occurrence out instead of using RRULE. The class

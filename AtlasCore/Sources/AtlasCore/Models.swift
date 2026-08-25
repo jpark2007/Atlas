@@ -164,22 +164,37 @@ public struct MeetingBlock: Codable, Equatable {
     public var start: String
     public var end: String
     public var location: String?
+    /// The first day this block actually meets, when the schedule said so — an `.ics`
+    /// import carries the earliest DTSTART among the occurrences it folded. `nil` for a
+    /// pattern with no start of its own (typed by hand, or scanned from a syllabus):
+    /// that one is bounded only by the term, which is the behavior it has always had.
+    public var firstDate: Date?
+    /// The last day this block meets: the latest occurrence a spelled-out file listed,
+    /// or the weekly rule's UNTIL when it named one. `nil` ⇒ bounded by the term's end.
+    public var lastDate: Date?
 
-    public init(weekdays: [Int], start: String, end: String, location: String? = nil) {
+    public init(weekdays: [Int], start: String, end: String, location: String? = nil,
+                firstDate: Date? = nil, lastDate: Date? = nil) {
         self.weekdays = weekdays
         self.start = start
         self.end = end
         self.location = location
+        self.firstDate = firstDate
+        self.lastDate = lastDate
     }
 
-    enum CodingKeys: String, CodingKey { case weekdays, start, end, location }
+    enum CodingKeys: String, CodingKey { case weekdays, start, end, location, firstDate, lastDate }
 
+    /// Both dates decode `IfPresent`, so a class created before this shape existed reads
+    /// back with no dates and stays term-bounded — no migration, nothing to backfill.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        weekdays = try c.decodeIfPresent([Int].self, forKey: .weekdays) ?? []
-        start    = try c.decode(String.self, forKey: .start)
-        end      = try c.decode(String.self, forKey: .end)
-        location = try c.decodeIfPresent(String.self, forKey: .location)
+        weekdays  = try c.decodeIfPresent([Int].self, forKey: .weekdays) ?? []
+        start     = try c.decode(String.self, forKey: .start)
+        end       = try c.decode(String.self, forKey: .end)
+        location  = try c.decodeIfPresent(String.self, forKey: .location)
+        firstDate = try c.decodeIfPresent(Date.self, forKey: .firstDate)
+        lastDate  = try c.decodeIfPresent(Date.self, forKey: .lastDate)
     }
 }
 
@@ -398,7 +413,12 @@ public struct CalendarEvent: Identifiable {
     /// Canvas items are read-only too, but they belong to a real Atlas space (and,
     /// when mapped to a class, a project), so they keep their space/project color —
     /// a Canvas tile must never masquerade as a neutral external event (rule 5).
-    public var rendersNeutral: Bool { isReadOnly && source != .canvas }
+    ///
+    /// A `projectID` is the same kind of Atlas identity: a class meeting synthesized from
+    /// a class's pattern, an imported exam tied to its class, or any tile the user filed
+    /// under a project wears THAT project's color (see `AppState.gridColored`), read-only
+    /// or not. Neutral grey is only for a read-only tile that belongs to nothing in Atlas.
+    public var rendersNeutral: Bool { isReadOnly && source != .canvas && projectID == nil }
 
     /// The Canvas course label this item came from (migration 0032) — the SUMMARY's
     /// trailing "[…]" bracket parsed at ingest, `nil` for non-Canvas events. Read-only

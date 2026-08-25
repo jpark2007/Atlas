@@ -70,6 +70,32 @@ final class TermTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode([MeetingBlock].self, from: data), [block])
     }
 
+    /// The dated window round-trips, and a block that has none writes no keys at all —
+    /// so a class created before this shape existed reads back identical to what it was.
+    func testMeetingBlockRoundTripsItsDatesAndOmitsThemWhenAbsent() throws {
+        let e = JSONEncoder(); e.dateEncodingStrategy = .iso8601
+        let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601
+
+        let dated = MeetingBlock(weekdays: [2], start: "10:00", end: "10:50",
+                                 firstDate: day("2026-09-01"), lastDate: day("2026-12-11"))
+        XCTAssertEqual(try d.decode([MeetingBlock].self, from: e.encode([dated])), [dated])
+
+        let undatedJSON = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: try e.encode([MeetingBlock(weekdays: [2], start: "10:00", end: "10:50")])
+        ) as? [[String: Any]])
+        XCTAssertNil(undatedJSON.first?["firstDate"])
+        XCTAssertNil(undatedJSON.first?["lastDate"])
+    }
+
+    /// Backward compatibility: a stored block from before the dated window decodes with
+    /// neither date — term-bounded, exactly as it always drew. No migration.
+    func testMeetingBlockDecodesWithoutDates() throws {
+        let json = #"[{"weekdays":[2,4,6],"start":"10:00","end":"10:50"}]"#.data(using: .utf8)!
+        let blocks = try JSONDecoder().decode([MeetingBlock].self, from: json)
+        XCTAssertNil(blocks.first?.firstDate)
+        XCTAssertNil(blocks.first?.lastDate)
+    }
+
     func testMeetingBlockDecodesWithoutLocation() throws {
         let json = #"[{"weekdays":[3],"start":"14:00","end":"15:15"}]"#.data(using: .utf8)!
         let blocks = try JSONDecoder().decode([MeetingBlock].self, from: json)
