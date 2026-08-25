@@ -16,15 +16,31 @@ struct CommittedCapture: Identifiable, Equatable {
 }
 
 struct CaptureResultCards: View {
+    /// How a committed item reads. `.chips` is the main-window bar's correction
+    /// flow (Class ▾ · Type ▾ · Due ▾). `.plain` is the floating panel's one-line
+    /// row — glyph · title · class · due · Undo — which opens the item in Atlas
+    /// when clicked; menus don't belong in a panel that dismisses on click-outside.
+    enum Style { case chips, plain }
+
     @EnvironmentObject private var state: AppState
 
     @Binding var items: [CommittedCapture]
     let entryID: UUID
     let onUndoAll: () -> Void
+    var style: Style = .chips
+    /// `.plain` only: called once a clicked row has set the route, to hand the
+    /// user off to the main window.
+    var onOpenItem: (() -> Void)? = nil
 
     /// The card whose "Pick a date…" popover is open.
     @State private var pickingDateFor: UUID?
     @State private var pickedDate = Date()
+
+    /// Roughly one laid-out row. Only used to give the rows a positive minimum
+    /// height: `NSHostingController`'s `.intrinsicContentSize` bridge (the panel)
+    /// reports nothing for a bare `maxHeight`, so the panel window never grows.
+    /// The 260 cap still wins once there are enough rows to reach it.
+    private var rowHeight: CGFloat { style == .plain ? 40 : 64 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -32,7 +48,7 @@ struct CaptureResultCards: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(items) { entry in
-                        card(entry)
+                        row(entry)
                         if entry.id != items.last?.id {
                             Rectangle()
                                 .fill(AtlasTheme.Colors.border)
@@ -41,10 +57,18 @@ struct CaptureResultCards: View {
                     }
                 }
             }
-            .frame(maxHeight: 260)
+            .frame(minHeight: min(CGFloat(items.count) * rowHeight, 260), maxHeight: 260)
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 14)
+    }
+
+    @ViewBuilder
+    private func row(_ entry: CommittedCapture) -> some View {
+        switch style {
+        case .chips: card(entry)
+        case .plain: plainRow(entry)
+        }
     }
 
     private var header: some View {
@@ -63,7 +87,7 @@ struct CaptureResultCards: View {
         .padding(.vertical, 10)
     }
 
-    // MARK: - One card
+    // MARK: - One card (chips)
 
     private func card(_ entry: CommittedCapture) -> some View {
         HStack(alignment: .top, spacing: 12) {
@@ -80,15 +104,91 @@ struct CaptureResultCards: View {
                 }
             }
             Spacer(minLength: 8)
-            Button { undoOne(entry) } label: {
-                Text("Undo")
-                    .atlasFont(size: 12, weight: .medium, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-            }
-            .buttonStyle(.plain)
-            .help("Remove this item")
+            undoButton(entry)
         }
         .padding(.vertical, 11)
+    }
+
+    // MARK: - One line item (plain)
+
+    /// The whole line is the open-in-Atlas button except the trailing Undo, which
+    /// is a sibling — a Button nested inside another Button's label is inert.
+    private func plainRow(_ entry: CommittedCapture) -> some View {
+        HStack(spacing: 10) {
+            Button { open(entry) } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: glyph(entry.item))
+                        .atlasFont(size: 12, weight: .semibold)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .frame(width: 15)
+
+                    Text(entry.item.title)
+                        .atlasFont(size: 14, weight: .semibold, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    atlasTag(text: classChipText(entry.item),
+                             color: state.calendarSpaceColor(named: entry.item.spaceName))
+                        .fixedSize()
+
+                    Spacer(minLength: 8)
+
+                    let due = dueRowText(entry.item)
+                    if !due.isEmpty {
+                        Text(due)
+                            .atlasMono(size: 11, weight: .medium)
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                            .fixedSize()
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Open in Atlas")
+
+            undoButton(entry)
+        }
+        .padding(.vertical, 11)
+    }
+
+    private func undoButton(_ entry: CommittedCapture) -> some View {
+        Button { undoOne(entry) } label: {
+            Text("Undo")
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+        }
+        .buttonStyle(.plain)
+        .help("Remove this item")
+    }
+
+    private func glyph(_ item: CaptureHistoryItem) -> String {
+        switch CaptureItemType.of(item) {
+        case .task:     return "circle"
+        case .deadline: return "flag"
+        case .event:    return "calendar"
+        case .note:     return "note.text"
+        }
+    }
+
+    /// Opens the committed item in the main window, reusing the command palette's
+    /// routes (CommandPalette.activate): tasks route by id, events go through
+    /// `calendarDetailItem` + `.calendarDetail`. There is no `Route.note`, so a
+    /// note opens its Space, which is where notes are listed.
+    private func open(_ entry: CommittedCapture) {
+        let item = entry.item
+        switch item.kind {
+        case .task:
+            state.route = .task(item.id)
+        case .event:
+            guard let event = state.events.first(where: { $0.id == item.id }) else { return }
+            state.calendarDetailItem = event
+            state.route = .calendarDetail
+        case .note:
+            guard let spaceID = state.spaceID(named: item.spaceName) else { return }
+            state.route = .space(spaceID)
+        }
+        onOpenItem?()
     }
 
     // MARK: - Chips
@@ -223,9 +323,37 @@ struct CaptureResultCards: View {
         return "\(code) · \(project.name)"
     }
 
+    /// The plain row's mono date — "SEP 4" for a date-only item, "SEP 4 5 PM"
+    /// once it carries a time. Empty when there's no date at all (undated task,
+    /// note), in which case the row simply doesn't show one.
+    private func dueRowText(_ item: CaptureHistoryItem) -> String {
+        guard let date = item.dueDate ?? item.start else { return "" }
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+        let hour = parts.hour ?? 0, minute = parts.minute ?? 0
+        let formatter: DateFormatter
+        if hour == 0 && minute == 0 {
+            formatter = Self.dayFormatter                                   // SEP 4
+        } else {
+            formatter = minute == 0 ? Self.dayHourFormatter : Self.dayTimeFormatter
+        }
+        return formatter.string(from: date).uppercased()
+    }
+
     private static let dayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "MMM d"
+        return f
+    }()
+
+    private static let dayHourFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d h a"      // SEP 4 5 PM
+        return f
+    }()
+
+    private static let dayTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d h:mm a"   // SEP 4 5:30 PM
         return f
     }()
 

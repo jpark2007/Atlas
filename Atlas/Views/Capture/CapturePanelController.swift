@@ -105,6 +105,20 @@ final class CapturePanelController {
         previousApp = nil
     }
 
+    /// Dismiss because the user clicked a result row to open that item: Atlas
+    /// itself becomes the front app, not whatever they came from.
+    ///
+    /// This goes through the NORMAL `hide()` so the panel, monitors and cached
+    /// hosting controller tear down identically — it only clears `previousApp`
+    /// first, because `hide()`'s reactivation would immediately push Atlas back
+    /// behind the app the user summoned from, undoing the handoff. `show()` also
+    /// deliberately ordered the main window to the back, so bring it forward again.
+    func hideForItemHandoff() {
+        previousApp = nil
+        hide()
+        AtlasMenuBarContent.activateMainWindow()
+    }
+
     private func makePanel(state: AppState, auth: AuthService) -> CapturePanelWindow {
         let panel = CapturePanelWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 120),

@@ -160,7 +160,9 @@ struct CaptureCommandBar: View {
                     .frame(height: 1)
                 CaptureResultCards(items: $committed,
                                    entryID: entryID,
-                                   onUndoAll: undoAll)
+                                   onUndoAll: undoAll,
+                                   style: inPanel ? .plain : .chips,
+                                   onOpenItem: inPanel ? openedInAtlas : nil)
             }
         }
         .background(glassBackground)
@@ -171,7 +173,17 @@ struct CaptureCommandBar: View {
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         .shadow(color: .black.opacity(0.12), radius: 22, x: 0, y: 10)
         .shadow(color: .black.opacity(0.06), radius: 6, x: 0, y: 2)
-        .animation(.easeInOut(duration: 0.2), value: committed)
+        // In the panel this animation is the bug: NSHostingController's
+        // `.intrinsicContentSize` bridge misses an ANIMATED structural insertion, so
+        // the panel window never grows and the committed rows render off-window.
+        // The main-window overlay keeps the fade.
+        .animation(inPanel ? nil : .easeInOut(duration: 0.2), value: committed)
+    }
+
+    /// A result row was clicked in the floating panel: it has already set the
+    /// route, so close the panel and bring Atlas forward.
+    private func openedInAtlas() {
+        CapturePanelController.shared.hideForItemHandoff()
     }
 
     private var bar: some View {
