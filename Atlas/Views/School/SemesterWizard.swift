@@ -45,8 +45,20 @@ struct SemesterWizard: View {
     @State private var feedName = ""
     @State private var working = false
     @State private var error: String?
-    /// True once the wait for the first sync has run its course with nothing found.
-    @State private var importTimedOut = false
+    /// How the wait for the first Canvas sync ended. "Nothing arrived" used to cover three
+    /// very different situations at once — a feed that synced and is genuinely empty, a
+    /// sync the server hasn't run yet, and a feed the server couldn't read. Connected-and-
+    /// empty is a SUCCESS, so it must not wear the same sentence as a failure.
+    enum ImportOutcome: Equatable {
+        case waiting            // the poll is still running
+        case pending            // the poll ended before the server's first sync ran
+        case empty              // a sync completed and the feed holds nothing
+        case failed(String)     // the server couldn't read the feed — with its reason
+    }
+    @State private var outcome: ImportOutcome = .waiting
+    /// What the first sync actually brought in, for the connected step's count line.
+    @State private var arrivedTasks = 0
+    @State private var arrivedEvents = 0
 
     // Manual entry: a handful of name/code rows.
     @State private var manualRows: [ManualClass] = [ManualClass(), ManualClass(), ManualClass()]
@@ -410,43 +422,58 @@ struct SemesterWizard: View {
 
     private var importingStep: some View {
         VStack(alignment: .leading, spacing: 14) {
-            prompt(importTimedOut ? "Nothing has arrived yet" : "Bringing your schedule in…",
-                   importTimedOut
-                   ? "Your first sync can take a few minutes. Atlas will offer to create the classes as soon as the courses land."
-                   : "Atlas is reading the feed. This usually takes a moment.")
-            if !importTimedOut { ProgressView().controlSize(.small) }
-            actionButton("Done for now") { dismiss() }
-        }
-        .task(id: importTimedOut) {
-            guard !importTimedOut else { return }
-            // Poll the feed for courses. Server-side sync writes the items; a re-pull is
-            // the only way the client learns about them.
-            for _ in 0..<12 {
-                try? await Task.sleep(for: .seconds(5))
-                if Task.isCancelled { return }
-                await state.refreshFromServer()
-                if !state.unlinkedCanvasCourses.isEmpty {
-                    step = .courses
-                    return
-                }
+            switch outcome {
+            case .waiting:
+                prompt("Bringing your schedule in…",
+                       "Atlas is reading the feed. This usually takes a moment.")
+                AtlasLoader(size: 26)
+            case .pending:
+                // Connected, but the server's pull hasn't run yet. Saying "empty" here
+                // would be a guess — the feed row in Settings carries it from now on.
+                prompt("Connected — your first sync is on its way",
+                       "Canvas is pulled on a schedule, so the first one can take a few minutes. Your courses show up in School the moment they land.")
+            case .empty:
+                prompt("Connected — your feed is empty right now",
+                       "New assignments appear in Atlas automatically as your teachers post them.")
+            case .failed(let reason):
+                prompt("Atlas couldn't read your Canvas feed", reason)
             }
-            importTimedOut = true
+            actionButton(outcome == .waiting ? "Done for now" : "Done") { dismiss() }
         }
+        .task { await awaitFirstSync() }
     }
 
     // MARK: - Step 5 · the courses Atlas found
 
     private var coursesStep: some View {
         VStack(alignment: .leading, spacing: 14) {
-            prompt("Atlas found your courses",
-                   "Pick the ones to keep as classes. Their Canvas work files under them from now on.")
-            CanvasCourseChecklistBody(courses: state.unlinkedCanvasCourses) { chosen in
-                if !chosen.isEmpty {
-                    state.createClasses(fromCanvasCourses: chosen, term: ensureTerm())
+            let unlinked = state.unlinkedCanvasCourses
+            if unlinked.isEmpty {
+                // Items arrived but every course they name already has a class — there is
+                // nothing to pick, so the count line stands on its own.
+                prompt("Connected — \(broughtInLine)",
+                       "Your Canvas work is filed under the classes it names. New assignments arrive automatically.")
+                actionButton("Done") { dismiss() }
+            } else {
+                prompt("Connected — \(broughtInLine)",
+                       "Pick the courses to keep as classes. Their Canvas work files under them from now on.")
+                CanvasCourseChecklistBody(courses: unlinked) { chosen in
+                    if !chosen.isEmpty {
+                        state.createClasses(fromCanvasCourses: chosen, term: ensureTerm())
+                    }
+                    dismiss()
                 }
-                dismiss()
             }
         }
+    }
+
+    /// "4 assignments and 2 events brought in" — the feed's own terms, counted from what
+    /// actually landed rather than asserted.
+    private var broughtInLine: String {
+        let parts = [(arrivedTasks, "assignment", "assignments"), (arrivedEvents, "event", "events")]
+            .filter { $0.0 > 0 }
+            .map { "\($0.0) \($0.0 == 1 ? $0.1 : $0.2)" }
+        return parts.isEmpty ? "your Canvas feed is in" : parts.joined(separator: " and ") + " brought in"
     }
 
     // MARK: - Step 6 · manual
@@ -585,6 +612,41 @@ struct SemesterWizard: View {
         let resolved = state.ensureActiveTerm()
         term = resolved
         return resolved
+    }
+
+    /// Waits out the first server-side sync of the just-connected Canvas feed and lands on
+    /// one honest ending. Server-side sync writes the items; a re-pull is the only way the
+    /// client learns about them, and the feed row's own `status`/`last_synced_at` is the
+    /// only thing that can tell an empty feed apart from a sync that hasn't happened.
+    private func awaitFirstSync() async {
+        for _ in 0..<12 {
+            try? await Task.sleep(for: .seconds(5))
+            if Task.isCancelled { return }
+            await state.refreshFromServer()
+
+            guard let feed = state.calendarFeeds.first(where: { $0.feedType == "canvas" && $0.isServerOwned })
+            else { continue }
+
+            if feed.status == "error" {
+                outcome = .failed(feed.lastError
+                    ?? "Atlas will keep retrying. If it doesn't clear, re-copy the link from Canvas → Calendar → Calendar Feed.")
+                return
+            }
+            // Courses to offer is the fastest signal something landed; otherwise a
+            // completed sync (`last_synced_at`) is what earns the right to say "empty".
+            let hasCourses = !state.unlinkedCanvasCourses.isEmpty
+            guard hasCourses || feed.lastSyncedDate != nil else { continue }
+
+            arrivedTasks = state.tasks.filter { $0.feedID == feed.id }.count
+            arrivedEvents = state.events.filter { $0.source == .canvas }.count
+            if hasCourses || arrivedTasks + arrivedEvents > 0 {
+                step = .courses
+            } else {
+                outcome = .empty
+            }
+            return
+        }
+        outcome = .pending
     }
 
     private func connect(type: String) {
