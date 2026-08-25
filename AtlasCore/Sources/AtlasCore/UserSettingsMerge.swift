@@ -23,6 +23,7 @@ public enum UserSettingsMerge {
             sidebarMode:               local.sidebarMode               ?? base?.sidebarMode,
             tasksGrouping:             local.tasksGrouping             ?? base?.tasksGrouping,
             perTabDocsSync:            local.perTabDocsSync            ?? base?.perTabDocsSync,
+            schoolEnabled:             local.schoolEnabled             ?? base?.schoolEnabled,
             notificationPrefsJSON:     local.notificationPrefsJSON     ?? base?.notificationPrefsJSON,
             updatedAt:                 nil   // server stamps updated_at; never sent from the client
         )

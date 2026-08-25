@@ -37,6 +37,15 @@ final class AppState: ObservableObject {
     /// the record / undo / persistence logic in an extension).
     @Published var captureHistory: [CaptureHistoryEntry] = []
 
+    /// School terms (0042). Loaded with the snapshot; empty until the user has one.
+    /// Classes hang off these — see `activeTerm` / `classes(in:)`.
+    @Published var terms: [Term] = []
+
+    /// The term the School section is *looking at* when the user picked one from the
+    /// header menu. nil ⇒ follow `activeTerm` (today's term). Session-only: which
+    /// semester is current is a date fact, not a stored preference.
+    @Published var schoolTermOverride: UUID?
+
     /// Docs → Notes import: the project-scoped reference pool. Empty until the
     /// notes-import migration (0013) is live and references are imported; the
     /// write-through CRUD lives in `AppState+References.swift`.
@@ -414,6 +423,8 @@ final class AppState: ObservableObject {
         var day = windowStart
         while day < windowEnd {
             relevant += scheduledWorkBlocks(on: day)
+            // Class meetings are real occupancy — you can't take a study slot during Bio 201.
+            relevant += classMeetingEvents(on: day)
             day = cal.date(byAdding: .day, value: 1, to: day) ?? windowEnd
         }
 
@@ -534,6 +545,8 @@ final class AppState: ObservableObject {
     /// from `bootstrap`; the fresh `loadAll()` (or a re-sign-in) repopulates.
     private func clearUserData() {
         spaces = []
+        terms = []
+        schoolTermOverride = nil
         tasks = []
         events = []
         notes = []
@@ -588,6 +601,7 @@ final class AppState: ObservableObject {
 
         // Assign to @Published properties (already on @MainActor).
         self.spaces = nestedSpaces
+        self.terms  = snapshot.terms
         self.tasks  = snapshot.tasks
         self.events = snapshot.events
         self.notes  = snapshot.notes
@@ -863,6 +877,29 @@ final class AppState: ObservableObject {
         Task { try? await self.db?.upsertSpace(updatedSpace, sort: si) }
     }
 
+    // MARK: - School framework (terms + classes, 0042)
+
+    /// Every project across every space, flattened. Classes are `projects` rows, so
+    /// the School queries below read through this.
+    var allProjects: [Project] { spaces.flatMap(\.projects) }
+
+    /// The term the app should be showing — today's term, else the most recent
+    /// (see `TermSelection`). Nil when the user has no terms yet.
+    var activeTerm: Term? { TermSelection.active(in: terms) }
+
+    /// The live classes of `term`: `is_class`, in that term, not archived. Ending a
+    /// term archives its classes, so they drop out here while staying queryable.
+    func classes(in term: Term) -> [Project] {
+        allProjects.filter { $0.isClass && $0.termID == term.id && $0.archivedAt == nil }
+    }
+
+    /// True when the user has classes that predate the term model (`term_id` nil) —
+    /// the UI stage uses this to prompt "date your term once". Nothing is guessed
+    /// here: no term is auto-created with invented dates.
+    var unassignedClassesNeedTerm: Bool {
+        allProjects.contains { $0.isClass && $0.termID == nil && $0.archivedAt == nil }
+    }
+
     // MARK: - Projects (WS-8)
 
     /// Create a Project inside the Space named `spaceName` and persist it.
@@ -1040,7 +1077,7 @@ final class AppState: ObservableObject {
     /// scheduled work-blocks (dragged tasks), in time order — a scheduled task is
     /// something to do, so it belongs on the schedule too.
     var todaysEvents: [CalendarEvent] {
-        (events(on: Date()) + scheduledWorkBlocks(on: Date()))
+        (events(on: Date()) + scheduledWorkBlocks(on: Date()) + classMeetingEvents(on: Date()))
             .sorted { $0.start < $1.start }
     }
 

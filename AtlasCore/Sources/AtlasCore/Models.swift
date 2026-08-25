@@ -15,6 +15,202 @@ public struct Space: Identifiable {
     }
 }
 
+// MARK: - School framework (Term → Class)
+
+/// Day-precision codec for the School framework's `date` columns (`terms.starts_on`,
+/// `terms.ends_on`, key-date days). Postgres `date` values travel as 'YYYY-MM-DD',
+/// which the app's iso8601 JSON codec can't read — so these columns are carried as
+/// strings on the wire and bridged here. Dates land at LOCAL midnight, matching how
+/// the rest of the app reasons about "today".
+public enum TermDay {
+    public static let formatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale     = Locale(identifier: "en_US_POSIX")
+        f.timeZone   = .current
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    public static func date(from string: String) -> Date? { formatter.date(from: string) }
+    public static func string(from date: Date) -> String { formatter.string(from: date) }
+}
+
+/// What a Key Date flags, so the calendar can render it correctly. Unknown values
+/// decode as `.other` — a flag added by a later client must never fail a decode.
+public enum TermKeyDateKind: String, Codable, Equatable {
+    case classesBegin = "classes_begin"
+    case classesEnd   = "classes_end"
+    case addDrop      = "add_drop"
+    case holiday
+    case breakPeriod  = "break"     // `break` is a Swift keyword
+    case finals
+    case deadline
+    case other
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = TermKeyDateKind(rawValue: raw) ?? .other
+    }
+}
+
+/// One entry in a term's Key Dates (classes begin, add/drop deadline, a holiday,
+/// spring break…). Stored inside `terms.key_dates` jsonb as `{label, date, kind?}`;
+/// `date` is encoded day-precision, independent of the ambient JSON date strategy.
+public struct TermKeyDate: Codable, Equatable {
+    public var label: String
+    public var date: Date
+    public var kind: TermKeyDateKind?
+
+    public init(label: String, date: Date, kind: TermKeyDateKind? = nil) {
+        self.label = label
+        self.date = date
+        self.kind = kind
+    }
+
+    enum CodingKeys: String, CodingKey { case label, date, kind }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        label = try c.decode(String.self, forKey: .label)
+        let day = try c.decode(String.self, forKey: .date)
+        guard let parsed = TermDay.date(from: day) else {
+            throw DecodingError.dataCorruptedError(forKey: .date, in: c,
+                debugDescription: "Key date is not YYYY-MM-DD: \(day)")
+        }
+        date = parsed
+        kind = try c.decodeIfPresent(TermKeyDateKind.self, forKey: .kind)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(label, forKey: .label)
+        try c.encode(TermDay.string(from: date), forKey: .date)
+        try c.encodeIfPresent(kind, forKey: .kind)
+    }
+}
+
+/// A school term ("Fall 2026") — the first-class object classes hang off. The app
+/// filters School by the active term; ending a term soft-archives its classes
+/// (nothing is ever wiped). Dates are optional: a migrated account has classes
+/// before it has term dates, and the UI asks for them once.
+public struct Term: Identifiable, Equatable {
+    public var id = UUID()
+    public var name: String
+    public var startsOn: Date?
+    public var endsOn: Date?
+    /// Registrar dates rendered as flags on the calendar (see `TermKeyDate`).
+    public var keyDates: [TermKeyDate] = []
+
+    public init(id: UUID = UUID(), name: String, startsOn: Date? = nil, endsOn: Date? = nil,
+                keyDates: [TermKeyDate] = []) {
+        self.id = id
+        self.name = name
+        self.startsOn = startsOn
+        self.endsOn = endsOn
+        self.keyDates = keyDates
+    }
+
+    /// True when `day` falls inside this term. A term missing either date contains
+    /// nothing — an undated term is "not yet dated", not "always current".
+    public func contains(_ day: Date) -> Bool {
+        guard let startsOn, let endsOn else { return false }
+        let d = Calendar.current.startOfDay(for: day)
+        return d >= Calendar.current.startOfDay(for: startsOn)
+            && d <= Calendar.current.startOfDay(for: endsOn)
+    }
+}
+
+/// Picking the term the app should be showing. Pure, so it's testable without a DB.
+public enum TermSelection {
+    /// The term to treat as active: the one containing `date`, else the most recent
+    /// term that has already begun, else the next upcoming one, else any term at all.
+    /// Undated terms only ever win when nothing else does.
+    public static func active(in terms: [Term], on date: Date = Date()) -> Term? {
+        guard !terms.isEmpty else { return nil }
+        let today = Calendar.current.startOfDay(for: date)
+
+        if let containing = terms.first(where: { $0.contains(today) }) { return containing }
+
+        // Most recent begun term — ranked by when it ended (or started, if undated end).
+        let begun = terms.filter { ($0.startsOn ?? .distantFuture) <= today }
+        if let mostRecent = begun.max(by: { rank($0) < rank($1) }) { return mostRecent }
+
+        // Nothing has begun: the soonest upcoming term.
+        let upcoming = terms.compactMap { t -> (Term, Date)? in
+            guard let s = t.startsOn, s > today else { return nil }
+            return (t, s)
+        }
+        if let next = upcoming.min(by: { $0.1 < $1.1 })?.0 { return next }
+
+        return terms.first  // wholly undated
+    }
+
+    private static func rank(_ t: Term) -> Date { t.endsOn ?? t.startsOn ?? .distantPast }
+}
+
+/// One structured meeting block of a class ("MWF 10:00–10:50, Tech Hall 204").
+/// Stored in `projects.meeting_pattern` jsonb as an array of these. Whatever door
+/// the schedule came through (school ICS, an existing calendar, a screenshot scan,
+/// manual entry) lands here, and the calendar draws these.
+///
+/// Rotation timetables (A/B days) are deliberately NOT built — the shape merely
+/// leaves room: a block is an open JSON object, so a later `rotation_day` key is
+/// additive and older clients ignore it.
+public struct MeetingBlock: Codable, Equatable {
+    /// 1 = Sunday … 7 = Saturday (Foundation's `Calendar` weekday numbering), so a
+    /// block covers "MWF" without three near-duplicate entries.
+    public var weekdays: [Int]
+    /// Local wall-clock "HH:mm" — a meeting is 10:00 in the school's day, not an instant.
+    public var start: String
+    public var end: String
+    public var location: String?
+
+    public init(weekdays: [Int], start: String, end: String, location: String? = nil) {
+        self.weekdays = weekdays
+        self.start = start
+        self.end = end
+        self.location = location
+    }
+
+    enum CodingKeys: String, CodingKey { case weekdays, start, end, location }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        weekdays = try c.decodeIfPresent([Int].self, forKey: .weekdays) ?? []
+        start    = try c.decode(String.self, forKey: .start)
+        end      = try c.decode(String.self, forKey: .end)
+        location = try c.decodeIfPresent(String.self, forKey: .location)
+    }
+}
+
+/// The "Class info" card a syllabus scan produces — static display strings shown on
+/// the class page. Explicitly NOT grades tracking: these are the syllabus's own words
+/// (weight bullets, policy notes, office hours), never computed.
+public struct ClassInfoCard: Codable, Equatable {
+    public var gradeWeights: [String]
+    public var policies: [String]
+    public var officeHours: String?
+
+    public init(gradeWeights: [String] = [], policies: [String] = [], officeHours: String? = nil) {
+        self.gradeWeights = gradeWeights
+        self.policies = policies
+        self.officeHours = officeHours
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case gradeWeights = "grade_weights"
+        case policies
+        case officeHours  = "office_hours"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        gradeWeights = try c.decodeIfPresent([String].self, forKey: .gradeWeights) ?? []
+        policies     = try c.decodeIfPresent([String].self, forKey: .policies) ?? []
+        officeHours  = try c.decodeIfPresent(String.self,   forKey: .officeHours)
+    }
+}
+
 /// A project inside a Space. In the School space, projects are Classes.
 public struct Project: Identifiable {
     public var id = UUID()
@@ -43,8 +239,20 @@ public struct Project: Identifiable {
     public var backlinks: [Backlink] = []
     /// The parent space's id — authoritative once set; the name remains for display.
     public var spaceID: UUID? = nil
+    /// The `Term` this class belongs to (migration 0042). A class belongs to exactly one
+    /// term; `nil` on a class means "not dated yet" (an existing class awaiting the
+    /// one-time term prompt). Always `nil` for non-class projects.
+    public var termID: UUID? = nil
+    /// Soft archive (0042). Set when a term ends: the class drops out of the active
+    /// view but its tasks and notes stay queryable — never wiped. `nil` = active.
+    public var archivedAt: Date? = nil
+    /// Structured meeting blocks (0042). Empty ⇒ the class has no known schedule yet;
+    /// free-text `meetingInfo` survives only as an optional note.
+    public var meetingPattern: [MeetingBlock] = []
+    /// The syllabus-scan "Class info" card (0042); `nil` until a syllabus is scanned.
+    public var classInfo: ClassInfoCard? = nil
 
-    public init(id: UUID = UUID(), name: String, code: String? = nil, isClass: Bool, spaceName: String, spaceColor: Color, meetingInfo: String? = nil, instructor: String? = nil, canvasSynced: Bool = false, overview: String = "", colorToken: String? = nil, canvasCourse: String? = nil, assignments: [TaskItem] = [], notes: [NoteRef] = [], pinned: [PinnedResource] = [], backlinks: [Backlink] = [], spaceID: UUID? = nil) {
+    public init(id: UUID = UUID(), name: String, code: String? = nil, isClass: Bool, spaceName: String, spaceColor: Color, meetingInfo: String? = nil, instructor: String? = nil, canvasSynced: Bool = false, overview: String = "", colorToken: String? = nil, canvasCourse: String? = nil, assignments: [TaskItem] = [], notes: [NoteRef] = [], pinned: [PinnedResource] = [], backlinks: [Backlink] = [], spaceID: UUID? = nil, termID: UUID? = nil, archivedAt: Date? = nil, meetingPattern: [MeetingBlock] = [], classInfo: ClassInfoCard? = nil) {
         self.id = id
         self.name = name
         self.code = code
@@ -62,6 +270,10 @@ public struct Project: Identifiable {
         self.pinned = pinned
         self.backlinks = backlinks
         self.spaceID = spaceID
+        self.termID = termID
+        self.archivedAt = archivedAt
+        self.meetingPattern = meetingPattern
+        self.classInfo = classInfo
     }
 }
 

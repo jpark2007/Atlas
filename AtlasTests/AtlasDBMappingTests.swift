@@ -378,6 +378,92 @@ final class AtlasDBMappingTests: XCTestCase {
         XCTAssertNil(decoded.toDomain().code)
     }
 
+    // MARK: - School framework columns (0042)
+
+    /// The new class columns must survive a round-trip — a client edit of a class
+    /// must never null its term, archive stamp, meeting pattern or info card.
+    func testProjectRowRoundTripsSchoolColumns() throws {
+        let termID = UUID()
+        var project = Project(
+            name: "Data Structures",
+            code: "CS 201",
+            isClass: true,
+            spaceName: "School",
+            spaceColor: AtlasTheme.Colors.school
+        )
+        project.termID = termID
+        project.archivedAt = refDate
+        project.meetingPattern = [
+            MeetingBlock(weekdays: [2, 4, 6], start: "10:00", end: "10:50", location: "Tech Hall 204"),
+            MeetingBlock(weekdays: [5], start: "13:00", end: "14:50")
+        ]
+        project.classInfo = ClassInfoCard(gradeWeights: ["Midterm 30%", "Final 40%"],
+                                          policies: ["Two free late days"],
+                                          officeHours: "W 1–3")
+
+        let data = try encoder.encode(ProjectRow(domain: project))
+        let result = try decoder.decode(ProjectRow.self, from: data).toDomain()
+
+        XCTAssertEqual(result.termID, termID)
+        XCTAssertEqual(result.archivedAt, refDate)
+        XCTAssertEqual(result.meetingPattern, project.meetingPattern)
+        XCTAssertEqual(result.classInfo, project.classInfo)
+    }
+
+    /// A project written before 0042 (columns absent) must still decode, and an
+    /// unscheduled class must not invent an empty-vs-null distinction.
+    func testProjectRowWithoutSchoolColumnsDecodes() throws {
+        let json = """
+        {"id":"\(UUID().uuidString)","space_name":"School","name":"Calculus II",
+         "is_class":true,"canvas_synced":false,"overview":""}
+        """.data(using: .utf8)!
+        let project = try decoder.decode(ProjectRow.self, from: json).toDomain()
+        XCTAssertNil(project.termID)
+        XCTAssertNil(project.archivedAt)
+        XCTAssertNil(project.classInfo)
+        XCTAssertTrue(project.meetingPattern.isEmpty)
+
+        // …and an empty pattern goes back up as NULL, not `[]`.
+        let row = ProjectRow(domain: project)
+        XCTAssertNil(row.meetingPattern)
+    }
+
+    func testTermRowRoundTrip() throws {
+        let term = Term(
+            name: "Fall 2026",
+            startsOn: TermDay.date(from: "2026-08-24"),
+            endsOn:   TermDay.date(from: "2026-12-15"),
+            keyDates: [
+                TermKeyDate(label: "Classes begin", date: TermDay.date(from: "2026-08-24")!,
+                            kind: .classesBegin),
+                TermKeyDate(label: "Fall break", date: TermDay.date(from: "2026-10-12")!,
+                            kind: .breakPeriod),
+                TermKeyDate(label: "Convocation", date: TermDay.date(from: "2026-08-23")!)
+            ])
+
+        let data = try encoder.encode(TermRow(domain: term))
+        // `date` columns must travel as 'YYYY-MM-DD', not as timestamps.
+        let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(raw["starts_on"] as? String, "2026-08-24")
+
+        let result = try decoder.decode(TermRow.self, from: data).toDomain()
+        XCTAssertEqual(result.id, term.id)
+        XCTAssertEqual(result.name, term.name)
+        XCTAssertEqual(result.startsOn, term.startsOn)
+        XCTAssertEqual(result.endsOn, term.endsOn)
+        XCTAssertEqual(result.keyDates, term.keyDates)
+    }
+
+    /// A term the user hasn't dated yet round-trips as undated, with no key dates.
+    func testTermRowUndatedRoundTrip() throws {
+        let term = Term(name: "My semester")
+        let data = try encoder.encode(TermRow(domain: term))
+        let result = try decoder.decode(TermRow.self, from: data).toDomain()
+        XCTAssertNil(result.startsOn)
+        XCTAssertNil(result.endsOn)
+        XCTAssertTrue(result.keyDates.isEmpty)
+    }
+
     // MARK: - DTO id capture (DTO stores domain id; toDomain() produces fresh domain id)
 
     /// `TaskRow.id` captures the domain TaskItem's UUID — verified here.

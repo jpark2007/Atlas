@@ -96,8 +96,11 @@ public struct AtlasSnapshot {
     /// `loadAll()` populates them, and best-effort so a not-yet-migrated DB → [].
     public var references: [Reference]
     public var referenceAttachments: [ReferenceAttachment]
+    /// School terms (0042). Defaulted so existing callers are unchanged; best-effort
+    /// in `loadAll()` so a DB without the migration simply has none.
+    public var terms: [Term]
 
-    public init(spaces: [Space], projects: [Project], tasks: [TaskItem], events: [CalendarEvent], notes: [Note], goals: [Goal], references: [Reference] = [], referenceAttachments: [ReferenceAttachment] = []) {
+    public init(spaces: [Space], projects: [Project], tasks: [TaskItem], events: [CalendarEvent], notes: [Note], goals: [Goal], references: [Reference] = [], referenceAttachments: [ReferenceAttachment] = [], terms: [Term] = []) {
         self.spaces = spaces
         self.projects = projects
         self.tasks = tasks
@@ -106,6 +109,7 @@ public struct AtlasSnapshot {
         self.goals = goals
         self.references = references
         self.referenceAttachments = referenceAttachments
+        self.terms = terms
     }
 }
 
@@ -205,6 +209,9 @@ public struct UserSettingsRow: Codable, Equatable {
     public var sidebarMode: String?
     public var tasksGrouping: String?
     public var perTabDocsSync: Bool?
+    /// Whether the School framework is shown (0042). nil ⇒ column absent/NULL, which
+    /// the client reads as "show it" — School hides only when this is explicitly false.
+    public var schoolEnabled: Bool?
     /// Opaque compact JSON blob (same shape `NotificationPrefs` encodes); stored
     /// in the jsonb `notification_prefs` column. nil ⇒ column absent/NULL.
     public var notificationPrefsJSON: String?
@@ -218,6 +225,7 @@ public struct UserSettingsRow: Codable, Equatable {
         case sidebarMode               = "sidebar_mode"
         case tasksGrouping             = "tasks_grouping"
         case perTabDocsSync            = "per_tab_docs_sync"
+        case schoolEnabled             = "school_enabled"
         case notificationPrefs         = "notification_prefs"
         case updatedAt                 = "updated_at"
     }
@@ -229,6 +237,7 @@ public struct UserSettingsRow: Codable, Equatable {
                 sidebarMode: String? = nil,
                 tasksGrouping: String? = nil,
                 perTabDocsSync: Bool? = nil,
+                schoolEnabled: Bool? = nil,
                 notificationPrefsJSON: String? = nil,
                 updatedAt: Date? = nil) {
         self.userId                    = userId
@@ -238,6 +247,7 @@ public struct UserSettingsRow: Codable, Equatable {
         self.sidebarMode               = sidebarMode
         self.tasksGrouping             = tasksGrouping
         self.perTabDocsSync            = perTabDocsSync
+        self.schoolEnabled             = schoolEnabled
         self.notificationPrefsJSON     = notificationPrefsJSON
         self.updatedAt                 = updatedAt
     }
@@ -251,6 +261,7 @@ public struct UserSettingsRow: Codable, Equatable {
         sidebarMode               = try c.decodeIfPresent(String.self, forKey: .sidebarMode)
         tasksGrouping             = try c.decodeIfPresent(String.self, forKey: .tasksGrouping)
         perTabDocsSync            = try c.decodeIfPresent(Bool.self,   forKey: .perTabDocsSync)
+        schoolEnabled             = try c.decodeIfPresent(Bool.self,   forKey: .schoolEnabled)
         updatedAt                 = try c.decodeIfPresent(Date.self,   forKey: .updatedAt)
         // jsonb object → compact string (nil when the column is absent or NULL).
         if let value = try c.decodeIfPresent(JSONValue.self, forKey: .notificationPrefs) {
@@ -270,6 +281,7 @@ public struct UserSettingsRow: Codable, Equatable {
         try c.encodeIfPresent(sidebarMode,               forKey: .sidebarMode)
         try c.encodeIfPresent(tasksGrouping,             forKey: .tasksGrouping)
         try c.encodeIfPresent(perTabDocsSync,            forKey: .perTabDocsSync)
+        try c.encodeIfPresent(schoolEnabled,             forKey: .schoolEnabled)
         try c.encodeIfPresent(updatedAt,                 forKey: .updatedAt)
         // compact string → raw JSON object (parse the blob back into a fragment
         // so it lands in the jsonb column as an object, not a quoted string).
@@ -300,6 +312,16 @@ public struct ProjectRow: Codable {
     public var colorToken: String?
     /// The Canvas course this class is explicitly linked to (0032); nil ⇒ unlinked.
     public var canvasCourse: String?
+    /// The term this class belongs to (0042). Optional so decoding survives rows/DBs
+    /// that predate the migration; round-tripped so a client edit never nulls it.
+    public var termId: UUID?
+    /// Soft-archive stamp (0042); nil ⇒ active. Round-tripped. Un-archiving needs an
+    /// explicit NULL, which `setProjectArchived` writes as a scoped PATCH.
+    public var archivedAt: Date?
+    /// Structured meeting blocks (0042) — jsonb array. nil/absent ⇒ no known schedule.
+    public var meetingPattern: [MeetingBlock]?
+    /// Syllabus-scan info card (0042) — jsonb object. nil/absent ⇒ never scanned.
+    public var classInfo: ClassInfoCard?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
@@ -315,6 +337,10 @@ public struct ProjectRow: Codable {
         case spaceId      = "space_id"
         case colorToken   = "color_token"
         case canvasCourse = "canvas_course"
+        case termId         = "term_id"
+        case archivedAt     = "archived_at"
+        case meetingPattern = "meeting_pattern"
+        case classInfo      = "class_info"
     }
 
     public init(domain p: Project) {
@@ -330,6 +356,12 @@ public struct ProjectRow: Codable {
         self.spaceId      = p.spaceID
         self.colorToken   = p.colorToken
         self.canvasCourse = p.canvasCourse
+        self.termId       = p.termID
+        self.archivedAt   = p.archivedAt
+        // An empty pattern is stored as NULL rather than `[]` — "no schedule known"
+        // is one state, not two.
+        self.meetingPattern = p.meetingPattern.isEmpty ? nil : p.meetingPattern
+        self.classInfo      = p.classInfo
     }
 
     public func toDomain() -> Project {
@@ -341,8 +373,63 @@ public struct ProjectRow: Codable {
                 meetingInfo: meetingInfo, instructor: instructor,
                 canvasSynced: canvasSynced, overview: overview,
                 colorToken: colorToken, canvasCourse: canvasCourse)
-        project.spaceID = spaceId
+        project.spaceID        = spaceId
+        project.termID         = termId
+        project.archivedAt     = archivedAt
+        project.meetingPattern = meetingPattern ?? []
+        project.classInfo      = classInfo
         return project
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TermRow — a school term (0042). `starts_on`/`ends_on` are Postgres `date`
+// columns, which arrive as 'YYYY-MM-DD' and would fail the ambient iso8601 date
+// decoder — so they travel as strings here and are bridged through `TermDay`.
+// `key_dates` is jsonb (`not null default '[]'`), encoded as a real JSON array.
+// ─────────────────────────────────────────────────────────────────────────────
+
+public struct TermRow: Codable {
+    public var id: UUID
+    public var userId: UUID?
+    public var name: String
+    public var startsOn: String?
+    public var endsOn: String?
+    public var keyDates: [TermKeyDate]
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case id
+        case userId   = "user_id"
+        case name
+        case startsOn = "starts_on"
+        case endsOn   = "ends_on"
+        case keyDates = "key_dates"
+    }
+
+    public init(domain t: Term) {
+        self.id       = t.id
+        self.name     = t.name
+        self.startsOn = t.startsOn.map(TermDay.string(from:))
+        self.endsOn   = t.endsOn.map(TermDay.string(from:))
+        self.keyDates = t.keyDates
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id       = try c.decode(UUID.self, forKey: .id)
+        userId   = try c.decodeIfPresent(UUID.self,   forKey: .userId)
+        name     = try c.decode(String.self,          forKey: .name)
+        startsOn = try c.decodeIfPresent(String.self, forKey: .startsOn)
+        endsOn   = try c.decodeIfPresent(String.self, forKey: .endsOn)
+        keyDates = try c.decodeIfPresent([TermKeyDate].self, forKey: .keyDates) ?? []
+    }
+
+    public func toDomain() -> Term {
+        Term(id: id,
+             name: name,
+             startsOn: startsOn.flatMap(TermDay.date(from:)),
+             endsOn:   endsOn.flatMap(TermDay.date(from:)),
+             keyDates: keyDates)
     }
 }
 
@@ -1350,6 +1437,10 @@ public final class AtlasDB {
         let refRows:    [ReferenceRow]           = (try? await refRowsAsync)    ?? []
         let attachRows: [ReferenceAttachmentRow] = (try? await attachRowsAsync) ?? []
 
+        // School terms — same best-effort posture: a DB without 0042 404s here, and
+        // School simply has no terms rather than the whole load failing.
+        let termRows: [Term] = (try? await listTerms()) ?? []
+
         // Feed names label generic-ICS events (`.icsFeed(name:)`). Best-effort: if the
         // multi-ICS-feeds migration isn't deployed yet, `calendar_feeds` 404s — degrade to
         // an empty map (unresolved ICS events fall back to "Calendar") rather than failing
@@ -1367,7 +1458,8 @@ public final class AtlasDB {
             notes:    nr.map { $0.toDomain() },
             goals:    gr.map { $0.toDomain() },
             references:           refRows.map    { $0.toDomain() },
-            referenceAttachments: attachRows.map { $0.toDomain() }
+            referenceAttachments: attachRows.map { $0.toDomain() },
+            terms:                termRows
         )
     }
 
@@ -1766,6 +1858,52 @@ public final class AtlasDB {
         let body = try isoEncoder.encode(row)
         try await send(method: "POST", table: "projects",
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
+    }
+
+    /// Archives (or un-archives) a class via a scoped PATCH. A full upsert can only
+    /// ever WRITE `archived_at` — an omitted optional leaves the column alone — so
+    /// un-archiving needs this explicit NULL, the same reasoning as `setTaskDone`.
+    /// Never deletes anything: an archived class keeps its tasks and notes.
+    public func setProjectArchived(id: UUID, archivedAt: Date?) async throws {
+        let sess = try await requireSession()
+        let payload: [String: Any] = [
+            "archived_at": archivedAt.map { Self.isoFormatter.string(from: $0) } ?? NSNull()
+        ]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        try await send(method: "PATCH", table: "projects",
+                       query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                       extraHeaders: ["Prefer": "return=minimal"],
+                       body: body, sess: sess)
+    }
+
+    // MARK: Terms (School framework, 0042)
+
+    /// Every term the signed-in user owns, oldest first (RLS scopes the read).
+    public func listTerms() async throws -> [Term] {
+        let rows: [TermRow] = try await getAll("terms", order: "starts_on")
+        return rows.map { $0.toDomain() }
+    }
+
+    public func upsertTerm(_ t: Term) async throws {
+        let sess = try await requireSession()
+        guard let userId = UUID(uuidString: sess.user.id) else {
+            throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
+        }
+        var row = TermRow(domain: t)
+        row.userId = userId
+        let body = try isoEncoder.encode(row)
+        try await send(method: "POST", table: "terms",
+                       query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
+    }
+
+    /// Deletes a term. Its classes survive (`term_id` FK is `on delete set null`) and
+    /// resurface as "needs a term" — deleting a semester must never delete coursework.
+    public func deleteTerm(id: UUID) async throws {
+        let sess = try await requireSession()
+        try await send(method: "DELETE", table: "terms",
+                       query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                       extraHeaders: ["Prefer": "return=minimal"],
+                       sess: sess)
     }
 
     // MARK: Tasks

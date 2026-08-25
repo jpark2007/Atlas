@@ -1707,6 +1707,28 @@ struct SettingsView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .atlasHairlineBelow()
+
+            // School is a sidebar section, so its show/hide lives with the sidebar's
+            // other visibility control rather than earning a sixth settings heading.
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("School")
+                        .atlasFont(size: 14, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    Text("Semesters, classes and their work. Turn it off and the section disappears — nothing is deleted.")
+                        .atlasFont(size: 12, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+                Spacer()
+                Toggle("", isOn: Binding(get: { state.schoolEnabled },
+                                         set: { state.schoolEnabled = $0 }))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(AtlasTheme.Colors.textPrimary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .atlasHairlineBelow()
         }
     }
 

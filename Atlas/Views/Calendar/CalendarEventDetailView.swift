@@ -57,6 +57,11 @@ struct CalendarEventDetailView: View {
             VStack(alignment: .leading, spacing: 22) {
                 header
                 duplicateSourceNote
+                // A Canvas item whose course has no class yet — never dropped, never
+                // blocking; picking here teaches the mapping for good.
+                if let course = item.canvasCourse, item.projectID == nil {
+                    UnassignedClassChip(course: course)
+                }
                 if isReadOnly || isCanvasBackedBlock { lockBanner }
                 fields
                 if canLinkNote { linkedNoteSection }

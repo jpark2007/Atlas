@@ -42,6 +42,16 @@ struct SidebarView: View {
                     .padding(.horizontal, 10)
                     .padding(.top, 12)
 
+                // School is its own top-level section (Phase 5 IA) — the framework's
+                // visible face, pulled out of the generic SPACES tree.
+                if state.schoolEnabled {
+                    SchoolSidebarSection(hovered: $hovered)
+
+                    hairline
+                        .padding(.horizontal, 10)
+                        .padding(.top, 8)
+                }
+
                 HStack(spacing: 4) {
                     Text("SPACES")
                         .atlasCapsLabel()
@@ -471,7 +481,7 @@ struct SidebarView: View {
 
 // MARK: - Row chrome (paper language)
 
-private extension View {
+extension View {
     /// Paper-language selection/hover chrome for a sidebar row. The active row
     /// gets a 2px accent (clay) tick on the left edge and no fill; a
     /// hovered-but-inactive row gets a soft full-row ink wash with square

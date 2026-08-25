@@ -47,6 +47,7 @@ final class SettingsSyncService: ObservableObject {
         static let textScale                 = "appearance.textScale"            // text_scale
         static let sidebarMode               = "sidebar.mode"                    // sidebar_mode
         static let perTabDocsSync            = "notes.perTabDocsSync.enabled"    // per_tab_docs_sync
+        static let schoolEnabled             = "school.enabled"                  // school_enabled
         // Phone-owned but applied locally on pull BY DESIGN — the later Mac
         // notifications task consumes this UserDefaults key.
         static let notificationPrefs         = "notificationPrefs"               // notification_prefs
@@ -99,7 +100,8 @@ final class SettingsSyncService: ObservableObject {
         lastPulledRow = nil
         hasPulledThisSession = false
         for key in [Key.defaultSpaceName, Key.appleCalendarDefaultSpace,
-                    Key.textScale, Key.sidebarMode, Key.perTabDocsSync, Key.notificationPrefs] {
+                    Key.textScale, Key.sidebarMode, Key.perTabDocsSync, Key.schoolEnabled,
+                    Key.notificationPrefs] {
             Self.syncedDefaults.removeObject(forKey: key)
         }
     }
@@ -135,6 +137,7 @@ final class SettingsSyncService: ObservableObject {
         var textScale: Double? = nil
         var sidebarMode: String? = nil
         var perTabDocsSync: Bool? = nil
+        var schoolEnabled: Bool? = nil
         var notificationPrefsJSON: String? = nil
     }
 
@@ -166,6 +169,7 @@ final class SettingsSyncService: ObservableObject {
         if let v = row.textScale                 { writes.append(.init(key: Key.textScale,                 value: .double(v))) }
         if let v = row.sidebarMode               { writes.append(.init(key: Key.sidebarMode,               value: .string(v))) }
         if let v = row.perTabDocsSync            { writes.append(.init(key: Key.perTabDocsSync,            value: .bool(v)))   }
+        if let v = row.schoolEnabled             { writes.append(.init(key: Key.schoolEnabled,             value: .bool(v)))   }
         if let v = row.notificationPrefsJSON     { writes.append(.init(key: Key.notificationPrefs,         value: .string(v))) }
         return writes
     }
@@ -179,6 +183,7 @@ final class SettingsSyncService: ObservableObject {
             textScale:                 defaults.object(forKey: Key.textScale) == nil ? nil : defaults.double(forKey: Key.textScale),
             sidebarMode:               defaults.string(forKey: Key.sidebarMode),
             perTabDocsSync:            defaults.object(forKey: Key.perTabDocsSync) == nil ? nil : defaults.bool(forKey: Key.perTabDocsSync),
+            schoolEnabled:             defaults.object(forKey: Key.schoolEnabled)  == nil ? nil : defaults.bool(forKey: Key.schoolEnabled),
             notificationPrefsJSON:     defaults.string(forKey: Key.notificationPrefs)
         )
     }
@@ -197,6 +202,7 @@ final class SettingsSyncService: ObservableObject {
             sidebarMode:               local.sidebarMode,
             tasksGrouping:             nil,   // phone-owned; no Mac local source
             perTabDocsSync:            local.perTabDocsSync,
+            schoolEnabled:             local.schoolEnabled,
             notificationPrefsJSON:     local.notificationPrefsJSON
         )
         return UserSettingsMerge.overlay(base: base, local: localRow, userId: userId)

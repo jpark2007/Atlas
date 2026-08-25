@@ -50,6 +50,23 @@ final class SettingsSyncServiceTests: XCTestCase {
                        [.init(key: "sidebar.mode", value: .string("always"))])
     }
 
+    /// `school_enabled` (0042) round-trips through the Mac's own key. Absent must stay
+    /// absent on the way up — School defaults to shown, and a device that has never been
+    /// asked must not push "off".
+    func testSchoolEnabledRoundTripsThroughItsLocalKey() {
+        let row = UserSettingsRow(userId: uid, schoolEnabled: false)
+        XCTAssertEqual(SettingsSyncService.applies(from: row),
+                       [.init(key: "school.enabled", value: .bool(false))])
+
+        let d = makeDefaults()
+        XCTAssertNil(SettingsSyncService.readLocal(from: d).schoolEnabled, "absent, NOT false")
+        d.set(false, forKey: "school.enabled")
+        XCTAssertEqual(SettingsSyncService.readLocal(from: d).schoolEnabled, false)
+        XCTAssertEqual(SettingsSyncService.mergedRow(base: nil,
+                                                    local: SettingsSyncService.readLocal(from: d),
+                                                    userId: uid).schoolEnabled, false)
+    }
+
     // MARK: - readLocal(from:) — absent vs present
 
     func testReadLocalDistinguishesAbsentFromPresent() {
