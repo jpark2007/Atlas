@@ -179,6 +179,7 @@ final class MobileStore: ObservableObject {
         spaceFilter = nil
         settingsSync.reset()           // same clean-slate as signOut
         PendingCaptureQueue.clearStorage()   // undrained dumps must not outlive the account
+        CaptureDraftStore.clear()            // in-progress draft text must not outlive the account
         return nil
     }
 

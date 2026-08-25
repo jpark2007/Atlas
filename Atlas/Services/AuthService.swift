@@ -283,6 +283,8 @@ final class AuthService: ObservableObject {
         // and return to the gate.
         clearStoredSession()
         if let userID { CaptureHistoryStore.delete(userID: userID) }
+        CaptureDraftStore.clear()            // in-progress draft text must not outlive the account
+        PendingCaptureQueue.clearStorage()   // undrained dumps must not outlive the account
         ReferencePreviewLoader.clearCache()
         session = nil
         state = .signedOut

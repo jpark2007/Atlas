@@ -16,8 +16,11 @@ import TipKit
 //   • Overlays a centered-near-top command bar whenever `state.presentCapture == true`.
 //   • Dismisses on Esc and on click-outside.
 //   • On Return: calls the AI edge function to auto-sort the text into the right Space.
-//     Falls back to a plain task on ANY error (offline, 404, timeout, bad JSON, etc.)
-//     so ⌥Space ALWAYS works even when the edge function is not yet deployed.
+//     Offline / server-down dumps are held in `PendingCaptureQueue` and drained on a
+//     later summon; any other error (404, bad JSON, …) falls back to a plain task, so
+//     ⌥Space ALWAYS works even when the edge function is not yet deployed.
+//   • Persists the in-progress draft (`CaptureDraftStore`) on every keystroke and
+//     restores it on the next summon — see Phase 4 §1, "if I typed it, Atlas saved it."
 
 extension View {
     /// Overlays the Atlas quick-capture command bar and installs its keyboard shortcut.
@@ -81,6 +84,10 @@ struct CaptureCommandBar: View {
     @State private var errorAnchor: String = ""
     @State private var isProcessing: Bool = false
 
+    /// Offline / server-down dumps wait here until the bar next opens with a
+    /// working connection. Rebuilt each summon; it loads itself from disk.
+    @StateObject private var pending = PendingCaptureQueue()
+
     // Click-to-talk dictation. NEVER listens on open — only when the mic button
     // is tapped. The live transcript streams into `text`.
     @StateObject private var speech = SpeechCaptureService()
@@ -118,7 +125,11 @@ struct CaptureCommandBar: View {
             }
         }
         .onAppear {
+            // "If I typed it, Atlas saved it" — restore an unsent draft from the
+            // last summon (Esc / focus loss / quit all keep it).
+            text = CaptureDraftStore.load()
             DispatchQueue.main.async { fieldFocused = true }
+            Task { await drainPending() }
         }
         // When dictation stops, re-focus the text field so the user can press
         // Return to submit without having to click first.
@@ -153,7 +164,7 @@ struct CaptureCommandBar: View {
 
             TextField(state.captureContext == nil
                       ? "Capture anything — a task, a thought…"
-                      : "Add a task…", text: $text)
+                      : "Add a task…", text: draftBinding)
                 .textFieldStyle(.plain)
                 .atlasFont(size: 19, weight: .regular, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
@@ -187,6 +198,20 @@ struct CaptureCommandBar: View {
         .shadow(color: .black.opacity(0.06), radius: 6, x: 0, y: 2)
         .animation(.easeInOut(duration: 0.2), value: confirmation)
         .animation(.easeInOut(duration: 0.2), value: errorMessage)
+    }
+
+    /// Writes the draft through on every KEYSTROKE only. Programmatic writes to
+    /// `text` (the optimistic clear in `submit`, the restore in `showError`) bypass
+    /// this setter, so an in-flight submit that dies mid-way leaves the draft on
+    /// disk to be restored next summon.
+    private var draftBinding: Binding<String> {
+        Binding(
+            get: { text },
+            set: { newValue in
+                text = newValue
+                CaptureDraftStore.save(newValue)
+            }
+        )
     }
 
     private var glassBackground: some View {
@@ -267,6 +292,7 @@ struct CaptureCommandBar: View {
     private func toggleVoice() {
         speech.toggle(currentText: text) { merged in
             text = merged
+            CaptureDraftStore.save(merged)   // dictated words are typed words
         }
     }
 
@@ -361,13 +387,41 @@ struct CaptureCommandBar: View {
                 // Server rejected the size (413) — surface it, keep the text.
                 showError(Self.tooLongMessage, restoring: rawText)
             } catch AtlasAIError.serverUnavailable, AtlasAIError.rateLimited {
-                // Server down / busy (5xx / 429) — surface it, keep the text.
-                showError(Self.serverDownMessage, restoring: rawText)
+                // Server down / busy (5xx / 429) — transient, so hold the dump and
+                // sort it on a later summon rather than making the user retry.
+                pending.enqueue(rawText)
+                await showConfirmation(Self.queuedServerMessage, duration: 2)
+            } catch let error as URLError where error.isConnectivity {
+                // No usable network — hold the dump, drained on a later summon.
+                pending.enqueue(rawText)
+                await showConfirmation(Self.queuedOfflineMessage, duration: 2)
             } catch {
-                // ANY other error (offline, 404 — function not deployed, parse
-                // failure): fall through to a fallback task so capture never breaks.
+                // ANY other error (404 — function not deployed, parse failure):
+                // fall through to a fallback task so capture never breaks.
                 fallbackTask(rawText)
                 await showConfirmation(CaptureOutcome.degraded.confirmation)
+            }
+        }
+    }
+
+    /// Parse and commit any dumps held from an offline / server-down submit. Runs
+    /// when the bar appears (every summon rebuilds it, so this is effectively every
+    /// `CapturePanelController.show()`). Each item is removed BEFORE parsing and
+    /// re-queued on failure, so a crash mid-parse can't double-commit it; the first
+    /// failure stops the drain and leaves the rest queued. Mirrors iOS.
+    @MainActor
+    private func drainPending() async {
+        guard auth.session != nil, !pending.items.isEmpty else { return }
+        let spaces = AtlasAI.context(from: state.spaces)
+        for item in pending.items {
+            pending.remove(item.id)
+            do {
+                let response = try await atlasAI.parse(item.text, spaces: spaces)
+                let applied = response.results.map { state.applyCapture($0) }
+                state.recordCapture(rawText: item.text, items: applied.map(\.item))
+            } catch {
+                pending.enqueue(item.text)
+                break
             }
         }
     }
@@ -392,9 +446,13 @@ struct CaptureCommandBar: View {
         state.addTask(title: title, notes: rawText)
     }
 
-    // The two user-facing failure strings (kept verbatim, shared with iOS).
+    // User-facing capture strings (kept verbatim, shared with iOS).
+    // 413 is NOT queued — a retry would 413 forever — so it stays an inline error
+    // with the text restored to the field.
     static let tooLongMessage = "Sorry — that message is too long to sort"
-    static let serverDownMessage = "Servers are down — please try again later"
+    // Held-for-later confirmations. A queued dump is SAVED, not lost — say so.
+    static let queuedOfflineMessage = "Saved — will sort when you're back online"
+    static let queuedServerMessage = "Saved — will sort when servers are back"
     // Rare: the server's defensive item bound trimmed an enormous paste. Most items
     // WERE added; suggest splitting the remainder. (Normal long pastes fan out and
     // are not capped.)
@@ -418,6 +476,9 @@ struct CaptureCommandBar: View {
     /// needs a moment to read.
     @MainActor
     private func showConfirmation(_ message: String, duration: TimeInterval = 1) async {
+        // Every path that reaches here has committed or queued the text, so the
+        // draft is safe to drop. (Failure paths call showError instead and keep it.)
+        CaptureDraftStore.clear()
         // Every path that reaches here has committed at least one item — donate once.
         Task { await AtlasTipEvents.captured.donate() }
         withAnimation { confirmation = message }

@@ -3,9 +3,11 @@ import AtlasCore
 import TipKit
 
 /// The Capture hero. A small state machine drives the screen: empty → listening /
-/// thinking → result (typed or spoken — one shared flow). Offline dumps are held
-/// in `PendingCaptureQueue` and drained when Capture next appears / the app
-/// foregrounds with a connection.
+/// thinking → result (typed or spoken — one shared flow). Offline and server-down
+/// dumps are held in `PendingCaptureQueue` (AtlasCore) and drained when Capture next
+/// appears / the app foregrounds with a connection. The in-progress buffer is
+/// mirrored to `CaptureDraftStore` on every keystroke so an app kill can't eat it —
+/// Phase 4 §1, "if I typed it, Atlas saved it."
 struct CaptureView: View {
     @EnvironmentObject private var store: MobileStore
     @Environment(\.scenePhase) private var scenePhase
@@ -54,8 +56,25 @@ struct CaptureView: View {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active { Task { await drainPending() } }
         }
-        .onAppear(perform: consumeMicDeepLink)
+        .onAppear {
+            // "If I typed it, Atlas saved it" — an unsent draft survives an app kill.
+            if phase == .empty, text.isEmpty { text = CaptureDraftStore.load() }
+            consumeMicDeepLink()
+        }
         .onChange(of: store.autoStartMic) { _, _ in consumeMicDeepLink() }
+    }
+
+    /// Writes the draft through on every KEYSTROKE only. Programmatic writes to
+    /// `text` (the clear after a successful parse) bypass this setter, so an app
+    /// kill mid-submit still leaves the typed text on disk for the next launch.
+    private var draftBinding: Binding<String> {
+        Binding(
+            get: { text },
+            set: { newValue in
+                text = newValue
+                CaptureDraftStore.save(newValue)
+            }
+        )
     }
 
     // MARK: - Empty state (spec §4.2)
@@ -76,7 +95,7 @@ struct CaptureView: View {
 
             // The page IS the input (spec §6, Direction A) — no box, no chrome.
             ZStack(alignment: .topLeading) {
-                TextEditor(text: $text)
+                TextEditor(text: draftBinding)
                     .focused($editorFocused)
                     .font(.system(size: 22, weight: .regular, design: .rounded))
                     .foregroundStyle(MobileTheme.ink)
@@ -296,7 +315,8 @@ struct CaptureView: View {
             drafts: $drafts,
             spaces: store.snapshot.spaces,
             onCommit: commitAll,
-            onUndo: { drafts = []; phase = .empty }
+            // Undo = "not what I meant" → hand the original words back to the editor.
+            onUndo: { drafts = []; text = CaptureDraftStore.load(); phase = .empty }
         )
     }
 
@@ -354,28 +374,38 @@ struct CaptureView: View {
             do {
                 let ctx = AtlasAI.context(from: store.contextSpaces)
                 let response = try await store.ai.parse(raw, spaces: ctx)
-                text = ""
                 truncated = response.truncated
                 if response.results.isEmpty {
+                    // Nothing actionable — hand the words back rather than eat them.
                     phase = .empty
                     note = "Nothing to add"
                 } else {
+                    // The persisted draft is NOT cleared here: nothing is committed
+                    // until commitAll, so an app kill at the result card still
+                    // restores the typed text on the next launch.
+                    text = ""
                     drafts = response.results.map(DraftItem.init)
                     phase = .result
                 }
             } catch let error as URLError where error.isConnectivity {
                 pending.enqueue(raw)
                 text = ""
+                CaptureDraftStore.clear()
                 phase = .empty
                 note = "Saved — will sort when you’re back online"
             } catch AtlasAIError.tooLong {
-                // Server rejected the size (413) — surface it, keep the text.
+                // Server rejected the size (413) — a retry would 413 forever, so
+                // this stays an in-place error with the text kept in the field.
                 phase = .empty
                 note = "Sorry — that message is too long to sort"
             } catch AtlasAIError.serverUnavailable, AtlasAIError.rateLimited {
-                // Server down / busy (5xx / 429) — surface it, keep the text.
+                // Server down / busy (5xx / 429) — transient, so hold the dump and
+                // drain it later instead of making the user retry by hand.
+                pending.enqueue(raw)
+                text = ""
+                CaptureDraftStore.clear()
                 phase = .empty
-                note = "Servers are down — please try again later"
+                note = "Saved — will sort when servers are back"
             } catch {
                 phase = .empty
                 note = "Couldn’t sort that. Try again."
@@ -391,6 +421,7 @@ struct CaptureView: View {
             ? "That was a lot — some items may not have been added. Try splitting it up"
             : commitSummary(drafts)
         for draft in drafts { commit(draft) }
+        CaptureDraftStore.clear()   // committed for real — the draft is safe to drop
         drafts = []
         truncated = false
         phase = .empty
@@ -560,16 +591,3 @@ private struct LevelBars: View {
     }
 }
 
-private extension URLError {
-    /// True for the "no usable network" family — the signal to hold a dump offline.
-    var isConnectivity: Bool {
-        switch code {
-        case .notConnectedToInternet, .networkConnectionLost, .timedOut,
-             .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
-             .dataNotAllowed, .internationalRoamingOff:
-            return true
-        default:
-            return false
-        }
-    }
-}
