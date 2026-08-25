@@ -146,7 +146,7 @@ struct SyllabusScanSheet: View {
     private var scanningStep: some View {
         VStack(spacing: 12) {
             Spacer()
-            ProgressView().controlSize(.small)
+            AtlasLoader(size: 26)
             Text("Reading \(pages.count) \(pages.count == 1 ? "page" : "pages")…")
                 .atlasFont(size: 13, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
