@@ -150,7 +150,7 @@ final class AuthService: ObservableObject {
             let nonce = PKCE.verifier()
             let credential = try await AppleSignInCoordinator(presenter: presenter)
                 .signIn(hashedNonce: PKCE.sha256(nonce))
-            let s = try await api.signInWithIdToken(provider: "apple", idToken: credential, nonce: nonce)
+            let s = try await api.signInWithIdToken(provider: "apple", idToken: credential.idToken, nonce: nonce)
             persist(s)
         }
     }
@@ -262,11 +262,14 @@ final class AuthService: ObservableObject {
         guard let token = await validAccessToken() else {
             return "Your session expired — sign in again, then delete your account."
         }
+        let userID = session?.user.id
         let url = SupabaseConfig.functionsBase.appendingPathComponent("delete-account")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue(SupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: await appleRevocationBody())
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -276,11 +279,29 @@ final class AuthService: ObservableObject {
             return "Couldn't delete your account. Check your connection and try again."
         }
         // The auth user no longer exists — clear the local session (no server
-        // logout to call) and return to the gate.
+        // logout to call), wipe the per-account files the cascade can't reach,
+        // and return to the gate.
         clearStoredSession()
+        if let userID { CaptureHistoryStore.delete(userID: userID) }
+        ReferencePreviewLoader.clearCache()
         session = nil
         state = .signedOut
         return nil
+    }
+
+    /// The optional Apple-revocation fields of the delete-account request body.
+    /// App Store guideline 5.1.1(v) requires revoking the Apple token, and Apple
+    /// only accepts a refresh/access token — neither of which Supabase keeps for the
+    /// native id_token sign-in. So we re-run the Apple authorization here to get a
+    /// fresh one-shot code for the server to exchange and revoke. Best-effort: a
+    /// dismissed sheet returns an empty body and the account still deletes.
+    private func appleRevocationBody() async -> [String: String] {
+        guard Self.appleSignInAvailable, session?.user.signedInWithApple == true,
+              let clientID = Bundle.main.bundleIdentifier,
+              let credential = try? await AppleSignInCoordinator(presenter: presenter)
+                  .signIn(hashedNonce: PKCE.sha256(PKCE.verifier())),
+              let code = credential.authorizationCode else { return [:] }
+        return ["apple_authorization_code": code, "apple_client_id": clientID]
     }
 
     // MARK: - Helper
@@ -340,14 +361,22 @@ final class AuthPresentationAnchor: NSObject, ASAuthorizationControllerPresentat
 
 // MARK: - Apple Sign In coordinator
 
+/// One successful Apple authorization: the identity token that becomes a Supabase
+/// session, plus the one-shot authorization code the delete-account function
+/// exchanges for a refresh token to revoke.
+struct AppleCredential {
+    let idToken: String
+    let authorizationCode: String?
+}
+
 final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate {
     private let presenter: AuthPresentationAnchor
-    private var continuation: CheckedContinuation<String, Error>?
+    private var continuation: CheckedContinuation<AppleCredential, Error>?
 
     init(presenter: AuthPresentationAnchor) { self.presenter = presenter }
 
     /// Runs the Apple flow and returns the identity token (JWT) on success.
-    func signIn(hashedNonce: String) async throws -> String {
+    func signIn(hashedNonce: String) async throws -> AppleCredential {
         try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
             let request = ASAuthorizationAppleIDProvider().createRequest()
@@ -368,7 +397,9 @@ final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate 
             continuation?.resume(throwing: SupabaseAuthError(message: "Apple returned no identity token."))
             return
         }
-        continuation?.resume(returning: token)
+        continuation?.resume(returning: AppleCredential(
+            idToken: token,
+            authorizationCode: credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }))
     }
 
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {

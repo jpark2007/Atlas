@@ -15,9 +15,15 @@ struct QueuedCapture: Codable, Identifiable, Equatable {
 final class PendingCaptureQueue: ObservableObject {
     @Published private(set) var items: [QueuedCapture] = []
 
-    private let key = "atlas.capture.pending"
+    private static let key = "atlas.capture.pending"
 
     init() { load() }
+
+    /// Drops the persisted queue — called when the account is deleted, so raw capture
+    /// text doesn't outlive it.
+    static func clearStorage() {
+        UserDefaults.standard.removeObject(forKey: key)
+    }
 
     func enqueue(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -32,14 +38,14 @@ final class PendingCaptureQueue: ObservableObject {
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: key),
+        guard let data = UserDefaults.standard.data(forKey: Self.key),
               let decoded = try? JSONDecoder().decode([QueuedCapture].self, from: data) else { return }
         items = decoded
     }
 
     private func save() {
         if let data = try? JSONEncoder().encode(items) {
-            UserDefaults.standard.set(data, forKey: key)
+            UserDefaults.standard.set(data, forKey: Self.key)
         }
     }
 }

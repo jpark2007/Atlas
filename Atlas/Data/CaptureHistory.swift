@@ -123,6 +123,13 @@ enum CaptureHistoryStore {
         guard let data = try? coder.encoder.encode(capped) else { return }
         try? data.write(to: url, options: .atomic)
     }
+
+    /// Removes a user's history file — called when their account is deleted, so no
+    /// capture snippets survive on disk.
+    static func delete(userID: String) {
+        guard let url = fileURL(userID: userID) else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
 }
 
 // MARK: - AppState: record / eligibility / undo
