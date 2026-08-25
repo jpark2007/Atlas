@@ -3,12 +3,24 @@
  *
  * POST /functions/v1/capture
  * Body:   { text: string,
+ *           timezone?: string,                       // IANA id
  *           spaces?: [{ name: string,
- *                       projects: (string | { name: string, code?: string, overview?: string })[] }] }
+ *                       projects: (string | { name, code?, overview?, isClass? })[] }],
+ *           deadlines?: [{ id, title, dueISO, projectName? }],  // existing upcoming items
+ *           recent?: string[] }                      // last few raw captures
  *          Projects may be bare names (legacy) or objects whose code + short
- *          overview give the model description-aware routing context.
+ *          overview give the model description-aware routing context; `isClass`
+ *          marks a School class so "bio lab" routes to BIO 201.
+ *          `deadlines` lets a capture REFER to something the user already has
+ *          ("the essay") — the model may then answer with an update item instead
+ *          of a duplicate. `recent` supplies referents from the last few dumps.
  * Returns: JSON ARRAY of capture items:
- *   [{ kind, title, spaceName, projectName?, dueISO?, startISO?, durationMin?, notes? }, ...]
+ *   [{ kind, title, spaceName, projectName?, dueISO?, startISO?, durationMin?, notes?,
+ *      confidence? }, ...]
+ *   or, for an item that attaches to an existing one:
+ *   [{ kind: "update", targetId, title, spaceName, dueISO?, notes?, confidence? }, ...]
+ *   A client that doesn't know "update" treats it as an unknown kind and still
+ *   saves a task, so nothing is ever lost.
  *
  * The model splits a multi-item paragraph ("essay due thu, gym 3x, dinner sunday")
  * into multiple objects. When `spaces` is supplied, the user's real Space + project
@@ -48,10 +60,22 @@ const MAX_ITEMS = 200;
 
 // A project is either a bare name (legacy clients) or an object carrying an
 // optional short code and description used for description-aware routing.
-type ContextProject = string | { name: string; code?: string; overview?: string };
+type ContextProject =
+  | string
+  | { name: string; code?: string; overview?: string; isClass?: boolean };
 type ContextSpace = { name: string; projects: ContextProject[] };
 
+/** One existing upcoming item the capture may refer to instead of duplicating. */
+type ContextDeadline = { id: string; title: string; dueISO: string; projectName?: string };
+
 const DEFAULT_SPACES = ["School", "Work", "Personal", "Health", "Finance", "Other"];
+
+// Defensive caps on the client-supplied context. The clients already cap these
+// (AtlasAI.deadlineContext / recentContext); these bounds stop a hand-rolled or
+// buggy caller from inflating the prompt (and the bill).
+const MAX_DEADLINES = 40;
+const MAX_RECENT = 8;
+const MAX_RECENT_CHARS = 200;
 
 /**
  * Render one project line for the routing block. Tolerant of both the legacy
@@ -66,13 +90,52 @@ function projectLabel(p: ContextProject): string | null {
   }
   if (p && typeof p === "object" && typeof p.name === "string" && p.name.trim().length) {
     const name = p.name.trim();
+    // The code leads: a capture says "bio lab", never the full project name, so
+    // the code is the highest-signal token the model has to match against.
     const code = typeof p.code === "string" && p.code.trim().length
       ? ` [${p.code.trim()}]` : "";
+    const cls = p.isClass === true ? " (class)" : "";
     const desc = typeof p.overview === "string" && p.overview.trim().length
       ? ` — ${p.overview.trim()}` : "";
-    return `"${name}"${code}${desc}`;
+    return `"${name}"${code}${cls}${desc}`;
   }
   return null;
+}
+
+/**
+ * Render the "things you already have" block. Each line carries the id the model
+ * must echo back in `targetId` when the capture refers to that item. Omitted
+ * entirely when the client sent nothing, so the prompt stays short.
+ */
+function deadlinesBlock(deadlines: ContextDeadline[]): string {
+  if (!deadlines.length) return "";
+  const lines = deadlines.map((d) =>
+    `    • id=${d.id} · "${d.title}"${d.projectName ? ` · ${d.projectName}` : ""} · due ${d.dueISO}`
+  );
+  return `
+
+The user ALREADY has these upcoming items:
+${lines.join("\n")}
+When the capture clearly refers to ONE of them ("finish the essay", "move the bio \
+lab to friday", "the midterm is actually thursday") do NOT create a new item. Emit \
+an UPDATE item instead:
+{ "kind": "update", "targetId": "<the exact id above>", "title": "<that item's title>", \
+"spaceName": "<that item's space>", "dueISO"?: <new deadline, only if the capture states one>, \
+"notes"?: <detail to attach> }
+Only ever use an id copied EXACTLY from the list above. If you are not sure the \
+capture means one of these, create a new item as usual — a duplicate is far better \
+than editing the wrong thing.`;
+}
+
+/** Referents from the user's last few dumps — context only, never new items. */
+function recentBlock(recent: string[]): string {
+  if (!recent.length) return "";
+  const lines = recent.map((t) => `    • ${t}`);
+  return `
+
+For reference only, the user's most recent captures (newest first) — use these to \
+resolve pronouns and short referents. NEVER create items for this text:
+${lines.join("\n")}`;
 }
 
 /**
@@ -126,7 +189,12 @@ function localNow(timezone: string): { tz: string; text: string } {
   }
 }
 
-function buildSystemPrompt(spaces: ContextSpace[] | undefined, timezone: string): string {
+function buildSystemPrompt(
+  spaces: ContextSpace[] | undefined,
+  timezone: string,
+  deadlines: ContextDeadline[] = [],
+  recent: string[] = [],
+): string {
   const now = localNow(timezone);
   return `You are Atlas, a personal life-management AI. \
 The user's timezone is ${now.tz}. Right now, the user's LOCAL date and time is: ${now.text}. \
@@ -150,11 +218,14 @@ Each element of "items" matches this schema:
                               // explicit end/finish time is stated; else omit and durationMin governs
   "durationMin"?: number,     // duration in minutes (events, default 60 if not specified)
   "isAllDay"?: boolean,       // true for an event on a date with NO stated clock time (all-day)
-  "notes"?: string            // extra detail / body text (notes, or longer event notes)
+  "notes"?: string,           // extra detail / body text (notes, or longer event notes)
+  "confidence"?: number       // 0–1: how sure you are of kind + routing + date for THIS item.
+                              // Be honest — a low number marks the item for a quick fix
+                              // instead of silently getting it wrong. Omit if fully sure.
 }
 
 Routing:
-${spacesBlock(spaces)}
+${spacesBlock(spaces)}${deadlinesBlock(deadlines)}${recentBlock(recent)}
 
 Rules:
 - Split distinct to-dos / events / notes into SEPARATE items. A single self-contained
@@ -162,6 +233,8 @@ Rules:
 - "task"  = something to do (verb phrase, deadline, assignment, chore)
 - "event" = a meeting, appointment, session, or time-bound activity
 - "note"  = a thought, idea, reference, or piece of information to remember
+- "update" = a change to an item the user ALREADY has (only valid when an existing-items
+  list appears above, and only with an id copied exactly from it)
 - If an item is ambiguous, prefer "task".
 - STATED TIMES ARE SACRED. If the user states a clock time ("at 5:30", "by noon",
   "8pm"), it MUST appear in dueISO (tasks) or startISO (events), converted from the
@@ -335,6 +408,8 @@ Deno.serve(async (req: Request) => {
   let text: string;
   let spaces: ContextSpace[] | undefined;
   let timezone = "UTC";
+  let deadlines: ContextDeadline[] = [];
+  let recent: string[] = [];
   try {
     const body = await req.json();
     if (typeof body?.text !== "string" || !body.text.trim()) {
@@ -356,6 +431,24 @@ Deno.serve(async (req: Request) => {
     if (typeof body.timezone === "string" && body.timezone.trim()) {
       timezone = body.timezone.trim();
     }
+    // Context is optional and client-supplied: keep only well-formed entries and
+    // cap the count, so a malformed caller degrades to "no context" not a 500.
+    if (Array.isArray(body.deadlines)) {
+      deadlines = (body.deadlines as unknown[])
+        .filter((d): d is ContextDeadline =>
+          !!d && typeof d === "object" &&
+          typeof (d as ContextDeadline).id === "string" &&
+          typeof (d as ContextDeadline).title === "string" &&
+          typeof (d as ContextDeadline).dueISO === "string"
+        )
+        .slice(0, MAX_DEADLINES);
+    }
+    if (Array.isArray(body.recent)) {
+      recent = (body.recent as unknown[])
+        .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+        .slice(0, MAX_RECENT)
+        .map((t) => t.trim().slice(0, MAX_RECENT_CHARS));
+    }
   } catch {
     return new Response(
       JSON.stringify({ error: "Invalid JSON body" }),
@@ -376,7 +469,7 @@ Deno.serve(async (req: Request) => {
   // parsed in PARALLEL, each later chunk carrying a read-only tail of the prior
   // text as context. Any chunk failure fails the whole request with the existing
   // error taxonomy — no silent partial results.
-  const systemPrompt = buildSystemPrompt(spaces, timezone);
+  const systemPrompt = buildSystemPrompt(spaces, timezone, deadlines, recent);
   const chunks = chunkText(text);
   const outcomes = await Promise.all(
     chunks.map((_, i) =>

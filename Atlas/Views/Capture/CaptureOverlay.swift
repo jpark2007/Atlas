@@ -84,6 +84,13 @@ struct CaptureCommandBar: View {
     @State private var errorAnchor: String = ""
     @State private var isProcessing: Bool = false
 
+    // Phase 4 §3 — Enter commits, and the committed items STAY on screen as
+    // cards with Class ▾ · Type ▾ · Due ▾ chips until the bar is dismissed.
+    @State private var committed: [CommittedCapture] = []
+    @State private var committedEntryID: UUID?
+    /// The words behind `committed`, handed back to the field on "Undo all".
+    @State private var lastRawText: String = ""
+
     /// Offline / server-down dumps wait here until the bar next opens with a
     /// working connection. Rebuilt each summon; it loads itself from disk.
     @StateObject private var pending = PendingCaptureQueue()
@@ -102,7 +109,7 @@ struct CaptureCommandBar: View {
                 // Hosted in the floating panel — just the bar; the panel handles
                 // click-outside + Esc dismissal (CapturePanelController). The padding gives
                 // the bar's drop shadow room so it renders soft instead of clipped.
-                bar.frame(width: barWidth).padding(18)
+                surface.frame(width: barWidth).padding(18)
             } else {
                 ZStack(alignment: .top) {
                     // Click-outside catcher + subtle scrim for focus.
@@ -111,7 +118,7 @@ struct CaptureCommandBar: View {
                         .contentShape(Rectangle())
                         .onTapGesture { dismiss() }
 
-                    bar
+                    surface
                         .frame(width: barWidth)
                         .padding(.top, 96)
                 }
@@ -141,6 +148,31 @@ struct CaptureCommandBar: View {
     }
 
     // MARK: - Bar layout
+
+    /// The bar plus, once a capture has committed, its result cards — one glass
+    /// surface so the chips read as part of the same moment, not a new screen.
+    private var surface: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            bar
+            if !committed.isEmpty, let entryID = committedEntryID {
+                Rectangle()
+                    .fill(AtlasTheme.Colors.border)
+                    .frame(height: 1)
+                CaptureResultCards(items: $committed,
+                                   entryID: entryID,
+                                   onUndoAll: undoAll)
+            }
+        }
+        .background(glassBackground)
+        .overlay(
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+        .shadow(color: .black.opacity(0.12), radius: 22, x: 0, y: 10)
+        .shadow(color: .black.opacity(0.06), radius: 6, x: 0, y: 2)
+        .animation(.easeInOut(duration: 0.2), value: committed)
+    }
 
     private var bar: some View {
         HStack(spacing: 14) {
@@ -188,14 +220,6 @@ struct CaptureCommandBar: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
-        .background(glassBackground)
-        .overlay(
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .strokeBorder(AtlasTheme.Colors.border, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-        .shadow(color: .black.opacity(0.12), radius: 22, x: 0, y: 10)
-        .shadow(color: .black.opacity(0.06), radius: 6, x: 0, y: 2)
         .animation(.easeInOut(duration: 0.2), value: confirmation)
         .animation(.easeInOut(duration: 0.2), value: errorMessage)
     }
@@ -328,6 +352,10 @@ struct CaptureCommandBar: View {
         text = ""
         errorMessage = nil
         isProcessing = true
+        // A new dump replaces the last one's cards; anything already corrected
+        // stays corrected — those items are committed, not pending.
+        committed = []
+        committedEntryID = nil
 
         // From a project's "Add Task": force-tag the task to that project/space and
         // skip AI routing entirely, so it always lands where the user asked.
@@ -365,7 +393,9 @@ struct CaptureCommandBar: View {
             do {
                 let response = try await atlasAI.parse(
                     rawText,
-                    spaces: AtlasAI.context(from: state.spaces)
+                    spaces: AtlasAI.context(from: state.spaces),
+                    deadlines: AtlasAI.deadlineContext(from: state.tasks),
+                    recent: AtlasAI.recentContext(state.captureHistory.map(\.snippet))
                 )
                 let results = response.results
                 guard !results.isEmpty else {
@@ -374,14 +404,13 @@ struct CaptureCommandBar: View {
                     await showConfirmation(CaptureOutcome.degraded.confirmation)
                     return
                 }
+                // Commit immediately (Phase 4 §3): no review screen, no countdown.
                 let applied = results.map { state.applyCapture($0) }
-                let outcomes = applied.map(\.outcome)
                 state.recordCapture(rawText: rawText, items: applied.map(\.item))
+                showCommitted(applied, results: results, rawText: rawText)
                 if response.truncated {
                     // Server capped the paste at 50 — the items were still added.
-                    await showConfirmation(Self.truncatedMessage, duration: 3)
-                } else {
-                    await showConfirmation(CaptureOutcome.confirmation(for: outcomes))
+                    withAnimation { confirmation = Self.truncatedMessage }
                 }
             } catch AtlasAIError.tooLong {
                 // Server rejected the size (413) — surface it, keep the text.
@@ -416,7 +445,11 @@ struct CaptureCommandBar: View {
         for item in pending.items {
             pending.remove(item.id)
             do {
-                let response = try await atlasAI.parse(item.text, spaces: spaces)
+                let response = try await atlasAI.parse(
+                    item.text,
+                    spaces: spaces,
+                    deadlines: AtlasAI.deadlineContext(from: state.tasks),
+                    recent: AtlasAI.recentContext(state.captureHistory.map(\.snippet)))
                 let applied = response.results.map { state.applyCapture($0) }
                 state.recordCapture(rawText: item.text, items: applied.map(\.item))
             } catch {
@@ -424,6 +457,39 @@ struct CaptureCommandBar: View {
                 break
             }
         }
+    }
+
+    /// Hand the just-committed items to the result cards and leave the bar open
+    /// so the chips are one click away. The draft is safe to drop — everything on
+    /// screen is already saved — but the raw words are kept for "Undo all".
+    @MainActor
+    private func showCommitted(_ applied: [AppliedCapture],
+                               results: [CaptureResult],
+                               rawText: String) {
+        CaptureDraftStore.clear()
+        Task { await AtlasTipEvents.captured.donate() }
+        lastRawText = rawText
+        committedEntryID = state.captureHistory.first?.id
+        committed = zip(applied, results).map {
+            CommittedCapture(item: $0.item, lowConfidence: $1.isLowConfidence)
+        }
+        withAnimation { confirmation = nil }
+        fieldFocused = true
+    }
+
+    /// "Undo all" — reverse every item still on the cards (a per-item Undo has
+    /// already removed the ones it took), hand the words back, and clear the cards.
+    private func undoAll() {
+        if let entryID = committedEntryID {
+            for entry in committed {
+                state.undoCapturedItem(entry.item, inEntry: entryID)
+            }
+        }
+        committed = []
+        committedEntryID = nil
+        text = lastRawText
+        CaptureDraftStore.save(lastRawText)
+        fieldFocused = true
     }
 
     /// The never-lose-text fallback. A long or multi-line paste keeps its FULL
@@ -491,6 +557,9 @@ struct CaptureCommandBar: View {
         speech.stop()
         fieldFocused = false
         state.captureContext = nil
+        // Walking away = committed as parsed (Phase 4 §3) — just drop the cards.
+        committed = []
+        committedEntryID = nil
         withAnimation(.spring(response: 0.32, dampingFraction: 0.88)) {
             isPresented = false
         }

@@ -17,6 +17,15 @@ import AtlasCore
 struct CaptureHistoryItem: Codable, Identifiable, Equatable {
     enum Kind: String, Codable { case task, event, note }
 
+    /// The fields an `update` capture can change, as they were BEFORE it ran.
+    /// Non-nil only when this capture MODIFIED an item the user already had, in
+    /// which case Undo restores these values instead of deleting the item —
+    /// capture must never delete something it didn't create.
+    struct PriorTaskState: Codable, Equatable {
+        let dueDate: Date?
+        let notes: String
+    }
+
     let id: UUID          // the created domain object's id
     let kind: Kind
     let title: String
@@ -26,6 +35,9 @@ struct CaptureHistoryItem: Codable, Identifiable, Equatable {
     let spaceName: String
     let projectName: String
     let done: Bool?       // tasks
+    /// Set by the `update` capture path only — see `PriorTaskState`. Optional so
+    /// history files written before this existed still decode.
+    var priorTask: PriorTaskState?
 
     init(task: TaskItem) {
         id = task.id
@@ -170,15 +182,25 @@ extension AppState {
     func undoCapture(_ entry: CaptureHistoryEntry) {
         guard let idx = captureHistory.firstIndex(where: { $0.id == entry.id }),
               captureUndoEligible(captureHistory[idx]) else { return }
-        for item in captureHistory[idx].items {
-            switch item.kind {
-            case .task:  deleteTask(id: item.id)
-            case .event: deleteEvent(id: item.id)
-            case .note:  deleteNote(id: item.id)
-            }
-        }
+        for item in captureHistory[idx].items { revert(item) }
         captureHistory[idx].undoneAt = Date()
         persistCaptureHistory()
+    }
+
+    /// Undo ONE captured item: an item capture CREATED is deleted; an item it
+    /// merely UPDATED is rolled back to its pre-capture values (never deleted —
+    /// the user had it before this capture ran).
+    func revert(_ item: CaptureHistoryItem) {
+        if let prior = item.priorTask, item.kind == .task {
+            setDueDate(taskId: item.id, date: prior.dueDate)
+            updateTaskNotes(taskId: item.id, notes: prior.notes)
+            return
+        }
+        switch item.kind {
+        case .task:  deleteTask(id: item.id)
+        case .event: deleteEvent(id: item.id)
+        case .note:  deleteNote(id: item.id)
+        }
     }
 
     /// True when the live domain object for `item` still matches its snapshot.
