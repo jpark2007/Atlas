@@ -27,10 +27,6 @@ enum CalendarLayout {
     static let workdayEndHour: Int = 22    // 10 PM
     static let hourHeight: CGFloat = 56
     static let gutterWidth: CGFloat = 54
-    /// Width of the in-column deadline rail — the narrow left strip (just inside the hour
-    /// gutter) that holds timed-deadline flag markers, so a deadline never overlaps a tile.
-    /// Days with no timed deadlines reserve zero width, so tiles keep the full column.
-    static let deadlineRailWidth: CGFloat = 18
     static let minEventHeight: CGFloat = 26
     /// Height of the all-day strip when it contains at least one event (Task 5 populates it).
     static let allDayRowHeight: CGFloat = 28
@@ -39,6 +35,11 @@ enum CalendarLayout {
     static let deadlineLabelHeight: CGFloat = 14
 
     static var totalHeight: CGFloat { CGFloat(endHour - startHour) * hourHeight }
+
+    /// Y position for an UNTIMED due marker — the very end of the day (11:59 PM), where a
+    /// "due today, no time given" item honestly belongs. Inset by the label height so the
+    /// row stays fully inside the clipped column.
+    static var endOfDayY: CGFloat { totalHeight - deadlineLabelHeight }
 
     /// Fractional hours since `startHour` for a given date.
     static func offsetHours(for date: Date) -> CGFloat {
@@ -133,6 +134,42 @@ func clusterTimedDeadlines(_ deadlines: [CalendarEvent], gapPoints: CGFloat) -> 
     }
     if !current.isEmpty { clusters.append(DeadlineCluster(events: current)) }
     return clusters
+}
+
+// MARK: - Due markers (hairlines, never blocks)
+
+/// One hairline due-marker row on the grid: the deadlines that share a y position, plus
+/// whether they are UNTIMED (parked at the end of the day behind a "no time" glyph).
+struct DueMarkerGroup: Identifiable {
+    let deadlines: [CalendarEvent]
+    let untimed: Bool
+    /// Points from the top of the grid.
+    let y: CGFloat
+    var id: UUID { deadlines[0].id }
+    var count: Int { deadlines.count }
+}
+
+/// Splits a day's deadlines into hairline marker rows.
+///
+/// Timed dues sit at their actual due time, collapsed via `clusterTimedDeadlines` so
+/// near-simultaneous labels don't overprint. Untimed dues (a bare date, i.e. local
+/// midnight) collect into ONE row parked at the end of the day — they aren't "due at
+/// 12 AM", they're "due today, no time given", which the row's glyph says out loud.
+func dueMarkerGroups(_ deadlines: [CalendarEvent]) -> [DueMarkerGroup] {
+    let timed = deadlines.filter(\.hasSpecificTime)
+    let untimed = deadlines.filter { !$0.hasSpecificTime }
+    var rows = clusterTimedDeadlines(timed, gapPoints: CalendarLayout.deadlineLabelHeight)
+        .map { cluster in
+            DueMarkerGroup(
+                deadlines: cluster.events,
+                untimed: false,
+                y: CalendarLayout.offsetHours(for: cluster.representative.start) * CalendarLayout.hourHeight
+            )
+        }
+    if !untimed.isEmpty {
+        rows.append(DueMarkerGroup(deadlines: untimed, untimed: true, y: CalendarLayout.endOfDayY))
+    }
+    return rows
 }
 
 /// Cached formatters for the grid chrome (gutter, headers).

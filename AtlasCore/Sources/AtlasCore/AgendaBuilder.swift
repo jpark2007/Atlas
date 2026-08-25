@@ -87,3 +87,83 @@ public enum AgendaBuilder {
         }
     }
 }
+
+// MARK: - Bucketed agenda (List view)
+
+/// The List view's four fixed buckets. Ordered as declared — Late always first, so an
+/// overdue item can never be scrolled past on the way to today's work.
+public enum AgendaBucketKind: Int, CaseIterable, Identifiable {
+    case late, dueToday, tomorrow, thisWeek
+    public var id: Int { rawValue }
+
+    public var title: String {
+        switch self {
+        case .late:     return "Late"
+        case .dueToday: return "Due today"
+        case .tomorrow: return "Tomorrow"
+        case .thisWeek: return "This week"
+        }
+    }
+}
+
+/// One bucket of the List agenda.
+public struct AgendaBucket: Identifiable {
+    public let kind: AgendaBucketKind
+    public let items: [AgendaItem]
+    public var id: Int { kind.rawValue }
+}
+
+extension AgendaBuilder {
+
+    /// Bucketed agenda for the calendar's List mode: Late / Due today / Tomorrow / This week.
+    ///
+    /// Reuses `build` for the forward-looking material (so ordering rules stay in one place)
+    /// and adds the Late bucket, which `build` deliberately drops as "past". Empty buckets
+    /// are omitted. "This week" runs from the day after tomorrow through the end of the
+    /// current week; anything beyond that is out of scope for the list.
+    public static func buckets(
+        events: [CalendarEvent],
+        tasks: [TaskItem],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [AgendaBucket] {
+        let today = calendar.startOfDay(for: now)
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today
+        let dayAfter = calendar.date(byAdding: .day, value: 2, to: today) ?? today
+        // End of the current week (exclusive), or a 7-day fallback if the interval is missing.
+        let weekEnd = calendar.dateInterval(of: .weekOfYear, for: today)?.end
+            ?? calendar.date(byAdding: .day, value: 7, to: today) ?? today
+
+        // Late: open, dated tasks whose due DAY is already behind us. Events are never
+        // "late" — an event that happened is simply over.
+        let lateItems: [AgendaItem] = tasks
+            .filter { !$0.done }
+            .compactMap { task in
+                guard let due = task.dueDate, calendar.startOfDay(for: due) < today else { return nil }
+                return AgendaItem(
+                    id: task.id,
+                    kind: .task,
+                    title: task.title,
+                    date: due,
+                    endDate: nil,
+                    allDay: true,
+                    color: task.spaceColor,
+                    spaceName: task.spaceName
+                )
+            }
+            .sorted { $0.date < $1.date }
+
+        let forward = build(events: events, tasks: tasks, from: today, now: now, calendar: calendar)
+        func items(in range: Range<Date>) -> [AgendaItem] {
+            forward.filter { range.contains($0.day) }.flatMap(\.items)
+        }
+
+        let candidates: [(AgendaBucketKind, [AgendaItem])] = [
+            (.late,     lateItems),
+            (.dueToday, items(in: today..<tomorrow)),
+            (.tomorrow, items(in: tomorrow..<dayAfter)),
+            (.thisWeek, dayAfter < weekEnd ? items(in: dayAfter..<weekEnd) : [])
+        ]
+        return candidates.filter { !$0.1.isEmpty }.map { AgendaBucket(kind: $0.0, items: $0.1) }
+    }
+}

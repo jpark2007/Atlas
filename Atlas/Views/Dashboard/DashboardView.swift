@@ -13,14 +13,8 @@ import AtlasCore
 struct DashboardView: View {
     @EnvironmentObject var state: AppState
 
-    /// The note open in the corner-card editor (nil = closed) — same host idiom
-    /// as ProjectDetailView: an overlay, not a modal sheet.
-    @State private var editingNote: Note?
-
     /// How many upcoming tasks the focus list shows.
     private let focusCount = 8
-    /// How many recent notes the notes section shows.
-    private let noteCount = 5
 
     private let calendar = Calendar.current
 
@@ -34,8 +28,13 @@ struct DashboardView: View {
                 HStack(alignment: .top, spacing: 26) {
                     VStack(alignment: .leading, spacing: 26) {
                         clockBlock
+                        // Late bar sits above the day's work — overdue is the first thing
+                        // you see, never something you scroll past.
+                        LateBar(compact: true, onOpenTask: { state.route = .task($0) })
+                            .environmentObject(state)
                         focusList
-                        recentNotes
+                        dueTodayRail
+                        tonightsWork
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -46,15 +45,6 @@ struct DashboardView: View {
             .padding(28)
         }
         .background(AtlasTheme.Colors.bgBase)
-        // Corner-card editor (not a modal sheet) — the dashboard stays visible
-        // behind it; drag-resize and expand live in `NoteCardOverlay`.
-        .overlay(alignment: .bottomTrailing) {
-            if let note = editingNote {
-                NoteCardOverlay(note: note) { editingNote = nil }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: editingNote?.id)
     }
 
     // MARK: - Title bar (tiny mono greeting left · date right)
@@ -249,75 +239,117 @@ struct DashboardView: View {
         .padding(.top, 2)
     }
 
-    // MARK: - Recent notes (plain rows, corner-card open)
+    // MARK: - Due today (the one place red is earned)
 
-    private var recentNotes: some View {
+    /// Everything due TODAY, as due markers rather than blocks — a deadline is a boundary,
+    /// not an occupancy. A row turns red only when it's due today AND no work time is
+    /// planned for it; that's the entire red budget in Atlas.
+    @ViewBuilder
+    private var dueTodayRail: some View {
+        let due = dueTodayTasks
+        if !due.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("DUE TODAY").atlasCapsLabel()
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(due) { task in dueRow(task) }
+                }
+            }
+        }
+    }
+
+    private var dueTodayTasks: [TaskItem] {
+        state.tasks
+            .filter { state.isVisiblyPending($0) && ($0.dueDate.map { calendar.isDate($0, inSameDayAs: state.now) } ?? false) }
+            .sorted { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }
+    }
+
+    private func dueRow(_ task: TaskItem) -> some View {
+        let unplanned = TimeModel.isDueTodayUnplanned(task, now: state.now)
+        let sessions = task.scheduledAt == nil ? [] : [task.durationMin ?? 60]
+        return HStack(spacing: 10) {
+            Button {
+                withAnimation(AtlasTheme.taskCrossOut) { state.toggleTask(task.id) }
+            } label: {
+                Image(systemName: "square")
+                    .atlasFont(size: 15)
+                    .foregroundStyle(unplanned ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textMuted)
+            }
+            .buttonStyle(.plain)
+            .help("Mark done")
+
+            Button { state.route = .task(task.id) } label: {
+                HStack(spacing: 8) {
+                    // Colour still says WHOSE.
+                    Circle().fill(task.spaceColor).frame(width: 6, height: 6)
+                    Text(task.title)
+                        .atlasFont(size: 14, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(TimeModel.plannedLabel(estimateMin: task.estimateMin, sessionMinutes: sessions))
+                        .atlasMono(size: 11, weight: .medium)
+                        .foregroundStyle(unplanned ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textSecondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 6)
+    }
+
+    // MARK: - Tonight's work (the sessions you actually planned)
+
+    @ViewBuilder
+    private var tonightsWork: some View {
+        let sessions = tonightsSessions
         VStack(alignment: .leading, spacing: 12) {
-            Text("RECENT NOTES").atlasCapsLabel()
-
-            let notes = recentNotesList
-            if notes.isEmpty {
-                Text("No notes yet.")
+            Text("TONIGHT'S WORK").atlasCapsLabel()
+            if sessions.isEmpty {
+                Text("No work sessions planned. Drag a task onto the calendar to plan one.")
                     .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .padding(.vertical, 6)
             } else {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(notes.enumerated()), id: \.element.id) { index, note in
-                        noteRow(note)
-                        if index < notes.count - 1 {
-                            Divider().overlay(AtlasTheme.Colors.hairline)
-                        }
-                    }
+                    ForEach(sessions) { session in sessionRow(session) }
                 }
             }
         }
     }
 
-    private var recentNotesList: [Note] {
-        Array(state.notes.sorted { $0.updatedAt > $1.updatedAt }.prefix(noteCount))
+    /// Work sessions still ahead of you today — a plan, not a commitment, so past ones
+    /// (which are history) stay off this list.
+    private var tonightsSessions: [CalendarEvent] {
+        state.scheduledWorkBlocks(on: state.now)
+            .filter { !$0.isHistory && $0.end >= state.now }
+            .sorted { $0.start < $1.start }
     }
 
-    private func noteRow(_ note: Note) -> some View {
-        Button { editingNote = note } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text(note.title.isEmpty ? "Untitled note" : note.title)
-                            .atlasTitleSerif(size: 15)
-                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                            .lineLimit(1)
-                        if isLinkedDoc(note) {
-                            atlasTag(text: "Google Doc", color: AtlasTheme.Colors.accentText)
-                        }
-                    }
-                    Text(noteMeta(note))
-                        .atlasMono(size: 11, weight: .regular)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                }
-                Spacer(minLength: 0)
+    private func sessionRow(_ session: CalendarEvent) -> some View {
+        Button { state.route = .task(session.id) } label: {
+            HStack(spacing: 10) {
+                Text(session.timeLabel)
+                    .atlasMono(size: 11, weight: .medium)
+                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                    .frame(width: 62, alignment: .trailing)
+                // Dashed spine — the same "planned, movable" language the grid tile uses.
+                RoundedRectangle(cornerRadius: 2)
+                    .strokeBorder(session.color, style: StrokeStyle(lineWidth: 3, dash: [3, 3]))
+                    .frame(width: 3, height: 22)
+                Text(session.title)
+                    .atlasFont(size: 14, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(session.durationLabel)
+                    .atlasMono(size: 11, weight: .medium)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
-            .padding(.vertical, 10)
+            .padding(.vertical, 6)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
-
-    /// A note is a linked Doc-note when a `.docNote` reference points back at it
-    /// (mirrors `NotesListView.isLinkedDoc`).
-    private func isLinkedDoc(_ note: Note) -> Bool {
-        state.references.contains { $0.kind == .docNote && $0.noteID == note.id }
-    }
-
-    /// "JUL 5 · SCHOOL" — date, then space when the note has one.
-    private func noteMeta(_ note: Note) -> String {
-        let date = DashFmt.monthDay.string(from: note.updatedAt).uppercased()
-        if let space = note.spaceName, !space.isEmpty {
-            return "\(date) · \(space.uppercased())"
-        }
-        return date
-    }
-
 }
 
 // MARK: - Cached formatters

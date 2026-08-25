@@ -15,6 +15,8 @@ struct AllDayRowView: View {
     /// Shared 60-sec clock (AppState.now) — a day fully before `now` dims its all-day items.
     let now: Date
     let eventsProvider: (Date) -> [CalendarEvent]
+    /// Jump the calendar to a day in Day view — the due-count cap's click target.
+    var onJumpToDay: (Date) -> Void = { _ in }
 
     // MARK: - Helpers
 
@@ -54,16 +56,14 @@ struct AllDayRowView: View {
         let events = allDayEvents(for: day)
         let deadlines = events.filter { $0.isDeadline }
         let others = events.filter { !$0.isDeadline }
-        // A day fully in the past dims its (non-deadline) all-day items; deadline pills keep
-        // their own red-overdue treatment and are never dimmed.
+        // A day fully in the past dims its all-day items.
         let isPastDay = Calendar.current.startOfDay(for: day) < Calendar.current.startOfDay(for: now)
         VStack(spacing: 2) {
-            // Several deadlines on one day would overflow the clipped cell — collapse them into
-            // one "N due ▸" pill (tap → popover). A lone deadline keeps its flag-pill look.
-            if deadlines.count > 1 {
-                CollapsedDeadlinePill(deadlines: deadlines)
-            } else {
-                ForEach(deadlines) { deadlinePill($0) }
+            // Per-day DUE COUNT CAP. A count + jump target, never a "+N more" collapse:
+            // every due still draws its own hairline marker down in the column (the markers
+            // are the source of truth). The cap only says HOW MANY and takes you to the day.
+            if !deadlines.isEmpty {
+                DueCountCap(deadlines: deadlines, onJump: { onJumpToDay(day) })
             }
             ForEach(others) { event in
                 Text(event.title)
@@ -79,52 +79,44 @@ struct AllDayRowView: View {
         }
     }
 
-    /// Deadline → flag-pill (matches the day-view DUE strip), red when overdue.
-    private func deadlinePill(_ event: CalendarEvent) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: "flag.fill").atlasFont(size: 8)
-            Text(event.title)
-                .atlasFont(size: 11, weight: .semibold, design: .rounded)
-                .lineLimit(1)
-            if event.hasSpecificTime {
-                Text(event.timeLabel)
-                    .atlasMono(size: 9, weight: .medium)
-                    .lineLimit(1)
-            }
-        }
-        .foregroundStyle(event.color)
-        .padding(.horizontal, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 18)
-        .background(AtlasTheme.wash(event.color), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-    }
 }
 
-/// Collapsed "N due ▸" pill for a week day-cell with several deadlines — taps to a popover
-/// listing each. All deadlines in one cell share an overdue colour (same day), so the first
-/// one's `color` drives the pill.
-private struct CollapsedDeadlinePill: View {
+/// The week view's per-day DUE COUNT CAP: "3 due" at the top of a column.
+///
+/// A cap is NOT a "+N more" collapse — nothing is hidden behind it. Every due keeps its own
+/// hairline marker inside the column; the cap is a glanceable count and a jump target.
+/// Clicking opens that day; right-click lists what's due without leaving the week.
+/// Class-colored when the whole day belongs to one space, muted ink when it's mixed — color
+/// always says WHOSE, never what state.
+struct DueCountCap: View {
     let deadlines: [CalendarEvent]
-    @State private var show = false
+    let onJump: () -> Void
+    @State private var showList = false
+
+    private var capColor: Color {
+        Set(deadlines.map(\.spaceName)).count == 1
+            ? (deadlines.first?.color ?? AtlasTheme.Colors.textSecondary)
+            : AtlasTheme.Colors.textSecondary
+    }
 
     var body: some View {
-        let color = deadlines.first?.color ?? AtlasTheme.Colors.danger
-        Button { show.toggle() } label: {
+        Button(action: onJump) {
             HStack(spacing: 4) {
                 Image(systemName: "flag.fill").atlasFont(size: 8)
                 Text("\(deadlines.count) due")
                     .atlasMono(size: 10, weight: .semibold)
                     .lineLimit(1)
-                Image(systemName: "chevron.right").atlasFont(size: 7, weight: .bold)
             }
-            .foregroundStyle(color)
+            .foregroundStyle(capColor)
             .padding(.horizontal, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 18)
-            .background(AtlasTheme.wash(color), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .background(AtlasTheme.wash(capColor), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $show, arrowEdge: .bottom) {
+        .help("Open this day")
+        .contextMenu { Button("See what's due") { showList = true } }
+        .popover(isPresented: $showList, arrowEdge: .bottom) {
             DeadlineListPopover(deadlines: deadlines)
         }
     }

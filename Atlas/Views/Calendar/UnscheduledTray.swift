@@ -1,11 +1,16 @@
 import SwiftUI
 import AtlasCore
 
-/// The right-hand tray of unscheduled tasks (`state.unscheduledTasks`). Each
-/// chip is `.draggable` onto a time slot; a context menu provides a click
-/// fallback that schedules to a chosen hour or auto-suggests a free slot.
-/// Clicking a chip opens a popover to set the task's due date. The tray hides the
-/// same spaces as the calendar's category chips (`hiddenSpaces`).
+/// The side RAIL of unscheduled tasks (`state.unscheduledTasks`) — the canonical surface
+/// for planning work.
+///
+/// A task lives here until you drag it onto the grid, which creates a WORK SESSION for it
+/// (custom pointer drag → `AppState.schedule(taskId:at:)`). Unscheduled tasks are never
+/// drawn on the grid itself. There is deliberately no auto-slot "schedule this for me"
+/// action: planning a session is always a deliberate drag (silent auto-scheduling is the
+/// most-cited trust failure in this category). A context menu keeps a keyboard/click
+/// fallback that schedules to a chosen hour. The rail hides the same spaces as the
+/// calendar's category chips (`hiddenSpaces`).
 struct UnscheduledTray: View {
     let tasks: [TaskItem]
     /// The shared "now" — drives the overdue (bright-red) treatment for re-planned chips.
@@ -16,8 +21,6 @@ struct UnscheduledTray: View {
     var spaceOrder: [String] = []
     /// Fallback scheduler — schedules the task to the given hour.
     let onSchedule: (UUID, Int) -> Void
-    /// Auto-find-a-slot: pick the first free gap today and schedule there.
-    var onSuggest: (UUID) -> Void = { _ in }
     /// Manual due-date editor — nil clears the due date.
     var onSetDueDate: (UUID, Date?) -> Void = { _, _ in }
     /// Check a task off — it completes and drops out of the tray.
@@ -69,7 +72,7 @@ struct UnscheduledTray: View {
                     .help("Collapse")
                 }
 
-                Text("Drag onto the grid, or use Suggest a time")
+                Text("Drag one onto the grid to plan a work session")
                     .atlasFont(size: 12, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
 
@@ -193,11 +196,6 @@ struct UnscheduledTray: View {
         )
         .contextMenu {
             Button {
-                onSuggest(task.id)
-            } label: {
-                Label("Suggest a time", systemImage: "wand.and.stars")
-            }
-            Button {
                 editingTaskID = task.id
             } label: {
                 Label("Set due date…", systemImage: "calendar")
@@ -217,10 +215,6 @@ struct UnscheduledTray: View {
                 initialDate: task.dueDate,
                 onSave: { date in
                     onSetDueDate(task.id, date)
-                    editingTaskID = nil
-                },
-                onSuggest: {
-                    onSuggest(task.id)
                     editingTaskID = nil
                 }
             )
@@ -274,15 +268,13 @@ private struct DueDatePopover: View {
     let title: String
     let initialDate: Date?
     let onSave: (Date?) -> Void
-    let onSuggest: () -> Void
 
     @State private var date: Date
 
-    init(title: String, initialDate: Date?, onSave: @escaping (Date?) -> Void, onSuggest: @escaping () -> Void) {
+    init(title: String, initialDate: Date?, onSave: @escaping (Date?) -> Void) {
         self.title = title
         self.initialDate = initialDate
         self.onSave = onSave
-        self.onSuggest = onSuggest
         _date = State(initialValue: initialDate ?? Date())
     }
 
@@ -300,15 +292,6 @@ private struct DueDatePopover: View {
             )
             .datePickerStyle(.field)
             .labelsHidden()
-
-            Button {
-                onSuggest()
-            } label: {
-                Label("Suggest a time today", systemImage: "wand.and.stars")
-                    .atlasFont(size: 13, weight: .medium, design: .rounded)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(AtlasTheme.Colors.accentText)
 
             Divider().overlay(AtlasTheme.Colors.border)
 

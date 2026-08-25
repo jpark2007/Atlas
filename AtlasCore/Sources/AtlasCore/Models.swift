@@ -135,9 +135,19 @@ public struct CalendarEvent: Identifiable {
     public var isWorkBlock: Bool = false
 
     /// True when this is a deadline marker synthesized from a task's `dueDate` — rendered as
-    /// a flag-pill in the deadline strip (never as a time block), red when overdue. Atlas-only;
-    /// deadlines are never pushed to Google.
+    /// a hairline due-marker on the grid (never as a time block). Atlas-only; deadlines are
+    /// never pushed to Google.
     public var isDeadline: Bool = false
+
+    /// The task a synthesized marker/work-session belongs to. Set on deadline markers (whose
+    /// own `id` is a stable hash, not the task's) so the deadline↔work-session link can find
+    /// the task's planned time. `nil` for real events.
+    public var deadlineTaskID: UUID? = nil
+
+    /// True when this tile is *history*: a work session whose task is already checked off, or
+    /// a faded marker at a late item's ORIGINAL due date after it was rescheduled. History
+    /// renders faded and is never interactive — proof of what happened, not a plan.
+    public var isHistory: Bool = false
 
     /// The parent space's id — authoritative once set; the name remains for display.
     public var spaceID: UUID? = nil
@@ -190,7 +200,7 @@ public struct CalendarEvent: Identifiable {
     /// note. Each entry is the loser's own ingest-stamped source, never a guessed label.
     public var duplicateSources: [EventSource] = []
 
-    public init(id: UUID = UUID(), title: String, subtitle: String, start: Date, end: Date, color: Color, spaceName: String, notes: String? = nil, isAllDay: Bool = false, projectID: UUID? = nil, noteID: UUID? = nil, isReadOnly: Bool = false, source: EventSource = .atlas, googleEventId: String? = nil, appleEventId: String? = nil, isRecurring: Bool = false, isWorkBlock: Bool = false, isDeadline: Bool = false, spaceID: UUID? = nil, googleConnectionId: UUID? = nil) {
+    public init(id: UUID = UUID(), title: String, subtitle: String, start: Date, end: Date, color: Color, spaceName: String, notes: String? = nil, isAllDay: Bool = false, projectID: UUID? = nil, noteID: UUID? = nil, isReadOnly: Bool = false, source: EventSource = .atlas, googleEventId: String? = nil, appleEventId: String? = nil, isRecurring: Bool = false, isWorkBlock: Bool = false, isDeadline: Bool = false, deadlineTaskID: UUID? = nil, isHistory: Bool = false, spaceID: UUID? = nil, googleConnectionId: UUID? = nil) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
@@ -209,6 +219,8 @@ public struct CalendarEvent: Identifiable {
         self.isRecurring = isRecurring
         self.isWorkBlock = isWorkBlock
         self.isDeadline = isDeadline
+        self.deadlineTaskID = deadlineTaskID
+        self.isHistory = isHistory
         self.spaceID = spaceID
         self.googleConnectionId = googleConnectionId
     }
@@ -228,6 +240,16 @@ public struct TaskItem: Identifiable {
     public var scheduledAt: Date? = nil
     public var dueDate: Date? = nil
     public var durationMin: Int? = nil
+    /// Optional user estimate of how much TOTAL time this task needs, in minutes (migration
+    /// 0041 `tasks.estimate_min`). Distinct from `durationMin`, which is the length of the
+    /// one planned work session. Drives the due marker's "2.5 of 4h planned" fill; with no
+    /// estimate the marker falls back to "N sessions planned".
+    public var estimateMin: Int? = nil
+    /// The due date this task carried BEFORE it was rescheduled off the Late bar (migration
+    /// 0041 `tasks.original_due_date`). Set once, on the first late-reschedule, and never
+    /// overwritten — the original date keeps a faded marker in the past so nothing about
+    /// the miss silently vanishes. `nil` for tasks that were never rescheduled while late.
+    public var originalDueDate: Date? = nil
     /// Optional link to a Note, set from the detail view's "tag to a note".
     public var noteID: UUID? = nil
     /// Google event id backing this task's scheduled work-block, set after it mirrors to

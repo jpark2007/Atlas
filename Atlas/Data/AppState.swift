@@ -959,6 +959,20 @@ final class AppState: ObservableObject {
         guard let i = tasks.firstIndex(where: { $0.id == id }) else { return }
         tasks[i].done.toggle()
         tasks[i].completedAt = tasks[i].done ? Date() : nil
+        // A checked task's FUTURE work sessions clear from the grid (`scheduledWorkBlocks`),
+        // so the reserved time is freed — its Apple mirror has to go with them, or the block
+        // lingers on a calendar Atlas no longer shows. Past sessions stay: they're history.
+        // Unchecking re-pushes (the id was cleared, so a fresh mirror is created).
+        var clearedMirror = false
+        if let at = tasks[i].scheduledAt, at > now {
+            if tasks[i].done {
+                removeWorkSessionFromApple(tasks[i])
+                tasks[i].appleEventId = nil
+                clearedMirror = true
+            } else {
+                pushWorkSessionToApple(tasks[i])
+            }
+        }
         let updated = tasks[i]
         lingerTasks[id]?.cancel()   // a re-toggle must not inherit the old timer
         if updated.done {
@@ -984,8 +998,11 @@ final class AppState: ObservableObject {
         doneWrites[id] = Task { @MainActor in
             await previousWrite?.value
             guard let db = self.db else { return }
-            let matched = (try? await db.setTaskDone(id: id, done: updated.done,
-                                                     completedAt: updated.completedAt)) ?? false
+            // Clearing the Apple handle needs the whole row, so that case skips the scoped
+            // PATCH and falls through to the full upsert below.
+            let matched = clearedMirror ? false
+                : ((try? await db.setTaskDone(id: id, done: updated.done,
+                                              completedAt: updated.completedAt)) ?? false)
             if !matched { try? await db.upsertTask(updated) }
         }
     }
@@ -1032,26 +1049,72 @@ final class AppState: ObservableObject {
     /// elapsed but isn't yet overdue STAYS on the grid (rendered dimmed/"passed"). Once it is
     /// overdue AND its slot has elapsed (`needsReplan`) it leaves the grid and returns to the
     /// tray to be re-planned. Shared by the calendar grid and the dashboard.
+    ///
+    /// A CHECKED-OFF task keeps its session on the grid only when the session is already in
+    /// the past: that block becomes faded *history* (`isHistory`) — proof you worked. Its
+    /// FUTURE sessions clear the instant the task is checked, per the completion mechanics
+    /// (the task checkbox is the only checkbox; a session completes nothing).
     func scheduledWorkBlocks(on date: Date) -> [CalendarEvent] {
         let cal = Calendar.current
         return tasks.compactMap { task in
-            guard !task.done,
-                  !task.needsReplan(now: now),
-                  let at = task.scheduledAt,
-                  cal.isDate(at, inSameDayAs: date) else { return nil }
+            guard let at = task.scheduledAt, cal.isDate(at, inSameDayAs: date) else { return nil }
             let end = cal.date(byAdding: .minute, value: task.durationMin ?? 60, to: at) ?? at
+            if task.done {
+                guard end < now else { return nil }   // future sessions of a done task clear
+            } else {
+                guard !task.needsReplan(now: now) else { return nil }
+            }
             return CalendarEvent(
                 id: task.id,
                 title: task.title,
-                subtitle: "Scheduled",
+                subtitle: task.done ? "Worked" : "Planned",
                 start: at,
                 end: end,
                 color: task.spaceColor,
                 spaceName: task.spaceName,
                 notes: task.notes,
                 noteID: task.noteID,
-                isWorkBlock: true
+                isWorkBlock: true,
+                isHistory: task.done
             )
+        }
+    }
+
+    // MARK: - Phase 2 time model (estimates · late triage · more time)
+
+    /// Set (or clear, with `nil`) a task's optional total time estimate — the number the
+    /// due marker's "2.5 of 4h planned" fill is measured against.
+    func setEstimate(taskId: UUID, minutes: Int?) {
+        guard let i = tasks.firstIndex(where: { $0.id == taskId }) else { return }
+        tasks[i].estimateMin = minutes
+        let updated = tasks[i]
+        Task { try? await self.db?.upsertTask(updated) }
+    }
+
+    /// A past session's "+ more time": plan the next session at the SAME clock time
+    /// tomorrow. Deliberately predictable — Atlas never auto-picks a "free gap" (auto-slot
+    /// scheduling is cut), and the new session drags like any other block.
+    func addMoreTime(taskId: UUID) {
+        guard let i = tasks.firstIndex(where: { $0.id == taskId }),
+              let previous = tasks[i].scheduledAt else { return }
+        tasks[i].scheduledAt = TimeModel.nextSessionSlot(after: previous, now: now)
+        let updated = tasks[i]
+        Task { try? await self.db?.upsertTask(updated) }
+        schedulePublish()
+    }
+
+    /// Late-bar triage: move every overdue open task's due date to `date`, stamping
+    /// `originalDueDate` once so the ORIGINAL date survives as a faded marker in the past.
+    /// Never automatic — this only ever runs from an explicit "Reschedule N late items" click.
+    func rescheduleLateItems(to date: Date) {
+        let late = TimeModel.lateItems(tasks: tasks, now: now)
+        for item in late {
+            guard let i = tasks.firstIndex(where: { $0.id == item.id }) else { continue }
+            if tasks[i].originalDueDate == nil { tasks[i].originalDueDate = tasks[i].dueDate }
+            tasks[i].dueDate = date
+            tasks[i].dueLabel = TaskItem.dueLabel(for: date)
+            let updated = tasks[i]
+            Task { try? await self.db?.upsertTask(updated) }
         }
     }
 

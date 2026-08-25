@@ -87,23 +87,27 @@ struct DayColumnView: View {
     var onDragEvent: ((CalendarEvent, CGPoint) -> Void)? = nil
     /// Drag released — CalendarView resolves the global point to a new slot.
     var onDropEvent: ((CalendarEvent, CGPoint) -> Void)? = nil
+    /// The task whose due marker is currently hovered/clicked: its work sessions glow and
+    /// everything else on the grid dims. `nil` = no link active, everything renders normally.
+    var linkedTaskID: UUID? = nil
+    /// Set/clear the deadline↔work-session link (hover in, hover out, click to pin).
+    var onLinkTask: ((UUID?) -> Void)? = nil
+    /// The task checkbox reached from a work session — completes the TASK, not the session.
+    var onToggleTask: ((UUID) -> Void)? = nil
+    /// "+ more time" on a past session of a still-open task — plans the next session.
+    var onMoreTime: ((UUID) -> Void)? = nil
+    /// Planned-time readout for a due marker's task ("2.5h of 4h planned" / "1 session planned").
+    var plannedLabel: ((UUID) -> String)? = nil
 
     var body: some View {
         GeometryReader { geo in
             // Exclude all-day events from timed packing — they corrupt lane widths
-            // and render off-screen at negative Y. Week mode shows them in AllDayRowView;
-            // day mode omits them from the grid (acceptable for v1).
+            // and render off-screen at negative Y. Deadlines carry isAllDay too: they are
+            // NEVER blocks, they draw as hairline markers below.
             let positioned = packEventsIntoLanes(events.filter { !$0.isAllDay })
-            // Collapse near-simultaneous timed deadlines so their dashed-line labels don't
-            // overprint (computed off-body to keep the grid's type-check budget light).
-            let deadlineClusters = clusterTimedDeadlines(
-                events.filter { $0.isDeadline && $0.hasSpecificTime },
-                gapPoints: CalendarLayout.deadlineLabelHeight
-            )
-            // Reserve a narrow left rail for timed-deadline flags — but only on days that have
-            // any, so other days keep the full tile width. Tiles inset by railWidth, so a
-            // deadline marker is NEVER drawn over a tile.
-            let railWidth: CGFloat = deadlineClusters.isEmpty ? 0 : CalendarLayout.deadlineRailWidth
+            // Due markers: timed ones at their real due time (near-simultaneous ones collapse
+            // so labels don't overprint), untimed ones parked at the end of the day.
+            let markers = dueMarkerGroups(events.filter(\.isDeadline))
             ZStack(alignment: .topLeading) {
                 // Subtle today-column background tint — first layer so everything renders on top
                 if isToday {
@@ -111,20 +115,22 @@ struct DayColumnView: View {
                 }
                 hourLines
                 if isToday { nowLine }
-                // Event/work-block tiles sit to the RIGHT of the deadline rail (inset by
-                // railWidth) so flags and tiles never collide.
                 ForEach(positioned) { item in
-                    tile(for: item, columnWidth: geo.size.width - railWidth, xInset: railWidth)
+                    tile(for: item, columnWidth: geo.size.width, xInset: 0)
                 }
-                // Timed-deadline flags live in the dedicated left rail (off the tiles), drawn
-                // last so they stay clickable and on top. A lone deadline is one red flag; a
-                // cluster of near-simultaneous ones collapses to a flag + count badge (tap →
-                // popover listing each). All-day deadlines stay in the top DUE strip.
-                ForEach(deadlineClusters) { cluster in
-                    let off = CalendarLayout.offsetHours(for: cluster.representative.start) * CalendarLayout.hourHeight
-                    if off >= 0, off <= CalendarLayout.totalHeight {
-                        DeadlineRailMarker(cluster: cluster)
-                            .offset(y: off - CalendarLayout.deadlineLabelHeight / 2)
+                // Due markers draw LAST so their hairline reads across the full column width
+                // and stays clickable. A deadline is a boundary, not an occupancy — it never
+                // takes grid space away from the blocks it crosses.
+                ForEach(markers) { group in
+                    if group.y >= 0, group.y <= CalendarLayout.totalHeight {
+                        DueMarkerRow(
+                            group: group,
+                            linkedTaskID: linkedTaskID,
+                            plannedLabel: plannedLabel,
+                            onLinkTask: onLinkTask
+                        )
+                        .frame(width: geo.size.width, alignment: .leading)
+                        .offset(y: group.y - CalendarLayout.deadlineLabelHeight / 2)
                     }
                 }
             }
@@ -196,7 +202,14 @@ struct DayColumnView: View {
         let openSourceClosure: (() -> Void)? = ev.isReadOnly
             ? nil
             : onTapEvent.map { handler in { handler(ev) } }
-        return EventTile(event: ev, now: now, compact: height < 44)
+        return EventTile(
+            event: ev,
+            now: now,
+            compact: height < 44,
+            emphasis: TileEmphasis(event: ev, linkedTaskID: linkedTaskID),
+            onToggleTask: onToggleTask,
+            onMoreTime: onMoreTime
+        )
             // Left-click: open source for writable events; swallow tap for read-only
             // so the parent ZStack's tap-to-create doesn't fire.
             .onTapGesture {
@@ -227,28 +240,54 @@ struct DayColumnView: View {
 
 // MARK: - Event tile
 
+/// How a tile participates in an active deadline↔work-session link.
+enum TileEmphasis {
+    case none      // no link is active — render normally
+    case glowing   // this tile is a work session for the linked task
+    case dimmed    // something else, pushed back so the linked sessions read
+
+    init(event: CalendarEvent, linkedTaskID: UUID?) {
+        guard let linked = linkedTaskID else { self = .none; return }
+        // A work-block's id IS its task's id (AppState.scheduledWorkBlocks).
+        self = (event.isWorkBlock && event.id == linked) ? .glowing : .dimmed
+    }
+}
+
+/// One block on the grid.
+///
+/// **Rendering language (phase 2).** Color always says WHOSE (calendar/class), never what
+/// type. Type is carried by fill and outline instead:
+/// - Event / class meeting → SOLID block, no outline.
+/// - Work session → dashed outline + a much fainter fill + a dashed accent bar. Visibly a
+///   plan, not a commitment — not merely a lighter tint of the same block (Sunsama's own
+///   finding: a tint-only task/event distinction reads as "too subtle").
+/// - A deadline is never a tile at all; see `DueMarkerRow`.
 struct EventTile: View {
     let event: CalendarEvent
     /// The shared 60-sec clock (AppState.now) — drives the "passed" dim live as time elapses.
     let now: Date
     var compact: Bool = false
+    /// Deadline-link state: glow this session, or push it back so the linked ones read.
+    var emphasis: TileEmphasis = .none
+    /// Check the underlying TASK off (the only checkbox there is).
+    var onToggleTask: ((UUID) -> Void)? = nil
+    /// Plan another session for a still-open task whose session has already passed.
+    var onMoreTime: ((UUID) -> Void)? = nil
+
+    /// A past session of a task that is still open — faded history that can grow more time.
+    private var isPastOpenSession: Bool {
+        event.isWorkBlock && !event.isHistory && event.end < now
+    }
 
     var body: some View {
         HStack(spacing: 0) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(tileAccentColor)
-                .frame(width: 3)
+            accentBar
             HStack(alignment: .top, spacing: 4) {
-                // Work-block checkbox — signals "planned work, tickable" (vs a fixed event).
-                if event.isWorkBlock {
-                    Image(systemName: "square")
-                        .atlasFont(size: 12, weight: .medium)
-                        .foregroundStyle(tileAccentColor)
-                        .padding(.top, compact ? 0 : 1)
-                }
+                if event.isWorkBlock { taskCheckbox }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(event.title)
                         .atlasFont(size: 13, weight: .semibold, design: .rounded)
+                        .strikethrough(event.isHistory)
                         .foregroundStyle(titleColor)
                         .lineLimit(1)
                     if !compact {
@@ -258,6 +297,18 @@ struct EventTile: View {
                             .textCase(.uppercase)
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                             .lineLimit(1)
+                    }
+                    // A past session completes nothing — it's proof you worked. If its task
+                    // is still open, this quiet affordance plans the NEXT session (one click).
+                    // There is deliberately no session-level "done?" prompt, ever.
+                    if isPastOpenSession, !compact, let onMoreTime {
+                        Button { onMoreTime(event.id) } label: {
+                            Text("+ more time")
+                                .atlasMono(size: 9, weight: .bold)
+                                .foregroundStyle(AtlasTheme.Colors.accentText)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Plan another session for this task")
                     }
                 }
                 Spacer(minLength: 0)
@@ -276,71 +327,171 @@ struct EventTile: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(tileAccentColor.opacity(backgroundOpacity))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        // Fixed events sit borderless on their tinted fill (mobile block idiom); a
-        // work-block keeps a dashed outline to read as provisional, tickable work.
+        // Events sit borderless on their solid fill; a work session wears a dashed outline.
         .overlay {
             if event.isWorkBlock {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(tileAccentColor.opacity(0.55),
+                    .strokeBorder(tileAccentColor.opacity(event.isHistory ? 0.3 : 0.6),
                                   style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
             }
         }
-        // A timed tile whose slot has fully elapsed reads as "passed" — dimmed only, no
-        // strike-through or recolor. Covers work-blocks (scheduled-but-unfinished; done ones
-        // never reach the grid) and events incl. read-only external ones (simply ended < now).
-        .opacity(event.end < now ? 0.65 : 1)
+        // The glow half of the deadline↔work link: the sessions that serve the hovered due
+        // date get a ring in their own class color (never a state color).
+        .overlay {
+            if emphasis == .glowing {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(tileAccentColor, lineWidth: 2)
+            }
+        }
+        .shadow(color: emphasis == .glowing ? tileAccentColor.opacity(0.35) : .clear, radius: 6)
+        .opacity(tileOpacity)
+        .animation(.easeOut(duration: 0.15), value: emphasis)
+    }
+
+    /// A solid bar for a real event; a dashed one for a work session — the same
+    /// solid-vs-dashed distinction the outline makes, repeated at the tile's spine.
+    @ViewBuilder
+    private var accentBar: some View {
+        if event.isWorkBlock {
+            RoundedRectangle(cornerRadius: 2)
+                .strokeBorder(tileAccentColor, style: StrokeStyle(lineWidth: 3, dash: [3, 3]))
+                .frame(width: 3)
+        } else {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(tileAccentColor)
+                .frame(width: 3)
+        }
+    }
+
+    /// The ONLY checkbox in the time model: it completes the TASK. Checking here fades this
+    /// session into history and clears the task's future sessions; it never "completes" a
+    /// session on its own.
+    private var taskCheckbox: some View {
+        Button { onToggleTask?(event.id) } label: {
+            Image(systemName: event.isHistory ? "checkmark.square.fill" : "square")
+                .atlasFont(size: 12, weight: .medium)
+                .foregroundStyle(tileAccentColor)
+                .padding(.top, compact ? 0 : 1)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(event.isHistory ? "Mark not done" : "Mark done")
     }
 
     private var tileAccentColor: Color {
         event.rendersNeutral ? AtlasTheme.Colors.textSecondary : event.color
     }
 
-    /// Work-blocks read as provisional (fainter fill, dashed border); fixed events are solid.
+    /// Work sessions read as provisional (much fainter fill + dashed outline); events are solid.
+    /// History is fainter still — present, but clearly behind you.
     private var backgroundOpacity: Double {
-        if event.isWorkBlock { return 0.10 }
-        return event.isReadOnly ? 0.08 : 0.14
+        if event.isHistory { return 0.05 }
+        if event.isWorkBlock { return 0.07 }
+        return event.isReadOnly ? 0.08 : 0.16
+    }
+
+    /// Elapsed tiles read as "passed" (dim only, no recolor); history is dimmer again; a
+    /// dimmed tile is one the active deadline link pushed back.
+    private var tileOpacity: Double {
+        if emphasis == .dimmed { return 0.28 }
+        if event.isHistory { return 0.5 }
+        return event.end < now ? 0.65 : 1
     }
 
     private var titleColor: Color {
-        event.rendersNeutral ? AtlasTheme.Colors.textSecondary : AtlasTheme.Colors.textPrimary
+        if event.isHistory { return AtlasTheme.Colors.textMuted }
+        return event.rendersNeutral ? AtlasTheme.Colors.textSecondary : AtlasTheme.Colors.textPrimary
     }
 }
 
-// MARK: - Timed deadline rail marker (grid)
+// MARK: - Due marker (hairline — a deadline is a boundary, never an occupancy)
 
-/// A timed-deadline marker that lives in the dedicated left rail (never over a tile): a red
-/// `flag.fill` at the due-time y. A lone deadline is a single flag; near-simultaneous ones
-/// collapse to a flag + count badge ("3"). Tapping opens a popover listing each deadline
-/// (title + time). The red flag iconography is deliberately distinct from a rounded event tile,
-/// so a deadline never reads as a calendar event.
-struct DeadlineRailMarker: View {
-    let cluster: DeadlineCluster
+/// A due-date marker on the grid: a thin FULL-WIDTH hairline at the actual due time in the
+/// class's own color, with a small flag cap carrying the title and the planned-time readout.
+///
+/// It is deliberately not a block: a deadline occupies no time, it ends time. Untimed dues
+/// park at the end of the day behind a "no time" glyph rather than pretending to be due at
+/// 12 AM. Hovering (or clicking to pin) lights up that task's work sessions and dims
+/// everything else — the deadline↔work link.
+struct DueMarkerRow: View {
+    let group: DueMarkerGroup
+    let linkedTaskID: UUID?
+    var plannedLabel: ((UUID) -> String)? = nil
+    var onLinkTask: ((UUID?) -> Void)? = nil
+
     @State private var showList = false
 
+    /// Class color when the whole row belongs to one space; muted ink when it's mixed.
+    private var markerColor: Color {
+        Set(group.deadlines.map(\.spaceName)).count == 1
+            ? (group.deadlines.first?.color ?? AtlasTheme.Colors.textSecondary)
+            : AtlasTheme.Colors.textSecondary
+    }
+
+    private var taskID: UUID? { group.deadlines.count == 1 ? group.deadlines[0].deadlineTaskID : nil }
+    private var isLinked: Bool { taskID != nil && taskID == linkedTaskID }
+
     var body: some View {
-        Button { showList.toggle() } label: {
-            Image(systemName: "flag.fill")
-                .atlasFont(size: 12, weight: .bold)
-                .foregroundStyle(AtlasTheme.Colors.danger)
-                .frame(width: CalendarLayout.deadlineRailWidth,
-                       height: CalendarLayout.deadlineLabelHeight)
-                // Count badge (kept inside the rail) when several deadlines collapse into one.
-                .overlay(alignment: .topTrailing) {
-                    if cluster.count > 1 {
-                        Text("\(cluster.count)")
-                            .atlasMono(size: 7, weight: .heavy)
-                            .foregroundStyle(.white)
-                            .frame(width: 10, height: 10)
-                            .background(Circle().fill(AtlasTheme.Colors.danger))
-                    }
-                }
+        ZStack(alignment: .leading) {
+            // The hairline itself never takes hits — it crosses the whole column, and a
+            // 14 pt invisible band across the grid would swallow taps and drags on the
+            // blocks beneath it. Only the small cap is interactive.
+            Rectangle()
+                .fill(markerColor.opacity(isLinked ? 1 : 0.75))
+                .frame(height: isLinked ? 2 : 1)
+                .allowsHitTesting(false)
+            cap
                 .contentShape(Rectangle())
+                .onHover { inside in
+                    guard let taskID else { return }
+                    onLinkTask?(inside ? taskID : nil)
+                }
+                .onTapGesture {
+                    if group.deadlines.count > 1 { showList = true }
+                    else if let taskID { onLinkTask?(linkedTaskID == taskID ? nil : taskID) }
+                }
+                .popover(isPresented: $showList, arrowEdge: .leading) {
+                    DeadlineListPopover(deadlines: group.deadlines)
+                }
+                .help(group.untimed ? "Due today — no time given" : "Due")
         }
-        .buttonStyle(.plain)
-        .help("See what's due")
-        .popover(isPresented: $showList, arrowEdge: .leading) {
-            DeadlineListPopover(deadlines: cluster.events)
+        .frame(height: CalendarLayout.deadlineLabelHeight)
+    }
+
+    private var cap: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "flag.fill").atlasFont(size: 8, weight: .bold)
+            if group.untimed {
+                // "No time" glyph — this is due today, but no clock time was ever given.
+                Image(systemName: "clock.badge.questionmark").atlasFont(size: 8, weight: .bold)
+            }
+            Text(capTitle)
+                .atlasFont(size: 10, weight: .bold, design: .rounded)
+                .lineLimit(1)
+            if let planned = plannedText {
+                Text(planned)
+                    .atlasMono(size: 9, weight: .medium)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .lineLimit(1)
+            }
         }
+        .foregroundStyle(markerColor)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 1)
+        .background(AtlasTheme.Colors.bgBase.opacity(0.92),
+                    in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+        .fixedSize()
+    }
+
+    private var capTitle: String {
+        group.deadlines.count == 1 ? group.deadlines[0].title : "\(group.deadlines.count) due"
+    }
+
+    /// The planned-hours fill, shown only for a single-task marker (a cluster's tasks each
+    /// have their own numbers — the popover lists them).
+    private var plannedText: String? {
+        guard let taskID, let plannedLabel else { return nil }
+        return plannedLabel(taskID)
     }
 }
 
@@ -374,66 +525,14 @@ struct DeadlineListPopover: View {
     }
 }
 
-// MARK: - Deadline strip
-
-/// A horizontal rail of deadline flag-pills, pinned above the time grid so due-dates are
-/// always visible (they never scroll away with the grid). Orange normally, red when overdue
-/// (the pill carries its colour via `event.color`). Deadlines are Atlas-only — never on Google.
-struct DeadlineStrip: View {
-    let deadlines: [CalendarEvent]
-    @State private var showOverflow = false
-
-    /// Inline pill budget before collapsing the rest into a "+N" overflow chip, so a busy day
-    /// doesn't push the strip off-screen. A simple cap (not width-measured) — keeps it light.
-    private let maxVisible = 4
-
-    var body: some View {
-        let visible = Array(deadlines.prefix(maxVisible))
-        let overflow = Array(deadlines.dropFirst(maxVisible))
-        HStack(spacing: 6) {
-            Text("DUE")
-                .atlasMono(size: 9, weight: .bold)
-                .tracking(0.6)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-            ForEach(visible) { dl in
-                pill(dl)
-            }
-            if !overflow.isEmpty {
-                Button { showOverflow.toggle() } label: {
-                    atlasTag(text: "+\(overflow.count)", color: AtlasTheme.Colors.textMuted)
-                }
-                .buttonStyle(.plain)
-                .popover(isPresented: $showOverflow, arrowEdge: .bottom) {
-                    DeadlineListPopover(deadlines: overflow)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func pill(_ dl: CalendarEvent) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: "flag.fill").atlasFont(size: 9)
-            Text(dl.title)
-                .atlasFont(size: 12, weight: .semibold, design: .rounded)
-                .lineLimit(1)
-            if dl.hasSpecificTime {
-                Text(dl.timeLabel)
-                    .atlasMono(size: 10, weight: .medium)
-                    .lineLimit(1)
-            }
-        }
-        .foregroundStyle(dl.color)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 4)
-        .background(AtlasTheme.wash(dl.color), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-    }
-}
-
 // MARK: - Day view (gutter + one column)
+
+/// Publishes the day grid's live scroll offset so the sticky "due later tonight" edge-chip
+/// knows which due markers have fallen below the viewport.
+private struct DayScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
 
 struct DayCalendarView: View {
     let date: Date
@@ -444,15 +543,33 @@ struct DayCalendarView: View {
     var onTapEvent: ((CalendarEvent) -> Void)? = nil
     var onDragEvent: ((CalendarEvent, CGPoint) -> Void)? = nil
     var onDropEvent: ((CalendarEvent, CGPoint) -> Void)? = nil
+    var linkedTaskID: UUID? = nil
+    var onLinkTask: ((UUID?) -> Void)? = nil
+    var onToggleTask: ((UUID) -> Void)? = nil
+    var onMoreTime: ((UUID) -> Void)? = nil
+    var plannedLabel: ((UUID) -> String)? = nil
+
+    /// How far the grid is scrolled, in content points.
+    @State private var scrollOffset: CGFloat = 0
+    /// Height of the visible grid area.
+    @State private var viewportHeight: CGFloat = 0
+
+    /// Top padding inside the scroll content — due-marker Y values are offset by it.
+    private static let contentTopInset: CGFloat = 6
+
+    private var markers: [DueMarkerGroup] { dueMarkerGroups(events.filter(\.isDeadline)) }
+
+    /// Due markers that have fallen below the visible grid — what the edge-chip counts.
+    /// Late-evening and untimed dues (which park at 11:59 PM) are exactly the ones a
+    /// scrolled-to-now grid hides, and exactly the ones you must not miss.
+    private var belowViewport: [DueMarkerGroup] {
+        guard viewportHeight > 0 else { return [] }
+        let bottom = scrollOffset + viewportHeight
+        return markers.filter { $0.y + Self.contentTopInset > bottom }
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Deadline strip — pinned above the grid so due-dates never scroll out of view.
-            let dayDeadlines = events.filter { $0.isDeadline }
-            if !dayDeadlines.isEmpty {
-                DeadlineStrip(deadlines: dayDeadlines)
-                Divider().overlay(AtlasTheme.Colors.border)
-            }
+        GeometryReader { outer in
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     ZStack(alignment: .topLeading) {
@@ -466,22 +583,63 @@ struct DayCalendarView: View {
                                 onTapEmpty: onTapEmpty,
                                 onTapEvent: onTapEvent,
                                 onDragEvent: onDragEvent,
-                                onDropEvent: onDropEvent
+                                onDropEvent: onDropEvent,
+                                linkedTaskID: linkedTaskID,
+                                onLinkTask: onLinkTask,
+                                onToggleTask: onToggleTask,
+                                onMoreTime: onMoreTime,
+                                plannedLabel: plannedLabel
                             )
                         }
                         .padding(.trailing, 8)
-                        .padding(.top, 6)
+                        .padding(.top, Self.contentTopInset)
                         .padding(.bottom, 16)
 
                         // Zero-height sentinel anchored at the current-time Y so that
                         // scrollTo("nowAnchor", anchor: .center) lands precisely on "now".
                         nowSentinel
+                        // Anchor at the first below-the-fold due marker — the edge-chip's
+                        // jump target.
+                        if let first = belowViewport.first { dueSentinel(at: first.y) }
                     }
+                    .background(
+                        GeometryReader { g in
+                            Color.clear.preference(
+                                key: DayScrollOffsetKey.self,
+                                value: -g.frame(in: .named("dayGridScroll")).minY
+                            )
+                        }
+                    )
                 }
+                .coordinateSpace(name: "dayGridScroll")
+                .onPreferenceChange(DayScrollOffsetKey.self) { scrollOffset = $0 }
                 .onAppear {
+                    viewportHeight = outer.size.height
                     scrollToNowIfVisible(proxy: proxy)
                 }
+                .onChange(of: outer.size.height) { _, h in viewportHeight = h }
+                // Sticky bottom edge-chip: due markers exist below the fold. Nothing is
+                // hidden or collapsed — the chip is a nudge plus a jump, and the markers
+                // themselves stay the source of truth.
+                .overlay(alignment: .bottom) {
+                    if !belowViewport.isEmpty {
+                        DueBelowChip(count: belowViewport.reduce(0) { $0 + $1.count }) {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                proxy.scrollTo("dueAnchor", anchor: .center)
+                            }
+                        }
+                        .padding(.bottom, 10)
+                    }
+                }
             }
+        }
+    }
+
+    /// Layout-positioned anchor (an `.offset` is visual-only and would land scrollTo at y=0).
+    private func dueSentinel(at y: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(width: 1, height: max(0, y + Self.contentTopInset))
+            Color.clear.frame(width: 1, height: 1).id("dueAnchor")
         }
     }
 
@@ -493,6 +651,33 @@ struct DayCalendarView: View {
             Color.clear.frame(width: 1, height: offsetY)
             Color.clear.frame(width: 1, height: 1).id("nowAnchor")
         }
+    }
+}
+
+/// The sticky bottom edge-chip: "2 due later tonight ↓". Appears only while due markers sit
+/// below the viewport (a grid auto-scrolled to "now" hides 11:59 PM by definition). Clicking
+/// scrolls to the first one. It never collapses or replaces the markers — it points at them.
+struct DueBelowChip: View {
+    let count: Int
+    let onJump: () -> Void
+
+    var body: some View {
+        Button(action: onJump) {
+            HStack(spacing: 6) {
+                Image(systemName: "flag.fill").atlasFont(size: 9, weight: .bold)
+                Text(count == 1 ? "1 due later tonight" : "\(count) due later tonight")
+                    .atlasFont(size: 12, weight: .semibold, design: .rounded)
+                Image(systemName: "arrow.down").atlasFont(size: 9, weight: .bold)
+            }
+            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(AtlasTheme.Colors.bgBase, in: Capsule())
+            .overlay(Capsule().strokeBorder(AtlasTheme.Colors.borderStrong, lineWidth: 1))
+            .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        }
+        .buttonStyle(.plain)
+        .help("Jump to what's due later today")
     }
 }
 
@@ -508,6 +693,13 @@ struct WeekGridView: View {
     var onTapEvent: ((CalendarEvent) -> Void)? = nil
     var onDragEvent: ((CalendarEvent, CGPoint) -> Void)? = nil
     var onDropEvent: ((CalendarEvent, CGPoint) -> Void)? = nil
+    var linkedTaskID: UUID? = nil
+    var onLinkTask: ((UUID?) -> Void)? = nil
+    var onToggleTask: ((UUID) -> Void)? = nil
+    var onMoreTime: ((UUID) -> Void)? = nil
+    var plannedLabel: ((UUID) -> String)? = nil
+    /// The due-count cap's jump target — opens that day in Day view.
+    var onJumpToDay: ((Date) -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -527,7 +719,8 @@ struct WeekGridView: View {
                     days: days,
                     columnWidth: columnWidth,
                     now: now,
-                    eventsProvider: eventsProvider
+                    eventsProvider: eventsProvider,
+                    onJumpToDay: { onJumpToDay?($0) }
                 )
 
                 // ── Scrollable time grid (auto-scrolls to current hour) ───────
@@ -545,7 +738,12 @@ struct WeekGridView: View {
                                         onTapEmpty: onTapEmpty,
                                         onTapEvent: onTapEvent,
                                         onDragEvent: onDragEvent,
-                                        onDropEvent: onDropEvent
+                                        onDropEvent: onDropEvent,
+                                        linkedTaskID: linkedTaskID,
+                                        onLinkTask: onLinkTask,
+                                        onToggleTask: onToggleTask,
+                                        onMoreTime: onMoreTime,
+                                        plannedLabel: plannedLabel
                                     )
                                     .frame(width: columnWidth)
                                     if index < days.count - 1 {
