@@ -78,9 +78,7 @@ extension MobileStore {
     }
 
     // MARK: - School synthesis (shared helpers)
-
-    /// The term the phone should be showing — same rule as the Mac (`TermSelection`).
-    var activeTerm: Term? { TermSelection.active(in: snapshot.terms) }
+    // `activeTerm` and `schoolEnabled` are declared in MobileStore+School.swift.
 
     /// Class meetings on `day`, from the active term's live classes.
     func classMeetingEvents(on day: Date) -> [CalendarEvent] {
@@ -98,13 +96,6 @@ extension MobileStore {
         return SchoolCalendar.keyDateFlagEvents(
             on: day, in: term,
             spaceName: space?.name ?? snapshot.spaces.first?.name ?? "School")
-    }
-
-    /// Mirrors the Mac's `AppState.schoolEnabled` default-on behaviour (the same
-    /// `school.enabled` key `SettingsSyncService` syncs across devices).
-    var schoolEnabled: Bool {
-        guard UserDefaults.standard.object(forKey: "school.enabled") != nil else { return true }
-        return UserDefaults.standard.bool(forKey: "school.enabled")
     }
 
     // MARK: - Late-bar triage

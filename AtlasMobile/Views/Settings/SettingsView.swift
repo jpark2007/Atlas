@@ -457,9 +457,7 @@ struct SettingsView: View {
     /// take them, where Atlas sends your own events. Mirrors the Mac's Calendars heading.
     private var calendarsSection: some View {
         Section {
-            // MERGE NOTE (iOS calendar wave): `AppleCalendarConnectRow()` belongs here,
-            // first — Apple Calendar is the phone's own source. It lives on the parallel
-            // branch, so it is slotted in at merge rather than referenced from here.
+            AppleCalendarConnectRow()
 
             googleAccountsBlock
             canvasBlock
