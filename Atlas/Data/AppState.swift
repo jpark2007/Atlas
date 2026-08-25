@@ -41,6 +41,11 @@ final class AppState: ObservableObject {
     /// Classes hang off these — see `activeTerm` / `classes(in:)`.
     @Published var terms: [Term] = []
 
+    /// A `.ics` file opened from Finder ("Open with Atlas") or dropped on the app icon.
+    /// The sidebar watches this and opens the class importer on it. Cleared when the
+    /// importer closes — it is a one-time hand-off, not stored state.
+    @Published var pendingICSImport: URL?
+
     /// The term the School section is *looking at* when the user picked one from the
     /// header menu. nil ⇒ follow `activeTerm` (today's term). Session-only: which
     /// semester is current is a date fact, not a stored preference.

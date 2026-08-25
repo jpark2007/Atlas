@@ -139,6 +139,12 @@ struct SidebarView: View {
         .sheet(isPresented: $presentInvites) {
             InviteInboxSheet()
         }
+        // An .ics opened with Atlas from Finder. Presented here rather than inside the
+        // School section so the file always lands somewhere, School shown or not.
+        .sheet(item: Binding(get: { state.pendingICSImport.map(ICSImportRequest.init) },
+                             set: { if $0 == nil { state.pendingICSImport = nil } })) { request in
+            SemesterWizard(startAt: .file, openedFile: request.url)
+        }
     }
 
     // MARK: - Zero state
@@ -479,6 +485,12 @@ struct SidebarView: View {
             }
         }
     }
+}
+
+/// Sheet identity for the opened-with-Atlas `.ics` — the file's own URL.
+private struct ICSImportRequest: Identifiable {
+    let url: URL
+    var id: URL { url }
 }
 
 // MARK: - Row chrome (paper language)
