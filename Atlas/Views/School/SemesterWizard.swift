@@ -131,8 +131,11 @@ struct SemesterWizard: View {
                 step = .schoolLink
             }
             choice("I'll type my classes", "Fastest if you only have a few.") { step = .manual }
+            // The scan commits ONTO a class (times, info card, its work), so it needs one
+            // to exist first — inside the wizard there is nothing to file it under yet.
+            // Type the classes here, then scan each syllabus from its own page.
             disabledChoice("I have a screenshot or a PDF",
-                           "Coming with syllabus scan — Atlas will read the schedule off it.")
+                           "Add the class first, then hit Scan a syllabus on its page — Atlas reads the times, the work and the policies off it.")
         }
     }
 

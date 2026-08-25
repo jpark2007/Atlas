@@ -11,6 +11,7 @@ struct ClassHubSection: View {
     let project: Project
 
     @State private var presentMeetingEditor = false
+    @State private var presentSyllabusScan = false
     @State private var editingInstructor = false
     @State private var draftInstructor = ""
 
@@ -30,6 +31,9 @@ struct ClassHubSection: View {
         }
         .sheet(isPresented: $presentMeetingEditor) {
             MeetingPatternSheet(project: project)
+        }
+        .sheet(isPresented: $presentSyllabusScan) {
+            SyllabusScanSheet(project: project)
         }
     }
 
@@ -168,18 +172,16 @@ struct ClassHubSection: View {
                 .atlasFont(size: 13, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
-            Button {} label: {
+            Button { presentSyllabusScan = true } label: {
                 Text("Scan a syllabus")
                     .atlasFont(size: 13, weight: .medium, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     .padding(.horizontal, 14).padding(.vertical, 7)
                     .overlay(RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
                         .strokeBorder(AtlasTheme.Colors.border,
                                       style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             }
             .buttonStyle(.plain)
-            .disabled(true)
-            .help("Coming with the syllabus scan")
         }
     }
 }

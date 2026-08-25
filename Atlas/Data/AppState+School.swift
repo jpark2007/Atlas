@@ -140,6 +140,14 @@ extension AppState {
         applyClassEdit(project)
     }
 
+    /// Replaces a class's "Class info" card — the syllabus scan's other product. Static
+    /// syllabus text only; nothing here is ever computed or scored.
+    func setClassInfo(projectID: UUID, info: ClassInfoCard?) {
+        guard var project = project(projectID) else { return }
+        project.classInfo = info
+        applyClassEdit(project)
+    }
+
     /// Soft-archives (or restores) a class. Its tasks and notes stay queryable — a term
     /// ending never wipes coursework.
     func setClassArchived(projectID: UUID, archived: Bool) {
