@@ -65,6 +65,11 @@ public enum AtlasAIError: LocalizedError, Equatable {
     case notAuthenticated
     /// The message exceeds the server's size cap (HTTP 413).
     case tooLong
+    /// A syllabus scan was asked for with no pages.
+    case noImages
+    /// The scan's pages bust the page-count / total-size cap (checked locally,
+    /// and the server's matching 413).
+    case imagesTooLarge
     /// The server or the model behind it is unreachable/erroring (HTTP 5xx).
     case rateLimited          // HTTP 429
     case serverUnavailable    // HTTP 5xx
@@ -79,6 +84,10 @@ public enum AtlasAIError: LocalizedError, Equatable {
             return "No active session — cannot call the capture function."
         case .tooLong:
             return "That message is too long to sort."
+        case .noImages:
+            return "Add at least one page to scan."
+        case .imagesTooLarge:
+            return "That's too much to scan at once — send at most \(SyllabusScan.maxImages) pages."
         case .rateLimited:
             return "The capture service is busy — try again shortly."
         case .serverUnavailable:
