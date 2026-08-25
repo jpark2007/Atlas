@@ -387,6 +387,9 @@ struct SettingsView: View {
         name: String,
         status: String? = nil,
         statusColor: Color = AtlasTheme.Colors.textMuted,
+        // A calendar source row passes its health instead of a color: the dot and the
+        // status sentence then both come from that one value and can't disagree.
+        health: StatusDot.Health? = nil,
         detail: String? = nil,
         detailColor: Color = AtlasTheme.Colors.textMuted,
         onTap: (() -> Void)? = nil,
@@ -405,12 +408,15 @@ struct SettingsView: View {
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .lineLimit(1)
                 if let status {
-                    Text(status)
-                        .atlasMono(size: 10)
-                        .textCase(.uppercase)
-                        .foregroundStyle(statusColor)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    HStack(spacing: 6) {
+                        if let health { StatusDot(health: health) }
+                        Text(status)
+                            .atlasMono(size: 10)
+                            .textCase(.uppercase)
+                            .foregroundStyle(health.map(StatusDot.textColor) ?? statusColor)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
                 } else if let detail {
                     // Two lines is the ceiling: a row explains itself in a sentence, or
                     // the explanation belongs behind the row.
@@ -507,7 +513,7 @@ struct SettingsView: View {
         settingsRow(icon: "applelogo", tint: AtlasTheme.Colors.textPrimary,
                     name: "Apple Calendar",
                     status: appleStatusLine,
-                    statusColor: appleStatusColor,
+                    health: appleHealth,
                     onTap: { toggleExpanded("apple") }) {
             // The switch owns the trailing slot on this row, so the chevron every other
             // source row uses to advertise its disclosure sits beside it — otherwise
@@ -574,11 +580,14 @@ struct SettingsView: View {
         }
     }
 
-    private var appleStatusColor: Color {
+    /// The same five outcomes `appleStatusLine` reads, as one health value — the dot and
+    /// the sentence's color both come from here. Write-only counts as an error: Atlas
+    /// can't see a single event, which is exactly the state the grant needs fixing for.
+    private var appleHealth: StatusDot.Health {
         switch appleAccessStatus {
-        case .denied, .restricted: return AtlasTheme.Colors.danger
-        case .writeOnly:           return AtlasTheme.Colors.warning
-        default:                   return AtlasTheme.Colors.textMuted
+        case .denied, .restricted, .writeOnly: return .error
+        case .fullAccess:                      return appleCalendarEnabled ? .live : .off
+        default:                               return .off
         }
     }
 
@@ -703,7 +712,7 @@ struct SettingsView: View {
         settingsRow(icon: "globe", tint: AtlasTheme.Colors.school,
                     name: "Google · \(conn.name)",
                     status: googleStatusLine(conn),
-                    statusColor: googleStatusColor(conn),
+                    health: googleHealth(conn),
                     onTap: {
                         detailRename = conn.name
                         detailConnection = conn
@@ -738,7 +747,7 @@ struct SettingsView: View {
                     tint: isCanvas ? AtlasTheme.Colors.school : AtlasTheme.Colors.textSecondary,
                     name: feed.displayName,
                     status: feedStatusLine(feed),
-                    statusColor: feed.status == "error" ? AtlasTheme.Colors.warning : AtlasTheme.Colors.textMuted,
+                    health: feedHealth(feed),
                     onTap: { toggleExpanded(key) }) {
             if feedRowWorking == feed.id {
                 ProgressView().controlSize(.small)
@@ -781,12 +790,25 @@ struct SettingsView: View {
         return "\(lead) · first sync runs shortly · shown, not editable"
     }
 
+    /// A feed syncs server-side on the 15-minute cron (0012+), so a `last_synced_at`
+    /// older than two ticks means a run was missed — stalled, not broken. A paused feed
+    /// (`status == "error"`) needs the user; its reason shows in the disclosed detail.
+    private func feedHealth(_ feed: CalendarFeedRow) -> StatusDot.Health {
+        if feed.status == "error" { return .error }
+        guard let synced = feed.lastSyncedDate else { return .live }  // first sync pending
+        return Date().timeIntervalSince(synced) > Self.feedSyncOverdue ? .stalled : .live
+    }
+
+    /// Two ticks of the 15-minute feed cron.
+    private static let feedSyncOverdue: TimeInterval = 30 * 60
+
     // ── Atlas itself ─────────────────────────────────────────────────────
 
     private var atlasNativeSourceRow: some View {
         settingsRow(icon: "sparkles", tint: AtlasTheme.Colors.accent,
                     name: "Atlas",
-                    status: "Always on · events you make here") {
+                    status: "Always on · events you make here",
+                    health: .live) {
             EmptyView()
         }
     }
@@ -1316,16 +1338,18 @@ struct SettingsView: View {
     /// minutes (0008), so ~15 min covers a slow first tick without masking a dead one.
     private static let firstSyncGrace: TimeInterval = 15 * 60
 
-    /// Amber only when something needs the user — a stopped connection, or an active one
-    /// that has gone past the grace window without ever receiving events. The connection's
-    /// own error reason is surfaced verbatim in its detail sheet.
-    private func googleStatusColor(_ conn: GoogleConnection) -> Color {
-        guard conn.status == "active" else { return AtlasTheme.Colors.warning }
+    /// The connection-health derivation `googleStatusLine` narrates, as one health value:
+    /// a stopped connection needs the user (error); an active one past the grace window
+    /// that has never received events is stalled; everything else — including a first sync
+    /// still inside the grace window — is live. The connection's own error reason is
+    /// surfaced verbatim in its detail sheet.
+    private func googleHealth(_ conn: GoogleConnection) -> StatusDot.Health {
+        guard conn.status == "active" else { return .error }
         if conn.lastSyncedDate == nil,
            let created = conn.createdDate, Date().timeIntervalSince(created) > Self.firstSyncGrace {
-            return AtlasTheme.Colors.warning
+            return .stalled
         }
-        return AtlasTheme.Colors.textMuted
+        return .live
     }
 
     /// The space NAME a connection is linked to (for the picker), or "" when unlinked.
