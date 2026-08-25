@@ -34,7 +34,7 @@ struct CaptureResultCards: View {
 
     /// The card whose "Pick a date…" popover is open.
     @State private var pickingDateFor: UUID?
-    @State private var pickedDate = Date()
+    @State private var pickedDate: Date? = nil
 
     /// Roughly one laid-out row. Only used to give the rows a positive minimum
     /// height: `NSHostingController`'s `.intrinsicContentSize` bridge (the panel)
@@ -111,8 +111,10 @@ struct CaptureResultCards: View {
 
     // MARK: - One line item (plain)
 
-    /// The whole line is the open-in-Atlas button except the trailing Undo, which
+    /// The whole line is the open-in-Atlas button except the trailing Edit, which
     /// is a sibling — a Button nested inside another Button's label is inert.
+    /// Per-item undo lives only in the header's "Undo all" here; the chips style
+    /// in the main window keeps its per-item Undo.
     private func plainRow(_ entry: CommittedCapture) -> some View {
         HStack(spacing: 10) {
             Button { open(entry) } label: {
@@ -147,9 +149,21 @@ struct CaptureResultCards: View {
             .buttonStyle(.plain)
             .help("Open in Atlas")
 
-            undoButton(entry)
+            editButton(entry)
         }
         .padding(.vertical, 11)
+    }
+
+    /// `.plain` only: the same open-in-Atlas handoff as the row click, spelled out
+    /// so the affordance is discoverable.
+    private func editButton(_ entry: CommittedCapture) -> some View {
+        Button { open(entry) } label: {
+            Text("Edit")
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+        }
+        .buttonStyle(.plain)
+        .help("Open in Atlas to edit")
     }
 
     private func undoButton(_ entry: CommittedCapture) -> some View {
@@ -264,9 +278,10 @@ struct CaptureResultCards: View {
         .disabled(entry.item.kind == .note)
         .popover(isPresented: datePopover(entry.id), arrowEdge: .bottom) {
             VStack(spacing: 12) {
-                DatePicker("", selection: $pickedDate)
-                    .datePickerStyle(.graphical)
-                    .labelsHidden()
+                // Events must keep a date, so only a task gets the "No date"
+                // row — mirroring the menu above.
+                AtlasDatePicker(date: $pickedDate,
+                                clearLabel: entry.item.kind == .task ? "No date" : nil)
                 Button("Set") {
                     setDue(entry, pickedDate)
                     pickingDateFor = nil

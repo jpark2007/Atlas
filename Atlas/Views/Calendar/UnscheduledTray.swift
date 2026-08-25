@@ -352,13 +352,13 @@ private struct DueDatePopover: View {
     let initialDate: Date?
     let onSave: (Date?) -> Void
 
-    @State private var date: Date
+    @State private var date: Date?
 
     init(title: String, initialDate: Date?, onSave: @escaping (Date?) -> Void) {
         self.title = title
         self.initialDate = initialDate
         self.onSave = onSave
-        _date = State(initialValue: initialDate ?? Date())
+        _date = State(initialValue: initialDate)
     }
 
     var body: some View {
@@ -368,21 +368,9 @@ private struct DueDatePopover: View {
                 .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 .lineLimit(2)
 
-            DatePicker(
-                "Due",
-                selection: $date,
-                displayedComponents: [.date, .hourAndMinute]
-            )
-            .datePickerStyle(.field)
-            .labelsHidden()
-
-            Divider().overlay(AtlasTheme.Colors.border)
+            AtlasDatePicker(date: $date)
 
             HStack {
-                Button("Clear") { onSave(nil) }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    .atlasFont(size: 13, design: .rounded)
                 Spacer()
                 Button("Set due date") { onSave(date) }
                     .keyboardShortcut(.defaultAction)
@@ -390,6 +378,6 @@ private struct DueDatePopover: View {
             }
         }
         .padding(14)
-        .frame(width: 250)
+        .frame(width: 320)
     }
 }
