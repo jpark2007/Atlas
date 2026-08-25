@@ -185,14 +185,27 @@ enum CalendarFormat {
         f.dateFormat = "EEE"
         return f
     }()
-    static let fullDay: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "EEEE, MMMM d"
-        return f
-    }()
     static let monthYear: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "MMMM yyyy"
+        return f
+    }()
+    /// "MON AUG 24" — the header's mono day label.
+    static let monoDay: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE MMM d"
+        return f
+    }()
+    /// "AUG 24" — one end of the header's mono week range.
+    static let monoMonthDay: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return f
+    }()
+    /// "24" — the closing end of a same-month week range.
+    static let dayNumber: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "d"
         return f
     }()
 }

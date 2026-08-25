@@ -14,6 +14,9 @@ struct CalendarView: View {
 
     /// In-calendar title search; empty = no search filter.
     @State private var searchText: String = ""
+    /// Whether the header's search glyph has unfolded into a field.
+    @State private var searchExpanded: Bool = false
+    @FocusState private var searchFocused: Bool
     /// Space names hidden via the color/category filter row. Empty = show all.
     @State private var hiddenSpaces: Set<String> = []
     /// Whether the unscheduled tray is folded into its thin rail (persists across launches).
@@ -46,8 +49,8 @@ struct CalendarView: View {
         VStack(spacing: 0) {
             header
                 .padding(.horizontal, 24)
-                .padding(.top, 20)
-                .padding(.bottom, 14)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
             Divider().overlay(AtlasTheme.Colors.border)
 
             // Late bar pinned above today — spanning the grid AND the side rail, so nothing
@@ -166,68 +169,100 @@ struct CalendarView: View {
 
     // MARK: - Header
 
+    /// One compact editorial row: serif title + mono range on the left, the mode
+    /// picker and the quiet controls on the right. Space chips ride a second,
+    /// smaller line only when there is more than one space to filter.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("CALENDAR")
-                        .atlasMono(size: 11, weight: .bold)
-                        .tracking(0.88)
-                        .textCase(.uppercase)
-                        .foregroundStyle(AtlasTheme.Colors.accentText)
-                    Text(titleLabel)
-                        .atlasFont(size: 26, weight: .bold, design: .rounded)
-                        .tracking(-0.4)
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                }
-                Spacer()
-                addEventButton
-                navigationControls
-            }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                Text(titleLabel)
+                    .atlasTitleSerif(size: 24)
+                    .tracking(-0.6)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .fixedSize()
+                Text(rangeLabel)
+                    .atlasMono(size: 12)
+                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                    .fixedSize()
 
-            HStack(spacing: 12) {
+                Spacer(minLength: 12)
+
                 AtlasSegmentedPicker(
                     options: CalendarMode.allCases,
                     label: { $0.rawValue },
                     selection: $mode
                 )
-
-                Spacer()
                 searchField
+                addEventButton
+                navigationControls
             }
 
             categoryFilterRow
         }
     }
 
-    /// In-calendar title search. Filters events/tasks across every view.
+    /// In-calendar title search. Filters events/tasks across every view. Rests as a
+    /// bare glyph and unfolds into a field on click or ⌘F; refolds when it loses
+    /// focus with nothing typed, so it never permanently eats header width.
     private var searchField: some View {
         HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .atlasFont(size: 12, weight: .medium)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-            TextField("Search", text: $searchText)
-                .textFieldStyle(.plain)
-                .atlasFont(size: 13, design: .rounded)
-                .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                .frame(width: 150)
-            if !searchText.isEmpty {
-                Button { searchText = "" } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .atlasFont(size: 12, weight: .medium)
+            Button {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                    searchExpanded = true
+                }
+                searchFocused = true
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .atlasFont(size: 13, weight: .medium)
+                    .foregroundStyle(searchText.isEmpty
+                                     ? AtlasTheme.Colors.textMuted
+                                     : AtlasTheme.Colors.textPrimary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut("f", modifiers: .command)
+            .help("Search this calendar (⌘F)")
+
+            if searchExpanded {
+                TextField("Search", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .atlasFont(size: 13, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .focused($searchFocused)
+                    .frame(width: 130)
+
+                Button {
+                    searchText = ""
+                    searchFocused = false
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                        searchExpanded = false
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .atlasFont(size: 10, weight: .bold)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 .buttonStyle(.plain)
                 .help("Clear the search")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .overlay(
-            RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
-                .strokeBorder(AtlasTheme.Colors.borderStrong, lineWidth: 1)
-        )
+        .padding(.horizontal, searchExpanded ? 8 : 0)
+        .padding(.vertical, searchExpanded ? 4 : 0)
+        .overlay {
+            if searchExpanded {
+                RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                    .strokeBorder(AtlasTheme.Colors.border, lineWidth: AtlasTheme.hairlineWidth)
+            }
+        }
         .fixedSize()
+        .onChange(of: searchFocused) { _, focused in
+            guard !focused,
+                  searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                searchExpanded = false
+            }
+        }
     }
 
     /// Color/category filter (Image #1): a row of toggleable space-color chips.
@@ -252,17 +287,17 @@ struct CalendarView: View {
             if isHidden { hiddenSpaces.remove(space.name) }
             else { hiddenSpaces.insert(space.name) }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Circle()
                     .fill(isHidden ? AtlasTheme.Colors.textMuted.opacity(0.4) : space.color)
-                    .frame(width: 8, height: 8)
+                    .frame(width: 7, height: 7)
                 Text(space.name)
-                    .atlasFont(size: 12, weight: .semibold, design: .rounded)
+                    .atlasFont(size: 11, weight: .semibold, design: .rounded)
                     .foregroundStyle(isHidden ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
                     .strikethrough(isHidden, color: AtlasTheme.Colors.textMuted)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
             .background(
                 isHidden ? Color.clear : AtlasTheme.wash(space.color),
                 in: RoundedRectangle(cornerRadius: 4, style: .continuous)
@@ -276,21 +311,23 @@ struct CalendarView: View {
         Button {
             openEditorForNewEvent(on: selectedDate)
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: 4) {
                 Image(systemName: "plus")
-                    .atlasFont(size: 12, weight: .bold)
-                Text("Add event")
-                    .atlasFont(size: 13, weight: .semibold, design: .rounded)
+                    .atlasFont(size: 10, weight: .bold)
+                Text("Event")
+                    .atlasMono(size: 11, weight: .bold)
+                    .tracking(0.88)
+                    .textCase(.uppercase)
             }
             .foregroundStyle(AtlasTheme.Colors.textPrimary)
             .padding(.horizontal, 12)
-            .padding(.vertical, 7)
+            .padding(.vertical, 5)
             .overlay(
-                RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
-                    .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
+                Capsule().strokeBorder(AtlasTheme.Colors.borderStrong, lineWidth: AtlasTheme.hairlineWidth)
             )
         }
         .buttonStyle(.plain)
+        .help("Add an event")
     }
 
     private var navigationControls: some View {
@@ -308,10 +345,10 @@ struct CalendarView: View {
                     .tracking(0.88)
                     .textCase(.uppercase)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
                     .overlay(
-                        Capsule().strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
+                        Capsule().strokeBorder(AtlasTheme.Colors.borderStrong, lineWidth: AtlasTheme.hairlineWidth)
                     )
             }
             .buttonStyle(.plain)
@@ -323,7 +360,7 @@ struct CalendarView: View {
             .foregroundStyle(AtlasTheme.Colors.textSecondary)
             .help("Next day, week, or month")
         }
-        .atlasFont(size: 14, weight: .semibold, design: .rounded)
+        .atlasFont(size: 13, weight: .semibold, design: .rounded)
     }
 
     // MARK: - Grid
@@ -775,17 +812,34 @@ struct CalendarView: View {
 
     // MARK: - Header helpers
 
+    /// The serif half of the header — what you are looking at, in words.
     private var titleLabel: String {
+        let cal = Calendar.current
+        switch mode {
+        case .day:   return cal.isDateInToday(selectedDate) ? "Today" : "Day"
+        case .week:  return cal.isDate(selectedDate, equalTo: Date(), toGranularity: .weekOfYear) ? "This week" : "Week"
+        case .month: return cal.isDate(selectedDate, equalTo: Date(), toGranularity: .month) ? "This month" : "Month"
+        case .list:  return "Upcoming"
+        }
+    }
+
+    /// The mono half of the header — the exact dates the title stands for.
+    private var rangeLabel: String {
+        let cal = Calendar.current
         switch mode {
         case .day:
-            if Calendar.current.isDateInToday(selectedDate) {
-                return "Today · " + CalendarFormat.fullDay.string(from: selectedDate)
-            }
-            return CalendarFormat.fullDay.string(from: selectedDate)
-        case .week, .month:
-            return CalendarFormat.monthYear.string(from: selectedDate)
+            return CalendarFormat.monoDay.string(from: selectedDate).uppercased()
+        case .week:
+            guard let first = weekDays.first, let last = weekDays.last else { return "" }
+            let start = CalendarFormat.monoMonthDay.string(from: first).uppercased()
+            let end = cal.isDate(first, equalTo: last, toGranularity: .month)
+                ? CalendarFormat.dayNumber.string(from: last)
+                : CalendarFormat.monoMonthDay.string(from: last).uppercased()
+            return start + "–" + end
+        case .month:
+            return CalendarFormat.monthYear.string(from: selectedDate).uppercased()
         case .list:
-            return "Upcoming"
+            return "FROM " + CalendarFormat.monoMonthDay.string(from: selectedDate).uppercased()
         }
     }
 
