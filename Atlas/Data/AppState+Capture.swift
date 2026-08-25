@@ -46,14 +46,32 @@ extension AppState {
         }
     }
 
+    /// The project (class) `result` names, looked up inside the space the item
+    /// actually lands in. Matched case-insensitively so a model answering
+    /// "general chemistry" still lands on the real class. Nil when the capture
+    /// named no project, or one this space doesn't have — an unmatched name
+    /// renders as unassigned anyway and loses the project color cascade, so it
+    /// must never be stored as if it were real.
+    private func captureProject(_ result: CaptureResult, in spaceName: String) -> Project? {
+        let name = (result.projectName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        return spaces
+            .first { $0.name.caseInsensitiveCompare(spaceName) == .orderedSame }?
+            .projects
+            .first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+    }
+
     /// Create the task described by `result`.
     private func applyTask(_ result: CaptureResult) -> AppliedCapture {
         let due = CaptureDateParser.date(from: result.dueISO)
+        // Resolve the space first: the project must be looked up in the space the
+        // task really lands in, and `projectName` is only meaningful paired with it.
+        let space = resolvedTaskSpaceName(hint: result.spaceName, text: result.title)
         let task = addTask(title: result.title,
                            dueDate: due,
                            durationMin: result.durationMin,
-                           spaceName: result.spaceName,
-                           projectName: result.projectName ?? "")
+                           spaceName: space,
+                           projectName: captureProject(result, in: space)?.name ?? "")
         return AppliedCapture(outcome: .task(hasDate: due != nil),
                               item: CaptureHistoryItem(task: task))
     }
@@ -123,6 +141,9 @@ extension AppState {
             isAllDay: isAllDay
         )
         event.spaceID = spaceID(named: result.spaceName)
+        // A captured class session/lab keeps its class link, so it wears the
+        // project's color in the grid and shows up under that class.
+        event.projectID = captureProject(result, in: result.spaceName)?.id
         addEvent(event)
         return AppliedCapture(outcome: .event, item: CaptureHistoryItem(event: event))
     }
