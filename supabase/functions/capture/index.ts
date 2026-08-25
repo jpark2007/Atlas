@@ -38,6 +38,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkRateLimit, tooManyRequests } from "../_shared/rate_limit.ts";
 import { chunkText, dedupeItems, userContentForChunk } from "../_shared/capture_chunking.ts";
+import { applyClassBackstop, classAliasHint } from "../_shared/capture_class_match.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -95,9 +96,12 @@ function projectLabel(p: ContextProject): string | null {
     const code = typeof p.code === "string" && p.code.trim().length
       ? ` [${p.code.trim()}]` : "";
     const cls = p.isClass === true ? " (class)" : "";
+    // The short forms a capture actually uses ("chem", "psych") — same table the
+    // server-side backstop matches on, so prompt and enforcement agree.
+    const aka = p.isClass === true ? classAliasHint(p) : "";
     const desc = typeof p.overview === "string" && p.overview.trim().length
       ? ` — ${p.overview.trim()}` : "";
-    return `"${name}"${code}${cls}${desc}`;
+    return `"${name}"${code}${cls}${aka}${desc}`;
   }
   return null;
 }
@@ -166,9 +170,16 @@ Use the EXACT name as written. If nothing fits, use the closest one. Each projec
 may include a [CODE] and a — description; use them to route ambiguous items confidently, \
 but never copy the code or description into any field.
 ${lines.join("\n")}
-- "projectName": when an item clearly belongs to one of that space's listed projects \
-(match on the name, code, or description), set it to the EXACT project name shown above \
-(without the code/description). Otherwise omit it.`;
+- "projectName": REQUIRED on every item — never omit this key. Set it to the EXACT project \
+name shown above (without the code, "aka" list, or description) when the item belongs to \
+one of that space's listed projects; otherwise set it to null. Match on the name, the \
+[CODE], the "aka" short forms, or the description.
+- COURSEWORK MUST CARRY ITS CLASS. Anything that is schoolwork — a lab, writeup, problem \
+set, reading, essay, quiz, exam, project, homework — belongs to one of the classes listed \
+above. Read the item's own words for the subject ("chem lab writeup" → the chemistry \
+class, "psych reading" → the psychology class) and attach that class. Use null ONLY when \
+the text genuinely names no subject at all, or names one that fits two of the classes \
+equally well.`;
 }
 
 /**
@@ -210,7 +221,8 @@ Each element of "items" matches this schema:
   "kind": "task" | "event" | "note",
   "title": string,            // concise, actionable title
   "spaceName": string,        // see routing rules below
-  "projectName"?: string,     // if the item belongs to a specific project/class
+  "projectName": string|null, // REQUIRED KEY on every item: the exact project/class name
+                              // from the routing list, or null. Never leave it out.
   "dueISO"?: string,          // Full ISO 8601 UTC instant converted from the user's local time,
                               // e.g. a 5:30 PM PDT deadline → "2026-07-03T00:30:00Z" (tasks)
   "startISO"?: string,        // Full ISO 8601 UTC instant, converted the same way (events)
@@ -273,7 +285,8 @@ Rules:
   dueISO/startISO — strip phrases like "due next friday", "on friday", "at 5:30",
   "tomorrow", "tonight" and leave a bare noun/verb phrase: "essay due next friday" →
   "Essay"; "pick up Sam at 5:30" → "Pick up Sam"; "math exam on friday" → "Math exam".
-- Always populate kind, title, and spaceName. All other fields are optional.`;
+- Always populate kind, title, spaceName, and projectName (a name or null). All other
+  fields are optional.`;
 }
 
 /**
@@ -484,6 +497,11 @@ Deno.serve(async (req: Request) => {
   // Concatenate in chunk order, then drop any dated event a boundary caused two
   // chunks to emit (identical title + startISO).
   let items = dedupeItems(outcomes.flatMap((o) => (o.ok ? o.items : [])));
+
+  // Deterministic class attribution: snap a returned project name onto the user's
+  // exact spelling, and recover the class from the item's own text when the model
+  // left it null. Only ever attaches a class the text names UNAMBIGUOUSLY.
+  items = applyClassBackstop(items, spaces);
 
   // Defensive abuse bound ONLY (chunking already removes any normal cap). When it
   // actually trims, flag it via a response header; the body stays a bare array.
