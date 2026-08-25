@@ -509,24 +509,30 @@ struct SettingsView: View {
                     status: appleStatusLine,
                     statusColor: appleStatusColor,
                     onTap: { toggleExpanded("apple") }) {
-            Toggle("", isOn: $appleCalendarEnabled)
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .tint(AtlasTheme.Colors.textPrimary)
-                .onChange(of: appleCalendarEnabled) { _, enabled in
-                    guard enabled else { return }
-                    Task {
-                        // Safe to call in any state: once the grant is decided macOS
-                        // returns the standing answer instead of re-prompting.
-                        _ = await ekService.requestAccess()
-                        await MainActor.run {
-                            refreshAppleAccessStatus()   // flips the switch back off if not granted
-                            // Never fail silently: open the detail so the reason and the
-                            // System Settings link are on screen.
-                            if !appleAccessGranted { expandedSource = "apple" }
+            // The switch owns the trailing slot on this row, so the chevron every other
+            // source row uses to advertise its disclosure sits beside it — otherwise
+            // nothing says the row itself opens (calendars, where events land, disconnect).
+            HStack(spacing: 10) {
+                Toggle("", isOn: $appleCalendarEnabled)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .tint(AtlasTheme.Colors.textPrimary)
+                    .onChange(of: appleCalendarEnabled) { _, enabled in
+                        guard enabled else { return }
+                        Task {
+                            // Safe to call in any state: once the grant is decided macOS
+                            // returns the standing answer instead of re-prompting.
+                            _ = await ekService.requestAccess()
+                            await MainActor.run {
+                                refreshAppleAccessStatus()   // flips the switch back off if not granted
+                                // Never fail silently: open the detail so the reason and the
+                                // System Settings link are on screen.
+                                if !appleAccessGranted { expandedSource = "apple" }
+                            }
                         }
                     }
-                }
+                disclosureChevron(expandedSource == "apple")
+            }
         }
         if expandedSource == "apple" {
             sourceDetail {
