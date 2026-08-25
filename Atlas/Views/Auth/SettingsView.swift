@@ -45,6 +45,11 @@ struct SettingsView: View {
     @State private var feedRowWorking: UUID? = nil
     @State private var feedRowError: String? = nil
 
+    /// Key of the source row whose details are disclosed (only one at a time), and the
+    /// "Add another calendar by link" sheet that holds the connect forms.
+    @State private var expandedSource: String? = nil
+    @State private var showAddCalendarSheet = false
+
     // MARK: – Shortcut recorder state
     @State private var recordingAction: ShortcutAction? = nil
     @State private var conflictWarning: String? = nil
@@ -153,7 +158,12 @@ struct SettingsView: View {
         case .account:
             settingsStack { account }
         case .calendars:
-            settingsStack(spacing: 30) { calendarsSection }
+            settingsStack(spacing: 26) {
+                HStack(alignment: .top, spacing: 36) {
+                    calendarSourcesColumn
+                    calendarOutboundColumn
+                }
+            }
         case .capture:
             settingsStack {
                 tasksSection
@@ -280,12 +290,497 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: – Calendar feeds (Canvas + by-link calendars — server-side sync)
+    // MARK: – Calendars pane · LEFT column (one compact row per source)
     //
     // Subscribed calendar feeds live in `calendar_feeds` and sync server-side (migration
     // 0012+ · `feeds-connect` + the feed cron): each feed's capability URL is Vaulted once,
-    // then assignments/events flow in with every Atlas client closed. Their rows render
-    // inside the one unified CALENDARS list below.
+    // then assignments/events flow in with every Atlas client closed.
+
+    /// Every calendar Atlas reads from — Apple, each Google account, each subscribed feed
+    /// (`calendar_feeds`: Canvas + generic links, synced server-side), and Atlas itself —
+    /// as one row each: icon · name · a single status line · one trailing control. The
+    /// details (where events land, which calendars, disconnect, the connect forms) live
+    /// behind the row: a disclosure for feeds/Apple, the account sheet for Google, and the
+    /// "Add another calendar by link" sheet for connecting something new.
+    private var calendarSourcesColumn: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            columnHeader("Your calendars", note: "One row per source. Atlas shows events from all of them.")
+
+            appleSourceRow
+
+            ForEach(state.googleConnections) { conn in
+                googleSourceRow(conn)
+            }
+            addGoogleAccountRow
+            if let err = googleError { errorRow(err).padding(.vertical, 8) }
+
+            ForEach(connectedFeeds) { feed in
+                feedSourceRow(feed)
+            }
+            if let err = feedRowError { errorRow(err).padding(.vertical, 8) }
+
+            atlasNativeSourceRow
+
+            Button { showAddCalendarSheet = true } label: {
+                Text("Add another calendar by link")
+                    .atlasFont(size: 13, weight: .semibold, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .padding(.vertical, 9)
+                    .padding(.horizontal, 18)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                            .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
+                    )
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 16)
+
+            Text("Most apps (Schoology, Outlook, your gym) have a \"subscribe\" or \"calendar link\". Copy it and paste it here.")
+                .atlasFont(size: 11, weight: .medium, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                .padding(.top, 8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task { await state.refreshCalendarFeeds() }
+        .sheet(item: $detailConnection) { conn in
+            googleDetailSheet(conn)
+        }
+        .sheet(isPresented: $showAddGoogleSheet) {
+            addGoogleSheet
+        }
+        .sheet(isPresented: $showAddCalendarSheet) {
+            addCalendarSheet
+        }
+    }
+
+    /// A column's caps heading + its one-line note, under a hairline (mockup anatomy).
+    private func columnHeader(_ title: String, note: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .atlasCapsLabel()
+                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .atlasHairlineBelow()
+            Text(note)
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                .padding(.top, 8)
+        }
+    }
+
+    /// THE source row: 16 pt icon · bold name · one tiny mono status line · one trailing
+    /// control. Tapping the row opens whatever detail it has.
+    @ViewBuilder
+    private func sourceRow<Trailing: View>(
+        icon: String,
+        tint: Color,
+        name: String,
+        status: String,
+        statusColor: Color = AtlasTheme.Colors.textMuted,
+        onTap: (() -> Void)? = nil,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
+                .foregroundStyle(tint)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(name)
+                    .atlasFont(size: 13, weight: .semibold, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    .lineLimit(1)
+                Text(status)
+                    .atlasMono(size: 10)
+                    .textCase(.uppercase)
+                    .foregroundStyle(statusColor)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 8)
+            trailing()
+        }
+        .padding(.vertical, 9)
+        .contentShape(Rectangle())
+        .atlasHairlineBelow()
+        .onTapGesture { onTap?() }
+    }
+
+    /// The disclosed detail block under a source row — indented to the row's text column.
+    @ViewBuilder
+    private func sourceDetail<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) { content() }
+            .padding(.leading, 28)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .atlasHairlineBelow()
+    }
+
+    /// A "where things land" space picker used by every detail block. `includeNone` adds
+    /// the unlinked option (events stay in Atlas).
+    private func spacePicker(_ title: String, selection: Binding<String>,
+                             includeNone: Bool = false, disabled: Bool = false) -> some View {
+        HStack {
+            Text(title)
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+            Spacer()
+            Picker(title, selection: selection) {
+                if includeNone { Text("Nowhere — stays in Atlas").tag("") }
+                ForEach(state.spaces) { space in
+                    Text(space.name).tag(space.name)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .frame(width: 160)
+            .tint(AtlasTheme.Colors.accent)
+            .disabled(disabled)
+        }
+    }
+
+    private func disclosureChevron(_ expanded: Bool) -> some View {
+        Image(systemName: expanded ? "chevron.down" : "chevron.right")
+            .atlasFont(size: 11, weight: .medium, design: .rounded)
+            .foregroundStyle(AtlasTheme.Colors.textMuted)
+    }
+
+    private func toggleExpanded(_ key: String) {
+        expandedSource = (expandedSource == key) ? nil : key
+    }
+
+    // ── Apple ────────────────────────────────────────────────────────────
+
+    @ViewBuilder
+    private var appleSourceRow: some View {
+        sourceRow(icon: "applelogo", tint: AtlasTheme.Colors.textPrimary,
+                  name: "Apple Calendar",
+                  status: appleStatusLine,
+                  statusColor: appleStatusColor,
+                  onTap: { toggleExpanded("apple") }) {
+            Toggle("", isOn: $appleCalendarEnabled)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .tint(AtlasTheme.Colors.textPrimary)
+                .onChange(of: appleCalendarEnabled) { _, enabled in
+                    if enabled {
+                        Task {
+                            let granted = await ekService.requestAccess()
+                            await MainActor.run {
+                                appleAccessGranted = granted
+                                if !granted { appleCalendarEnabled = false }
+                            }
+                        }
+                    }
+                }
+        }
+        if expandedSource == "apple", !state.spaces.isEmpty {
+            sourceDetail {
+                spacePicker("Apple events land in", selection: $appleDefaultSpace)
+                    .onAppear {
+                        if appleDefaultSpace.isEmpty, let first = state.spaces.first {
+                            appleDefaultSpace = first.name
+                        }
+                    }
+            }
+        }
+    }
+
+    private var appleStatusLine: String {
+        if appleCalendarEnabled && appleAccessGranted { return "Showing · this Mac" }
+        switch ekService.authorizationStatus() {
+        case .denied, .restricted: return "Access denied · allow in System Settings"
+        default:                   return "Not showing · turn on to add your Apple events"
+        }
+    }
+
+    private var appleStatusColor: Color {
+        let status = ekService.authorizationStatus()
+        return (status == .denied || status == .restricted)
+            ? AtlasTheme.Colors.danger
+            : AtlasTheme.Colors.textMuted
+    }
+
+    // ── Google accounts ──────────────────────────────────────────────────
+
+    /// One connected Google account. Everything editable (name, which calendars, where its
+    /// events land, reconnect, disconnect) lives in the detail sheet the row opens.
+    private func googleSourceRow(_ conn: GoogleConnection) -> some View {
+        sourceRow(icon: "globe", tint: AtlasTheme.Colors.school,
+                  name: "Google · \(conn.name)",
+                  status: googleStatusLine(conn),
+                  statusColor: googleStatusColor(conn),
+                  onTap: {
+                      detailRename = conn.name
+                      detailConnection = conn
+                  }) {
+            disclosureChevron(false)
+        }
+    }
+
+    /// The account's one status line: is it showing, and where do Atlas events go.
+    private func googleStatusLine(_ conn: GoogleConnection) -> String {
+        guard conn.status == "active" else { return "Reconnect needed · not syncing" }
+        let destination = spaceName(forSpaceId: conn.spaceId)
+        let sending = destination.isEmpty
+            ? "not sending Atlas events out"
+            : "sending Atlas events → \(destination)"
+        if let synced = conn.lastSyncedDate {
+            return "Showing · synced \(Self.relativeSync(from: synced)) · \(sending)"
+        }
+        if let created = conn.createdDate, Date().timeIntervalSince(created) > Self.firstSyncGrace {
+            return "Connected · no events received yet"
+        }
+        return "Showing · first sync runs shortly · \(sending)"
+    }
+
+    private var addGoogleAccountRow: some View {
+        Button { startAddGoogleAccount() } label: {
+            HStack(spacing: 8) {
+                if googleWorking {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "plus.circle")
+                        .atlasFont(size: 12, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.school)
+                        .frame(width: 16)
+                }
+                Text(googleWorking ? "Connecting…" : "Add a Google account")
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
+                Spacer()
+            }
+            .padding(.vertical, 9)
+            .contentShape(Rectangle())
+            .atlasHairlineBelow()
+        }
+        .buttonStyle(.plain)
+        .disabled(googleWorking)
+        .popoverTip(connectTip)
+    }
+
+    // ── Subscribed feeds (Canvas + calendar links) ───────────────────────
+
+    @ViewBuilder
+    private func feedSourceRow(_ feed: CalendarFeedRow) -> some View {
+        let isCanvas = feed.feedType == "canvas"
+        let key = feed.id.uuidString
+        sourceRow(icon: isCanvas ? "graduationcap.fill" : "link",
+                  tint: isCanvas ? AtlasTheme.Colors.school : AtlasTheme.Colors.textSecondary,
+                  name: feed.displayName,
+                  status: feedStatusLine(feed),
+                  statusColor: feed.status == "error" ? AtlasTheme.Colors.warning : AtlasTheme.Colors.textMuted,
+                  onTap: { toggleExpanded(key) }) {
+            if feedRowWorking == feed.id {
+                ProgressView().controlSize(.small)
+            } else {
+                disclosureChevron(expandedSource == key)
+            }
+        }
+        if expandedSource == key {
+            sourceDetail {
+                // The server's own reason for a paused feed — actionable detail the
+                // one-line row status can't carry.
+                if feed.status == "error", let reason = feed.lastError, !reason.isEmpty {
+                    Text(reason)
+                        .atlasFont(size: 12, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.warning)
+                }
+                if !state.spaces.isEmpty {
+                    spacePicker("Items land in", selection: Binding(
+                        get: { feed.spaceName ?? "" },
+                        set: { updateFeedSpace(feed, to: $0) }
+                    ), disabled: feedRowWorking == feed.id)
+                }
+                Button("Remove this calendar") { disconnectFeed(feed) }
+                    .buttonStyle(.plain)
+                    .atlasFont(size: 12, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.danger)
+                    .disabled(feedRowWorking == feed.id)
+            }
+        }
+    }
+
+    private func feedStatusLine(_ feed: CalendarFeedRow) -> String {
+        if feed.status == "error" {
+            return "Paused · Atlas will retry · shown, not editable"
+        }
+        let lead = feed.feedType == "canvas" ? "Showing" : "Calendar link · showing"
+        if let synced = feed.lastSyncedDate {
+            return "\(lead) · last synced \(Self.relativeSync(from: synced)) · shown, not editable"
+        }
+        return "\(lead) · first sync runs shortly · shown, not editable"
+    }
+
+    // ── Atlas itself ─────────────────────────────────────────────────────
+
+    private var atlasNativeSourceRow: some View {
+        sourceRow(icon: "sparkles", tint: AtlasTheme.Colors.accent,
+                  name: "Atlas",
+                  status: "Always on · events you make here") {
+            EmptyView()
+        }
+    }
+
+    // MARK: – Calendars pane · RIGHT column (what leaves Atlas)
+
+    /// The outbound side: the one thing Atlas actually pushes out (events), where they go,
+    /// and plain-language reassurance about what never leaves.
+    private var calendarOutboundColumn: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            columnHeader("What Atlas sends to your calendar",
+                         note: "Only what you choose leaves Atlas. Tasks never do.")
+
+            outboundRow(name: "Events",
+                        detail: "Things you schedule in Atlas show up in Apple Calendar on this Mac") {
+                Toggle("", isOn: $appleWritebackEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(AtlasTheme.Colors.textPrimary)
+                    .disabled(!appleAccessGranted)
+                    .onChange(of: appleWritebackEnabled) { _, on in
+                        if on {
+                            refreshAppleWritableCalendars()
+                            state.backfillEventsToApple()
+                        }
+                    }
+            }
+
+            if appleWritebackEnabled && !appleWritableCalendars.isEmpty {
+                sourceDetail {
+                    HStack {
+                        Text("They go into")
+                            .atlasFont(size: 12, weight: .medium, design: .rounded)
+                            .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                        Spacer()
+                        Picker("They go into", selection: $appleWritebackCalendarId) {
+                            ForEach(appleWritableCalendars, id: \.id) { cal in
+                                Text(cal.title).tag(cal.id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 160)
+                        .tint(AtlasTheme.Colors.accent)
+                    }
+                }
+            }
+
+            // Sub-rule of the mirror above: work sessions ride along by default (reserved
+            // time IS busy time), under a label the other calendar can actually show.
+            if appleWritebackEnabled {
+                outboundRow(name: "Work sessions",
+                            detail: "Reserved time shows as busy on your other calendars") {
+                    Toggle("", isOn: $workSessionPushEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .tint(AtlasTheme.Colors.textPrimary)
+                        .onChange(of: workSessionPushEnabled) { _, on in
+                            if on { state.backfillWorkSessionsToApple() }
+                        }
+                }
+
+                if workSessionPushEnabled {
+                    sourceDetail {
+                        HStack {
+                            Text("Labelled")
+                                .atlasFont(size: 12, weight: .medium, design: .rounded)
+                                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                            Spacer()
+                            TextField(CalendarSync.defaultWorkSessionPrefix, text: $workSessionPrefix)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 160)
+                        }
+                        Text(CalendarSync.mirroredWorkSessionTitle("English essay", prefix: workSessionPrefix))
+                            .atlasFont(size: 11, weight: .medium, design: .rounded)
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    }
+                }
+            }
+
+            outboundRow(name: "Google accounts",
+                        detail: "Each account gets the events from the space it's linked to") {
+                Text(googleOutboundState)
+                    .atlasMono(size: 10)
+                    .textCase(.uppercase)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+            }
+
+            outboundRow(name: "Due dates",
+                        detail: "Stay in Atlas — your other calendars stay clean") {
+                Text("Never sent")
+                    .atlasMono(size: 10)
+                    .textCase(.uppercase)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// An outbound row — bold name · one-line explanation · one trailing control.
+    private func outboundRow<Trailing: View>(
+        name: String, detail: String, @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(name)
+                    .atlasFont(size: 13, weight: .semibold, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                Text(detail)
+                    .atlasFont(size: 11, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+            }
+            Spacer(minLength: 8)
+            trailing()
+        }
+        .padding(.vertical, 9)
+        .atlasHairlineBelow()
+    }
+
+    /// How many Google accounts currently receive Atlas events.
+    private var googleOutboundState: String {
+        let linked = state.googleConnections.filter { $0.spaceId != nil }.count
+        if state.googleConnections.isEmpty { return "None added" }
+        return linked == 0 ? "None linked" : "\(linked) linked"
+    }
+
+    // MARK: – "Add another calendar by link" sheet
+
+    /// The connect forms, moved off the page: Canvas (when it isn't connected yet) and any
+    /// other calendar by its link.
+    @ViewBuilder
+    private var addCalendarSheet: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text("Add a calendar")
+                    .atlasFont(size: 18, weight: .semibold, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                Spacer()
+                Button("Done") { showAddCalendarSheet = false }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
+            }
+
+            if !hasActiveCanvasFeed {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "graduationcap.fill")
+                            .foregroundStyle(AtlasTheme.Colors.school)
+                        Text("Canvas")
+                            .atlasFont(size: 14, weight: .semibold, design: .rounded)
+                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                    }
+                    canvasConnectForm(repaste: canvasFeedRow?.status == "revoked")
+                }
+                Divider().overlay(AtlasTheme.Colors.border)
+            }
+
+            icsConnectForm
+        }
+        .padding(24)
+        .frame(width: 380)
+        .background(AtlasTheme.Colors.bgBase)
+    }
 
     /// The `calendar_feeds` row for the user's Canvas feed (any status), if any.
     private var canvasFeedRow: CalendarFeedRow? {
@@ -295,20 +790,20 @@ struct SettingsView: View {
     private var hasActiveCanvasFeed: Bool {
         state.calendarFeeds.contains { $0.feedType == "canvas" && $0.isServerOwned }
     }
-    /// The user's by-link (non-Canvas) calendars — one unified-list row each.
-    private var linkedFeeds: [CalendarFeedRow] {
-        state.calendarFeeds.filter { $0.isServerOwned && $0.feedType != "canvas" }
+    /// Feeds to list under "Connected" — every non-revoked feed (Canvas + ICS).
+    private var connectedFeeds: [CalendarFeedRow] {
+        state.calendarFeeds.filter { $0.isServerOwned }
     }
 
-    /// "Add a calendar by link" — display name + calendar link + destination space,
-    /// reusing the Canvas connect card's visual template. Connects an `ics`-type feed.
+    /// "Any other calendar" — display name + calendar link + destination space, reusing the
+    /// Canvas connect card's visual template. Connects a generic `ics`-type feed.
     @ViewBuilder
     private var icsConnectForm: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: "calendar.badge.plus")
+                Image(systemName: "link")
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
-                Text("Add a calendar by link")
+                Text("Any other calendar")
                     .atlasFont(size: 14, weight: .semibold, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
             }
@@ -358,155 +853,15 @@ struct SettingsView: View {
             .disabled(icsWorking)
 
             HStack(spacing: 6) {
-                Text("Paste a calendar link copied from another app.")
+                Text("Paste the calendar link from the other app.")
                     .atlasFont(size: 11, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Image(systemName: "questionmark.circle")
                     .atlasFont(size: 11, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    .help("Not sure if your app has one? Search Google for '[app name] calendar link' to see if it does and how to copy it. In Schoology: Calendar, then iCal or Calendar Feed. These calendars are shown in Atlas, not editable.")
+                    .help("Not sure if your app has one? Search for '[app name] calendar link' to see if it does and how to copy it. In Schoology: Calendar, then Calendar Feed. Calendars added this way are shown in Atlas but not editable here.")
             }
         }
-    }
-
-    /// One connected feed (Canvas or a by-link calendar) as a unified-list row: icon +
-    /// name + type badge, a status line (last-synced / error), Disconnect (DELETE), and
-    /// an inline destination-space picker (PATCH). Feeds are read-only sources, so they
-    /// get no "send my Atlas events here" control — just the plain-language note.
-    @ViewBuilder
-    private func feedRow(_ feed: CalendarFeedRow) -> some View {
-        let isCanvas = feed.feedType == "canvas"
-        VStack(alignment: .leading, spacing: 8) {
-            sourceHeader(icon: isCanvas ? "graduationcap.fill" : "calendar",
-                         tint: isCanvas ? AtlasTheme.Colors.school : AtlasTheme.Colors.textSecondary,
-                         name: feed.displayName,
-                         badge: isCanvas ? "CANVAS" : "CALENDAR LINK",
-                         status: feedStatusSubtitle(feed),
-                         statusColor: feedStatusColor(feed)) {
-                if feedRowWorking == feed.id {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button("Disconnect") { disconnectFeed(feed) }
-                        .buttonStyle(.plain)
-                        .atlasFont(size: 13, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.danger)
-                }
-            }
-
-            Text("Shown, not editable — Atlas never sends your events here.")
-                .atlasFont(size: 12, weight: .medium, design: .rounded)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-
-            if !state.spaces.isEmpty {
-                HStack {
-                    Text("Put these events in")
-                        .atlasFont(size: 13, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
-                    Spacer()
-                    Picker("Feed space", selection: Binding(
-                        get: { feed.spaceName ?? "" },
-                        set: { updateFeedSpace(feed, to: $0) }
-                    )) {
-                        ForEach(state.spaces) { space in
-                            Text(space.name).tag(space.name)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(width: 140)
-                    .tint(AtlasTheme.Colors.accent)
-                    .disabled(feedRowWorking == feed.id)
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .atlasHairlineBelow()
-    }
-
-    // MARK: – Unified-list row primitives
-
-    /// The name + optional badge + status line that opens every calendar source's block.
-    /// `trailing` hosts the row's action (Disconnect / spinner / chevron), if any.
-    @ViewBuilder
-    private func sourceHeader<T: View>(icon: String, tint: Color, name: String,
-                                       badge: String? = nil,
-                                       status: String, statusColor: Color,
-                                       @ViewBuilder trailing: () -> T = { EmptyView() }) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon).foregroundStyle(tint).frame(width: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(name)
-                        .atlasFont(size: 14, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                        .lineLimit(1)
-                    if let badge {
-                        Text(badge)
-                            .atlasMono(size: 9, weight: .semibold).tracking(1)
-                            .foregroundStyle(AtlasTheme.Colors.textMuted)
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .stroke(AtlasTheme.Colors.border, lineWidth: 1))
-                    }
-                }
-                Text(status)
-                    .atlasFont(size: 12, design: .rounded)
-                    .foregroundStyle(statusColor)
-            }
-            Spacer()
-            trailing()
-        }
-    }
-
-    /// A titled switch inside a source's block (no hairline — the block owns it).
-    private func toggleRow(_ title: String, detail: String, isOn: Binding<Bool>) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .atlasFont(size: 13, weight: .medium, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                Text(detail)
-                    .atlasFont(size: 12, weight: .medium, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-            }
-            Spacer()
-            Toggle("", isOn: isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .tint(AtlasTheme.Colors.textPrimary)
-        }
-    }
-
-    /// A titled dropdown inside a source's block (no hairline — the block owns it).
-    private func pickerRow<C: View>(_ title: String, detail: String,
-                                    @ViewBuilder control: () -> C) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .atlasFont(size: 13, weight: .medium, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                Text(detail)
-                    .atlasFont(size: 12, weight: .medium, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-            }
-            Spacer()
-            control()
-        }
-    }
-
-    private func feedStatusSubtitle(_ feed: CalendarFeedRow) -> String {
-        if feed.status == "error" {
-            return feed.lastError ?? "Sync paused — Atlas will retry automatically."
-        }
-        if let synced = feed.lastSyncedDate {
-            return "Last synced \(Self.relativeSync(from: synced))."
-        }
-        return "Connected — first sync runs shortly."
-    }
-
-    private func feedStatusColor(_ feed: CalendarFeedRow) -> Color {
-        feed.status == "error" ? AtlasTheme.Colors.warning : AtlasTheme.Colors.green
     }
 
     @ViewBuilder
@@ -592,6 +947,7 @@ struct SettingsView: View {
                 await AtlasTipEvents.connectedSource.donate()
                 AtlasTips.ConnectSource.hasConnection = true
                 canvasFeedURL = ""   // don't retain the capability URL in the field
+                showAddCalendarSheet = false
             } catch {
                 canvasError = "Couldn't connect Canvas. Check the link and your connection, then try again."
             }
@@ -626,6 +982,7 @@ struct SettingsView: View {
                 await AtlasTipEvents.connectedSource.donate()
                 AtlasTips.ConnectSource.hasConnection = true
                 icsName = ""; icsURL = ""   // don't retain the capability URL
+                showAddCalendarSheet = false
             } catch {
                 icsError = "Couldn't add that calendar. Check the link and your connection, then try again."
             }
@@ -832,321 +1189,21 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: – Calendars section
-
-    /// ONE unified list — a block per calendar source (Apple · each Google account ·
-    /// Canvas · each by-link calendar · Atlas itself). Every block says what it shows
-    /// in Atlas and, where the source can take them, where Atlas sends your own events.
-    private var calendarsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            label("CALENDARS")
-            Text("Turn on the calendars you want to see in Atlas. Where Atlas can write back, pick which space's events get sent there.")
-                .atlasFont(size: 11, weight: .medium, design: .rounded)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-
-            appleCalendarBlock
-            googleAccountsBlock
-            canvasBlock
-            linkedCalendarsBlock
-            if let err = feedRowError {
-                errorRow(err).padding(.horizontal, 12)
-            }
-            atlasNativeRow
-        }
-        .task { await state.refreshCalendarFeeds() }
-        .sheet(item: $detailConnection) { conn in
-            googleDetailSheet(conn)
-        }
-        .sheet(isPresented: $showAddGoogleSheet) {
-            addGoogleSheet
-        }
-    }
-
-    // ── Apple Calendar (device-local, both directions) ──────────────────
-    @ViewBuilder
-    private var appleCalendarBlock: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sourceHeader(icon: "applelogo", tint: AtlasTheme.Colors.textSecondary,
-                         name: "Apple Calendar",
-                         status: appleCalendarSubtitle, statusColor: appleCalendarSubtitleColor)
-
-            toggleRow("Show these events in Atlas",
-                      detail: "Your Mac's Apple Calendar events appear on the Atlas calendar.",
-                      isOn: $appleCalendarEnabled)
-                .onChange(of: appleCalendarEnabled) { _, enabled in
-                    guard enabled else { return }
-                    Task {
-                        let granted = await ekService.requestAccess()
-                        await MainActor.run {
-                            appleAccessGranted = granted
-                            if !granted { appleCalendarEnabled = false }
-                        }
-                    }
-                }
-
-            if !state.spaces.isEmpty {
-                pickerRow("Put Apple events in",
-                          detail: "Events read in from Apple Calendar land in this space") {
-                    Picker("Apple default space", selection: $appleDefaultSpace) {
-                        ForEach(state.spaces) { space in
-                            Text(space.name).tag(space.name)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(width: 140)
-                    .tint(AtlasTheme.Colors.accent)
-                    .onAppear {
-                        // Seed default to first space if not yet set
-                        if appleDefaultSpace.isEmpty, let first = state.spaces.first {
-                            appleDefaultSpace = first.name
-                        }
-                    }
-                }
-            }
-
-            toggleRow("Also add my Atlas events to Apple Calendar",
-                      detail: appleWritebackEnabled
-                        ? "New Atlas events are copied into Apple Calendar on this Mac."
-                        : "Off — Atlas events stay in Atlas. Applies to this Mac only.",
-                      isOn: $appleWritebackEnabled)
-                .disabled(!appleAccessGranted)
-                .onChange(of: appleWritebackEnabled) { _, on in
-                    if on {
-                        refreshAppleWritableCalendars()
-                        state.backfillEventsToApple()
-                    }
-                }
-
-            if appleWritebackEnabled && !appleWritableCalendars.isEmpty {
-                pickerRow("Add them to this calendar",
-                          detail: "Where those copies are created") {
-                    Picker("Apple destination calendar", selection: $appleWritebackCalendarId) {
-                        ForEach(appleWritableCalendars, id: \.id) { cal in
-                            Text(cal.title).tag(cal.id)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(width: 140)
-                    .tint(AtlasTheme.Colors.accent)
-                }
-            }
-
-            // Sub-rules of the mirror above: work sessions ride along by default
-            // (reserved time IS busy time), under a label the other calendar can show.
-            // Deadlines stay in Atlas and tasks never leave, so neither is a toggle.
-            if appleWritebackEnabled {
-                toggleRow("Also add my work sessions",
-                          detail: workSessionPushEnabled
-                            ? "Reserved time shows as busy on your other calendars."
-                            : "Off — scheduled work stays in Atlas.",
-                          isOn: $workSessionPushEnabled)
-                    .onChange(of: workSessionPushEnabled) { _, on in
-                        if on { state.backfillWorkSessionsToApple() }
-                    }
-
-                if workSessionPushEnabled {
-                    pickerRow("Work session label",
-                              detail: "Goes in front of the task's name — \(CalendarSync.mirroredWorkSessionTitle("English essay", prefix: workSessionPrefix))") {
-                        TextField(CalendarSync.defaultWorkSessionPrefix, text: $workSessionPrefix)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 140)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .atlasHairlineBelow()
-    }
-
-    // ── Google accounts — one row per connected account, then Add ───────
-    @ViewBuilder
-    private var googleAccountsBlock: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(state.googleConnections) { conn in
-                googleConnectionRow(conn)
-            }
-            Button { startAddGoogleAccount() } label: {
-                HStack(spacing: 8) {
-                    if googleWorking {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "plus.circle")
-                            .foregroundStyle(AtlasTheme.Colors.school)
-                    }
-                    Text(googleWorking ? "Connecting…" : "Add a Google account…")
-                        .atlasFont(size: 13, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.accentText)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .disabled(googleWorking)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .atlasHairlineBelow()
-            .popoverTip(connectTip)
-
-            if let err = googleError {
-                errorRow(err)
-                    .padding(.horizontal, 12)
-            }
-        }
-    }
-
-    // ── Canvas — one row: the connected feed, or the connect form ───────
-    @ViewBuilder
-    private var canvasBlock: some View {
-        if hasActiveCanvasFeed, let feed = canvasFeedRow {
-            feedRow(feed)
-        } else {
-            VStack(alignment: .leading, spacing: 10) {
-                sourceHeader(icon: "graduationcap.fill", tint: AtlasTheme.Colors.school,
-                             name: "Canvas",
-                             status: "Not connected — paste your Canvas calendar link below",
-                             statusColor: AtlasTheme.Colors.textMuted)
-                canvasConnectForm(repaste: canvasFeedRow?.status == "revoked")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .atlasHairlineBelow()
-        }
-    }
-
-    // ── Calendars added by link — one row each, then the add form ───────
-    @ViewBuilder
-    private var linkedCalendarsBlock: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(linkedFeeds) { feed in
-                feedRow(feed)
-            }
-            icsConnectForm
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .atlasHairlineBelow()
-        }
-    }
-
-    // ── Atlas itself ───────────────────────────────────────────────────
-    private var atlasNativeRow: some View {
-        sourceHeader(icon: "sparkles", tint: AtlasTheme.Colors.accent,
-                     name: "Atlas (native)",
-                     status: "Always on — events you make in Atlas live here",
-                     statusColor: AtlasTheme.Colors.textMuted) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(AtlasTheme.Colors.green)
-                .atlasFont(size: 15, design: .rounded)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .atlasHairlineBelow()
-    }
-
-    // MARK: – Google connection row (multi-account)
-
-    /// One connected Google account: name / muted email / status line, plus the inline
-    /// destination-space dropdown (visual sibling of the Canvas connected row). The row
-    /// itself opens the detail sheet (rename / reconnect / disconnect).
-    @ViewBuilder
-    private func googleConnectionRow(_ conn: GoogleConnection) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                Image(systemName: "globe")
-                    .foregroundStyle(AtlasTheme.Colors.school)
-                    .frame(width: 22)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(conn.name)
-                        .atlasFont(size: 14, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text(conn.googleEmail)
-                        .atlasFont(size: 12, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    Text(googleConnectionStatus(conn))
-                        .atlasFont(size: 12, design: .rounded)
-                        .foregroundStyle(googleConnectionStatusColor(conn))
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .atlasFont(size: 12, weight: .medium, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                detailRename = conn.name
-                detailConnection = conn
-            }
-
-            Text("Show these events in Atlas — always on. Open this account to choose which of its calendars come in.")
-                .atlasFont(size: 12, weight: .medium, design: .rounded)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-
-            // Destination space — inline. Changing it PATCHes google-connect (routes
-            // this space's Atlas events out to this account).
-            if !state.spaces.isEmpty {
-                pickerRow("Send my Atlas events here",
-                          detail: "Events you make in the chosen space are added to this Google account") {
-                    Picker("Destination space", selection: Binding(
-                        get: { spaceName(forSpaceId: conn.spaceId) },
-                        set: { updateGoogleSpace(conn, toSpaceName: $0) }
-                    )) {
-                        Text("Don't send my events here").tag("")
-                        ForEach(state.spaces) { space in
-                            Text(space.name).tag(space.name)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(width: 190)
-                    .tint(AtlasTheme.Colors.accent)
-                    .disabled(googleWorking)
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .atlasHairlineBelow()
-    }
-
     /// Grace period after a connection is created before a still-empty `last_synced_at`
     /// is treated as a stall rather than a pending first sync. The cron runs every 5
     /// minutes (0008), so ~15 min covers a slow first tick without masking a dead one.
     private static let firstSyncGrace: TimeInterval = 15 * 60
 
-    /// Status line for a connection row: server-owned sync state, per connection.
-    private func googleConnectionStatus(_ conn: GoogleConnection) -> String {
-        switch conn.status {
-        case "error", "revoked":
-            // Surface the server's own reason when it recorded one (e.g. invalid_grant,
-            // a push error) instead of a generic line — it's the actionable detail.
-            if let reason = conn.lastError, !reason.isEmpty {
-                return "⚠ Sync stopped — \(reason)"
-            }
-            return "⚠ Reconnect needed — sync is stopped"
-        default:
-            if conn.spaceId == nil { return "Connected — pick a space to send my Atlas events to" }
-            if let synced = conn.lastSyncedDate {
-                return "Connected — last synced \(Self.relativeSync(from: synced))"
-            }
-            // Never synced. Only reassure during the grace window; past it, the cron
-            // isn't reaching this connection — say so instead of promising a sync that
-            // isn't coming (was permanently "first sync runs shortly").
-            if let created = conn.createdDate, Date().timeIntervalSince(created) > Self.firstSyncGrace {
-                return "⚠ Connected, but not syncing — no events received yet"
-            }
-            return "Connected — first sync runs shortly"
-        }
-    }
-
-    private func googleConnectionStatusColor(_ conn: GoogleConnection) -> Color {
+    /// Amber only when something needs the user — a stopped connection, or an active one
+    /// that has gone past the grace window without ever receiving events. The connection's
+    /// own error reason is surfaced verbatim in its detail sheet.
+    private func googleStatusColor(_ conn: GoogleConnection) -> Color {
         guard conn.status == "active" else { return AtlasTheme.Colors.warning }
-        // An active-but-never-synced connection past the grace window is a warning too.
-        if conn.lastSyncedDate == nil, conn.spaceId != nil,
+        if conn.lastSyncedDate == nil,
            let created = conn.createdDate, Date().timeIntervalSince(created) > Self.firstSyncGrace {
             return AtlasTheme.Colors.warning
         }
-        return AtlasTheme.Colors.green
+        return AtlasTheme.Colors.textMuted
     }
 
     /// The space NAME a connection is linked to (for the picker), or "" when unlinked.
@@ -1181,6 +1238,14 @@ struct SettingsView: View {
                 Text(conn.lastError ?? "This account's sync is stopped — reconnect to resume.")
                     .atlasFont(size: 12, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.warning)
+            }
+
+            // Where this account's Atlas events go — moved off the source row.
+            if !state.spaces.isEmpty {
+                spacePicker("Atlas events go to", selection: Binding(
+                    get: { spaceName(forSpaceId: conn.spaceId) },
+                    set: { updateGoogleSpace(conn, toSpaceName: $0) }
+                ), includeNone: true, disabled: googleWorking)
             }
 
             calendarsPickerSection(conn)
@@ -1312,7 +1377,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     label("SEND MY ATLAS EVENTS HERE")
                     Picker("Destination space", selection: $newAccountSpace) {
-                        Text("Don't send my events here").tag("")
+                        Text("Nowhere — stays in Atlas").tag("")
                         ForEach(state.spaces) { space in
                             Text(space.name).tag(space.name)
                         }
@@ -1575,32 +1640,6 @@ struct SettingsView: View {
         if appleWritebackCalendarId.isEmpty, let first = appleWritableCalendars.first {
             appleWritebackCalendarId = first.id
         }
-    }
-
-    private var appleCalendarSubtitle: String {
-        if appleCalendarEnabled && appleAccessGranted {
-            return "Reading from Apple Calendar"
-        }
-        let status = ekService.authorizationStatus()
-        switch status {
-        case .denied, .restricted:
-            return "Access denied — enable in System Settings → Privacy"
-        case .notDetermined:
-            return "Turn this on and Atlas will ask for permission"
-        default:
-            return "Toggle to enable"
-        }
-    }
-
-    private var appleCalendarSubtitleColor: Color {
-        if appleCalendarEnabled && appleAccessGranted {
-            return AtlasTheme.Colors.green
-        }
-        let status = ekService.authorizationStatus()
-        if status == .denied || status == .restricted {
-            return AtlasTheme.Colors.danger
-        }
-        return AtlasTheme.Colors.textMuted
     }
 
     // MARK: – Tasks section
