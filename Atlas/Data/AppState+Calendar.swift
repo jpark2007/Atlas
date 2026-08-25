@@ -75,6 +75,140 @@ extension AppState {
         return ColorToken.color(for: token)
     }
 
+    /// The chip a TASK row should wear as its PRIMARY identity: its class/project,
+    /// preferring the short course code ("CS 201") over the full name, so a row reads
+    /// as the class it belongs to rather than the space it sits in. `nil` when the task
+    /// has no project — those rows keep the space tag.
+    func taskClassChipText(for task: TaskItem) -> String? {
+        guard let project = project(for: task) else { return nil }
+        let code = (project.code ?? "").trimmingCharacters(in: .whitespaces)
+        return code.isEmpty ? project.name : code
+    }
+
+    // MARK: - The one display pool
+
+    /// EVERYTHING a calendar surface should draw for `day` — the single pool the
+    /// Calendar tab, the dashboard mini-month and the menu-bar agenda all read, so the
+    /// three can never disagree about what is on a day.
+    ///
+    /// Store events (Atlas/Google/Canvas) + scheduled work-blocks + task deadline
+    /// markers + synthesized class meetings + read-only Apple externals, collapsed so
+    /// the same real block arriving from several calendars shows once. Key Date flags
+    /// stay OUT of dedup: a term flag labels the day, it is never a second copy of an
+    /// event, so it must not absorb (or be absorbed by) anything.
+    ///
+    /// Each event keeps its own source and read-only attribution — merging never
+    /// relabels where something came from.
+    func displayEvents(on day: Date) -> [CalendarEvent] {
+        let pool = events(on: day)
+            + scheduledWorkBlocks(on: day)
+            + deadlineEvents(on: day)
+            + classMeetingEvents(on: day)
+            + externalEvents(on: day)
+        return CalendarSync.collapsingDuplicates(pool, workSessionPrefix: workSessionTitlePrefix)
+            + keyDateFlags(on: day)
+    }
+
+    /// Deadline markers for `day`: one per open task whose `dueDate` falls there, plus a
+    /// faded HISTORY marker at the original due date of anything rescheduled off the Late
+    /// bar (so a missed date never silently vanishes).
+    ///
+    /// Deadlines are never blocks — the grid draws them as hairlines. Colour is the task's
+    /// own space/class colour (colour = whose, never what); the ONE state override is red
+    /// for "due today and no work time planned", the single place red is earned. Overdue
+    /// stays in its own colour here and is surfaced in amber by the Late bar instead.
+    /// Deadlines stay in Atlas — they are never pushed to Google.
+    func deadlineEvents(on day: Date) -> [CalendarEvent] {
+        let cal = Calendar.current
+        var markers: [CalendarEvent] = []
+        for task in tasks {
+            guard !task.done else { continue }
+            if let due = task.dueDate, cal.isDate(due, inSameDayAs: day) {
+                let red = TimeModel.isDueTodayUnplanned(task, now: now)
+                markers.append(CalendarEvent(
+                    id: GoogleCalendarMapper.stableUUID(from: "deadline-" + task.id.uuidString),
+                    title: task.title,
+                    subtitle: "Due",
+                    start: due,
+                    end: due,
+                    color: red ? AtlasTheme.Colors.danger : task.spaceColor,
+                    spaceName: task.spaceName,
+                    // Never packed as a time block either way — drawn as a rule on the grid.
+                    // A due date carrying a real clock time is NOT all-day, so it draws only
+                    // as its rule; a date-only due stays all-day and rides the pinned strip.
+                    isAllDay: !hasClockTime(due),
+                    isDeadline: true,
+                    deadlineTaskID: task.id
+                ))
+            }
+            // The original date keeps a faded marker in the past after a late-reschedule.
+            if let original = task.originalDueDate, original != task.dueDate,
+               cal.isDate(original, inSameDayAs: day) {
+                markers.append(CalendarEvent(
+                    id: GoogleCalendarMapper.stableUUID(from: "was-due-" + task.id.uuidString),
+                    title: "Was due · " + task.title,
+                    subtitle: "Originally due",
+                    start: original,
+                    end: original,
+                    color: AtlasTheme.Colors.textMuted,
+                    spaceName: task.spaceName,
+                    isAllDay: !hasClockTime(original),
+                    isDeadline: true,
+                    isHistory: true
+                ))
+            }
+        }
+        return markers
+    }
+
+    /// Whether a due date carries a real clock time (not bare-date midnight). Mirrors
+    /// `CalendarEvent.hasSpecificTime`, but has to be answered before the event is built.
+    private func hasClockTime(_ date: Date) -> Bool {
+        let cal = Calendar.current
+        return cal.component(.hour, from: date) != 0 || cal.component(.minute, from: date) != 0
+    }
+
+    // MARK: - External (Apple) events — the one fetch path
+
+    /// Fetch read-only Apple Calendar events for `start..<end` and publish them to
+    /// `externalEvents`. The ONLY place EventKit is read for display, so every surface
+    /// that needs externals for its own range (the Calendar tab's mode range, the
+    /// mini-month's visible grid) goes through here instead of showing a stale pool.
+    ///
+    /// Google is NOT read here: server-owned cloud sync owns Google↔DB, so Google events
+    /// arrive as `events` rows via `loadAll()`. A Mac-local Google pull would double-show
+    /// them on top of the synced rows.
+    ///
+    /// The per-calendar hide list from Settings is applied HERE, not at the call site, so
+    /// every surface that refreshes (Calendar tab, dashboard mini-month) respects the
+    /// unchecked calendars — otherwise a hidden calendar leaks back in via whichever
+    /// surface fetched last.
+    func refreshExternalEvents(start: Date, end: Date) async {
+        let enabled = UserDefaults.standard.bool(forKey: "calendar.apple.enabled")
+        guard enabled, eventKit.authorizationStatus() == .fullAccess else {
+            if !externalEvents.isEmpty { externalEvents = [] }
+            return
+        }
+        let stored = UserDefaults.standard.string(forKey: "calendar.apple.defaultSpace") ?? ""
+        let defaultSpace = stored.isEmpty ? (spaces.first?.name ?? "") : stored
+        let hidden = AppleCalendarSelection.decode(
+            UserDefaults.standard.string(forKey: AppleCalendarSelection.hiddenKey) ?? "")
+
+        let combined = await eventKit.fetchEvents(
+            start: start, end: end, defaultSpaceName: defaultSpace,
+            hiddenCalendarIds: hidden)
+
+        // Drop any Apple event that is actually one of our own events we already mirrored
+        // via the Atlas→Apple toggle (EventKit re-reads it next tick). Otherwise it shows
+        // twice: once native, once as its read-only Apple copy. Work sessions mirror to
+        // Apple too, and their handle lives on the TASK — so their ids must join the
+        // drop-set or every mirrored session double-displays as its own "Work: …" copy.
+        let ownAppleIDs = Set(events.compactMap(\.appleEventId))
+            .union(tasks.compactMap(\.appleEventId))
+        externalEvents = CalendarSync.excludingOwnMirrors(
+            external: combined, ownGoogleIDs: [], ownAppleIDs: ownAppleIDs)
+    }
+
     /// Resolve a space name to its id for dual-writing `spaceID` alongside
     /// `spaceName` (collab phase 1). Nil when no space matches — the row then
     /// relies on the name fallback exactly as before.

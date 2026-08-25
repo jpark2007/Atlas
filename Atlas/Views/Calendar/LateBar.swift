@@ -96,8 +96,13 @@ struct LateBar: View {
             .buttonStyle(.plain)
             .help("Mark done")
 
-            // Colour still says WHOSE — the space's own dot survives inside the amber bar.
-            Circle().fill(item.color).frame(width: 6, height: 6)
+            // Colour still says WHOSE — the dot survives inside the amber bar, wearing the
+            // task's CLASS colour when it has a class (same resolution as the rail and
+            // grid) and its space colour otherwise.
+            Circle()
+                .fill(state.tasks.first { $0.id == item.id }
+                    .map { state.taskAccentColor(for: $0) } ?? item.color)
+                .frame(width: 6, height: 6)
 
             Text(item.title)
                 .atlasFont(size: 13, weight: .semibold, design: .rounded)
