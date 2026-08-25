@@ -1906,6 +1906,18 @@ public final class AtlasDB {
                        sess: sess)
     }
 
+    /// Deletes a project (a class is a `projects` row). Its tasks survive — the
+    /// `tasks.project_id` FK is `on delete set null`, so work is unfiled, never wiped.
+    /// Its reference pool goes with it (`project_references` cascades), which is the
+    /// point: this is the undo for a bad import.
+    public func deleteProject(id: UUID) async throws {
+        let sess = try await requireSession()
+        try await send(method: "DELETE", table: "projects",
+                       query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                       extraHeaders: ["Prefer": "return=minimal"],
+                       sess: sess)
+    }
+
     // MARK: Tasks
 
     public func upsertTask(_ t: TaskItem) async throws {

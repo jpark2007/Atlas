@@ -25,22 +25,74 @@ public enum ICSFile {
         public let weekdays: [Int]
     }
 
+    /// What an item in the file turned out to be. The review list shows this as a chip the
+    /// user can re-type before anything is created — Atlas guesses, the student decides.
+    public enum Kind: String, CaseIterable {
+        case klass, exam, keyDate
+    }
+
     /// A class found in the file, with the meeting blocks its events describe.
     public struct Course: Equatable, Identifiable {
         public var id: String { code ?? name }
         public let name: String
         public let code: String?
         public let meetings: [MeetingBlock]
+        /// The earliest occurrence in the file. Carried so a row the user re-types as an
+        /// exam still knows when it happens.
+        public let start: Date
+    }
+
+    /// A one-off item: everything in the file that does NOT repeat weekly. A registrar
+    /// export is full of these — "Fall Semester Ends", "General Psychology Final Exam" —
+    /// and calling them classes is what put thirteen "classes" in Drew's sidebar.
+    public struct OneOff: Equatable, Identifiable {
+        public var id: String
+        public let title: String
+        public let code: String?
+        public let start: Date
+        public let end: Date?
+        public let location: String?
+        /// True when the title names a term boundary, break or holiday — a Term Key Date,
+        /// not a class and not work.
+        public let isKeyDate: Bool
+        /// True when the title reads like an exam ("Final", "Midterm", "Quiz", "Exam").
+        public let isExam: Bool
+        /// The `Course.id` of the class this item names, when one matched. Nil ⇒ it lands
+        /// as an unassigned event; an unmatched exam is never turned into a class.
+        public let courseID: String?
+    }
+
+    /// What a file actually holds, split three ways. The wizard reviews each group on its
+    /// own and lets the user re-type a row before anything is created.
+    public struct Import: Equatable {
+        public var courses: [Course]
+        public var keyDates: [OneOff]
+        /// Exams and any other one-off timed item. Both land as events; only the
+        /// exam-titled ones wear the exam label.
+        public var exams: [OneOff]
     }
 
     // MARK: - Courses
 
-    /// The classes `raw` describes. Events are attributed exactly the way the server
-    /// attributes feed items (`_shared/ics.ts`): a trailing `[CODE]` is the course, and
-    /// what's left is the title. Occurrences of the same class at the same time are
-    /// folded into one meeting block whose weekdays are the union of theirs, so a file
-    /// that spells out fifteen Mondays and fifteen Wednesdays lands as "MW".
+    /// The classes `raw` describes — the recurring items only. Kept as the narrow entry
+    /// point; `classify(in:)` is the whole picture.
     public static func courses(in raw: String, calendar: Calendar = .current) -> [Course] {
+        classify(in: raw, calendar: calendar).courses
+    }
+
+    /// Splits a file into classes, Key Dates and exams.
+    ///
+    /// Events are attributed exactly the way the server attributes feed items
+    /// (`_shared/ics.ts`): a trailing `[CODE]` is the course, and what's left is the title.
+    /// Occurrences of the same class at the same time are folded into one meeting block
+    /// whose weekdays are the union of theirs, so a file that spells out fifteen Mondays
+    /// and fifteen Wednesdays lands as "MW".
+    ///
+    /// A group is a CLASS only when it actually repeats weekly — a weekly RRULE, or the
+    /// same title seen on two or more different days. Everything else is a one-off, sorted
+    /// by what its title says: a term boundary is a Key Date, anything else is an event
+    /// (labelled an exam when the title says so, and tied to the class it names).
+    public static func classify(in raw: String, calendar: Calendar = .current) -> Import {
         var order: [String] = []
         var grouped: [String: [(title: String, code: String?, event: Event)]] = [:]
 
@@ -52,16 +104,88 @@ public enum ICSFile {
             grouped[key, default: []].append((parsed.title, parsed.code, event))
         }
 
-        return order.compactMap { key -> Course? in
-            guard let entries = grouped[key] else { return nil }
+        var courses: [Course] = []
+        var loose: [(title: String, code: String?, event: Event)] = []
+
+        for key in order {
+            guard let entries = grouped[key] else { continue }
             let name = entries.first(where: { !$0.title.isEmpty })?.title
                 ?? entries.first?.code
                 ?? ""
-            guard !name.isEmpty else { return nil }
-            return Course(name: name,
-                          code: entries.compactMap(\.code).first,
-                          meetings: meetingBlocks(from: entries.map(\.event), calendar: calendar))
+            guard !name.isEmpty else { continue }
+            guard repeatsWeekly(entries.map(\.event), calendar: calendar) else {
+                loose.append(contentsOf: entries)
+                continue
+            }
+            courses.append(Course(name: name,
+                                  code: entries.compactMap(\.code).first,
+                                  meetings: meetingBlocks(from: entries.map(\.event), calendar: calendar),
+                                  start: entries.map { $0.event.start }.min() ?? entries[0].event.start))
         }
+
+        var keyDates: [OneOff] = []
+        var exams: [OneOff] = []
+        for entry in loose {
+            let title = entry.title.isEmpty ? (entry.code ?? "") : entry.title
+            let item = OneOff(id: "\(title)|\(entry.event.start.timeIntervalSinceReferenceDate)",
+                              title: title,
+                              code: entry.code,
+                              start: entry.event.start,
+                              end: entry.event.end,
+                              location: entry.event.location,
+                              isKeyDate: isKeyDateTitle(title),
+                              isExam: !isKeyDateTitle(title) && isExamTitle(title),
+                              courseID: courseNamed(in: title, among: courses))
+            if item.isKeyDate { keyDates.append(item) } else { exams.append(item) }
+        }
+
+        return Import(courses: courses, keyDates: keyDates, exams: exams)
+    }
+
+    /// True when these occurrences describe a weekly pattern: a `FREQ=WEEKLY` rule, or the
+    /// same title landing on two or more distinct days.
+    private static func repeatsWeekly(_ events: [Event], calendar: Calendar) -> Bool {
+        if events.contains(where: { !$0.weekdays.isEmpty }) { return true }
+        return Set(events.map { calendar.startOfDay(for: $0.start) }).count > 1
+    }
+
+    /// Registrar boundary language. Deliberately a small closed list: a title Atlas can't
+    /// read stays an event, which is recoverable, rather than a silent Key Date.
+    public static func isKeyDateTitle(_ title: String) -> Bool {
+        let t = title.lowercased()
+        if ["classes begin", "classes end", "reading day", "no classes"].contains(where: { t.contains($0) }) {
+            return true
+        }
+        let nouns = ["semester", "session", "term", "break", "holiday"]
+        let verbs = ["begins", "ends", "begin", "end"]
+        return nouns.contains(where: { t.contains($0) }) && verbs.contains(where: { t.contains($0) })
+    }
+
+    /// The Key Date flag a boundary title deserves, so the calendar can draw it by kind.
+    public static func keyDateKind(_ title: String) -> TermKeyDateKind {
+        let t = title.lowercased()
+        if t.contains("break") { return .breakPeriod }
+        if t.contains("holiday") || t.contains("no classes") { return .holiday }
+        if t.contains("begin") { return .classesBegin }
+        if t.contains("end") { return .classesEnd }
+        return .other
+    }
+
+    public static func isExamTitle(_ title: String) -> Bool {
+        let t = title.lowercased()
+        return ["final", "exam", "midterm", "quiz"].contains { t.contains($0) }
+    }
+
+    /// The class `title` names, if any — longest name (or code) wins, so "General
+    /// Psychology Final" doesn't attach itself to a "Psychology" elsewhere in the file.
+    private static func courseNamed(in title: String, among courses: [Course]) -> String? {
+        let t = title.lowercased(), normalized = normalizeCode(title)
+        let matches = courses.filter { course in
+            if t.contains(course.name.lowercased()) { return true }
+            if let code = course.code { return normalized.contains(normalizeCode(code)) }
+            return false
+        }
+        return matches.max { $0.name.count < $1.name.count }?.id
     }
 
     /// `"Organic Chemistry [CHEM 201]"` → `("Organic Chemistry", "CHEM 201")`.

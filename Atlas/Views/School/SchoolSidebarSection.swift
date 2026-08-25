@@ -16,6 +16,9 @@ struct SchoolSidebarSection: View {
     @Binding var hovered: Route?
 
     @State private var presentWizard = false
+    @State private var presentQuickAdd = false
+    @State private var presentCanvasConnect = false
+    @State private var confirmRemoveAll = false
     @State private var presentNewSemester = false
     @State private var presentCourseCatchUp = false
     /// The term the editor sheet is editing — drives the sheet directly, so it can never
@@ -76,6 +79,24 @@ struct SchoolSidebarSection: View {
             // student — go straight to "how does your schedule exist?".
             SemesterWizard(startAt: term == nil ? .student : .door)
         }
+        .sheet(isPresented: $presentQuickAdd) {
+            QuickAddClassSheet(term: term)
+        }
+        .confirmationDialog("Remove every class in \(term?.name ?? "this semester")?",
+                            isPresented: $confirmRemoveAll, titleVisibility: .visible) {
+            Button("Remove \(termClasses.count) \(termClasses.count == 1 ? "class" : "classes")",
+                   role: .destructive) {
+                state.removeAllClasses(in: term)
+            }
+            Button("Keep them", role: .cancel) {}
+        } message: {
+            // Says exactly what goes, because a bad import is the reason anyone is here.
+            Text("Their meeting times and this semester's key dates go with them; any work filed under them is unfiled, not deleted. "
+                 + "Classes you already put away from an earlier semester are untouched. This can't be undone.")
+        }
+        .sheet(isPresented: $presentCanvasConnect) {
+            SemesterWizard(startAt: .canvas)
+        }
         .sheet(isPresented: $presentNewSemester) {
             NewSemesterSheet(previous: term)
         }
@@ -111,6 +132,17 @@ struct SchoolSidebarSection: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
+            // "+" adds ONE class by hand. The wizard is the semester-setup flow and lives
+            // behind the zero state and the ⋯ menu — being asked "are you a student?"
+            // again to add the class you forgot is not a quick add.
+            Button { presentQuickAdd = true } label: {
+                Image(systemName: "plus")
+                    .atlasFont(size: 11, weight: .semibold)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Add a class")
             Menu {
                 if let term {
                     Button("Edit \(term.name)…") { editingTerm = term }
@@ -127,7 +159,14 @@ struct SchoolSidebarSection: View {
                 }
                 Divider()
                 Button("Start a new semester…") { presentNewSemester = true }
-                Button("Add a class…") { presentWizard = true }
+                Button("Add classes from a file or link…") { presentWizard = true }
+                // Canvas carries the assignments, not the classes — so it lives here,
+                // beside the class list it files work under, not as a door in the wizard.
+                Button("Connect Canvas…") { presentCanvasConnect = true }
+                if !termClasses.isEmpty {
+                    Divider()
+                    Button("Remove all classes…", role: .destructive) { confirmRemoveAll = true }
+                }
             } label: {
                 Image(systemName: "ellipsis")
                     .atlasFont(size: 11, weight: .semibold)
@@ -155,15 +194,17 @@ struct SchoolSidebarSection: View {
                 Circle()
                     .fill(klass.colorToken.map { ColorToken.color(for: $0) } ?? klass.spaceColor)
                     .frame(width: 8, height: 8)
-                // "Introduction to Organic Chemistry II" has to survive a 232pt sidebar:
-                // the name gives way first, middle-truncated, and the course code keeps
-                // its intrinsic width instead of being squeezed to an ellipsis.
+                // "Introduction to Organic Chemistry II" has to survive a 232pt sidebar.
+                // The name takes ALL the width the row has left (layoutPriority) so it
+                // truncates only when it genuinely doesn't fit — middle, so the tail that
+                // tells two sections of one class apart survives.
                 Text(klass.name)
                     .atlasFont(size: 14, weight: selected ? .semibold : .regular, design: .rounded)
                     .foregroundStyle(selected ? AtlasTheme.Colors.textPrimary : AtlasTheme.Colors.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Spacer(minLength: 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
                 if let code = klass.code, !code.isEmpty {
                     Text(code)
                         .atlasMono(size: 10, weight: .medium)

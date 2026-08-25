@@ -85,6 +85,46 @@ extension AppState {
         allProjects.filter { $0.isClass && $0.termID == nil && $0.archivedAt == nil }
     }
 
+    /// Adds imported Key Dates to `term`, skipping ones it already carries. A registrar
+    /// file's "Fall Semester Ends" belongs here, on the term, not in the class list.
+    func addKeyDates(_ dates: [TermKeyDate], to term: Term) {
+        var updated = term
+        for date in dates where !updated.keyDates.contains(where: {
+            $0.label == date.label && Calendar.current.isDate($0.date, inSameDayAs: date.date)
+        }) {
+            updated.keyDates.append(date)
+        }
+        guard updated.keyDates.count != term.keyDates.count else { return }
+        updated.keyDates.sort { $0.date < $1.date }
+        saveTerm(updated)
+    }
+
+    /// Files an imported one-off (an exam, or any other single-occurrence item) as an
+    /// EVENT at its time, tied to the class its title named.
+    ///
+    /// Source attribution, per the house rule: the file was read here, on this machine,
+    /// and there is no address to sync back to — so this is an Atlas-native, writable
+    /// event, never "read-only from" anywhere. It wears the class's color and carries its
+    /// `projectID`; with no class matched it lands unassigned rather than inventing one.
+    func addImportedEvent(title: String, start: Date, end: Date?, location: String?, classID: UUID?) {
+        let klass = classID.flatMap { project($0) }
+        var event = CalendarEvent(
+            title: title,
+            subtitle: klass?.name ?? location ?? "",
+            start: start,
+            end: end ?? start.addingTimeInterval(3600),
+            color: klass.map { $0.colorToken.map(ColorToken.color(for:)) ?? $0.spaceColor }
+                ?? AtlasTheme.Colors.textSecondary,
+            spaceName: klass?.spaceName ?? schoolSpaceNameForDisplay,
+            notes: location,
+            projectID: klass?.id,
+            isReadOnly: false,
+            source: .atlas
+        )
+        event.spaceID = klass?.spaceID
+        addEvent(event)
+    }
+
     /// Files every undated class into `term` — the migration prompt's action.
     func adoptUndatedClasses(into term: Term) {
         for si in spaces.indices {
@@ -122,9 +162,24 @@ extension AppState {
             return nil
         }
         created.termID = resolvedTermID
-        created.colorToken = colorToken
+        created.colorToken = colorToken ?? nextClassColorToken()
         applyClassEdit(created)
         return created
+    }
+
+    /// The color the next class gets: the first hue in `classPalette` no live class is
+    /// already wearing, else the one used least. Classes are told apart by color all over
+    /// the app (sidebar dots, calendar meetings), so "all of them blue" is a bug, not a
+    /// default — a class never inherits the space color.
+    func nextClassColorToken() -> String {
+        var counts: [String: Int] = [:]
+        for token in allProjects.filter({ $0.isClass && $0.archivedAt == nil }).compactMap(\.colorToken) {
+            counts[token, default: 0] += 1
+        }
+        // `min(by:)` keeps the first minimal element, so palette order breaks the ties and
+        // the first six classes of a semester are six different hues.
+        let palette = AtlasTheme.Colors.classPalette.map { ColorToken.token(for: $0) }
+        return palette.min { (counts[$0] ?? 0) < (counts[$1] ?? 0) } ?? "school"
     }
 
     /// Writes an edited class back into `spaces` and persists it — the single funnel for
@@ -183,6 +238,41 @@ extension AppState {
         }
     }
 
+    /// The undo for a bad import: removes every LIVE class of `term`, the meeting blocks
+    /// they carried, and that term's Key Dates.
+    ///
+    /// Classes put away from an earlier semester are soft-archived and are deliberately
+    /// left alone — this clears the mess you can see, never the history you filed. Tasks
+    /// and events that were tied to a removed class are unfiled, not deleted: a wrong
+    /// class list is not a reason to lose work.
+    func removeAllClasses(in term: Term?) {
+        let doomed = term.map { classes(in: $0) } ?? undatedClasses
+        guard !doomed.isEmpty else { return }
+        let ids = Set(doomed.map(\.id))
+
+        for si in spaces.indices {
+            spaces[si].projects.removeAll { ids.contains($0.id) }
+        }
+        for id in ids {
+            Task { try? await self.db?.deleteProject(id: id) }
+        }
+
+        for i in events.indices where events[i].projectID.map(ids.contains) == true {
+            events[i].projectID = nil
+            let updated = events[i]
+            Task { try? await self.db?.upsertEvent(updated) }
+        }
+        let names = Set(doomed.map(\.name))
+        for i in tasks.indices where names.contains(tasks[i].projectName) {
+            tasks[i].projectName = ""   // the DB's `on delete set null` does the same server-side
+        }
+
+        if var term, !term.keyDates.isEmpty {
+            term.keyDates = []
+            saveTerm(term)
+        }
+    }
+
     /// Recreates the shells of `source`'s classes (name / code / color) under `target`.
     /// Deliberately shells only: last semester's assignments are not next semester's.
     func copyClassesForward(from source: Term, to target: Term) {
@@ -193,13 +283,25 @@ extension AppState {
 
     // MARK: - The legacy "School" space
 
-    /// The spaces the sidebar lists. With the framework on, a leftover "School" space
-    /// that holds nothing is folded away: a School space sitting under a School section
-    /// reads as two Schools. Folded, never deleted — the moment anything lands in it, it
-    /// is back, and no account ever loses a bucket it was using.
+    /// The spaces the sidebar lists. With the framework on, class projects belong to the
+    /// School section and nowhere else — listing them again under SPACES is the same class
+    /// twice. So each space is listed without its live classes, and a space that held
+    /// nothing but classes disappears entirely rather than showing an empty School under
+    /// a School section.
+    ///
+    /// Nothing is deleted and nothing is hidden that School doesn't already show: a
+    /// non-class project in the School space keeps that space on screen (slimmed to just
+    /// that project), and an archived class stays where it always was.
     var visibleSpaces: [Space] {
         guard schoolEnabled else { return spaces }
-        return spaces.filter { !isEmptyLegacySchoolSpace($0) }
+        return spaces.compactMap { space -> Space? in
+            guard space.projects.contains(where: { $0.isClass && $0.archivedAt == nil }) else {
+                return isEmptyLegacySchoolSpace(space) ? nil : space
+            }
+            var slimmed = space
+            slimmed.projects = space.projects.filter { !($0.isClass && $0.archivedAt == nil) }
+            return slimmed.projects.isEmpty ? nil : slimmed
+        }
     }
 
     private func isEmptyLegacySchoolSpace(_ space: Space) -> Bool {
@@ -258,7 +360,7 @@ extension AppState {
 
     /// The space name Key Date flags wear, so the calendar's space filter treats them like
     /// the rest of School. Read-only lookup — never creates a space.
-    private var schoolSpaceNameForDisplay: String {
+    var schoolSpaceNameForDisplay: String {
         spaces.first { $0.name.caseInsensitiveCompare("School") == .orderedSame }?.name
             ?? spaces.first?.name
             ?? "School"

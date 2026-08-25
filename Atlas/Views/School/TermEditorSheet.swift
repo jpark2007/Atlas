@@ -82,12 +82,7 @@ struct TermEditorSheet: View {
         VStack(alignment: .leading, spacing: 7) {
             Text("WHAT DO YOU CALL IT").atlasCapsLabel()
             TextField("Fall 2026", text: $name)
-                .textFieldStyle(.plain)
-                .atlasFont(size: 15, weight: .medium, design: .rounded)
-                .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                .padding(.horizontal, 12).padding(.vertical, 10)
-                .overlay(RoundedRectangle(cornerRadius: AtlasTheme.Radius.sm, style: .continuous)
-                    .stroke(AtlasTheme.Colors.border, lineWidth: 1))
+                .atlasTextField(size: 15)
         }
     }
 
@@ -99,21 +94,27 @@ struct TermEditorSheet: View {
                     .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
             }
-            .toggleStyle(.switch)
-            .tint(AtlasTheme.Colors.textPrimary)
+            .toggleStyle(AtlasToggleStyle())
 
             if hasDates {
-                HStack(spacing: 14) {
-                    DatePicker("First day", selection: $startsOn, displayedComponents: .date)
-                    DatePicker("Last day", selection: $endsOn, displayedComponents: .date)
+                HStack(alignment: .bottom, spacing: 14) {
+                    labelledDate("FIRST DAY", $startsOn)
+                    labelledDate("LAST DAY", $endsOn)
+                    Spacer()
                 }
-                .datePickerStyle(.compact)
-                .atlasFont(size: 13, weight: .medium, design: .rounded)
             } else {
                 Text("Without dates Atlas won't draw class meetings — you can add them later.")
                     .atlasFont(size: 11, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
+        }
+    }
+
+    private func labelledDate(_ label: String, _ value: Binding<Date>) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label).atlasCapsLabel()
+            DatePicker("", selection: value, displayedComponents: .date)
+                .atlasDateField()
         }
     }
 
@@ -146,16 +147,11 @@ struct TermEditorSheet: View {
                     TextField("Spring break", text: Binding(
                         get: { keyDates[i].label },
                         set: { keyDates[i].label = $0 }))
-                        .textFieldStyle(.plain)
-                        .atlasFont(size: 13, weight: .medium, design: .rounded)
-                        .padding(.horizontal, 8).padding(.vertical, 6)
-                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(AtlasTheme.Colors.border, lineWidth: 1))
+                        .atlasTextField()
                     DatePicker("", selection: Binding(
                         get: { keyDates[i].date },
                         set: { keyDates[i].date = $0 }), displayedComponents: .date)
-                        .labelsHidden()
-                        .datePickerStyle(.compact)
+                        .atlasDateField()
                     Picker("", selection: Binding(
                         get: { keyDates[i].kind ?? .other },
                         set: { keyDates[i].kind = $0 })) {
