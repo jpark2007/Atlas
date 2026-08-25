@@ -62,12 +62,19 @@ struct SettingsView: View {
     // these keys are intentionally NOT wired into `pushSyncedSettings()`.
     @AppStorage("calendar.apple.writeback") private var appleWritebackEnabled: Bool = false
     @AppStorage("calendar.apple.writeback.calendarId") private var appleWritebackCalendarId: String = ""
+    /// Which Apple calendars are hidden from Atlas — device-local, same reason.
+    @AppStorage(AppleCalendarSelection.hiddenKey) private var appleHiddenCalendarIds: String = ""
     // Outbound push rules per object type. Work sessions default ON — reserved time IS busy
     // time — under a human-readable label the external calendar can actually show.
     @AppStorage("calendar.workSessions.push") private var workSessionPushEnabled: Bool = true
     @AppStorage("calendar.workSessions.titlePrefix") private var workSessionPrefix: String = CalendarSync.defaultWorkSessionPrefix
     @State private var appleWritableCalendars: [(id: String, title: String)] = []
-    @State private var appleAccessGranted: Bool = false
+    /// Every calendar Atlas could read — the per-calendar checkbox list in the Apple detail.
+    @State private var appleReadableCalendars: [(id: String, title: String)] = []
+    /// The LIVE EventKit grant, not a boolean guess. macOS 14 has five outcomes and
+    /// write-only / denied must never render as a working connection.
+    @State private var appleAccessStatus: EKAuthorizationStatus = EKEventStore.authorizationStatus(for: .event)
+    private var appleAccessGranted: Bool { appleAccessStatus == .fullAccess }
     @State private var appleAccessChecked: Bool = false
 
     // MARK: – Google multi-account (CALENDARS) state
@@ -507,42 +514,173 @@ struct SettingsView: View {
                 .labelsHidden()
                 .tint(AtlasTheme.Colors.textPrimary)
                 .onChange(of: appleCalendarEnabled) { _, enabled in
-                    if enabled {
-                        Task {
-                            let granted = await ekService.requestAccess()
-                            await MainActor.run {
-                                appleAccessGranted = granted
-                                if !granted { appleCalendarEnabled = false }
-                            }
+                    guard enabled else { return }
+                    Task {
+                        // Safe to call in any state: once the grant is decided macOS
+                        // returns the standing answer instead of re-prompting.
+                        _ = await ekService.requestAccess()
+                        await MainActor.run {
+                            refreshAppleAccessStatus()   // flips the switch back off if not granted
+                            // Never fail silently: open the detail so the reason and the
+                            // System Settings link are on screen.
+                            if !appleAccessGranted { expandedSource = "apple" }
                         }
                     }
                 }
         }
-        if expandedSource == "apple", !state.spaces.isEmpty {
+        if expandedSource == "apple" {
             sourceDetail {
-                spacePicker("Apple events land in", selection: $appleDefaultSpace)
-                    .onAppear {
-                        if appleDefaultSpace.isEmpty, let first = state.spaces.first {
-                            appleDefaultSpace = first.name
-                        }
+                if appleAccessGranted {
+                    if !state.spaces.isEmpty {
+                        spacePicker("Apple events land in", selection: $appleDefaultSpace)
+                            .onAppear {
+                                if appleDefaultSpace.isEmpty, let first = state.spaces.first {
+                                    appleDefaultSpace = first.name
+                                }
+                            }
                     }
+                    appleCalendarsPicker
+                } else {
+                    Text(appleAccessExplanation)
+                        .atlasFont(size: 12, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if appleAccessStatus != .restricted { openCalendarPrivacySettingsButton }
+                }
+
+                appleDisconnect
             }
         }
     }
 
+    /// The row's one mono state line — it must never read as "working" when the grant
+    /// isn't full. macOS 14 has five outcomes and each gets its own honest sentence.
     private var appleStatusLine: String {
-        if appleCalendarEnabled && appleAccessGranted { return "Showing · this Mac" }
-        switch ekService.authorizationStatus() {
-        case .denied, .restricted: return "Access denied · allow in System Settings"
-        default:                   return "Not showing · turn on to add your Apple events"
+        switch appleAccessStatus {
+        case .denied:     return "Access denied · allow in System Settings"
+        case .restricted: return "Access blocked · calendars are restricted on this Mac"
+        case .writeOnly:  return "Write-only · Atlas can add but not see events"
+        case .fullAccess:
+            return appleCalendarEnabled
+                ? "Showing · this Mac"
+                : "Not showing · turn on to add your Apple events"
+        default:          return "Not showing · turn on to add your Apple events"
         }
     }
 
     private var appleStatusColor: Color {
-        let status = ekService.authorizationStatus()
-        return (status == .denied || status == .restricted)
-            ? AtlasTheme.Colors.danger
-            : AtlasTheme.Colors.textMuted
+        switch appleAccessStatus {
+        case .denied, .restricted: return AtlasTheme.Colors.danger
+        case .writeOnly:           return AtlasTheme.Colors.warning
+        default:                   return AtlasTheme.Colors.textMuted
+        }
+    }
+
+    /// The plain-sentence version of the status line, shown in the disclosed detail.
+    private var appleAccessExplanation: String {
+        switch appleAccessStatus {
+        case .denied:
+            return "Atlas was told no to calendar access, and macOS won't ask again. Turn Atlas on under Privacy & Security → Calendars, then flip this switch back on."
+        case .restricted:
+            return "Calendar access is blocked on this Mac by a profile or parental controls. Atlas can't ask for it."
+        case .writeOnly:
+            return "Atlas only got \"Add Only\" access: it can put events into Apple Calendar but can't see what's already there — so nothing shows in Atlas. Switch it to Full Access under Privacy & Security → Calendars."
+        default:
+            return "Turn the switch on and macOS will ask whether Atlas can see your calendars."
+        }
+    }
+
+    /// Deep-links to the Calendars pane of Privacy & Security — the only place a macOS
+    /// calendar grant can actually be changed.
+    private var openCalendarPrivacySettingsButton: some View {
+        Button("Open Privacy & Security → Calendars") {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") {
+                NSWorkspace.shared.open(url)
+            }
+        }
+        .buttonStyle(.plain)
+        .atlasFont(size: 13, weight: .medium, design: .rounded)
+        .foregroundStyle(AtlasTheme.Colors.accentText)
+    }
+
+    /// Which Apple calendars show in Atlas. macOS has no iOS-style "limited calendars"
+    /// OS picker, so this in-app list is the equivalent — device-local, matching the
+    /// per-calendar checkboxes a Google account gets. Unchecking never deletes anything;
+    /// it only stops Atlas reading that calendar.
+    @ViewBuilder
+    private var appleCalendarsPicker: some View {
+        if appleReadableCalendars.count > 1 {
+            let hidden = AppleCalendarSelection.decode(appleHiddenCalendarIds)
+            VStack(alignment: .leading, spacing: 8) {
+                label("CALENDARS")
+                Text("Choose which Apple calendars show in Atlas. This Mac only.")
+                    .atlasFont(size: 11, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(appleReadableCalendars, id: \.id) { cal in
+                            let shown = !hidden.contains(cal.id)
+                            Button { toggleAppleCalendar(cal.id) } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: shown ? "checkmark.square.fill" : "square")
+                                        .foregroundStyle(shown
+                                                         ? AtlasTheme.Colors.textPrimary
+                                                         : AtlasTheme.Colors.textMuted)
+                                    Text(cal.title)
+                                        .atlasFont(size: 13, design: .rounded)
+                                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                                        .lineLimit(1)
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                                .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 168)
+                if hidden.count == appleReadableCalendars.count {
+                    Text("Every calendar is unchecked, so no Apple events show.")
+                        .atlasFont(size: 11, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.warning)
+                }
+            }
+        }
+    }
+
+    /// Turns Apple Calendar off in both directions and forgets the device-local Apple
+    /// settings. The macOS grant itself is NOT ours to revoke — an app can't take back
+    /// its own TCC permission — so the copy says where that lives instead of pretending.
+    private var appleDisconnect: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button("Disconnect Apple Calendar") { disconnectApple() }
+                .buttonStyle(.plain)
+                .atlasFont(size: 13, weight: .medium, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.danger)
+            Text("Stops Atlas reading and writing Apple Calendar on this Mac and forgets these settings. Nothing is deleted from Apple Calendar. macOS keeps the permission itself — remove Atlas under Privacy & Security → Calendars to take that back.")
+                .atlasFont(size: 11, weight: .medium, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            if appleAccessGranted { openCalendarPrivacySettingsButton }
+        }
+        .padding(.top, 4)
+    }
+
+    private func toggleAppleCalendar(_ id: String) {
+        var hidden = AppleCalendarSelection.decode(appleHiddenCalendarIds)
+        if hidden.contains(id) { hidden.remove(id) } else { hidden.insert(id) }
+        appleHiddenCalendarIds = AppleCalendarSelection.encode(hidden)
+    }
+
+    private func disconnectApple() {
+        appleCalendarEnabled = false
+        appleWritebackEnabled = false
+        appleWritebackCalendarId = ""
+        appleHiddenCalendarIds = ""
+        appleWritableCalendars = []
+        appleReadableCalendars = []
+        state.externalEvents = []
     }
 
     // ── Google accounts ──────────────────────────────────────────────────
@@ -1600,11 +1738,12 @@ struct SettingsView: View {
     // MARK: – Calendar helpers
 
     private func refreshAppleAccessStatus() {
-        let status = ekService.authorizationStatus()
-        appleAccessGranted = (status == .fullAccess)
+        appleAccessStatus = ekService.authorizationStatus()
+        // Anything short of full access can't read events, so the switch must not sit "on".
         if !appleAccessGranted && appleCalendarEnabled {
             appleCalendarEnabled = false
         }
+        appleReadableCalendars = appleAccessGranted ? ekService.readableCalendars() : []
         // Populate the mirror's destination picker if it's already on when Settings opens.
         if appleAccessGranted && appleWritebackEnabled {
             refreshAppleWritableCalendars()

@@ -42,6 +42,8 @@ struct CalendarView: View {
     // MARK: - Apple Calendar sync
     @AppStorage("calendar.apple.enabled") private var appleCalendarEnabled: Bool = false
     @AppStorage("calendar.apple.defaultSpace") private var appleDefaultSpace: String = ""
+    /// Apple calendars the user unchecked in Settings (device-local). Empty ⇒ read all.
+    @AppStorage(AppleCalendarSelection.hiddenKey) private var appleHiddenCalendarIds: String = ""
     @AppStorage("calendar.workSessions.titlePrefix") private var workSessionPrefix: String = CalendarSync.defaultWorkSessionPrefix
     private let ekService = EventKitService()
 
@@ -140,6 +142,8 @@ struct CalendarView: View {
                 }
             } else { loadAppleEventsIfNeeded() }
         }
+        // Re-read immediately when the per-calendar checkboxes change in Settings.
+        .onChange(of: appleHiddenCalendarIds) { _, _ in loadAppleEventsIfNeeded() }
         // Auto-refresh so Apple-side changes (incl. deletes) surface without leaving and
         // re-entering the tab: poll every 60s while the calendar is visible, and refresh
         // immediately when the app regains focus (e.g. after you edited on your phone).
@@ -643,7 +647,8 @@ struct CalendarView: View {
             let combined = await ekService.fetchEvents(
                 start: rangeStart,
                 end:   rangeEnd,
-                defaultSpaceName: defaultSpace
+                defaultSpaceName: defaultSpace,
+                hiddenCalendarIds: AppleCalendarSelection.decode(appleHiddenCalendarIds)
             )
             await MainActor.run {
                 // Drop any Apple event that is actually one of our own events we already
