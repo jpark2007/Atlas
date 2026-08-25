@@ -6,7 +6,7 @@ import Foundation
 /// ISO date strings are left as `String` — the call site parses them when
 /// constructing domain objects so we never force a date strategy on this decoder.
 public struct CaptureResult: Codable {
-    public let kind: String          // "task" | "event" | "note"
+    public let kind: String          // "task" | "event" | "note" | "update"
     public let title: String
     public let spaceName: String
     public let projectName: String?
@@ -16,6 +16,61 @@ public struct CaptureResult: Codable {
     public let durationMin: Int?
     public let isAllDay: Bool?
     public let notes: String?
+    /// Set only on a `"update"` item: the id of an EXISTING item (from the
+    /// `deadlines` context) the capture refers to ("the essay"), so we attach to
+    /// it instead of creating a duplicate. Unknown/unparseable ids degrade to a
+    /// normal create — see `CaptureAction.decide`.
+    public let targetId: String?
+    /// The model's own 0…1 confidence in this item's classification. Drives the
+    /// subtle low-confidence marker on the correction chips; never a dialog.
+    public let confidence: Double?
+
+    public init(kind: String, title: String, spaceName: String,
+                projectName: String? = nil, dueISO: String? = nil,
+                startISO: String? = nil, endISO: String? = nil,
+                durationMin: Int? = nil, isAllDay: Bool? = nil,
+                notes: String? = nil, targetId: String? = nil,
+                confidence: Double? = nil) {
+        self.kind = kind
+        self.title = title
+        self.spaceName = spaceName
+        self.projectName = projectName
+        self.dueISO = dueISO
+        self.startISO = startISO
+        self.endISO = endISO
+        self.durationMin = durationMin
+        self.isAllDay = isAllDay
+        self.notes = notes
+        self.targetId = targetId
+        self.confidence = confidence
+    }
+
+    /// Below this the parse is "unsure" and the chips wear a subtle marker.
+    /// A result with no `confidence` at all is treated as confident (old deploys).
+    public static let lowConfidence = 0.6
+
+    public var isLowConfidence: Bool {
+        guard let confidence else { return false }
+        return confidence < CaptureResult.lowConfidence
+    }
+}
+
+/// What one decoded `CaptureResult` should DO to the user's data. Pure decision
+/// so both platforms (and the tests) agree: an `"update"` item that names a
+/// KNOWN existing item modifies it; anything else — including an update whose
+/// `targetId` is missing, malformed, or unknown — creates, so a hallucinated id
+/// can never make a capture vanish.
+public enum CaptureAction: Equatable {
+    case create
+    case update(targetId: UUID)
+
+    public static func decide(_ result: CaptureResult, knownIDs: Set<UUID>) -> CaptureAction {
+        guard result.kind == "update",
+              let raw = result.targetId,
+              let id = UUID(uuidString: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
+              knownIDs.contains(id) else { return .create }
+        return .update(targetId: id)
+    }
 }
 
 /// Outcome of a capture parse: the decoded items plus whether the server capped
@@ -38,6 +93,34 @@ public struct CaptureContextProject: Codable, Equatable {
     public let name: String
     public let code: String?
     public let overview: String?
+    /// True when this project is a CLASS (School). Sent only when true so the
+    /// payload stays small and old servers ignore it; the prompt marks these
+    /// so "bio lab" routes to the BIO 201 class rather than a look-alike project.
+    public let isClass: Bool?
+
+    public init(name: String, code: String? = nil, overview: String? = nil, isClass: Bool? = nil) {
+        self.name = name
+        self.code = code
+        self.overview = overview
+        self.isClass = isClass
+    }
+}
+
+/// One upcoming deadline the user already has, sent so a capture that REFERS to
+/// it ("finish the essay by friday") attaches to the real item instead of
+/// creating a duplicate. Deliberately tiny: id + title + due + owning project.
+public struct CaptureContextDeadline: Codable, Equatable {
+    public let id: String
+    public let title: String
+    public let dueISO: String
+    public let projectName: String?
+
+    public init(id: String, title: String, dueISO: String, projectName: String? = nil) {
+        self.id = id
+        self.title = title
+        self.dueISO = dueISO
+        self.projectName = projectName
+    }
 }
 
 /// One of the user's real Spaces + its projects (with descriptions), sent to the
@@ -53,10 +136,25 @@ public struct CaptureContextSpace: Codable, Equatable {
 /// `timezone` (IANA identifier) lets the model resolve times in the user's
 /// local day; omitted when nil so old deploys keep working.
 /// `Codable` (not just `Encodable`) so tests can round-trip the produced body.
+/// `deadlines` and `recent` are likewise omitted when empty, so a client with
+/// nothing to add produces exactly the body older deploys already accept.
 public struct CaptureRequest: Codable {
     public let text: String
     public let spaces: [CaptureContextSpace]?
     public let timezone: String?
+    public let deadlines: [CaptureContextDeadline]?
+    public let recent: [String]?
+
+    public init(text: String, spaces: [CaptureContextSpace]? = nil,
+                timezone: String? = nil,
+                deadlines: [CaptureContextDeadline]? = nil,
+                recent: [String]? = nil) {
+        self.text = text
+        self.spaces = spaces
+        self.timezone = timezone
+        self.deadlines = deadlines
+        self.recent = recent
+    }
 }
 
 // MARK: - Error
@@ -132,7 +230,9 @@ public final class AtlasAI {
     /// Throws `AtlasAIError.parseFailed` if the JSON can't be decoded.
     /// Connectivity failures throw `URLError` unchanged (for the offline queue).
     public func parse(_ text: String,
-               spaces: [CaptureContextSpace] = []) async throws -> CaptureParseResult {
+               spaces: [CaptureContextSpace] = [],
+               deadlines: [CaptureContextDeadline] = [],
+               recent: [String] = []) async throws -> CaptureParseResult {
         guard let session = sessionProvider() else {
             throw AtlasAIError.notAuthenticated
         }
@@ -144,7 +244,8 @@ public final class AtlasAI {
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try AtlasAI.requestBody(text: text, spaces: spaces,
-                                                   timezone: TimeZone.current.identifier)
+                                                   timezone: TimeZone.current.identifier,
+                                                   deadlines: deadlines, recent: recent)
 
         let (data, response) = try await urlSession.data(for: request)
 
@@ -181,7 +282,8 @@ public final class AtlasAI {
                     return CaptureContextProject(
                         name: p.name,
                         code: (trimmedCode?.isEmpty == false) ? trimmedCode : nil,
-                        overview: shortOverview(p.overview)
+                        overview: shortOverview(p.overview),
+                        isClass: p.isClass ? true : nil
                     )
                 }
             )
@@ -199,14 +301,72 @@ public final class AtlasAI {
         return cut + "…"
     }
 
-    /// Encode the POST body. `spaces` is dropped when empty and `timezone` when
-    /// nil, so callers without context produce `{ "text": ... }` exactly as before.
+    /// How far ahead a deadline counts as "upcoming" context, and the hard cap on
+    /// how many we ship. A dump is a few sentences — 25 titles is already more
+    /// referents than any capture needs, and keeps the prompt small and cheap.
+    public static let deadlineWindowDays = 14
+    public static let deadlineContextLimit = 25
+    /// Recent raw captures kept as referents ("the essay" said two dumps ago).
+    public static let recentContextLimit = 5
+    public static let recentContextChars = 140
+
+    /// The user's UPCOMING deadlines, as the model-facing referent list.
+    /// Selection is deliberately narrow: open (not done) tasks with a real due
+    /// date inside `[startOfDay(now), now + windowDays]`, earliest first, capped
+    /// at `limit`. Past-due tasks are excluded — "the essay" almost always means
+    /// something still ahead, and a stale backlog would crowd out the real one.
+    public static func deadlineContext(from tasks: [TaskItem],
+                                       now: Date = Date(),
+                                       windowDays: Int = deadlineWindowDays,
+                                       limit: Int = deadlineContextLimit,
+                                       calendar: Calendar = .current) -> [CaptureContextDeadline] {
+        let from = calendar.startOfDay(for: now)
+        let to = from.addingTimeInterval(Double(windowDays) * 86_400)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return tasks
+            .filter { !$0.done }
+            .compactMap { task -> (Date, CaptureContextDeadline)? in
+                guard let due = task.dueDate, due >= from, due <= to else { return nil }
+                let project = task.projectName.trimmingCharacters(in: .whitespacesAndNewlines)
+                return (due, CaptureContextDeadline(
+                    id: task.id.uuidString,
+                    title: task.title,
+                    dueISO: formatter.string(from: due),
+                    projectName: project.isEmpty ? nil : project
+                ))
+            }
+            .sorted { $0.0 < $1.0 }
+            .prefix(limit)
+            .map(\.1)
+    }
+
+    /// The last few raw capture texts, newest first, each trimmed to a short
+    /// snippet. `texts` is expected newest-first (capture history's own order).
+    /// Blank entries are dropped so the block never contains empty lines.
+    public static func recentContext(_ texts: [String],
+                                     limit: Int = recentContextLimit,
+                                     maxChars: Int = recentContextChars) -> [String] {
+        texts
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .prefix(limit)
+            .map { $0.count > maxChars ? String($0.prefix(maxChars)) + "…" : $0 }
+    }
+
+    /// Encode the POST body. `spaces`, `deadlines` and `recent` are dropped when
+    /// empty and `timezone` when nil, so callers without context produce
+    /// `{ "text": ... }` exactly as before.
     public static func requestBody(text: String,
                                    spaces: [CaptureContextSpace],
-                                   timezone: String? = nil) throws -> Data {
+                                   timezone: String? = nil,
+                                   deadlines: [CaptureContextDeadline] = [],
+                                   recent: [String] = []) throws -> Data {
         let payload = CaptureRequest(text: text,
                                      spaces: spaces.isEmpty ? nil : spaces,
-                                     timezone: timezone)
+                                     timezone: timezone,
+                                     deadlines: deadlines.isEmpty ? nil : deadlines,
+                                     recent: recent.isEmpty ? nil : recent)
         return try JSONEncoder().encode(payload)
     }
 

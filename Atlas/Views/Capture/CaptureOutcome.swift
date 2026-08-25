@@ -8,6 +8,7 @@ enum CaptureOutcome: Equatable {
     case task(hasDate: Bool)
     case event
     case note
+    case updated    // attached to an item the user already had, instead of duplicating it
     case degraded   // AI unreachable / unparseable → saved as a plain task
 
     var confirmation: String {
@@ -15,6 +16,7 @@ enum CaptureOutcome: Equatable {
         case .task(let hasDate): return hasDate ? "✓ Added task · due set" : "✓ Added task"
         case .event:             return "✓ Added event"
         case .note:              return "✓ Added note"
+        case .updated:           return "✓ Updated what you already had"
         case .degraded:          return "⚠︎ AI offline — saved as plain task"
         }
     }

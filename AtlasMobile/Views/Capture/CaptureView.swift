@@ -20,10 +20,13 @@ struct CaptureView: View {
 
     @State private var phase: Phase = .empty
     @State private var text = ""
-    @State private var drafts: [DraftItem] = []
+    /// Items this capture ALREADY committed — the result sheet corrects them in
+    /// place (Phase 4 §3), it does not gate them.
+    @State private var committed: [CommittedItem] = []
+    /// The words behind `committed`, handed back to the editor on "Undo everything".
+    @State private var lastRawText = ""
     @State private var showManualAdd = false
     @State private var note: String?
-    @State private var truncated = false
     @State private var isDraining = false
     @State private var thinkingText = ""
     @State private var dissolve = false
@@ -147,7 +150,7 @@ struct CaptureView: View {
                     micButton
                 } else {
                     Button { sortItOut(text) } label: {
-                        Text("Sort it out")
+                        Text("Capture")
                             .font(.system(size: 15.5, weight: .semibold, design: .rounded))
                             .foregroundStyle(MobileTheme.ink)
                             .frame(maxWidth: .infinity)
@@ -294,7 +297,7 @@ struct CaptureView: View {
     private var unavailableNote: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Voice unavailable").edScreenTitle()
-            Text("Speech recognition isn’t available right now. You can type your dump instead.")
+            Text("Speech recognition isn’t available right now. You can type it instead.")
                 .font(.system(size: 15, weight: .regular, design: .rounded))
                 .foregroundStyle(MobileTheme.muted)
             Button { speech.stop(); phase = .empty } label: {
@@ -312,11 +315,12 @@ struct CaptureView: View {
 
     private var resultState: some View {
         CaptureResultCard(
-            drafts: $drafts,
-            spaces: store.snapshot.spaces,
-            onCommit: commitAll,
-            // Undo = "not what I meant" → hand the original words back to the editor.
-            onUndo: { drafts = []; text = CaptureDraftStore.load(); phase = .empty }
+            items: $committed,
+            spaces: store.contextSpaces,
+            onDone: { committed = []; phase = .empty },
+            // Undo everything = "not what I meant" → reverse what was committed
+            // and hand the original words back to the editor.
+            onUndoAll: undoAll
         )
     }
 
@@ -372,19 +376,30 @@ struct CaptureView: View {
         phase = .thinking
         Task {
             do {
-                let ctx = AtlasAI.context(from: store.contextSpaces)
-                let response = try await store.ai.parse(raw, spaces: ctx)
-                truncated = response.truncated
+                let response = try await store.ai.parse(
+                    raw,
+                    spaces: AtlasAI.context(from: store.contextSpaces),
+                    deadlines: AtlasAI.deadlineContext(from: store.snapshot.tasks),
+                    recent: AtlasAI.recentContext(recentCaptures))
                 if response.results.isEmpty {
                     // Nothing actionable — hand the words back rather than eat them.
                     phase = .empty
                     note = "Nothing to add"
                 } else {
-                    // The persisted draft is NOT cleared here: nothing is committed
-                    // until commitAll, so an app kill at the result card still
-                    // restores the typed text on the next launch.
+                    // Commit immediately (Phase 4 §3): no review screen, no "did it
+                    // save?". The words are safely in the app now, so the persisted
+                    // draft is cleared — Undo hands them back from `lastRawText`.
+                    committed = response.results.map { commit(DraftItem($0)) }
+                    CaptureDraftStore.clear()
+                    rememberCapture(raw)
+                    MobileTheme.Haptic.success()
                     text = ""
-                    drafts = response.results.map(DraftItem.init)
+                    lastRawText = raw
+                    // Rare: the server's defensive item bound trimmed an enormous
+                    // paste (normal long pastes fan out and are not capped).
+                    note = response.truncated
+                        ? "That was a lot — some items may not have been added. Try splitting it up"
+                        : nil
                     phase = .result
                 }
             } catch let error as URLError where error.isConnectivity {
@@ -413,41 +428,60 @@ struct CaptureView: View {
         }
     }
 
-    private func commitAll() {
-        MobileTheme.Haptic.success()
-        // Rare: the server's defensive item bound trimmed an enormous paste (normal
-        // long pastes fan out and are not capped). Most items were still added.
-        note = truncated
-            ? "That was a lot — some items may not have been added. Try splitting it up"
-            : commitSummary(drafts)
-        for draft in drafts { commit(draft) }
-        CaptureDraftStore.clear()   // committed for real — the draft is safe to drop
-        drafts = []
-        truncated = false
+    /// Reverse everything this capture committed and hand the words back.
+    private func undoAll() {
+        for item in committed {
+            if let prior = item.prior, item.kind == .task {
+                if var task = store.snapshot.tasks.first(where: { $0.id == item.id }) {
+                    task.dueDate = prior.due
+                    task.dueLabel = TaskItem.dueLabel(for: prior.due)
+                    task.notes = prior.notes
+                    Task { await store.updateTask(task) }
+                }
+            } else {
+                switch item.kind {
+                case .task:  Task { await store.deleteTask(id: item.id) }
+                case .event: Task { await store.deleteEvent(id: item.id) }
+                }
+            }
+        }
+        committed = []
+        text = lastRawText
+        CaptureDraftStore.save(lastRawText)
+        note = nil
         phase = .empty
     }
 
-    /// "Added 3 · 2 School, 1 Personal" — the calm confirmation shown back on
-    /// the empty screen after a commit. Spaces resolved the same way commit() does.
-    private func commitSummary(_ drafts: [DraftItem]) -> String {
-        let bySpace = Dictionary(grouping: drafts) {
-            resolveSpace($0.spaceName)?.name ?? $0.spaceName
-        }
-        let parts = bySpace
-            .sorted { $0.value.count > $1.value.count }
-            .map { "\($0.value.count) \($0.key)" }
-            .joined(separator: ", ")
-        return "Added \(drafts.count) · \(parts)"
+    // MARK: - Recent capture referents
+
+    /// The last few raw captures, newest first, so "the essay" in the NEXT dump
+    /// can be resolved. Device-local (the Mac keeps its own capture history).
+    private static let recentKey = "capture.recentTexts"
+
+    private var recentCaptures: [String] {
+        UserDefaults.standard.stringArray(forKey: Self.recentKey) ?? []
     }
 
-    /// Map one draft into a real domain object and persist it through the store.
-    /// Space is resolved against the user's real spaces (fallback: the Settings
-    /// default space, else the first space). Note-kind captures become tasks whose
-    /// body carries the note text.
-    private func commit(_ draft: DraftItem) {
+    private func rememberCapture(_ raw: String) {
+        var list = recentCaptures
+        list.insert(String(raw.prefix(AtlasAI.recentContextChars)), at: 0)
+        UserDefaults.standard.set(Array(list.prefix(AtlasAI.recentContextLimit)),
+                                  forKey: Self.recentKey)
+    }
+
+    /// Map one parsed item into a real domain object and persist it through the
+    /// store, returning the committed identity the result sheet corrects. Space is
+    /// resolved against the user's real spaces (fallback: the Settings default
+    /// space, else the first space). Note-kind captures become tasks whose body
+    /// carries the note text. An "update" item that names a task the user already
+    /// has modifies THAT task instead of creating a duplicate.
+    @discardableResult
+    private func commit(_ draft: DraftItem) -> CommittedItem {
         let space = resolveSpace(draft.spaceName)
         let spaceName = space?.name ?? draft.spaceName
         let color = space?.color ?? MobileTheme.accent
+
+        if draft.kind == "update", let updated = commitUpdate(draft) { return updated }
 
         if draft.kind == "event" {
             let rawStart = draft.start ?? draft.due ?? Date()
@@ -471,6 +505,11 @@ struct CaptureView: View {
                 color: color, spaceName: spaceName, notes: draft.notes,
                 isAllDay: draft.isAllDay, source: .atlas)
             Task { await store.addEvent(event) }
+            donateCapture()
+            return CommittedItem(id: event.id, kind: .event, title: event.title,
+                                 spaceName: spaceName, projectName: draft.projectName ?? "",
+                                 date: event.start, lowConfidence: draft.lowConfidence,
+                                 prior: nil)
         } else {
             let notes = draft.kind == "note" ? (draft.notes ?? draft.title) : (draft.notes ?? "")
             let task = TaskItem(
@@ -484,8 +523,45 @@ struct CaptureView: View {
                 projectName: draft.projectName ?? "",
                 notes: notes)
             Task { await store.addTask(task) }
+            donateCapture()
+            return CommittedItem(id: task.id, kind: .task, title: task.title,
+                                 spaceName: spaceName, projectName: task.projectName,
+                                 date: task.dueDate, lowConfidence: draft.lowConfidence,
+                                 wasNote: draft.kind == "note", prior: nil)
         }
-        // Feeds the onboarding checklist (Task 7); no capture tip on iOS.
+    }
+
+    /// Attach the capture to an EXISTING task: a stated deadline moves the due
+    /// date, stated detail is appended to the notes. Returns nil when the model's
+    /// `targetId` is missing, malformed or unknown, so the caller falls back to a
+    /// normal create — a hallucinated id can never make a capture disappear.
+    private func commitUpdate(_ draft: DraftItem) -> CommittedItem? {
+        let known = Set(store.snapshot.tasks.map(\.id))
+        guard case .update(let id) = CaptureAction.decide(
+                CaptureResult(kind: "update", title: draft.title, spaceName: draft.spaceName,
+                              targetId: draft.targetId),
+                knownIDs: known),
+              var task = store.snapshot.tasks.first(where: { $0.id == id }) else { return nil }
+
+        let prior = CommittedItem.PriorState(due: task.dueDate, notes: task.notes)
+        if let due = draft.due {
+            task.dueDate = due
+            task.dueLabel = TaskItem.dueLabel(for: due)
+        }
+        let extra = (draft.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !extra.isEmpty, !task.notes.contains(extra) {
+            task.notes = task.notes.isEmpty ? extra : task.notes + "\n" + extra
+        }
+        Task { await store.updateTask(task) }
+        donateCapture()
+        return CommittedItem(id: task.id, kind: .task, title: task.title,
+                             spaceName: task.spaceName, projectName: task.projectName,
+                             date: task.dueDate, lowConfidence: draft.lowConfidence,
+                             prior: prior)
+    }
+
+    /// Feeds the onboarding checklist (Task 7); no capture tip on iOS.
+    private func donateCapture() {
         Task { await AtlasTipEvents.captured.donate() }
         UserDefaults.standard.set(true, forKey: "checklist.captured")
     }
@@ -517,7 +593,11 @@ struct CaptureView: View {
         for item in pending.items {
             pending.remove(item.id)
             do {
-                let response = try await store.ai.parse(item.text, spaces: ctx)
+                let response = try await store.ai.parse(
+                    item.text,
+                    spaces: ctx,
+                    deadlines: AtlasAI.deadlineContext(from: store.snapshot.tasks),
+                    recent: AtlasAI.recentContext(recentCaptures))
                 for r in response.results { commit(DraftItem(r)) }
             } catch {
                 pending.enqueue(item.text)

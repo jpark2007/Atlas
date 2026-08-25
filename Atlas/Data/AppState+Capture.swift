@@ -26,14 +26,17 @@ extension AppState {
             return AppliedCapture(outcome: .note, item: CaptureHistoryItem(note: note))
 
         case "task":
-            let due = CaptureDateParser.date(from: result.dueISO)
-            let task = addTask(title: result.title,
-                               dueDate: due,
-                               durationMin: result.durationMin,
-                               spaceName: result.spaceName,
-                               projectName: result.projectName ?? "")
-            return AppliedCapture(outcome: .task(hasDate: due != nil),
-                                  item: CaptureHistoryItem(task: task))
+            return applyTask(result)
+
+        case "update":
+            // The model says this refers to something the user already has.
+            // A missing/unknown id degrades to a normal create, so a hallucinated
+            // reference can never make the capture disappear.
+            if case .update(let id) = CaptureAction.decide(result, knownIDs: Set(tasks.map(\.id))),
+               let updated = applyUpdate(result, taskID: id) {
+                return updated
+            }
+            return applyTask(result)
 
         default:
             // Unknown kind — keep the parsed title, save as a plain task.
@@ -41,6 +44,43 @@ extension AppState {
             return AppliedCapture(outcome: .task(hasDate: false),
                                   item: CaptureHistoryItem(task: task))
         }
+    }
+
+    /// Create the task described by `result`.
+    private func applyTask(_ result: CaptureResult) -> AppliedCapture {
+        let due = CaptureDateParser.date(from: result.dueISO)
+        let task = addTask(title: result.title,
+                           dueDate: due,
+                           durationMin: result.durationMin,
+                           spaceName: result.spaceName,
+                           projectName: result.projectName ?? "")
+        return AppliedCapture(outcome: .task(hasDate: due != nil),
+                              item: CaptureHistoryItem(task: task))
+    }
+
+    /// Attach the capture to an EXISTING task instead of duplicating it: a stated
+    /// deadline moves the due date, stated detail is appended to the notes.
+    /// Everything else about the task is left alone. The returned history item
+    /// carries the pre-capture values so Undo restores rather than deletes.
+    /// Returns nil when the task vanished between decode and apply.
+    private func applyUpdate(_ result: CaptureResult, taskID: UUID) -> AppliedCapture? {
+        guard let before = tasks.first(where: { $0.id == taskID }) else { return nil }
+        let prior = CaptureHistoryItem.PriorTaskState(dueDate: before.dueDate,
+                                                      notes: before.notes)
+
+        if let due = CaptureDateParser.date(from: result.dueISO) {
+            setDueDate(taskId: taskID, date: due)
+        }
+        let extra = (result.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !extra.isEmpty, !before.notes.contains(extra) {
+            updateTaskNotes(taskId: taskID,
+                            notes: before.notes.isEmpty ? extra : before.notes + "\n" + extra)
+        }
+
+        guard let after = tasks.first(where: { $0.id == taskID }) else { return nil }
+        var item = CaptureHistoryItem(task: after)
+        item.priorTask = prior
+        return AppliedCapture(outcome: .updated, item: item)
     }
 
     /// Place an event on the calendar. Without a parseable `startISO` there's no
