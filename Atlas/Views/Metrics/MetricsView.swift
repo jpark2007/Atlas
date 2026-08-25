@@ -201,7 +201,7 @@ struct MetricsView: View {
                             )
                         }
 
-                        MetricsCompletionDonut(rate: m.goalAvgProgress, label: "GOAL AVG", size: 112)
+                        MetricsCompletionDonut(rate: m.goalAvgProgress, label: "Goals on track", size: 112)
                     }
                 }
             }

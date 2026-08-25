@@ -18,7 +18,7 @@ struct AtlasApp: App {
     /// Focus-session + Pomodoro state. Owned here (not inside FocusView) so the
     /// MenuBarExtra — a separate Scene — can bind to the same live countdown.
     @StateObject private var focus = FocusViewModel()
-    /// User-adjustable global text scale (Settings → General → Appearance).
+    /// User-adjustable global text scale (Settings → App & Help → Appearance).
     /// 1.0 = default; see `AtlasTextScaleKey` in AtlasCore/Theme.swift.
     @AppStorage("appearance.textScale") private var textScale: Double = 1.0
 

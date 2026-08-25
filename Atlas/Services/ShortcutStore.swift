@@ -12,8 +12,8 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .capture: return "Quick Capture"
-        case .search:  return "Command Palette"
+        case .capture: return "Quick capture key"
+        case .search:  return "Search key"
         }
     }
 

@@ -30,7 +30,7 @@ struct EventContextMenuModifier: ViewModifier {
             if event.isReadOnly {
                 // ── Read-only external event — no edit, no delete ─────────
                 Button {} label: {
-                    Label("Read-only (\(event.source.displayName))", systemImage: "lock.fill")
+                    Label("Shown, not editable (\(event.source.displayName))", systemImage: "lock.fill")
                 }
                 .disabled(true)
             } else if isTaskDerived {

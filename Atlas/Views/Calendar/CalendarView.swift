@@ -114,7 +114,10 @@ struct CalendarView: View {
         .background(AtlasTheme.Colors.bgBase)
         .onAppear { loadAppleEventsIfNeeded() }
         .onChange(of: selectedDate) { _, _ in loadAppleEventsIfNeeded() }
-        .onChange(of: mode) { _, _ in loadAppleEventsIfNeeded() }
+        .onChange(of: mode) { _, newMode in
+            loadAppleEventsIfNeeded()
+            if newMode == .month { AtlasChecklist.mark(AtlasChecklist.month) }  // Get-started card
+        }
         .onChange(of: appleCalendarEnabled) { _, enabled in
             if enabled {
                 Task {
