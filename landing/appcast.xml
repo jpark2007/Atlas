@@ -21,11 +21,11 @@
     -->
     <item>
       <title>0.10.1</title>
-      <pubDate>Tue, 25 Aug 2026 00:00:00 +0000</pubDate>
+      <pubDate>Tue, 25 Aug 2026 19:06:26 +0000</pubDate>
       <sparkle:version>0.10.1</sparkle:version>
       <sparkle:shortVersionString>0.10.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <enclosure url="https://www.atlaslm.net/downloads/Atlas-0.10.1.dmg" length="0" type="application/x-apple-diskimage" sparkle:edSignature="PLACEHOLDER_ED_SIGNATURE" />
+      <enclosure url="https://www.atlaslm.net/downloads/Atlas-0.10.1.dmg" length="9079024" type="application/x-apple-diskimage" sparkle:edSignature="rDp4RE9gOEoP8XFsQrv1LXWuq8n0tL2jzE6a74sB3gjitBFoeWX5OWl+FMWPpddzUNorj45J+SzN39J716NTBQ==" />
     </item>
   </channel>
 </rss>
