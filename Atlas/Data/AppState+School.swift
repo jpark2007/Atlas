@@ -106,8 +106,19 @@ extension AppState {
     /// and there is no address to sync back to — so this is an Atlas-native, writable
     /// event, never "read-only from" anywhere. It wears the class's color and carries its
     /// `projectID`; with no class matched it lands unassigned rather than inventing one.
+    ///
+    /// Idempotent: re-importing the same `.ics` must not mint a second copy of an exam.
+    /// A local import carries no UID to key on, so the identity is what the user would
+    /// call the same item — same class, same title, same start. Matches the key-date
+    /// import's posture above.
     func addImportedEvent(title: String, start: Date, end: Date?, location: String?, classID: UUID?) {
         let klass = classID.flatMap { project($0) }
+        let alreadyImported = events.contains {
+            $0.projectID == klass?.id
+                && $0.title == title
+                && $0.start == start
+        }
+        guard !alreadyImported else { return }
         var event = CalendarEvent(
             title: title,
             subtitle: klass?.name ?? location ?? "",
@@ -263,8 +274,10 @@ extension AppState {
             Task { try? await self.db?.upsertEvent(updated) }
         }
         let names = Set(doomed.map(\.name))
-        for i in tasks.indices where names.contains(tasks[i].projectName) {
+        for i in tasks.indices
+        where tasks[i].projectID.map(ids.contains) == true || names.contains(tasks[i].projectName) {
             tasks[i].projectName = ""   // the DB's `on delete set null` does the same server-side
+            tasks[i].projectID   = nil
         }
 
         if var term, !term.keyDates.isEmpty {

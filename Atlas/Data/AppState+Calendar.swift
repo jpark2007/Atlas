@@ -51,13 +51,20 @@ extension AppState {
         project(spaceName: spaceName, projectName: projectName)?.colorToken
     }
 
-    /// The project (a class, when `isClass`) a task belongs to — matched by name inside
-    /// its space. `nil` when the task carries no project link or nothing matches.
+    /// THE resolver: the project (a class, when `isClass`) a task belongs to. `projectID`
+    /// is authoritative — it is what persists — and the name pair is the fallback for
+    /// tasks written before the id round-tripped (and for MockData). Every surface that
+    /// wants a task's class goes through here, so none of them can drift apart.
+    /// `nil` when the task carries no project link or nothing matches.
     func project(for task: TaskItem) -> Project? {
-        project(spaceName: task.spaceName, projectName: task.projectName)
+        if let pid = task.projectID,
+           let byID = spaces.flatMap(\.projects).first(where: { $0.id == pid }) {
+            return byID
+        }
+        return project(spaceName: task.spaceName, projectName: task.projectName)
     }
 
-    private func project(spaceName: String, projectName: String) -> Project? {
+    func project(spaceName: String, projectName: String) -> Project? {
         guard !projectName.isEmpty else { return nil }
         return spaces.flatMap(\.projects)
             .first { $0.name == projectName && $0.spaceName == spaceName }
@@ -69,7 +76,7 @@ extension AppState {
     /// the neutral accent. Same resolution `gridColored` uses for day-grid tiles, so
     /// the rail and the grid can never disagree about a class's color.
     func taskAccentColor(for task: TaskItem) -> Color {
-        guard let token = projectColorToken(spaceName: task.spaceName, projectName: task.projectName) else {
+        guard let token = project(for: task)?.colorToken else {
             return task.spaceColor
         }
         return ColorToken.color(for: token)

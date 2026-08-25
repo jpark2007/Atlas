@@ -33,6 +33,23 @@ final class SpaceIDRoundTripTests: XCTestCase {
         XCTAssertEqual(NoteRow(domain: n).toDomain().spaceID, sid)
     }
 
+    /// A task's CLASS must survive a save/load. `TaskRow` used to hardcode
+    /// `projectId = nil`, so every upsert dropped the link and the next snapshot pull
+    /// degraded the class chip to the space tag.
+    func testTaskRowRoundTripsProjectID() {
+        let pid = UUID()
+        var t = TaskItem(title: "Watch Edpuzzle for Chem", dueLabel: "")
+        t.spaceName = "School"
+        t.projectName = "General Chemistry"
+        t.projectID = pid
+        XCTAssertEqual(TaskRow(domain: t).toDomain().projectID, pid)
+    }
+
+    func testTaskRowNilProjectIDStaysNil() {
+        let t = TaskItem(title: "Buy milk", dueLabel: "")
+        XCTAssertNil(TaskRow(domain: t).toDomain().projectID)
+    }
+
     func testNilSpaceIDStaysNil() {
         let p = Project(name: "Essay", isClass: false, spaceName: "School", spaceColor: .blue)
         XCTAssertNil(ProjectRow(domain: p).toDomain().spaceID)

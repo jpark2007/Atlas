@@ -508,7 +508,7 @@ public struct TaskRow: Codable {
 
     public init(domain t: TaskItem) {
         self.id          = t.id
-        self.projectId   = nil // no projectId on TaskItem yet; map to nil
+        self.projectId   = t.projectID
         self.spaceName   = t.spaceName
         self.title       = t.title
         self.dueDate     = t.dueDate
@@ -549,6 +549,7 @@ public struct TaskRow: Codable {
                  notes: notes ?? "")
         task.estimateMin = estimateMin
         task.originalDueDate = originalDueDate
+        task.projectID = projectId
         task.spaceID = spaceId
         task.assigneeID = assigneeId
         task.createdByID = createdBy

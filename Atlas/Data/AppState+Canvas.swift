@@ -88,6 +88,7 @@ extension AppState {
         item.spaceName   = project.spaceName
         item.spaceColor  = project.spaceColor
         item.projectName = project.name
+        item.projectID   = project.id
         return item
     }
 
@@ -127,6 +128,7 @@ extension AppState {
             }
             for i in tasks.indices where tasks[i].canvasCourse == course {
                 tasks[i].projectName = project.name
+                tasks[i].projectID   = project.id
                 tasks[i].spaceName   = spaceName
                 tasks[i].spaceID     = project.spaceID
                 tasks[i].spaceColor  = color
