@@ -43,6 +43,18 @@ final class UserSettingsMergeTests: XCTestCase {
         XCTAssertEqual(out.perTabDocsSync, true)
     }
 
+    /// `school_enabled` (0042) rides the same overlay as every other column: a device with
+    /// no local value keeps the server's, and turning School off must survive a push from
+    /// a device that has never seen the setting.
+    func testOverlayCarriesSchoolEnabled() {
+        let base = UserSettingsRow(userId: uid, schoolEnabled: false)
+        let silent = UserSettingsMerge.overlay(base: base, local: UserSettingsRow(userId: uid), userId: uid)
+        XCTAssertEqual(silent.schoolEnabled, false, "a device with no local value must not clear it")
+
+        let local = UserSettingsRow(userId: uid, schoolEnabled: true)
+        XCTAssertEqual(UserSettingsMerge.overlay(base: base, local: local, userId: uid).schoolEnabled, true)
+    }
+
     func testOverlayWithNilBaseUsesOnlyLocal() {
         let local = UserSettingsRow(userId: uid, defaultSpaceName: "Work", sidebarMode: "hover")
         let out = UserSettingsMerge.overlay(base: nil, local: local, userId: uid)

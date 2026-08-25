@@ -96,7 +96,11 @@ struct ProjectDetailView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     badges
                     titleBlock
-                    if project.isClass { CanvasCoursePicker(project: project) }
+                    if project.isClass {
+                        CanvasCoursePicker(project: project)
+                        // School framework: term, meeting pattern, instructor, syllabus card.
+                        ClassHubSection(project: project)
+                    }
                     overview
                     if !liveTasks.isEmpty || !completedTasks.isEmpty { liveTasksSection }
                     if !liveEvents.isEmpty || !pastEvents.isEmpty    { liveEventsSection }
@@ -603,8 +607,12 @@ struct ProjectDetailView: View {
                 }
             }
             HStack(spacing: 16) {
-                if let m = project.meetingInfo { metaItem("calendar", m) }
-                if let i = project.instructor { metaItem("person", i) }
+                // A class renders these in `ClassHubSection` (structured, editable) —
+                // showing them here too would say the same thing twice.
+                if !project.isClass {
+                    if let m = project.meetingInfo { metaItem("calendar", m) }
+                    if let i = project.instructor { metaItem("person", i) }
+                }
                 if project.canvasSynced { metaItem("folder", "Canvas + Drive", accent: true) }
             }
         }

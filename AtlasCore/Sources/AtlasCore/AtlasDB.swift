@@ -209,6 +209,9 @@ public struct UserSettingsRow: Codable, Equatable {
     public var sidebarMode: String?
     public var tasksGrouping: String?
     public var perTabDocsSync: Bool?
+    /// Whether the School framework is shown (0042). nil ⇒ column absent/NULL, which
+    /// the client reads as "show it" — School hides only when this is explicitly false.
+    public var schoolEnabled: Bool?
     /// Opaque compact JSON blob (same shape `NotificationPrefs` encodes); stored
     /// in the jsonb `notification_prefs` column. nil ⇒ column absent/NULL.
     public var notificationPrefsJSON: String?
@@ -222,6 +225,7 @@ public struct UserSettingsRow: Codable, Equatable {
         case sidebarMode               = "sidebar_mode"
         case tasksGrouping             = "tasks_grouping"
         case perTabDocsSync            = "per_tab_docs_sync"
+        case schoolEnabled             = "school_enabled"
         case notificationPrefs         = "notification_prefs"
         case updatedAt                 = "updated_at"
     }
@@ -233,6 +237,7 @@ public struct UserSettingsRow: Codable, Equatable {
                 sidebarMode: String? = nil,
                 tasksGrouping: String? = nil,
                 perTabDocsSync: Bool? = nil,
+                schoolEnabled: Bool? = nil,
                 notificationPrefsJSON: String? = nil,
                 updatedAt: Date? = nil) {
         self.userId                    = userId
@@ -242,6 +247,7 @@ public struct UserSettingsRow: Codable, Equatable {
         self.sidebarMode               = sidebarMode
         self.tasksGrouping             = tasksGrouping
         self.perTabDocsSync            = perTabDocsSync
+        self.schoolEnabled             = schoolEnabled
         self.notificationPrefsJSON     = notificationPrefsJSON
         self.updatedAt                 = updatedAt
     }
@@ -255,6 +261,7 @@ public struct UserSettingsRow: Codable, Equatable {
         sidebarMode               = try c.decodeIfPresent(String.self, forKey: .sidebarMode)
         tasksGrouping             = try c.decodeIfPresent(String.self, forKey: .tasksGrouping)
         perTabDocsSync            = try c.decodeIfPresent(Bool.self,   forKey: .perTabDocsSync)
+        schoolEnabled             = try c.decodeIfPresent(Bool.self,   forKey: .schoolEnabled)
         updatedAt                 = try c.decodeIfPresent(Date.self,   forKey: .updatedAt)
         // jsonb object → compact string (nil when the column is absent or NULL).
         if let value = try c.decodeIfPresent(JSONValue.self, forKey: .notificationPrefs) {
@@ -274,6 +281,7 @@ public struct UserSettingsRow: Codable, Equatable {
         try c.encodeIfPresent(sidebarMode,               forKey: .sidebarMode)
         try c.encodeIfPresent(tasksGrouping,             forKey: .tasksGrouping)
         try c.encodeIfPresent(perTabDocsSync,            forKey: .perTabDocsSync)
+        try c.encodeIfPresent(schoolEnabled,             forKey: .schoolEnabled)
         try c.encodeIfPresent(updatedAt,                 forKey: .updatedAt)
         // compact string → raw JSON object (parse the blob back into a fragment
         // so it lands in the jsonb column as an object, not a quoted string).

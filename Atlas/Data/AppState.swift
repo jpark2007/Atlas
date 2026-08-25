@@ -41,6 +41,11 @@ final class AppState: ObservableObject {
     /// Classes hang off these — see `activeTerm` / `classes(in:)`.
     @Published var terms: [Term] = []
 
+    /// The term the School section is *looking at* when the user picked one from the
+    /// header menu. nil ⇒ follow `activeTerm` (today's term). Session-only: which
+    /// semester is current is a date fact, not a stored preference.
+    @Published var schoolTermOverride: UUID?
+
     /// Docs → Notes import: the project-scoped reference pool. Empty until the
     /// notes-import migration (0013) is live and references are imported; the
     /// write-through CRUD lives in `AppState+References.swift`.
@@ -418,6 +423,8 @@ final class AppState: ObservableObject {
         var day = windowStart
         while day < windowEnd {
             relevant += scheduledWorkBlocks(on: day)
+            // Class meetings are real occupancy — you can't take a study slot during Bio 201.
+            relevant += classMeetingEvents(on: day)
             day = cal.date(byAdding: .day, value: 1, to: day) ?? windowEnd
         }
 
@@ -539,6 +546,7 @@ final class AppState: ObservableObject {
     private func clearUserData() {
         spaces = []
         terms = []
+        schoolTermOverride = nil
         tasks = []
         events = []
         notes = []
@@ -1069,7 +1077,7 @@ final class AppState: ObservableObject {
     /// scheduled work-blocks (dragged tasks), in time order — a scheduled task is
     /// something to do, so it belongs on the schedule too.
     var todaysEvents: [CalendarEvent] {
-        (events(on: Date()) + scheduledWorkBlocks(on: Date()))
+        (events(on: Date()) + scheduledWorkBlocks(on: Date()) + classMeetingEvents(on: Date()))
             .sorted { $0.start < $1.start }
     }
 

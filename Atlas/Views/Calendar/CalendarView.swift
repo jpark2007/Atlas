@@ -404,11 +404,17 @@ struct CalendarView: View {
         let all = state.events(on: date)
             + scheduledTaskEvents(on: date)
             + deadlineEvents(on: date)
+            + state.classMeetingEvents(on: date)
             + state.externalEvents(on: date)
         // Collapse the same real block arriving from several calendars (school ICS + Google,
         // Google + Apple). Display-time and client-side by necessity: Apple events are only
-        // ever in memory, so no server pass can see this pool.
-        return CalendarSync.collapsingDuplicates(all, workSessionPrefix: workSessionTitlePrefix)
+        // ever in memory, so no server pass can see this pool. Synthesized class meetings go
+        // through it deliberately — that's how an already-in-Google lecture collapses into
+        // its class's meeting instead of showing twice (Phase 1, door 2).
+        let collapsed = CalendarSync.collapsingDuplicates(all, workSessionPrefix: workSessionTitlePrefix)
+        // Key Date flags stay OUT of dedup: a term flag is a label on the day, never a second
+        // copy of an event, so it must not absorb (or be absorbed by) anything.
+        return (collapsed + state.keyDateFlags(on: date))
             .filter { passesFilters($0.spaceName, title: $0.title) }
     }
 
@@ -500,8 +506,14 @@ struct CalendarView: View {
     /// cross-source duplicates the grid also hides, applies the same filters as the grid,
     /// then buckets them via the pure `AgendaBuilder`.
     private var agendaBuckets: [AgendaBucket] {
+        // Class meetings are synthesized per day, so the agenda's horizon (Late → this
+        // week) is materialized a day at a time before dedup sees the pool.
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: state.now)
+        let meetings = (0..<8).compactMap { cal.date(byAdding: .day, value: $0, to: today) }
+            .flatMap { state.classMeetingEvents(on: $0) }
         let events = CalendarSync
-            .collapsingDuplicates(state.events + state.externalEvents,
+            .collapsingDuplicates(state.events + meetings + state.externalEvents,
                                   workSessionPrefix: workSessionTitlePrefix)
             .filter { passesFilters($0.spaceName, title: $0.title) }
         let tasks = state.tasks

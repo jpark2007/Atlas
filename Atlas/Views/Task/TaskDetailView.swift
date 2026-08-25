@@ -27,6 +27,11 @@ struct TaskDetailView: View {
             VStack(alignment: .leading, spacing: 24) {
                 if isCanvasTask { canvasBanner }
                 header
+                // A Canvas assignment whose course has no class yet — picking here files
+                // it, and every other item of that course, for good.
+                if let course = live.canvasCourse, live.projectName == nil {
+                    UnassignedClassChip(course: course)
+                }
                 metaRow
                 spacePicker
                 projectPicker
