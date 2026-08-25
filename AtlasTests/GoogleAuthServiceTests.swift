@@ -67,7 +67,7 @@ final class GoogleAuthServiceTests: XCTestCase {
         XCTAssertEqual(items["code_challenge"], "challenge-xyz")
         XCTAssertEqual(items["code_challenge_method"], "S256")
         XCTAssertEqual(items["access_type"], "offline")
-        XCTAssertEqual(items["prompt"], "consent")
+        XCTAssertEqual(items["prompt"], "select_account consent")
         XCTAssertEqual(items["state"], "state-abc")
     }
 
