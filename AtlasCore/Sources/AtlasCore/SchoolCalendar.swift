@@ -98,3 +98,31 @@ public enum SchoolCalendar {
         }
     }
 }
+
+/// "MWF · 10 AM–10:50 AM" from a stored meeting block — how a `MeetingBlock` reads to a
+/// person. Shared rather than per-platform: the Mac class page and the iOS class hub must
+/// describe the same pattern the same way, and the weekday mapping is worth one test, not
+/// two copies. Weekday numbers follow Foundation's 1 = Sunday convention, the same one
+/// `SchoolCalendar` matches against.
+public enum MeetingPatternFormat {
+    public static let weekdayInitials = ["", "Su", "M", "Tu", "W", "Th", "F", "Sa"]
+
+    /// Weekday initials run together, then the time range — "MWF · 10 AM–10:50 AM".
+    /// A block with no (or only out-of-range) weekdays degrades to the bare time.
+    public static func describe(_ block: MeetingBlock) -> String {
+        let days = block.weekdays.sorted()
+            .compactMap { (1...7).contains($0) ? weekdayInitials[$0] : nil }
+            .joined()
+        let time = "\(display(block.start))–\(display(block.end))"
+        return days.isEmpty ? time : "\(days) · \(time)"
+    }
+
+    /// "10:00" → "10 AM", "10:30" → "10:30 AM". Falls back to the stored string when it
+    /// isn't parseable, so a malformed block still shows what it actually holds.
+    public static func display(_ hhmm: String) -> String {
+        guard let date = SchoolCalendar.time(hhmm, on: Date()) else { return hhmm }
+        let f = DateFormatter()
+        f.dateFormat = Calendar.current.component(.minute, from: date) == 0 ? "h a" : "h:mm a"
+        return f.string(from: date)
+    }
+}

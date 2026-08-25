@@ -186,24 +186,5 @@ struct ClassHubSection: View {
     }
 }
 
-/// "MWF · 10:00–10:50" from a stored meeting block. Weekday numbers follow Foundation's
-/// 1 = Sunday convention, the same one `SchoolCalendar` matches against.
-enum MeetingPatternFormat {
-    static let weekdayInitials = ["", "Su", "M", "Tu", "W", "Th", "F", "Sa"]
-
-    static func describe(_ block: MeetingBlock) -> String {
-        let days = block.weekdays.sorted()
-            .compactMap { (1...7).contains($0) ? weekdayInitials[$0] : nil }
-            .joined()
-        let time = "\(display(block.start))–\(display(block.end))"
-        return days.isEmpty ? time : "\(days) · \(time)"
-    }
-
-    /// "10:00" → "10:00 AM". Falls back to the stored string when it isn't parseable.
-    static func display(_ hhmm: String) -> String {
-        guard let date = SchoolCalendar.time(hhmm, on: Date()) else { return hhmm }
-        let f = DateFormatter()
-        f.dateFormat = Calendar.current.component(.minute, from: date) == 0 ? "h a" : "h:mm a"
-        return f.string(from: date)
-    }
-}
+// `MeetingPatternFormat` moved to AtlasCore so the Mac class page and the iOS class hub
+// describe a pattern identically (and the weekday mapping is tested once).

@@ -316,7 +316,7 @@ struct ItemDetailSheet: View {
                 .edCapsLabel()
                 .padding(.bottom, 8)
         } else {
-            Text("From \(e.source.displayName) — read-only")
+            Text("From \(e.source.displayName) — shown, not editable")
                 .edCapsLabel()
                 .padding(.bottom, 8)
         }

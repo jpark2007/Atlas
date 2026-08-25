@@ -38,7 +38,7 @@ struct NoteEditorSheet: View {
                     .padding(.bottom, 24)
 
                 if note.isExternal {
-                    Text("Linked Google Doc — read-only on iPhone")
+                    Text("Linked Google Doc — shown, not editable on iPhone")
                         .edCapsLabel()
                         .padding(.bottom, 8)
                     labeledRow("Title", note.title)

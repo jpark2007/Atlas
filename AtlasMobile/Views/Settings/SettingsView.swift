@@ -26,9 +26,11 @@ struct SettingsSheet: View {
     }
 }
 
-/// In-app settings (spec §4.4 + §7): account, the capture-fallback default space,
-/// notification preferences, voice permission, and a derived Google-connected
-/// status. No system-level settings.
+/// In-app settings under the SAME five headings as the Mac — Account, Calendars,
+/// Capture & Tasks, Notes & Files, App & Help (Phase 5 IA) — so what a student learns
+/// on one device transfers to the other. Mac-only rows (shortcut recorder, text size,
+/// sidebar visibility) are simply absent; nothing iOS-only is invented, and the phone's
+/// two OS-permission surfaces (notifications, microphone) live under App & Help.
 struct SettingsView: View {
     @EnvironmentObject private var store: MobileStore
     @Environment(\.openURL) private var openURL
@@ -40,9 +42,9 @@ struct SettingsView: View {
     /// nil = not yet loaded; false = OS-denied (show honest off state); otherwise the app's own prefs UI.
     @State private var osAuthorized: Bool?
 
-    // Connections — the server-owned connection rows, loaded in `.task`. Empty/nil ⇒
-    // no row (or not yet loaded / offline → the honest "not connected" copy). Google is
-    // read-only here (accounts are managed on the Mac); Canvas is fully manageable.
+    // The server-owned connection rows, loaded in `.task`. Empty/nil ⇒ no row (or not
+    // yet loaded / offline → the honest "not connected" copy). Google accounts are shown
+    // here and managed on the Mac; Canvas and by-link calendars are fully manageable.
     @State private var googleConns: [GoogleConnection] = []
     @State private var docsConn: AtlasDB.GoogleDocsConnection?
 
@@ -86,12 +88,10 @@ struct SettingsView: View {
         List {
             Section {
                 navRow("Account") { accountPage }
-                navRow("Connections") { integrationsPage }
-                navRow("Notifications") { notificationsPage }
-                navRow("General") { generalPage }
-                navRow("Help & Tips") { helpPage }
-                navRow("Report a bug") { ReportBugPage(db: store.db) }
-                    .onboardingTip(bugTip, when: AtlasBuild.isBeta)
+                navRow("Calendars") { calendarsPage }
+                navRow("Capture & Tasks") { capturePage }
+                navRow("Notes & Files") { notesFilesPage }
+                navRow("App & Help") { appHelpPage }
             }
         }
         .settingsListChrome()
@@ -130,14 +130,14 @@ struct SettingsView: View {
             }
     }
 
-    private var integrationsPage: some View {
+    /// ONE unified list — a block per calendar source (each Google account · Canvas ·
+    /// each by-link calendar · Atlas itself), mirroring the Mac's Calendars heading.
+    private var calendarsPage: some View {
         List {
             calendarsSection
-            calendarFeedsSection
-            integrationsSection
         }
         .settingsListChrome()
-        .navigationTitle("Connections")
+        .navigationTitle("Calendars")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("Disconnect calendar?",
                             isPresented: Binding(get: { feedToDisconnect != nil },
@@ -153,28 +153,59 @@ struct SettingsView: View {
         }
     }
 
-    private var notificationsPage: some View {
-        List { notificationsSection }
+    private var capturePage: some View {
+        List { captureSection }
             .settingsListChrome()
-            .navigationTitle("Notifications")
+            .navigationTitle("Capture & Tasks")
             .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var generalPage: some View {
+    private var notesFilesPage: some View {
+        List { notesFilesSection }
+            .settingsListChrome()
+            .navigationTitle("Notes & Files")
+            .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// The Mac's App & Help, phone edition: School's show/hide, the two OS-permission
+    /// surfaces the phone owns (notifications, microphone), then tips and bug reporting.
+    private var appHelpPage: some View {
         List {
-            captureSection
+            schoolSection
+            notificationsSection
             voiceSection
+            helpSection
+            Section {
+                navRow("Report a bug") { ReportBugPage(db: store.db) }
+                    .onboardingTip(bugTip, when: AtlasBuild.isBeta)
+                labeledRow("Version", value: Self.appVersion)
+            }
         }
         .settingsListChrome()
-        .navigationTitle("General")
+        .navigationTitle("App & Help")
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var helpPage: some View {
-        List { helpSection }
-            .settingsListChrome()
-            .navigationTitle("Help & Tips")
-            .navigationBarTitleDisplayMode(.inline)
+    private static var appVersion: String {
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+        return "\(short) (\(build))"
+    }
+
+    // MARK: - School (show / hide)
+
+    /// The Mac keeps this beside its sidebar control rather than earning a sixth heading;
+    /// on the phone the same switch lives here, with the same words.
+    private var schoolSection: some View {
+        Section {
+            Toggle(isOn: Binding(get: { store.schoolEnabled },
+                                 set: { store.schoolEnabled = $0 })) {
+                Text("School").rowLabel()
+            }
+            .rowStyle()
+        } header: { header("School") } footer: {
+            footer("Semesters, classes and their work. Turn it off and the tab disappears — nothing is deleted.")
+        }
     }
 
     // MARK: - Account
@@ -230,15 +261,15 @@ struct SettingsView: View {
                 }
             } label: {
                 HStack {
-                    Text("Default space").rowLabel()
+                    Text("Default space for new tasks").rowLabel()
                     Spacer()
                     Text(defaultSpaceName.isEmpty ? "First space" : defaultSpaceName).rowValue()
                     chevron
                 }
             }
             .rowStyle()
-        } header: { header("Capture") } footer: {
-            footer("Where a captured item lands when the AI can’t match a space.")
+        } header: { header("Capture & Tasks") } footer: {
+            footer("Quick-captured tasks without an inferred space land here.")
         }
     }
 
@@ -339,12 +370,12 @@ struct SettingsView: View {
         } header: { header("Voice") }
     }
 
-    // MARK: - Integrations (Notes & Docs status + Canvas manage)
+    // MARK: - Notes & Files (the dedicated Drive/Docs Google login)
 
-    private var integrationsSection: some View {
+    private var notesFilesSection: some View {
         Section {
             notesDocsRow
-        } header: { header("Connections") }
+        } header: { header("Notes & Files") }
     }
 
     /// Load the server-owned connection rows. On any error (offline / not signed in /
@@ -405,44 +436,112 @@ struct SettingsView: View {
     private let helpTips: [(title: String, body: String)] = [
         ("Quick capture",
          "Tap + to jot a task or event by voice or text. Atlas files it into the right space — or your Default space when it can’t tell."),
-        ("Spaces vs. projects",
+        ("Spaces vs. projects & classes",
          "Spaces are the big areas of your life; projects and classes live inside them. Capture picks a space — organize the rest on Mac or web."),
         ("Schedule views",
          "Switch between the list and the hour grid. On the grid, long-press a block and drag to move it to a new time."),
-        ("Canvas sync",
-         "Canvas assignments come in read-only. Connect or change where they land here; manage the feed on Mac or web."),
+        ("School",
+         "Set up your semester once and your classes, their work and their meeting times all hang off it. Scan a syllabus from a class page to fill in the rest."),
+        ("Canvas",
+         "Canvas assignments are shown, not editable. Connect it, or change where its items land, under Calendars."),
         ("Google Calendar",
-         "Connected Google calendars are read-only on your phone. Add or manage accounts in Atlas on your Mac — they sync here."),
+         "Connected Google calendars are shown, not editable on your phone. Add or manage accounts in Atlas on your Mac — they sync here."),
         ("Notifications",
-         "Choose what nudges you — events, tasks due, a daily digest, overdue reminders — under Notifications above."),
+         "Choose what nudges you — events, tasks due, a daily digest, overdue reminders — under Notifications on this page."),
     ]
 
-    // MARK: - Calendars (Google Calendar accounts — read-only, managed on the Mac)
+    // MARK: - Calendars (ONE unified list, one block per source)
 
+    /// A block per calendar source — each Google account, Canvas, each by-link calendar,
+    /// and Atlas itself. Every block says what it shows in Atlas and, where the source can
+    /// take them, where Atlas sends your own events. Mirrors the Mac's Calendars heading.
     private var calendarsSection: some View {
         Section {
-            if googleConns.isEmpty {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Google Calendar").rowLabel()
-                    Spacer()
-                    Text("Not connected — set up on your Mac")
-                        .font(.system(size: 15, weight: .regular, design: .rounded))
-                        .foregroundStyle(MobileTheme.muted)
-                        .multilineTextAlignment(.trailing)
-                }
-                .rowStyle()
-            } else {
-                ForEach(googleConns) { conn in
-                    googleAccountRow(conn)
-                }
+            // MERGE NOTE (iOS calendar wave): `AppleCalendarConnectRow()` belongs here,
+            // first — Apple Calendar is the phone's own source. It lives on the parallel
+            // branch, so it is slotted in at merge rather than referenced from here.
+
+            googleAccountsBlock
+            canvasBlock
+            linkedCalendarsBlock
+            if let feedRowError {
+                Text(feedRowError)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(MobileTheme.danger)
+                    .rowStyle()
             }
+            atlasNativeRow
         } header: { header("Calendars") } footer: {
-            footer("Add or manage Google accounts in Atlas on your Mac — they sync here automatically.")
+            footer("Turn on the calendars you want to see in Atlas. Where Atlas can write back, pick which space's events get sent there.")
         }
     }
 
+    // ── Google accounts (shown here, managed on the Mac) ────────────────
+    @ViewBuilder
+    private var googleAccountsBlock: some View {
+        if googleConns.isEmpty {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Google Calendar").rowLabel()
+                Spacer()
+                Text("Not connected — set up on your Mac")
+                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                    .foregroundStyle(MobileTheme.muted)
+                    .multilineTextAlignment(.trailing)
+            }
+            .rowStyle()
+        } else {
+            ForEach(googleConns) { conn in
+                googleAccountRow(conn)
+            }
+        }
+    }
+
+    // ── Canvas ─────────────────────────────────────────────────────────
+    @ViewBuilder
+    private var canvasBlock: some View {
+        if hasActiveCanvasFeed, let feed = canvasFeedRow {
+            feedRows(feed)
+        } else {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Canvas").rowLabel()
+                Text("Not connected — paste your Canvas calendar link below")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(MobileTheme.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .rowStyle()
+            canvasConnectForm(repaste: canvasFeedRow?.status == "revoked")
+        }
+    }
+
+    // ── Calendars added by link — one block each, then the add form ─────
+    @ViewBuilder
+    private var linkedCalendarsBlock: some View {
+        ForEach(linkedFeeds) { feed in
+            feedRows(feed)
+        }
+        icsConnectForm
+    }
+
+    // ── Atlas itself ───────────────────────────────────────────────────
+    private var atlasNativeRow: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Atlas (native)").rowLabel()
+                Text("Always on — events you make in Atlas live here")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(MobileTheme.muted)
+            }
+            Spacer()
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(MobileTheme.green)
+        }
+        .rowStyle()
+    }
+
     /// One connected Google account: name, muted email, and a per-account status line
-    /// (incl. the reconnect-needed warning). Read-only — no tap target, no manage flow.
+    /// (incl. the reconnect-needed warning). Shown here, managed on the Mac.
     private func googleAccountRow(_ conn: GoogleConnection) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(conn.name).rowLabel()
@@ -452,18 +551,24 @@ struct SettingsView: View {
             Text(googleAccountStatus(conn))
                 .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundStyle(googleAccountStatusColor(conn))
+            Text("Show these events in Atlas — always on. Choose which of its calendars come in, and where Atlas sends your events, in Atlas on your Mac.")
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(MobileTheme.faint)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .rowStyle()
     }
 
-    /// Per-account status, mirroring the Mac's `googleConnectionStatus`.
+    /// Per-account status, mirroring the Mac's `googleConnectionStatus`. The phone can't
+    /// change where Atlas sends events (that PATCH is Mac-side), so the no-destination
+    /// case says where to go rather than repeating the Mac's instruction verbatim.
     private func googleAccountStatus(_ conn: GoogleConnection) -> String {
         switch conn.status {
         case "error", "revoked":
             return "Reconnect needed — open Atlas on your Mac"
         default:
-            if conn.spaceId == nil { return "Connected — read-in only" }
+            if conn.spaceId == nil { return "Connected — not sending your Atlas events here" }
             if let synced = conn.lastSyncedDate {
                 return "Connected · synced \(Self.relativeSync(from: synced))"
             }
@@ -475,31 +580,7 @@ struct SettingsView: View {
         conn.status == "active" ? MobileTheme.green : MobileTheme.warning
     }
 
-    // MARK: - Calendar feeds (Canvas + generic ICS — full manage)
-
-    private var calendarFeedsSection: some View {
-        Section {
-            // Canvas — the suggested first-class feed (connect card when none active).
-            if !hasActiveCanvasFeed {
-                Text("Canvas").rowLabel().rowStyle()
-                canvasConnectForm(repaste: canvasFeedRow?.status == "revoked")
-            }
-            // Add any calendar by ICS link.
-            icsConnectForm
-            // Connected feeds (Canvas + ICS).
-            ForEach(connectedFeeds) { feed in
-                feedRows(feed)
-            }
-            if let feedRowError {
-                Text(feedRowError)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(MobileTheme.danger)
-                    .rowStyle()
-            }
-        } header: { header("Calendar feeds") } footer: {
-            footer("Add calendars from Canvas, Schoology, and other apps by link. These are read-only in Atlas.")
-        }
-    }
+    // MARK: - Subscribed calendars (Canvas + by-link — full manage from the phone)
 
     private var canvasFeedRow: CalendarFeedRow? {
         calendarFeeds.first { $0.feedType == "canvas" }
@@ -507,15 +588,16 @@ struct SettingsView: View {
     private var hasActiveCanvasFeed: Bool {
         calendarFeeds.contains { $0.feedType == "canvas" && $0.isServerOwned }
     }
-    private var connectedFeeds: [CalendarFeedRow] {
-        calendarFeeds.filter { $0.isServerOwned }
+    /// The user's by-link (non-Canvas) calendars — one unified-list block each.
+    private var linkedFeeds: [CalendarFeedRow] {
+        calendarFeeds.filter { $0.isServerOwned && $0.feedType != "canvas" }
     }
 
-    /// "Add calendar (ICS link)" — name + ICS URL + destination space, mirroring the
-    /// Canvas connect form. Connects a generic `ics`-type feed (read-only events only).
+    /// "Add a calendar by link" — display name + calendar link + destination space,
+    /// reusing the Canvas connect card's template. Connects an `ics`-type feed.
     @ViewBuilder
     private var icsConnectForm: some View {
-        Text("Add calendar (ICS link)").rowLabel().rowStyle()
+        Text("Add a calendar by link").rowLabel().rowStyle()
 
         TextField("Calendar name (e.g. Schoology)", text: $icsName)
             .textFieldStyle(.plain)
@@ -541,7 +623,7 @@ struct SettingsView: View {
                 }
             } label: {
                 HStack {
-                    Text("Items land in").rowLabel()
+                    Text("Put these events in").rowLabel()
                     Spacer()
                     Text(icsSpaceName).rowValue()
                     chevron
@@ -573,7 +655,7 @@ struct SettingsView: View {
         .disabled(icsWorking)
         .rowStyle()
 
-        Text("Paste a calendar link (ICS) from another app.")
+        Text("Paste a calendar link copied from another app.")
             .font(.system(size: 13, weight: .medium, design: .rounded))
             .foregroundStyle(MobileTheme.faint)
             .rowStyle()
@@ -591,15 +673,17 @@ struct SettingsView: View {
         .rowStyle()
 
         if showICSHelp {
-            Text("Search Google for ‘[app name] ICS calendar link’ to see if it does and how to copy it. In Schoology: Calendar, then iCal or Calendar Feed. These calendars are read-only in Atlas.")
+            Text("Search Google for ‘[app name] calendar link’ to see if it does and how to copy it. In Schoology: Calendar, then iCal or Calendar Feed. These calendars are shown in Atlas, not editable.")
                 .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundStyle(MobileTheme.faint)
                 .rowStyle()
         }
     }
 
-    /// One connected feed (Canvas or ICS): name + type badge + status, an inline space
-    /// picker (PATCH), and Disconnect (DELETE, via the confirmation dialog).
+    /// One connected calendar (Canvas or by-link) as a unified-list block: name + type
+    /// badge + status, an inline destination-space picker (PATCH), and Disconnect
+    /// (DELETE, via the confirmation dialog). These are read-in sources, so they get no
+    /// "send my Atlas events here" control — just the plain-language note.
     @ViewBuilder
     private func feedRows(_ feed: CalendarFeedRow) -> some View {
         let isCanvas = feed.feedType == "canvas"
@@ -607,13 +691,17 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(feed.displayName).rowLabel()
-                    Text(isCanvas ? "CANVAS" : "ICS")
+                    Text(isCanvas ? "CANVAS" : "CALENDAR LINK")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .foregroundStyle(MobileTheme.faint)
                 }
                 Text(feedStatusText(feed))
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(feedStatusColor(feed))
+                Text("Shown, not editable — Atlas never sends your events here.")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(MobileTheme.faint)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             if feedRowWorking == feed.id {
@@ -634,7 +722,7 @@ struct SettingsView: View {
                 }
             } label: {
                 HStack {
-                    Text("Items land in").rowLabel()
+                    Text("Put these events in").rowLabel()
                     Spacer()
                     Text(feed.spaceName ?? "").rowValue()
                     chevron
@@ -681,7 +769,7 @@ struct SettingsView: View {
                 }
             } label: {
                 HStack {
-                    Text("Items land in").rowLabel()
+                    Text("Put these events in").rowLabel()
                     Spacer()
                     Text(canvasSpaceName).rowValue()
                     chevron
