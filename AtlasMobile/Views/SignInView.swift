@@ -1,5 +1,33 @@
 import SwiftUI
+import AuthenticationServices
 import AtlasCore
+
+/// Apple's approved Sign in with Apple control. We wrap `ASAuthorizationAppleIDButton`
+/// rather than use SwiftUI's `SignInWithAppleButton` so the tap keeps running the
+/// existing `MobileStore.signInWithApple()` flow (its own nonce + `signInWithIdToken`),
+/// unchanged.
+private struct AppleSignInButton: UIViewRepresentable {
+    let action: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(action: action) }
+
+    func makeUIView(context: Context) -> ASAuthorizationAppleIDButton {
+        let button = ASAuthorizationAppleIDButton(type: .signIn, style: .whiteOutline)
+        button.cornerRadius = MobileTheme.radiusControl
+        button.addTarget(context.coordinator, action: #selector(Coordinator.tapped), for: .touchUpInside)
+        return button
+    }
+
+    func updateUIView(_ uiView: ASAuthorizationAppleIDButton, context: Context) {
+        context.coordinator.action = action
+    }
+
+    final class Coordinator: NSObject {
+        var action: () -> Void
+        init(action: @escaping () -> Void) { self.action = action }
+        @objc func tapped() { action() }
+    }
+}
 
 /// Editorial sign-in: a big title on the bg, thin-rule fields, and an outlined
 /// button (never accent-filled). Shown while `store.session == nil`.
@@ -70,22 +98,13 @@ struct SignInView: View {
                 .buttonStyle(.plain)
                 .disabled(busy)
 
-                // Custom-styled per the outlined-control design language (a stock
-                // black SignInWithAppleButton would break the "never a fill" rule).
-                Button(action: signInWithApple) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "applelogo")
-                            .font(.system(size: 15, weight: .semibold))
-                        Text("Sign in with Apple")
-                            .font(.system(size: 15.5, weight: .semibold, design: .rounded))
-                    }
-                    .foregroundStyle(MobileTheme.ink)
-                    .frame(maxWidth: .infinity)
-                    .edOutlineControl()
-                }
-                .buttonStyle(.plain)
-                .disabled(busy)
-                .opacity(busy ? 0.4 : 1)
+                // Apple's own artwork (SIWA HIG forbids a hand-rolled applelogo
+                // button). `.whiteOutline` is the outlined, unfilled variant — it
+                // sits on the cream ground without breaking the "never a fill" rule.
+                AppleSignInButton(action: signInWithApple)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .disabled(busy)
+                    .opacity(busy ? 0.4 : 1)
 
                 Button(action: resetPassword) {
                     Text("Forgot password?").edCapsLabel()
