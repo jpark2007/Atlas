@@ -2,11 +2,15 @@ import SwiftUI
 import AtlasCore
 
 /// Sticky 7-day column header for the week grid.
-/// Each cell shows a weekday short name above a day number; today reads in clay
-/// text (accent = graphics/brand only — never a filled badge).
+/// Each cell is columnar: a tiny mono weekday next to a serif day number on the
+/// left, and a compact outlined "N DUE" pill on the right for days that carry
+/// deadlines. Today reads in clay text (accent = graphics/brand only — never a
+/// filled badge).
 struct WeekColumnHeader: View {
     let days: [Date]
     let columnWidth: CGFloat
+    /// Number of deadlines due on a given day — drives the "N DUE" pill.
+    let deadlineCount: (Date) -> Int
 
     var body: some View {
         HStack(spacing: 0) {
@@ -18,31 +22,42 @@ struct WeekColumnHeader: View {
                 dayCell(day)
                     .frame(width: columnWidth)
                 if index < days.count - 1 {
-                    // 1 pt spacer mirrors the 1 pt column dividers in the grid below
-                    Color.clear.frame(width: 1, height: 0)
+                    // 1 pt divider mirrors the grid's column dividers, so the header
+                    // reads as columns rather than a loose row of labels.
+                    Rectangle()
+                        .fill(AtlasTheme.Colors.border)
+                        .frame(width: 1)
                 }
             }
         }
-        .padding(.vertical, 5)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func dayCell(_ day: Date) -> some View {
         let isToday = Calendar.current.isDateInToday(day)
         let dayNum  = Calendar.current.component(.day, from: day)
-        return HStack(spacing: 4) {
-            // Mirrors atlasCapsLabel()'s mono + wide-tracked caps treatment, but with a
-            // conditional foreground so today's weekday keeps the clay accent — atlasCapsLabel()
-            // bakes in textSecondary, and SwiftUI's nearest-to-Text foregroundStyle wins, so an
-            // outer override on the helper wouldn't take effect.
-            Text(CalendarFormat.weekdayShort.string(from: day).uppercased())
-                .atlasMono(size: 11, weight: .bold)
-                .tracking(2)
-                .textCase(.uppercase)
-                .foregroundStyle(isToday ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textSecondary)
-            Text("\(dayNum)")
-                .atlasMono(size: 13, weight: isToday ? .heavy : .semibold)
-                .foregroundStyle(isToday ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textPrimary)
-                .frame(width: 22, height: 22)
+        let dues    = deadlineCount(day)
+        return HStack(spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(CalendarFormat.weekdayShort.string(from: day).uppercased())
+                    .atlasMono(size: 10, weight: .bold)
+                    .foregroundStyle(isToday ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textMuted)
+                Text("\(dayNum)")
+                    .atlasTitleSerif(size: 15)
+                    .foregroundStyle(isToday ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textPrimary)
+            }
+            Spacer(minLength: 0)
+            if dues > 0 {
+                Text("\(dues) DUE")
+                    .atlasMono(size: 9, weight: .bold)
+                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .overlay(Capsule().strokeBorder(AtlasTheme.Colors.borderStrong, lineWidth: 1))
+            }
         }
+        .padding(.horizontal, 8)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
     }
 }

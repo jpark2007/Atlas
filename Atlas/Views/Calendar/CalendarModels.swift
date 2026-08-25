@@ -106,7 +106,8 @@ func packEventsIntoLanes(_ events: [CalendarEvent]) -> [PositionedEvent] {
 }
 
 /// A run of timed deadlines close enough in time that their grid labels would overprint.
-/// A single-item cluster renders exactly as one deadline did before; ≥2 collapse to a count.
+/// Nothing collapses: every deadline in a cluster keeps its own rule, and the labels step
+/// up a row so they stack instead of overprinting.
 struct DeadlineCluster: Identifiable {
     let events: [CalendarEvent]   // sorted by start, always ≥1
     var id: UUID { events[0].id }
@@ -138,7 +139,7 @@ func clusterTimedDeadlines(_ deadlines: [CalendarEvent], gapPoints: CGFloat) -> 
 
 // MARK: - Due markers (hairlines, never blocks)
 
-/// One hairline due-marker row on the grid: the deadlines that share a y position, plus
+/// One due-marker row on the grid: the deadlines that share a y position, plus
 /// whether they are UNTIMED (parked at the end of the day behind a "no time" glyph).
 struct DueMarkerGroup: Identifiable {
     let deadlines: [CalendarEvent]
@@ -149,10 +150,10 @@ struct DueMarkerGroup: Identifiable {
     var count: Int { deadlines.count }
 }
 
-/// Splits a day's deadlines into hairline marker rows.
+/// Splits a day's deadlines into marker rows.
 ///
-/// Timed dues sit at their actual due time, collapsed via `clusterTimedDeadlines` so
-/// near-simultaneous labels don't overprint. Untimed dues (a bare date, i.e. local
+/// Timed dues sit at their actual due time, grouped via `clusterTimedDeadlines` so
+/// near-simultaneous labels can stack instead of overprinting. Untimed dues (a bare date, i.e. local
 /// midnight) collect into ONE row parked at the end of the day — they aren't "due at
 /// 12 AM", they're "due today, no time given", which the row's glyph says out loud.
 func dueMarkerGroups(_ deadlines: [CalendarEvent]) -> [DueMarkerGroup] {
