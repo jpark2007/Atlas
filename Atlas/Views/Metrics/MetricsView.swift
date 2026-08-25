@@ -141,6 +141,10 @@ struct MetricsView: View {
                     .buttonStyle(.plain)
                     .help("Open relationship graph")
                 }
+                // Same header chrome as every other Settings pane: caps-mono kicker
+                // sitting on a hairline.
+                .padding(.bottom, 8)
+                .atlasHairlineBelow()
 
                 // ── Summary ────────────────────────────────────────────────
                 AtlasCard {

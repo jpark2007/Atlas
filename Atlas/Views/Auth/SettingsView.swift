@@ -165,21 +165,16 @@ struct SettingsView: View {
                 }
             }
         case .capture:
-            settingsStack {
-                tasksSection
-                Divider().overlay(AtlasTheme.Colors.border)
-                shortcutsSection
+            settingsStack(spacing: 26) {
+                captureAndTasksSection
                 Divider().overlay(AtlasTheme.Colors.border)
                 CaptureHistorySection()
             }
         case .notes:
             settingsStack { notesFilesSection }
         case .app:
-            settingsStack {
-                appearanceSection
-                Divider().overlay(AtlasTheme.Colors.border)
-                sidebarSection
-                Divider().overlay(AtlasTheme.Colors.border)
+            settingsStack(spacing: 26) {
+                appSection
                 helpSection
             }
         case .metrics:
@@ -200,22 +195,18 @@ struct SettingsView: View {
     }
 
     private var account: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            label("ACCOUNT")
-            HStack(spacing: 12) {
-                Circle().fill(AtlasTheme.Colors.accent.opacity(0.15))
-                    .frame(width: 40, height: 40)
-                    .overlay(Image(systemName: "person.fill").foregroundStyle(AtlasTheme.Colors.accent))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(identityTitle).atlasFont(size: 15, weight: .semibold, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text(identitySubtitle).atlasFont(size: 13, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                }
-                Spacer()
+        VStack(alignment: .leading, spacing: 0) {
+            columnHeader("Account", note: "Who you're signed in as on this Mac.")
+
+            settingsRow(icon: "person.crop.circle",
+                        tint: AtlasTheme.Colors.accent,
+                        name: identityTitle,
+                        detail: identitySubtitle) {
                 if case .offline = auth.state {
                     Button("Sign in") { auth.signOut() } // returns to gate
-                        .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.accentText)
+                        .buttonStyle(.plain)
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
                 } else {
                     Button("Sign out") {
                         // Clear the settings-sync cache + synced keys AND every Google
@@ -225,40 +216,42 @@ struct SettingsView: View {
                         googleAuth.disconnect()
                         auth.signOut()
                     }
-                    .buttonStyle(.plain).foregroundStyle(AtlasTheme.Colors.danger)
+                    .buttonStyle(.plain)
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.danger)
                 }
             }
+
             // Editable first name / nickname — feeds the dashboard greeting. Persists
             // to profiles.display_name (server-synced). Seeded once from the profile;
-            // saved on submit and when Settings closes if changed.
+            // saved on submit and when Settings closes if changed. The field IS the
+            // row's trailing control, so nothing sits open on the page.
             if auth.state != .offline {
-                VStack(alignment: .leading, spacing: 6) {
-                    label("YOUR NAME")
+                settingsRow(icon: "textformat",
+                            name: "Your name",
+                            detail: "Used to greet you on the dashboard. Leave it blank for a plain greeting.") {
                     input("First name or nickname", text: $nicknameField)
-                        .frame(maxWidth: 280)
+                        .frame(width: 200)
                         .onSubmit { commitNickname() }
-                    Text("Used to greet you on the dashboard. Leave blank for a plain greeting.")
-                        .atlasFont(size: 11, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 .onAppear {
                     if !nicknameSeeded { nicknameField = state.nickname; nicknameSeeded = true }
                 }
-            }
 
-            if auth.state != .offline {
-                HStack(spacing: 10) {
+                settingsRow(icon: "trash",
+                            tint: AtlasTheme.Colors.danger,
+                            name: "Delete account",
+                            detail: "Erases your account and everything in it. This can't be undone.") {
                     Button { showDeleteAccountConfirm = true } label: {
-                        Text(deletingAccount ? "Deleting account…" : "Delete account…")
-                            .font(.system(size: 12, design: .rounded))
+                        Text(deletingAccount ? "Deleting…" : "Delete…")
+                            .atlasFont(size: 13, weight: .medium, design: .rounded)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(AtlasTheme.Colors.danger)
                     .disabled(deletingAccount)
-                    if let err = deleteAccountError {
-                        Text(err).font(.system(size: 11, design: .rounded))
-                            .foregroundStyle(AtlasTheme.Colors.danger)
-                    }
+                }
+                if let err = deleteAccountError {
+                    errorRow(err).padding(.vertical, 8)
                 }
             }
         }
@@ -311,7 +304,6 @@ struct SettingsView: View {
             ForEach(state.googleConnections) { conn in
                 googleSourceRow(conn)
             }
-            addGoogleAccountRow
             if let err = googleError { errorRow(err).padding(.vertical, 8) }
 
             ForEach(connectedFeeds) { feed in
@@ -321,18 +313,14 @@ struct SettingsView: View {
 
             atlasNativeSourceRow
 
-            Button { showAddCalendarSheet = true } label: {
-                Text("Add another calendar by link")
-                    .atlasFont(size: 13, weight: .semibold, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    .padding(.vertical, 9)
-                    .padding(.horizontal, 18)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
-                            .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
-                    )
+            // Adding is an action, not a source — both live under the list as the same
+            // outlined button, so every row above is a calendar you actually have.
+            VStack(alignment: .leading, spacing: 10) {
+                outlinedAction(googleWorking ? "Connecting…" : "Add a Google account…",
+                               working: googleWorking) { startAddGoogleAccount() }
+                    .popoverTip(connectTip)
+                outlinedAction("Add another calendar by link") { showAddCalendarSheet = true }
             }
-            .buttonStyle(.plain)
             .padding(.top, 16)
 
             Text("Most apps (Schoology, Outlook, your gym) have a \"subscribe\" or \"calendar link\". Copy it and paste it here.")
@@ -353,49 +341,71 @@ struct SettingsView: View {
         }
     }
 
-    /// A column's caps heading + its one-line note, under a hairline (mockup anatomy).
-    private func columnHeader(_ title: String, note: String) -> some View {
+    // MARK: – Shared pane anatomy (every Settings tab is built from these)
+
+    /// A section heading — caps-mono title under a hairline, with an optional one-line note.
+    private func columnHeader(_ title: String, note: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .atlasCapsLabel()
                 .padding(.bottom, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .atlasHairlineBelow()
-            Text(note)
-                .atlasFont(size: 12, weight: .medium, design: .rounded)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-                .padding(.top, 8)
+            if let note {
+                Text(note)
+                    .atlasFont(size: 12, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .padding(.top, 8)
+            }
         }
     }
 
-    /// THE source row: 16 pt icon · bold name · one tiny mono status line · one trailing
-    /// control. Tapping the row opens whatever detail it has.
+    /// THE settings row, used by every tab: an optional 16 pt icon · 13 pt semibold name ·
+    /// ONE status line · one trailing control · hairline. `status` is the tiny mono
+    /// uppercase state line; `detail` is a short plain sentence. A row uses one or the
+    /// other — never both, and never a stack of sentences. Anything longer lives behind
+    /// the row (a disclosure or a sheet).
     @ViewBuilder
-    private func sourceRow<Trailing: View>(
-        icon: String,
-        tint: Color,
+    private func settingsRow<Trailing: View>(
+        icon: String? = nil,
+        tint: Color = AtlasTheme.Colors.textSecondary,
         name: String,
-        status: String,
+        status: String? = nil,
         statusColor: Color = AtlasTheme.Colors.textMuted,
+        detail: String? = nil,
+        detailColor: Color = AtlasTheme.Colors.textMuted,
         onTap: (() -> Void)? = nil,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .atlasFont(size: 12, weight: .medium, design: .rounded)
-                .foregroundStyle(tint)
-                .frame(width: 16)
+        let content = HStack(spacing: 12) {
+            if let icon {
+                Image(systemName: icon)
+                    .atlasFont(size: 12, weight: .medium, design: .rounded)
+                    .foregroundStyle(tint)
+                    .frame(width: 16)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 Text(name)
                     .atlasFont(size: 13, weight: .semibold, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                     .lineLimit(1)
-                Text(status)
-                    .atlasMono(size: 10)
-                    .textCase(.uppercase)
-                    .foregroundStyle(statusColor)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                if let status {
+                    Text(status)
+                        .atlasMono(size: 10)
+                        .textCase(.uppercase)
+                        .foregroundStyle(statusColor)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                } else if let detail {
+                    // Two lines is the ceiling: a row explains itself in a sentence, or
+                    // the explanation belongs behind the row.
+                    Text(detail)
+                        .atlasFont(size: 11, weight: .medium, design: .rounded)
+                        .foregroundStyle(detailColor)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 8)
             trailing()
@@ -403,7 +413,33 @@ struct SettingsView: View {
         .padding(.vertical, 9)
         .contentShape(Rectangle())
         .atlasHairlineBelow()
-        .onTapGesture { onTap?() }
+
+        if let onTap {
+            content.onTapGesture(perform: onTap)
+        } else {
+            content
+        }
+    }
+
+    /// The outlined action button that closes a section — "Add a Google account…",
+    /// "Add another calendar by link". An action, never a row.
+    private func outlinedAction(_ title: String, working: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                if working { ProgressView().controlSize(.small) }
+                Text(title)
+                    .atlasFont(size: 13, weight: .semibold, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+            }
+            .padding(.vertical, 9)
+            .padding(.horizontal, 18)
+            .overlay(
+                RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                    .strokeBorder(AtlasTheme.Colors.textPrimary, lineWidth: AtlasTheme.rule)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(working)
     }
 
     /// The disclosed detail block under a source row — indented to the row's text column.
@@ -453,11 +489,11 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var appleSourceRow: some View {
-        sourceRow(icon: "applelogo", tint: AtlasTheme.Colors.textPrimary,
-                  name: "Apple Calendar",
-                  status: appleStatusLine,
-                  statusColor: appleStatusColor,
-                  onTap: { toggleExpanded("apple") }) {
+        settingsRow(icon: "applelogo", tint: AtlasTheme.Colors.textPrimary,
+                    name: "Apple Calendar",
+                    status: appleStatusLine,
+                    statusColor: appleStatusColor,
+                    onTap: { toggleExpanded("apple") }) {
             Toggle("", isOn: $appleCalendarEnabled)
                 .toggleStyle(.switch)
                 .labelsHidden()
@@ -503,17 +539,23 @@ struct SettingsView: View {
 
     // ── Google accounts ──────────────────────────────────────────────────
 
-    /// One connected Google account. Everything editable (name, which calendars, where its
-    /// events land, reconnect, disconnect) lives in the detail sheet the row opens.
+    /// One connected Google account — the same skeleton as the Apple row (16 pt icon ·
+    /// name · one mono status line · one trailing control). The control is a chevron, not
+    /// a switch: Google has no per-account on/off. The only thing an account-level switch
+    /// could drive is the per-calendar selection, and deselecting a calendar server-side
+    /// DELETES its mirrored Atlas events (google-connect PATCH) — a destructive action
+    /// wearing a visibility switch, with no stored previous selection to restore. So the
+    /// row keeps the chevron and everything editable (name, which calendars, where its
+    /// events land, reconnect, disconnect) stays in the detail sheet the row opens.
     private func googleSourceRow(_ conn: GoogleConnection) -> some View {
-        sourceRow(icon: "globe", tint: AtlasTheme.Colors.school,
-                  name: "Google · \(conn.name)",
-                  status: googleStatusLine(conn),
-                  statusColor: googleStatusColor(conn),
-                  onTap: {
-                      detailRename = conn.name
-                      detailConnection = conn
-                  }) {
+        settingsRow(icon: "globe", tint: AtlasTheme.Colors.school,
+                    name: "Google · \(conn.name)",
+                    status: googleStatusLine(conn),
+                    statusColor: googleStatusColor(conn),
+                    onTap: {
+                        detailRename = conn.name
+                        detailConnection = conn
+                    }) {
             disclosureChevron(false)
         }
     }
@@ -534,43 +576,18 @@ struct SettingsView: View {
         return "Showing · first sync runs shortly · \(sending)"
     }
 
-    private var addGoogleAccountRow: some View {
-        Button { startAddGoogleAccount() } label: {
-            HStack(spacing: 8) {
-                if googleWorking {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(systemName: "plus.circle")
-                        .atlasFont(size: 12, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.school)
-                        .frame(width: 16)
-                }
-                Text(googleWorking ? "Connecting…" : "Add a Google account")
-                    .atlasFont(size: 13, weight: .medium, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.accentText)
-                Spacer()
-            }
-            .padding(.vertical, 9)
-            .contentShape(Rectangle())
-            .atlasHairlineBelow()
-        }
-        .buttonStyle(.plain)
-        .disabled(googleWorking)
-        .popoverTip(connectTip)
-    }
-
     // ── Subscribed feeds (Canvas + calendar links) ───────────────────────
 
     @ViewBuilder
     private func feedSourceRow(_ feed: CalendarFeedRow) -> some View {
         let isCanvas = feed.feedType == "canvas"
         let key = feed.id.uuidString
-        sourceRow(icon: isCanvas ? "graduationcap.fill" : "link",
-                  tint: isCanvas ? AtlasTheme.Colors.school : AtlasTheme.Colors.textSecondary,
-                  name: feed.displayName,
-                  status: feedStatusLine(feed),
-                  statusColor: feed.status == "error" ? AtlasTheme.Colors.warning : AtlasTheme.Colors.textMuted,
-                  onTap: { toggleExpanded(key) }) {
+        settingsRow(icon: isCanvas ? "graduationcap.fill" : "link",
+                    tint: isCanvas ? AtlasTheme.Colors.school : AtlasTheme.Colors.textSecondary,
+                    name: feed.displayName,
+                    status: feedStatusLine(feed),
+                    statusColor: feed.status == "error" ? AtlasTheme.Colors.warning : AtlasTheme.Colors.textMuted,
+                    onTap: { toggleExpanded(key) }) {
             if feedRowWorking == feed.id {
                 ProgressView().controlSize(.small)
             } else {
@@ -615,9 +632,9 @@ struct SettingsView: View {
     // ── Atlas itself ─────────────────────────────────────────────────────
 
     private var atlasNativeSourceRow: some View {
-        sourceRow(icon: "sparkles", tint: AtlasTheme.Colors.accent,
-                  name: "Atlas",
-                  status: "Always on · events you make here") {
+        settingsRow(icon: "sparkles", tint: AtlasTheme.Colors.accent,
+                    name: "Atlas",
+                    status: "Always on · events you make here") {
             EmptyView()
         }
     }
@@ -631,7 +648,7 @@ struct SettingsView: View {
             columnHeader("What Atlas sends to your calendar",
                          note: "Only what you choose leaves Atlas. Tasks never do.")
 
-            outboundRow(name: "Events",
+            settingsRow(name: "Events",
                         detail: "Things you schedule in Atlas show up in Apple Calendar on this Mac") {
                 Toggle("", isOn: $appleWritebackEnabled)
                     .labelsHidden()
@@ -669,7 +686,7 @@ struct SettingsView: View {
             // Sub-rule of the mirror above: work sessions ride along by default (reserved
             // time IS busy time), under a label the other calendar can actually show.
             if appleWritebackEnabled {
-                outboundRow(name: "Work sessions",
+                settingsRow(name: "Work sessions",
                             detail: "Reserved time shows as busy on your other calendars") {
                     Toggle("", isOn: $workSessionPushEnabled)
                         .labelsHidden()
@@ -698,43 +715,25 @@ struct SettingsView: View {
                 }
             }
 
-            outboundRow(name: "Google accounts",
+            settingsRow(name: "Google accounts",
                         detail: "Each account gets the events from the space it's linked to") {
-                Text(googleOutboundState)
-                    .atlasMono(size: 10)
-                    .textCase(.uppercase)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                stateBadge(googleOutboundState)
             }
 
-            outboundRow(name: "Due dates",
+            settingsRow(name: "Due dates",
                         detail: "Stay in Atlas — your other calendars stay clean") {
-                Text("Never sent")
-                    .atlasMono(size: 10)
-                    .textCase(.uppercase)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                stateBadge("Never sent")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// An outbound row — bold name · one-line explanation · one trailing control.
-    private func outboundRow<Trailing: View>(
-        name: String, detail: String, @ViewBuilder trailing: () -> Trailing
-    ) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(name)
-                    .atlasFont(size: 13, weight: .semibold, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                Text(detail)
-                    .atlasFont(size: 11, weight: .medium, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-            }
-            Spacer(minLength: 8)
-            trailing()
-        }
-        .padding(.vertical, 9)
-        .atlasHairlineBelow()
+    /// A read-only trailing state — the mono caps label a row shows when it has no control.
+    private func stateBadge(_ text: String) -> some View {
+        Text(text)
+            .atlasMono(size: 10)
+            .textCase(.uppercase)
+            .foregroundStyle(AtlasTheme.Colors.textMuted)
     }
 
     /// How many Google accounts currently receive Atlas events.
@@ -1031,34 +1030,22 @@ struct SettingsView: View {
     }
 
     private var notesFilesSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            label("NOTES & FILES")
-            Text("Pick the Google account Atlas uses for your notes and files in Google Drive.")
-                .atlasFont(size: 11, weight: .medium, design: .rounded)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
+        VStack(alignment: .leading, spacing: 0) {
+            columnHeader("Notes & files",
+                         note: "The Google account Atlas uses for Drive and Docs — separate from your calendar accounts.")
 
             // ── Notes & Docs (dedicated Drive/Docs login, one at a time) ─
             notesDocsRow
 
             // ── Per-tab Google Doc sync (beta) ──────────────────────────
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Edit multi-tab Google Docs (beta)")
-                        .font(.system(size: 13, design: .rounded))
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text("Edit each tab of a Google Doc on its own. Tabs with tables are shown, not editable.")
-                        .font(.system(size: 11, design: .rounded))
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                }
-                Spacer()
+            settingsRow(icon: "doc.on.doc",
+                        name: "Per-tab Google Doc sync (beta)",
+                        detail: "Multi-tab Docs edit tab-by-tab; tabs with tables stay read-only.") {
                 Toggle("", isOn: $perTabSyncEnabled)
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .tint(AtlasTheme.Colors.textPrimary)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .atlasHairlineBelow()
         }
         .task {
             await loadDocsConnection()
@@ -1073,66 +1060,49 @@ struct SettingsView: View {
     /// login exists but calendar accounts do, a muted hint names the fallback account.
     @ViewBuilder
     private var notesDocsRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                Image(systemName: "doc.text")
-                    .foregroundStyle(AtlasTheme.Colors.school)
-                    .frame(width: 22)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Notes & Docs")
-                        .atlasFont(size: 14, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    if let docs = docsConnection {
-                        Text(docs.googleEmail)
-                            .atlasFont(size: 12, design: .rounded)
-                            .foregroundStyle(AtlasTheme.Colors.textMuted)
-                        Text(docs.status == "active"
-                             ? "Connected — Drive & Docs use this account"
-                             : (docs.lastError ?? "Reconnect needed — Drive/Docs sync is stopped"))
-                            .atlasFont(size: 12, design: .rounded)
-                            .foregroundStyle(docs.status == "active"
-                                             ? AtlasTheme.Colors.green
-                                             : AtlasTheme.Colors.warning)
-                    } else {
-                        Text("Sign in to choose the Google account for Drive & Docs")
-                            .atlasFont(size: 12, weight: .medium, design: .rounded)
-                            .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    }
-                }
-                Spacer()
-                if docsWorking {
-                    ProgressView().controlSize(.small)
-                } else if docsConnection != nil {
-                    Button("Disconnect") { disconnectDocs() }
-                        .buttonStyle(.plain)
-                        .atlasFont(size: 13, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.danger)
-                } else {
-                    Button("Sign in with Google") { connectDocs() }
-                        .buttonStyle(.plain)
-                        .atlasFont(size: 13, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.accentText)
-                }
-            }
-
-            // Fallback hint: no explicit Docs login, but calendar accounts exist —
-            // the server uses the oldest one until the user picks explicitly.
-            if docsConnection == nil, let fallback = state.googleConnections.first {
-                Text("Using \(fallback.googleEmail) (calendar account) — sign in to choose explicitly")
-                    .atlasFont(size: 11, weight: .medium, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    .padding(.leading, 34)
-            }
-
-            if let err = docsError {
-                Text(err).atlasFont(size: 12, design: .rounded)
+        settingsRow(icon: "doc.text",
+                    tint: AtlasTheme.Colors.school,
+                    name: "Google Drive & Docs",
+                    detail: docsDetailLine,
+                    detailColor: docsDetailColor) {
+            if docsWorking {
+                ProgressView().controlSize(.small)
+            } else if docsConnection != nil {
+                Button("Disconnect") { disconnectDocs() }
+                    .buttonStyle(.plain)
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.danger)
-                    .padding(.leading, 34)
+            } else {
+                Button("Sign in with Google") { connectDocs() }
+                    .buttonStyle(.plain)
+                    .atlasFont(size: 13, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .atlasHairlineBelow()
+        if let err = docsError {
+            errorRow(err).padding(.vertical, 8)
+        }
+    }
+
+    /// The Docs row's one line: which account is in use, or what to do about it. Covers
+    /// the fallback case too — no explicit Docs login, but calendar accounts exist, so
+    /// the server uses the oldest one until the user picks explicitly.
+    private var docsDetailLine: String {
+        if let docs = docsConnection {
+            return docs.status == "active"
+                ? "Signed in as \(docs.googleEmail)"
+                : (docs.lastError ?? "Reconnect needed — Drive and Docs have stopped syncing")
+        }
+        if let fallback = state.googleConnections.first {
+            return "Using \(fallback.googleEmail) from your calendar accounts — sign in to choose"
+        }
+        return "Sign in to choose the Google account Drive and Docs use"
+    }
+
+    private var docsDetailColor: Color {
+        (docsConnection?.status ?? "active") == "active"
+            ? AtlasTheme.Colors.textMuted
+            : AtlasTheme.Colors.warning
     }
 
     /// Reads the singleton `google_docs_connections` row. Best-effort: a nil db
@@ -1642,26 +1612,26 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: – Tasks section
+    // MARK: – Capture & tasks section
 
-    private var tasksSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            label("TASKS")
+    /// Where captured tasks land, and the keys that open capture — one row each. The
+    /// shortcut recorder keeps its existing interaction (Record → press a combo), just
+    /// wearing the row skeleton instead of its own boxed card.
+    private var captureAndTasksSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            columnHeader("Capture & tasks",
+                         note: "The global capture key works from any app, even when Atlas is in the background.")
+
             if state.spaces.isEmpty {
-                Text("Create a space first to set a default.")
-                    .atlasFont(size: 12, weight: .medium, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                settingsRow(icon: "tray.and.arrow.down",
+                            name: "Default space for new tasks",
+                            detail: "Make a space first, then you can pick one here") {
+                    EmptyView()
+                }
             } else {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Default space for new tasks")
-                            .atlasFont(size: 14, design: .rounded)
-                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                        Text("Quick-captured tasks without an inferred space land here")
-                            .atlasFont(size: 12, weight: .medium, design: .rounded)
-                            .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    }
-                    Spacer()
+                settingsRow(icon: "tray.and.arrow.down",
+                            name: "Default space for new tasks",
+                            detail: "Captured tasks with no obvious space land here") {
                     Picker("Default task space", selection: $defaultTaskSpace) {
                         ForEach(state.spaces) { space in
                             Text(space.name).tag(space.name)
@@ -1680,28 +1650,37 @@ struct SettingsView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 12)
+            }
+
+            ForEach(ShortcutAction.allCases) { action in
+                shortcutRow(for: action)
+            }
+
+            if let warning = conflictWarning {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .atlasFont(size: 12, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.warning)
+                    Text(warning)
+                        .atlasFont(size: 12, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.warning)
+                }
                 .padding(.vertical, 8)
-                .atlasHairlineBelow()
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: conflictWarning)
             }
         }
     }
 
-    // MARK: – Appearance section
+    // MARK: – App section (appearance + sidebar)
 
-    private var appearanceSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            label("APPEARANCE")
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Text size")
-                        .atlasFont(size: 14, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text("Applies everywhere, immediately")
-                        .atlasFont(size: 12, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                }
-                Spacer()
+    private var appSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            columnHeader("App")
+
+            settingsRow(icon: "textformat.size",
+                        name: "Text size",
+                        detail: "Applies everywhere, right away") {
                 Picker("Text size", selection: $textScale) {
                     Text("Small").tag(0.9)
                     Text("Default").tag(1.0)
@@ -1711,29 +1690,12 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 320)
+                .frame(width: 300)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .atlasHairlineBelow()
-        }
-    }
 
-    // MARK: – Sidebar section
-
-    private var sidebarSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            label("SIDEBAR")
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Sidebar visibility")
-                        .atlasFont(size: 14, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text("Slide out keeps it hidden until the cursor touches the left edge")
-                        .atlasFont(size: 12, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                }
-                Spacer()
+            settingsRow(icon: "sidebar.left",
+                        name: "Sidebar",
+                        detail: "Slide out keeps it hidden until the cursor touches the left edge") {
                 Picker("Sidebar visibility", selection: $sidebarMode) {
                     Text("Always visible").tag("always")
                     Text("Slide out on hover").tag("hover")
@@ -1743,31 +1705,18 @@ struct SettingsView: View {
                 .frame(width: 170)
                 .tint(AtlasTheme.Colors.accent)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .atlasHairlineBelow()
 
             // School is a sidebar section, so its show/hide lives with the sidebar's
-            // other visibility control rather than earning a sixth settings heading.
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("School")
-                        .atlasFont(size: 14, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text("Semesters, classes and their work. Turn it off and the section disappears — nothing is deleted.")
-                        .atlasFont(size: 12, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                }
-                Spacer()
+            // other visibility control rather than earning a seventh settings heading.
+            settingsRow(icon: "graduationcap",
+                        name: "School",
+                        detail: "Semesters, classes and their work. Turn it off and the section disappears — nothing is deleted.") {
                 Toggle("", isOn: Binding(get: { state.schoolEnabled },
                                          set: { state.schoolEnabled = $0 }))
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .tint(AtlasTheme.Colors.textPrimary)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .atlasHairlineBelow()
         }
     }
 
@@ -1779,31 +1728,20 @@ struct SettingsView: View {
     /// Static, scannable practical tips — title + one-liner per row, hairline-
     /// separated like every other settings group. No links, no fluff.
     private var helpSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            label("HELP & TIPS")
+        VStack(alignment: .leading, spacing: 0) {
+            columnHeader("Help & tips")
+
             ForEach(Self.helpTips, id: \.title) { tip in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(tip.title)
-                        .atlasFont(size: 14, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text(tip.detail)
-                        .atlasFont(size: 12, weight: .medium, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .atlasHairlineBelow()
+                settingsRow(name: tip.title, detail: tip.detail) { EmptyView() }
             }
 
-            Button { showReportBug = true } label: {
-                row(icon: "ant", tint: AtlasTheme.Colors.accent,
-                    title: "Report a bug",
-                    subtitle: "Hit a snag? Send it straight to us — no email needed.")
+            settingsRow(icon: "ant",
+                        tint: AtlasTheme.Colors.accent,
+                        name: "Report a bug",
+                        detail: "Hit a snag? Send it straight to us — no email needed.",
+                        onTap: { showReportBug = true }) {
+                disclosureChevron(false)
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
         }
         .sheet(isPresented: $showReportBug) {
             ReportBugSheet(db: state.db)
@@ -1825,111 +1763,59 @@ struct SettingsView: View {
          "Atlas lives in the menu bar too — click its icon for today's agenda without opening the full window."),
     ]
 
-    // MARK: – Shortcuts section
+    // MARK: – Shortcut row
 
-    private var shortcutsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            label("SHORTCUTS")
-            Text("Pick your own key combos. The quick capture key works even when Atlas isn't the front app.")
-                .atlasFont(size: 11, weight: .medium, design: .rounded)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-
-            ForEach(ShortcutAction.allCases) { action in
-                shortcutRow(for: action)
-            }
-
-            if let warning = conflictWarning {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .atlasFont(size: 12, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.warning)
-                    Text(warning)
-                        .atlasFont(size: 12, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.warning)
-                }
-                .transition(.opacity)
-                .animation(.easeInOut(duration: 0.2), value: conflictWarning)
-            }
-        }
-    }
-
+    /// One rebindable key, in the row skeleton: name · a mono state line · the combo
+    /// badge, Record/Cancel and Reset as the trailing control cluster. Same interaction
+    /// as before (Record, then press a combo; Esc cancels) — no boxed card.
     @ViewBuilder
     private func shortcutRow(for action: ShortcutAction) -> some View {
         let isRecording = recordingAction == action
         let binding = shortcuts.binding(for: action)
 
-        HStack(spacing: 12) {
-            // Action title
-            VStack(alignment: .leading, spacing: 2) {
-                Text(action.title)
-                    .atlasFont(size: 14, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                if isRecording {
-                    Text("Press a key combo…")
-                        .atlasFont(size: 12, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.accentText)
+        settingsRow(icon: "command",
+                    tint: isRecording ? AtlasTheme.Colors.accent : AtlasTheme.Colors.textSecondary,
+                    name: action.title,
+                    status: isRecording ? "Press a key combo…" : nil,
+                    statusColor: AtlasTheme.Colors.accentText,
+                    detail: isRecording ? nil : "Press Record, then the keys you want") {
+            HStack(spacing: 12) {
+                // Current combo badge
+                Text(isRecording ? "…" : binding.displayString)
+                    .atlasMono(size: 12, weight: .semibold)
+                    .foregroundStyle(isRecording ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(isRecording ? AtlasTheme.Colors.accent.opacity(0.4) : AtlasTheme.Colors.border,
+                                    lineWidth: 1)
+                    )
+
+                Button(isRecording ? "Cancel" : "Record") {
+                    if isRecording {
+                        stopRecording()
+                    } else {
+                        startRecording(for: action)
+                    }
                 }
-            }
+                .buttonStyle(.plain)
+                .atlasFont(size: 13, weight: .medium, design: .rounded)
+                .foregroundStyle(isRecording ? AtlasTheme.Colors.danger : AtlasTheme.Colors.accentText)
 
-            Spacer()
-
-            // Current combo badge
-            Text(isRecording ? "…" : binding.displayString)
-                .atlasMono(size: 12, weight: .semibold)
-                .foregroundStyle(isRecording ? AtlasTheme.Colors.accentText : AtlasTheme.Colors.textSecondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(isRecording
-                              ? AtlasTheme.Colors.accent.opacity(0.12)
-                              : Color.clear)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(isRecording ? AtlasTheme.Colors.accent.opacity(0.4) : AtlasTheme.Colors.border,
-                                lineWidth: 1)
-                )
-
-            // Record / Cancel button
-            Button(isRecording ? "Cancel" : "Record") {
-                if isRecording {
-                    stopRecording()
-                } else {
-                    startRecording(for: action)
+                Button {
+                    shortcuts.reset(action)
+                    if recordingAction == action { stopRecording() }
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                        .atlasFont(size: 12, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
+                .buttonStyle(.plain)
+                .help("Reset to default (\(ShortcutBinding(key: action.defaultKey, modifiers: action.defaultModifiers).displayString))")
             }
-            .buttonStyle(.plain)
-            .atlasFont(size: 13, weight: .medium, design: .rounded)
-            .foregroundStyle(isRecording ? AtlasTheme.Colors.danger : AtlasTheme.Colors.accentText)
-
-            // Reset button
-            Button {
-                shortcuts.reset(action)
-                if recordingAction == action { stopRecording() }
-            } label: {
-                Image(systemName: "arrow.counterclockwise")
-                    .atlasFont(size: 12, weight: .medium, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-            }
-            .buttonStyle(.plain)
-            .help("Reset to default (\(ShortcutBinding(key: action.defaultKey, modifiers: action.defaultModifiers).displayString))")
+            .animation(.easeInOut(duration: 0.15), value: isRecording)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        // Recording keeps the accent-highlighted instrument box; idle rows drop the
-        // dead fill and separate with a hairline (paper idiom).
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isRecording ? AtlasTheme.Colors.accent.opacity(0.05) : Color.clear)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(isRecording ? AtlasTheme.Colors.accent.opacity(0.25) : Color.clear,
-                        lineWidth: 1)
-        )
-        .atlasHairlineBelow()
-        .animation(.easeInOut(duration: 0.15), value: isRecording)
     }
 
     // MARK: – Recorder
@@ -2042,17 +1928,6 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
                 .atlasFont(size: 12, weight: .semibold, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.accentText)
-        }
-    }
-
-    private func row(icon: String, tint: Color, title: String, subtitle: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon).foregroundStyle(tint).frame(width: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).atlasFont(size: 14, design: .rounded).foregroundStyle(AtlasTheme.Colors.textPrimary)
-                Text(subtitle).atlasFont(size: 12, weight: .medium, design: .rounded).foregroundStyle(AtlasTheme.Colors.textMuted)
-            }
-            Spacer()
         }
     }
 
