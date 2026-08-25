@@ -105,7 +105,7 @@ targets:
         # key in his login keychain and prints the public key — paste that value here.
         # Until then the app cannot verify any update (Sparkle refuses to install), and
         # scripts/release-dmg.sh refuses to build a release. See UpdaterService.swift.
-        SUPublicEDKey: "PLACEHOLDER_ED_PUBLIC_KEY"
+        SUPublicEDKey: "0z9ZVqbz7/IwSwmjyP6YLz6wBk9mmQr41ZV/yzBsBPI="
         SUEnableAutomaticChecks: true
         # Registers atlas:// so the Supabase OAuth callback (atlas://auth-callback)
         # opened in the system default browser routes back into the app via
