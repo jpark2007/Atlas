@@ -35,6 +35,7 @@ struct CalendarView: View {
     // MARK: - Apple Calendar sync
     @AppStorage("calendar.apple.enabled") private var appleCalendarEnabled: Bool = false
     @AppStorage("calendar.apple.defaultSpace") private var appleDefaultSpace: String = ""
+    @AppStorage("calendar.workSessions.titlePrefix") private var workSessionPrefix: String = CalendarSync.defaultWorkSessionPrefix
     private let ekService = EventKitService()
 
     var body: some View {
@@ -377,7 +378,17 @@ struct CalendarView: View {
             + scheduledTaskEvents(on: date)
             + deadlineEvents(on: date)
             + state.externalEvents(on: date)
-        return all.filter { passesFilters($0.spaceName, title: $0.title) }
+        // Collapse the same real block arriving from several calendars (school ICS + Google,
+        // Google + Apple). Display-time and client-side by necessity: Apple events are only
+        // ever in memory, so no server pass can see this pool.
+        return CalendarSync.collapsingDuplicates(all, workSessionPrefix: workSessionTitlePrefix)
+            .filter { passesFilters($0.spaceName, title: $0.title) }
+    }
+
+    /// The work-session mirror label, so dedup can strip it off an inbound "Work: X" copy
+    /// and recognise it as the native session it mirrors.
+    private var workSessionTitlePrefix: String {
+        workSessionPrefix.isEmpty ? CalendarSync.defaultWorkSessionPrefix : workSessionPrefix
     }
 
     /// Day/week-grid events: `filteredEvents` with per-project colors layered on top
@@ -425,7 +436,9 @@ struct CalendarView: View {
     /// read-only external events + dated tasks, applies the same filters as the
     /// grid, then orders them via the pure `AgendaBuilder`.
     private var agendaSections: [AgendaSection] {
-        let events = (state.events + state.externalEvents)
+        let events = CalendarSync
+            .collapsingDuplicates(state.events + state.externalEvents,
+                                  workSessionPrefix: workSessionTitlePrefix)
             .filter { passesFilters($0.spaceName, title: $0.title) }
         let tasks = state.tasks
             .filter { !$0.done && passesFilters($0.spaceName, title: $0.title) }
@@ -518,7 +531,11 @@ struct CalendarView: View {
                 // Drop any Apple event that is actually one of our own events we already
                 // mirrored via the Atlas→Apple toggle (EventKit re-reads it next tick).
                 // Otherwise it shows twice: once native, once as its read-only Apple copy.
+                // Work sessions mirror to Apple too (Phase 3), and their handle lives on the
+                // TASK — so their ids must join the drop-set or every mirrored session
+                // double-displays as its own "Work: …" Apple copy.
                 let ownAppleIDs = Set(state.events.compactMap(\.appleEventId))
+                    .union(state.tasks.compactMap(\.appleEventId))
                 state.externalEvents = CalendarSync.excludingOwnMirrors(
                     external: combined,
                     ownGoogleIDs: [],

@@ -56,6 +56,10 @@ struct SettingsView: View {
     // these keys are intentionally NOT wired into `pushSyncedSettings()`.
     @AppStorage("calendar.apple.writeback") private var appleWritebackEnabled: Bool = false
     @AppStorage("calendar.apple.writeback.calendarId") private var appleWritebackCalendarId: String = ""
+    // Outbound push rules per object type. Work sessions default ON — reserved time IS busy
+    // time — under a human-readable label the external calendar can actually show.
+    @AppStorage("calendar.workSessions.push") private var workSessionPushEnabled: Bool = true
+    @AppStorage("calendar.workSessions.titlePrefix") private var workSessionPrefix: String = CalendarSync.defaultWorkSessionPrefix
     @State private var appleWritableCalendars: [(id: String, title: String)] = []
     @State private var appleAccessGranted: Bool = false
     @State private var appleAccessChecked: Bool = false
@@ -1025,6 +1029,56 @@ struct SettingsView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .atlasHairlineBelow()
+            }
+
+            // ── What gets mirrored: work sessions ──────────────────────
+            // Outbound rules (Phase 3): events ON, work sessions ON by default, deadlines
+            // stay in Atlas, tasks NEVER leave — Atlas is the home of tasks, so that one
+            // isn't a toggle. Only shown with the mirror on; it's a sub-rule of it.
+            if appleWritebackEnabled {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Mirror work sessions too")
+                            .atlasFont(size: 14, design: .rounded)
+                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        Text(workSessionPushEnabled
+                             ? "Reserved time shows as busy on your other calendars."
+                             : "Off — scheduled work stays in Atlas.")
+                            .atlasFont(size: 12, weight: .medium, design: .rounded)
+                            .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $workSessionPushEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .tint(AtlasTheme.Colors.textPrimary)
+                        .onChange(of: workSessionPushEnabled) { _, on in
+                            if on { state.backfillWorkSessionsToApple() }
+                        }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .atlasHairlineBelow()
+
+                if workSessionPushEnabled {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Work session label")
+                                .atlasFont(size: 14, design: .rounded)
+                                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                            Text("Goes in front of the task's name — \(CalendarSync.mirroredWorkSessionTitle("English essay", prefix: workSessionPrefix))")
+                                .atlasFont(size: 12, weight: .medium, design: .rounded)
+                                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        }
+                        Spacer()
+                        TextField(CalendarSync.defaultWorkSessionPrefix, text: $workSessionPrefix)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 140)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .atlasHairlineBelow()
+                }
             }
 
             // ── Default space mapping ──────────────────────────────────

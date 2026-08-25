@@ -1167,6 +1167,7 @@ final class AppState: ObservableObject {
             tasks[i].scheduledAt = date
             let updated = tasks[i]
             Task { try? await self.db?.upsertTask(updated) }
+            pushWorkSessionToApple(updated)
             schedulePublish()
         }
     }
@@ -1185,6 +1186,7 @@ final class AppState: ObservableObject {
         tasks[i].noteID = noteID
         let updated = tasks[i]
         Task { try? await self.db?.upsertTask(updated) }
+        pushWorkSessionToApple(updated)
         schedulePublish()
     }
 
@@ -1193,8 +1195,10 @@ final class AppState: ObservableObject {
     func unscheduleTask(id: UUID) {
         guard let i = tasks.firstIndex(where: { $0.id == id }) else { return }
         let gid = tasks[i].workBlockGoogleEventId
+        removeWorkSessionFromApple(tasks[i])
         tasks[i].scheduledAt = nil
         tasks[i].workBlockGoogleEventId = nil
+        tasks[i].appleEventId = nil
         let updated = tasks[i]
         Task { try? await self.db?.upsertTask(updated) }
         if let gid, !gid.isEmpty { deleteGoogleEvent(googleEventID: gid) }
@@ -1204,7 +1208,9 @@ final class AppState: ObservableObject {
     /// Remove a task's calendar slot, returning it to the unscheduled tray.
     func unschedule(taskId: UUID) {
         if let i = tasks.firstIndex(where: { $0.id == taskId }) {
+            removeWorkSessionFromApple(tasks[i])
             tasks[i].scheduledAt = nil
+            tasks[i].appleEventId = nil
             let updated = tasks[i]
             Task { try? await self.db?.upsertTask(updated) }
             schedulePublish()
@@ -1213,6 +1219,7 @@ final class AppState: ObservableObject {
 
     /// Permanently delete a task (used after completion grace period).
     func deleteTask(id: UUID) {
+        if let task = tasks.first(where: { $0.id == id }) { removeWorkSessionFromApple(task) }
         tasks.removeAll { $0.id == id }
         Task { try? await self.db?.deleteTask(id: id) }
     }
@@ -1447,6 +1454,86 @@ final class AppState: ObservableObject {
         events[i].appleEventId = aid
         let persisted = events[i]
         Task { try? await self.db?.upsertEvent(persisted) }
+    }
+
+    // MARK: - Work-session mirror (Atlas → Apple)
+    //
+    // Outbound push rules per object type: events ON (above), work sessions ON by default
+    // with a toggle, deadlines OFF, tasks NEVER. A work session is a scheduled task, not an
+    // `events` row, so its mirror handle is `tasks.apple_event_id` (migration 0026) — the
+    // same shape as the event mirror, persisted so a relaunch patches instead of duplicating
+    // and the EventKit read-back de-dupes it (CalendarSync.excludingOwnMirrors).
+
+    /// Default ON — a reserved slot is real busy time. `object(forKey:)` rather than `bool`
+    /// so an untouched install gets the ON default instead of UserDefaults' implicit false.
+    private var workSessionPushEnabled: Bool {
+        UserDefaults.standard.object(forKey: "calendar.workSessions.push") as? Bool ?? true
+    }
+
+    /// User-adjustable mirror label; empty falls back to the shared default.
+    private var workSessionTitlePrefix: String {
+        let stored = UserDefaults.standard.string(forKey: "calendar.workSessions.titlePrefix") ?? ""
+        return stored.isEmpty ? CalendarSync.defaultWorkSessionPrefix : stored
+    }
+
+    private var mirrorsWorkSessionsToApple: Bool {
+        workSessionPushEnabled
+            && UserDefaults.standard.bool(forKey: "calendar.apple.writeback")
+            && eventKit.authorizationStatus() == .fullAccess
+    }
+
+    /// The session as an external calendar sees it: prefixed title over the task's slot.
+    private func appleMirror(for task: TaskItem) -> CalendarEvent? {
+        guard let at = task.scheduledAt else { return nil }
+        let end = Calendar.current.date(byAdding: .minute, value: task.durationMin ?? 60, to: at) ?? at
+        return CalendarEvent(
+            title: CalendarSync.mirroredWorkSessionTitle(task.title, prefix: workSessionTitlePrefix),
+            subtitle: "",
+            start: at,
+            end: end,
+            color: task.spaceColor,
+            spaceName: task.spaceName,
+            notes: task.notes,
+            isWorkBlock: true)
+    }
+
+    /// Creates or patches the Apple mirror of a scheduled task. Failures are swallowed —
+    /// the local schedule already succeeded.
+    private func pushWorkSessionToApple(_ task: TaskItem) {
+        guard mirrorsWorkSessionsToApple, let mirror = appleMirror(for: task) else { return }
+        Task { @MainActor in
+            if let aid = task.appleEventId, !aid.isEmpty {
+                try? await self.eventKit.updateEvent(appleEventID: aid, with: mirror)
+            } else {
+                guard let aid = try? await self.eventKit.createEvent(mirror, calendarId: self.appleWritebackCalendarId),
+                      !aid.isEmpty else { return }
+                self.stampTaskAppleEventId(aid, on: task.id)
+            }
+        }
+    }
+
+    /// Removes a session's Apple mirror when the slot goes away (unschedule / task delete).
+    /// Runs regardless of the push toggle — a mirror we created must still be cleaned up
+    /// after the toggle is switched off.
+    private func removeWorkSessionFromApple(_ task: TaskItem) {
+        guard let aid = task.appleEventId, !aid.isEmpty,
+              eventKit.authorizationStatus() == .fullAccess else { return }
+        Task { try? await eventKit.deleteEvent(appleEventID: aid) }
+    }
+
+    /// Mirrors already-scheduled sessions that were never pushed — fired when the toggle
+    /// flips on. Safe to repeat: sessions that already gained an id are patched, not doubled.
+    func backfillWorkSessionsToApple() {
+        for task in tasks where !task.done && task.scheduledAt != nil {
+            pushWorkSessionToApple(task)
+        }
+    }
+
+    private func stampTaskAppleEventId(_ aid: String, on taskID: UUID) {
+        guard let i = tasks.firstIndex(where: { $0.id == taskID }) else { return }
+        tasks[i].appleEventId = aid
+        let persisted = tasks[i]
+        Task { try? await self.db?.upsertTask(persisted) }
     }
 
     // MARK: - Goal CRUD (in-memory; DB write-through layered in Task 2)
