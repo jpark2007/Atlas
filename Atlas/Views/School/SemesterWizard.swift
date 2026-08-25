@@ -4,10 +4,12 @@ import AtlasCore
 /// "Set up your semester" — the School zero state, in place of the fake seeded class
 /// the server used to create.
 ///
-/// Order is the agreed one: *are you a student?* → **how does your schedule already
-/// exist?** → the chosen door → the courses Atlas found, as a checklist → term dates.
-/// The premise throughout is that the schedule already exists somewhere and Atlas's job
-/// is to go get it, not to make the student build a timetable by hand.
+/// Order is the agreed one: *are you a student?* → **add your classes** (the doors,
+/// school calendar link first) → done. Classes are the point; term dates are optional and
+/// never gate — an undated term is created silently, and dates can be filled in later
+/// from School → Edit term. The premise throughout is that the schedule already exists
+/// somewhere and Atlas's job is to go get it, not to make the student build a timetable
+/// by hand.
 struct SemesterWizard: View {
     @EnvironmentObject var state: AppState
     @EnvironmentObject var auth: AuthService
@@ -22,7 +24,6 @@ struct SemesterWizard: View {
         case courses        // "create these as classes?"
         case manual         // type the classes
         case schoolLink     // a calendar link from the school/registrar
-        case term           // name + dates + key dates
     }
 
     /// Where the flow opens. The full run starts at "are you a student?"; adding a class
@@ -40,8 +41,6 @@ struct SemesterWizard: View {
     @State private var error: String?
     /// True once the wait for the first sync has run its course with nothing found.
     @State private var importTimedOut = false
-    /// Drives the term editor the last step opens.
-    @State private var presentTermEditor = false
 
     // Manual entry: a handful of name/code rows.
     @State private var manualRows: [ManualClass] = [ManualClass(), ManualClass(), ManualClass()]
@@ -66,7 +65,6 @@ struct SemesterWizard: View {
                     case .courses:    coursesStep
                     case .manual:     manualStep
                     case .schoolLink: schoolLinkStep
-                    case .term:       termStep
                     }
                     if let error {
                         Text(error)
@@ -80,11 +78,6 @@ struct SemesterWizard: View {
         .frame(width: 500, height: 520, alignment: .topLeading)
         .background(AtlasTheme.Colors.bgBase)
         .onAppear { step = startAt }
-        .sheet(isPresented: $presentTermEditor) {
-            if let term {
-                TermEditorSheet(term: term) { _ in dismiss() }
-            }
-        }
     }
 
     // MARK: - Header
@@ -122,15 +115,21 @@ struct SemesterWizard: View {
 
     private var doorStep: some View {
         VStack(alignment: .leading, spacing: 14) {
-            prompt("How does your schedule already exist?",
-                   "Wherever it lives, Atlas can read it — you shouldn't have to type it twice.")
-            choice("It's in Canvas", "Assignments and class events, straight from your course feed.") {
-                step = .canvas
-            }
-            choice("My school publishes a calendar link", "A registrar or timetable feed ending in .ics.") {
+            prompt("Add your classes",
+                   "Wherever your schedule already lives, Atlas can read it — you shouldn't have to type it twice.")
+            choice("My school publishes a calendar link",
+                   "Your classes and their meeting times, in one link. A registrar or timetable feed ending in .ics.",
+                   recommended: true) {
                 step = .schoolLink
             }
-            choice("I'll type my classes", "Fastest if you only have a few.") { step = .manual }
+            choice("I'll type my classes",
+                   "Fastest if you only have a few. Scan a syllabus afterward to fill in times and policies.") {
+                step = .manual
+            }
+            choice("Connect Canvas",
+                   "Best for your assignments — they flow in automatically. Atlas finds your courses too; add times from your school calendar or a syllabus scan.") {
+                step = .canvas
+            }
             // The scan commits ONTO a class (times, info card, its work), so it needs one
             // to exist first — inside the wizard there is nothing to file it under yet.
             // Type the classes here, then scan each syllabus from its own page.
@@ -190,10 +189,10 @@ struct SemesterWizard: View {
         VStack(alignment: .leading, spacing: 14) {
             prompt(importTimedOut ? "Nothing has arrived yet" : "Bringing your schedule in…",
                    importTimedOut
-                   ? "Your first sync can take a few minutes. Name your semester now — Atlas will offer to create the classes as soon as the courses land."
+                   ? "Your first sync can take a few minutes. Atlas will offer to create the classes as soon as the courses land."
                    : "Atlas is reading the feed. This usually takes a moment.")
             if !importTimedOut { ProgressView().controlSize(.small) }
-            actionButton("Name my semester") { goToTerm() }
+            actionButton("Done for now") { dismiss() }
         }
         .task(id: importTimedOut) {
             guard !importTimedOut else { return }
@@ -219,9 +218,10 @@ struct SemesterWizard: View {
             prompt("Atlas found your courses",
                    "Pick the ones to keep as classes. Their Canvas work files under them from now on.")
             CanvasCourseChecklistBody(courses: state.unlinkedCanvasCourses) { chosen in
-                let target = ensureTerm()
-                state.createClasses(fromCanvasCourses: chosen, term: target)
-                goToTerm()
+                if !chosen.isEmpty {
+                    state.createClasses(fromCanvasCourses: chosen, term: ensureTerm())
+                }
+                dismiss()
             }
         }
     }
@@ -262,20 +262,6 @@ struct SemesterWizard: View {
         }
     }
 
-    // MARK: - Step 7 · term dates
-
-    private var termStep: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            prompt("Last thing — name your semester",
-                   "Dates keep class meetings inside the term, and breaks stop them.")
-            actionButton("Name my semester") { presentTermEditor = true }
-            Button("I'll do it later") { dismiss() }
-                .buttonStyle(.plain)
-                .atlasFont(size: 12, weight: .medium, design: .rounded)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-        }
-    }
-
     // MARK: - Pieces
 
     private func prompt(_ title: String, _ detail: String) -> some View {
@@ -290,9 +276,13 @@ struct SemesterWizard: View {
         }
     }
 
-    private func choice(_ title: String, _ detail: String, action: @escaping () -> Void) -> some View {
+    private func choice(_ title: String, _ detail: String, recommended: Bool = false,
+                        action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 3) {
+                if recommended {
+                    Text("RECOMMENDED").atlasCapsLabel()
+                }
                 Text(title)
                     .atlasFont(size: 14, weight: .semibold, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
@@ -365,7 +355,8 @@ struct SemesterWizard: View {
     // MARK: - Actions
 
     /// The term new classes go under: the one this wizard already made, else the active
-    /// one, else a freshly named term. Created before any class so nothing lands undated.
+    /// one, else a freshly named undated one ("Fall 2026"). Created silently — dates come
+    /// later from School → Edit term, and never gate the classes.
     private func ensureTerm() -> Term {
         if let term { return term }
         if let active = state.activeTerm { term = active; return active }
@@ -373,12 +364,6 @@ struct SemesterWizard: View {
         state.saveTerm(created)
         term = created
         return created
-    }
-
-    private func goToTerm() {
-        _ = ensureTerm()
-        step = .term
-        presentTermEditor = true
     }
 
     private func connect(type: String) {
@@ -407,8 +392,14 @@ struct SemesterWizard: View {
                 await state.refreshCalendarFeeds()
                 AtlasTips.ConnectSource.hasConnection = true
                 feedURL = ""
-                step = type == "canvas" ? .importing : .term
-                if type != "canvas" { _ = ensureTerm() }
+                if type == "canvas" {
+                    step = .importing
+                } else {
+                    // The feed's classes land as events; a term to hang them on so
+                    // School opens on "add your first class", not the wizard again.
+                    _ = ensureTerm()
+                    dismiss()
+                }
             } catch {
                 self.error = "Couldn't connect that link. Check it and your connection, then try again."
             }
@@ -430,7 +421,7 @@ struct SemesterWizard: View {
                            code: code.isEmpty ? nil : code,
                            termID: target.id)
         }
-        step = .term
+        dismiss()
     }
 
     private func suggestedTermName() -> String {

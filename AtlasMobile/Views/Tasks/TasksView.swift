@@ -4,6 +4,9 @@ import AtlasCore
 /// The Tasks tab (spec §4.3): all open tasks under a Project | Due grouping toggle.
 /// Reuses the shared `TaskGrouping` (same buckets as the Mac). Honors the shared
 /// space filter; check off inline; swipe to set a time or delete.
+///
+/// School rides at the top of the list as `SchoolTasksSection` (it has no tab of its
+/// own); the class rows push `ClassHubView` through this screen's NavigationStack.
 struct TasksView: View {
     @EnvironmentObject private var store: MobileStore
 
@@ -21,6 +24,15 @@ struct TasksView: View {
     @State private var justCompleted: Set<UUID> = []
 
     var body: some View {
+        NavigationStack {
+            content
+                .navigationDestination(for: UUID.self) { id in
+                    ClassHubView(classID: id).environmentObject(store)
+                }
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Tasks").edScreenTitle()
@@ -45,6 +57,7 @@ struct TasksView: View {
                 spaceList
             } else if openTasks.isEmpty {
                 ScrollView {
+                    SchoolTasksSection()
                     emptyContent
                         .frame(maxWidth: .infinity)
                         .padding(.top, 120)
@@ -56,6 +69,8 @@ struct TasksView: View {
             }
         }
         .background(MobileTheme.bg.ignoresSafeArea())
+        // Tasks draws its own title row; the stack exists only to push the class hub.
+        .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $timing) { task in
             SetTimeSheet(task: task, day: task.dueDate ?? Date()) { updated in
                 Task { await store.updateTask(updated) }
@@ -113,6 +128,7 @@ struct TasksView: View {
 
     private var list: some View {
         List {
+            schoolRow
             ForEach(groups, id: \.title) { group in
                 Section {
                     ForEach(group.tasks) { task in
@@ -137,6 +153,7 @@ struct TasksView: View {
 
     private var spaceList: some View {
         List {
+            schoolRow
             ForEach(spaceGroups, id: \.spaceName) { group in
                 Section {
                     if !collapsedSpaces.contains(group.spaceName) {
@@ -164,6 +181,15 @@ struct TasksView: View {
         .scrollContentBackground(.hidden)
         .contentMargins(.bottom, 72, for: .scrollContent)
         .refreshable { await store.refresh() }
+    }
+
+    /// School at the top of the list — self-padded, so it drops into either list as one
+    /// full-bleed row. Renders nothing when School is off.
+    private var schoolRow: some View {
+        SchoolTasksSection()
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
     }
 
     /// A collapsible space section header: a rotating chevron beside the caps name.
