@@ -49,14 +49,24 @@ struct CalendarSpotlightOverlay: View {
                         .ignoresSafeArea()
                         .allowsHitTesting(false)   // taps pass through to the real control
 
+                    // The bubble lives in a screen-wide band inset by `margin`, hugging the
+                    // side its anchor is on — centring it on the anchor pushed the caption
+                    // off-screen whenever the control sat near an edge.
+                    let margin: CGFloat = 16
+                    let band = max(0, geo.size.width - margin * 2)
+                    let onTrailingHalf = hole.midX > geo.size.width / 2
                     Text(caption)
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
+                        .multilineTextAlignment(onTrailingHalf ? .trailing : .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: max(0, band - 28))
                         .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(Capsule().fill(Color.black.opacity(0.7)))
+                        .frame(width: band, alignment: onTrailingHalf ? .trailing : .leading)
                         // `hole` is in global coords but the dim ignores the safe area, so
                         // convert the caption's y into this GeometryReader's inset-local space.
-                        .position(x: hole.midX, y: hole.maxY + 28 - geo.safeAreaInsets.top)
+                        .position(x: geo.size.width / 2, y: hole.maxY + 28 - geo.safeAreaInsets.top)
 
                     Button("Skip", action: onSkip)
                         .font(.system(size: 13, weight: .semibold, design: .rounded))

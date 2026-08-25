@@ -3,10 +3,12 @@ import AtlasCore
 
 /// "Set up your semester" on the phone — the whole of Enable School, completable here.
 ///
-/// Same agreed order as the Mac: *are you a student?* → **how does your schedule already
-/// exist?** → the chosen door → the courses Atlas found, as a checklist → term dates.
-/// The premise throughout is that the schedule already exists somewhere and Atlas's job
-/// is to go get it, not to make the student build a timetable by hand.
+/// Same agreed order as the Mac: *are you a student?* → **add your classes** (the doors,
+/// school calendar link first) → done. Classes are the point; term dates are optional and
+/// never gate — an undated term is created silently, and dates can be filled in later
+/// from School → Edit term. The premise throughout is that the schedule already exists
+/// somewhere and Atlas's job is to go get it, not to make the student build a timetable
+/// by hand.
 ///
 /// The Canvas copy is phone-appropriate: on a phone you tap, and Canvas's calendar feed
 /// lives behind the desktop site, so the steps say so instead of pretending otherwise.
@@ -22,7 +24,6 @@ struct SemesterWizardSheet: View {
         case courses        // "create these as classes?"
         case manual         // type the classes
         case schoolLink     // a calendar link from the school/registrar
-        case term           // name + dates + key dates
     }
 
     /// Where the flow opens. The full run starts at "are you a student?"; adding a class
@@ -40,7 +41,6 @@ struct SemesterWizardSheet: View {
     @State private var error: String?
     /// True once the wait for the first sync has run its course with nothing found.
     @State private var importTimedOut = false
-    @State private var presentTermEditor = false
 
     @State private var manualRows: [ManualClass] = [ManualClass(), ManualClass(), ManualClass()]
 
@@ -62,7 +62,6 @@ struct SemesterWizardSheet: View {
                 case .courses:    coursesStep
                 case .manual:     manualStep
                 case .schoolLink: schoolLinkStep
-                case .term:       termStep
                 }
                 if let error {
                     Text(error)
@@ -79,12 +78,6 @@ struct SemesterWizardSheet: View {
         .background(MobileTheme.bg.ignoresSafeArea())
         .presentationDetents([.large])
         .onAppear { step = startAt }
-        .sheet(isPresented: $presentTermEditor) {
-            if let term {
-                TermEditorSheet(term: term) { _ in dismiss() }
-                    .environmentObject(store)
-            }
-        }
     }
 
     // MARK: - Header
@@ -106,7 +99,7 @@ struct SemesterWizardSheet: View {
         prompt("Are you a student?",
                "School in Atlas is a semester, your classes, and the work that hangs off them.")
         choice("Yes — set up my classes", "It takes about a minute.") { step = .door }
-        choice("Not right now", "Hides the School tab. Turn it back on in Settings → App & Help.") {
+        choice("Not right now", "Hides School. Turn it back on in Settings → App & Help.") {
             store.schoolEnabled = false
             dismiss()
         }
@@ -116,15 +109,21 @@ struct SemesterWizardSheet: View {
 
     @ViewBuilder
     private var doorStep: some View {
-        prompt("How does your schedule already exist?",
-               "Wherever it lives, Atlas can read it — you shouldn't have to type it twice.")
-        choice("It's in Canvas", "Assignments and class events, straight from your course feed.") {
-            step = .canvas
-        }
-        choice("My school publishes a calendar link", "A registrar or timetable feed ending in .ics.") {
+        prompt("Add your classes",
+               "Wherever your schedule already lives, Atlas can read it — you shouldn't have to type it twice.")
+        choice("My school publishes a calendar link",
+               "Your classes and their meeting times, in one link. A registrar or timetable feed ending in .ics.",
+               recommended: true) {
             step = .schoolLink
         }
-        choice("I'll type my classes", "Fastest if you only have a few.") { step = .manual }
+        choice("I'll type my classes",
+               "Fastest if you only have a few. Scan a syllabus afterward to fill in times and policies.") {
+            step = .manual
+        }
+        choice("Connect Canvas",
+               "Best for your assignments — they flow in automatically. Atlas finds your courses too; add times from your school calendar or a syllabus scan.") {
+            step = .canvas
+        }
         // The scan commits ONTO a class (times, info card, its work), so it needs one to
         // exist first — inside the wizard there is nothing to file it under yet.
         disabledChoice("I have a photo of my syllabus",
@@ -166,12 +165,12 @@ struct SemesterWizardSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             prompt(importTimedOut ? "Nothing has arrived yet" : "Bringing your schedule in…",
                    importTimedOut
-                   ? "Your first sync can take a few minutes. Name your semester now — Atlas will offer to create the classes as soon as the courses land."
+                   ? "Your first sync can take a few minutes. Atlas will offer to create the classes as soon as the courses land."
                    : "Atlas is reading the feed. This usually takes a moment.")
             if !importTimedOut {
                 ProgressView().tint(MobileTheme.muted).padding(.bottom, 8)
             }
-            actionButton("Name my semester") { goToTerm() }
+            actionButton("Done for now") { dismiss() }
         }
         .task(id: importTimedOut) {
             guard !importTimedOut else { return }
@@ -197,9 +196,10 @@ struct SemesterWizardSheet: View {
         prompt("Atlas found your courses",
                "Pick the ones to keep as classes. Their Canvas work files under them from now on.")
         CanvasCourseChecklistBody(courses: store.unlinkedCanvasCourses) { chosen in
-            let target = ensureTerm()
-            store.createClasses(fromCanvasCourses: chosen, term: target)
-            goToTerm()
+            if !chosen.isEmpty {
+                store.createClasses(fromCanvasCourses: chosen, term: ensureTerm())
+            }
+            dismiss()
         }
     }
 
@@ -240,21 +240,6 @@ struct SemesterWizardSheet: View {
         backButton { step = .door }
     }
 
-    // MARK: - Step 7 · term dates
-
-    @ViewBuilder
-    private var termStep: some View {
-        prompt("Last thing — name your semester",
-               "Dates keep class meetings inside the term, and breaks stop them.")
-        actionButton("Name my semester") { presentTermEditor = true }
-        Button("I'll do it later") { dismiss() }
-            .buttonStyle(.plain)
-            .font(.system(size: 13, weight: .medium, design: .rounded))
-            .foregroundStyle(MobileTheme.faint)
-            .frame(maxWidth: .infinity)
-            .padding(.top, 14)
-    }
-
     // MARK: - Pieces
 
     private func prompt(_ title: String, _ detail: String) -> some View {
@@ -271,9 +256,13 @@ struct SemesterWizardSheet: View {
         .padding(.bottom, 20)
     }
 
-    private func choice(_ title: String, _ detail: String, action: @escaping () -> Void) -> some View {
+    private func choice(_ title: String, _ detail: String, recommended: Bool = false,
+                        action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 4) {
+                if recommended {
+                    Text("Recommended").edCapsLabel()
+                }
                 Text(title)
                     .font(.system(size: 15.5, weight: .semibold, design: .rounded))
                     .foregroundStyle(MobileTheme.ink)
@@ -373,7 +362,8 @@ struct SemesterWizardSheet: View {
     // MARK: - Actions
 
     /// The term new classes go under: the one this wizard already made, else the active
-    /// one, else a freshly named term. Created before any class so nothing lands undated.
+    /// one, else a freshly named undated one ("Fall 2026"). Created silently, and only
+    /// when there are classes to hang on it — dates come later from School → Edit term.
     private func ensureTerm() -> Term {
         if let term { return term }
         if let active = store.activeTerm { term = active; return active }
@@ -381,12 +371,6 @@ struct SemesterWizardSheet: View {
         store.saveTerm(created)
         term = created
         return created
-    }
-
-    private func goToTerm() {
-        _ = ensureTerm()
-        step = .term
-        presentTermEditor = true
     }
 
     private func connect(type: String) {
@@ -416,8 +400,14 @@ struct SemesterWizardSheet: View {
                 AtlasTips.ConnectSource.hasConnection = true
                 UserDefaults.standard.set(true, forKey: "checklist.connected")
                 feedURL = ""   // don't retain the capability URL in the field
-                step = type == "canvas" ? .importing : .term
-                if type != "canvas" { _ = ensureTerm() }
+                if type == "canvas" {
+                    step = .importing
+                } else {
+                    // The feed's classes land as events; a term to hang them on so
+                    // School opens on "add your first class", not the wizard again.
+                    _ = ensureTerm()
+                    dismiss()
+                }
             } catch {
                 self.error = "Couldn't connect that link. Check it and your connection, then try again."
             }
@@ -440,6 +430,6 @@ struct SemesterWizardSheet: View {
                            termID: target.id)
         }
         MobileTheme.Haptic.success()
-        step = .term
+        dismiss()
     }
 }

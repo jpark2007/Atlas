@@ -24,8 +24,10 @@ struct SchoolSidebarSection: View {
 
     private var term: Term? { state.displayedTerm }
 
+    /// The term's classes — or, with no term yet, the ones that predate the term model.
+    /// Undated classes are shown, not prompted about: dates are optional now.
     private var termClasses: [Project] {
-        guard let term else { return [] }
+        guard let term else { return state.undatedClasses.sorted { $0.name < $1.name } }
         return state.classes(in: term).sorted { $0.name < $1.name }
     }
 
@@ -42,14 +44,7 @@ struct SchoolSidebarSection: View {
         VStack(alignment: .leading, spacing: 2) {
             header
 
-            if state.unassignedClassesNeedTerm {
-                promptRow(title: "Date your term",
-                          detail: "You have classes from before Atlas had semesters. Name the term they belong to.") {
-                    editingTerm = Term(name: suggestedTermName())
-                }
-            }
-
-            if term == nil && termClasses.isEmpty && !state.unassignedClassesNeedTerm {
+            if term == nil && termClasses.isEmpty {
                 zeroState
             } else {
                 if let finishedTerm {
@@ -244,18 +239,5 @@ struct SchoolSidebarSection: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 6)
         .padding(.bottom, 6)
-    }
-
-    /// "Fall 2026" from today's date — a starting point for the term prompt, always
-    /// editable. Months are the US academic split; the user names it whatever they call it.
-    private func suggestedTermName() -> String {
-        let cal = Calendar.current
-        let month = cal.component(.month, from: state.now)
-        let year = cal.component(.year, from: state.now)
-        switch month {
-        case 1...5:  return "Spring \(year)"
-        case 6...7:  return "Summer \(year)"
-        default:     return "Fall \(year)"
-        }
     }
 }
