@@ -22,7 +22,7 @@ private struct AppleSignInButton: UIViewRepresentable {
         context.coordinator.action = action
     }
 
-    final class Coordinator {
+    final class Coordinator: NSObject {
         var action: () -> Void
         init(action: @escaping () -> Void) { self.action = action }
         @objc func tapped() { action() }
