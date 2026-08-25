@@ -1077,13 +1077,11 @@ final class AppState: ObservableObject {
             .sorted { $0.start < $1.start }
     }
 
-    /// Today's events, sorted — the Dashboard schedule reads this.
-    /// Today's calendar entries for the dashboard schedule: store events plus the
-    /// scheduled work-blocks (dragged tasks), in time order — a scheduled task is
-    /// something to do, so it belongs on the schedule too.
+    /// Today's calendar entries for the dashboard schedule, in time order — the shared
+    /// `displayEvents(on:)` pool, so the dashboard shows exactly what the Calendar tab
+    /// does for today (class meetings and Apple events included, duplicates collapsed).
     var todaysEvents: [CalendarEvent] {
-        (events(on: Date()) + scheduledWorkBlocks(on: Date()) + classMeetingEvents(on: Date()))
-            .sorted { $0.start < $1.start }
+        displayEvents(on: Date()).sorted { $0.start < $1.start }
     }
 
     /// Scheduled tasks rendered as work-block events for `date` — the calendar's
@@ -1573,8 +1571,10 @@ final class AppState: ObservableObject {
         UserDefaults.standard.object(forKey: "calendar.workSessions.push") as? Bool ?? true
     }
 
-    /// User-adjustable mirror label; empty falls back to the shared default.
-    private var workSessionTitlePrefix: String {
+    /// User-adjustable mirror label; empty falls back to the shared default. Also read by
+    /// `displayEvents(on:)` so dedup can strip the prefix off an inbound "Work: X" copy and
+    /// recognise it as the native session it mirrors.
+    var workSessionTitlePrefix: String {
         let stored = UserDefaults.standard.string(forKey: "calendar.workSessions.titlePrefix") ?? ""
         return stored.isEmpty ? CalendarSync.defaultWorkSessionPrefix : stored
     }

@@ -37,6 +37,20 @@ struct MiniMonthAgenda: View {
             selectedDay = newToday
             visibleMonth = newToday
         }
+        // Apple events are device-local and fetched per range, so the dashboard/menu-bar
+        // grid has to ask for ITS month — otherwise it draws whatever range the Calendar
+        // tab happened to load last (nothing at all, if that tab was never opened).
+        .task(id: visibleMonth) { await loadAppleEventsForVisibleMonth() }
+    }
+
+    /// Pull read-only Apple events covering the whole visible grid, through the store's
+    /// one fetch path (the same one the Calendar tab uses).
+    private func loadAppleEventsForVisibleMonth() async {
+        let cells = MonthGrid.cells(for: visibleMonth, calendar: calendar)
+        guard let first = cells.first, let last = cells.last else { return }
+        let start = calendar.startOfDay(for: first)
+        let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: last)) ?? last
+        await state.refreshExternalEvents(start: start, end: end)
     }
 
     // MARK: - Mini month calendar (the one outlined instrument container)
@@ -111,7 +125,7 @@ struct MiniMonthAgenda: View {
         let weeks = stride(from: 0, to: cells.count, by: 7)
             .map { Array(cells[$0 ..< min($0 + 7, cells.count)]) }
             .filter { week in week.contains { MonthGrid.isInMonth($0, of: visibleMonth, calendar: calendar) } }
-        let dots = dotDayStarts()
+        let dots = dotDayStarts(in: cells)
         return VStack(spacing: 2) {
             ForEach(Array(weeks.enumerated()), id: \.offset) { _, week in
                 HStack(spacing: 0) {
@@ -167,21 +181,14 @@ struct MiniMonthAgenda: View {
         }
     }
 
-    /// The days that carry a dot: store events (Atlas/Google/Canvas), read-only
-    /// Apple externals, scheduled work-blocks, or an open task deadline — the same
-    /// master feed the full calendar draws (mirrors `events(on:)` +
-    /// `externalEvents(on:)` + `scheduledWorkBlocks(on:)` +
-    /// `CalendarView.deadlineEvents`). One pass over the collections per render
-    /// instead of one per grid cell.
-    private func dotDayStarts() -> Set<Date> {
+    /// The days in the visible grid that carry a dot — asked of the SAME
+    /// `displayEvents(on:)` pool the Calendar tab draws, so a day with only a class
+    /// meeting (or only an Apple event) is dotted here too, and a block arriving from
+    /// two calendars never counts twice.
+    private func dotDayStarts(in cells: [Date]) -> Set<Date> {
         var days = Set<Date>()
-        for event in state.events { days.insert(calendar.startOfDay(for: event.start)) }
-        for event in state.externalEvents { days.insert(calendar.startOfDay(for: event.start)) }
-        for task in state.tasks where !task.done {
-            if let at = task.scheduledAt, !task.needsReplan(now: state.now) {
-                days.insert(calendar.startOfDay(for: at))
-            }
-            if let due = task.dueDate { days.insert(calendar.startOfDay(for: due)) }
+        for day in cells where !state.displayEvents(on: day).isEmpty {
+            days.insert(calendar.startOfDay(for: day))
         }
         return days
     }
@@ -246,14 +253,14 @@ struct MiniMonthAgenda: View {
         isViewingToday ? "TODAY" : MiniFmt.agendaDay.string(from: selectedDay).uppercased()
     }
 
-    /// The selected day's master feed — store events (Atlas/Google/Canvas) +
-    /// scheduled work-blocks + read-only Apple externals — in time order, exactly
-    /// what the full calendar composes. Each row keeps its own source color and
-    /// attribution (externals stay Apple/read-only); merging never relabels them.
+    /// The selected day's master feed — the shared `displayEvents(on:)` pool, in time
+    /// order, so this agenda lists exactly what the full calendar composes for the day
+    /// (class meetings, deadlines and Key Date flags included, duplicates collapsed).
+    /// Colored like the day grid, so a class task reads in its class's color. Each row
+    /// keeps its own source and attribution (externals stay Apple/read-only); neither
+    /// merging nor coloring ever relabels them.
     private var agendaItems: [CalendarEvent] {
-        (state.events(on: selectedDay)
-            + state.scheduledWorkBlocks(on: selectedDay)
-            + state.externalEvents(on: selectedDay))
+        state.gridColored(state.displayEvents(on: selectedDay))
             .sorted { $0.start < $1.start }
     }
 
@@ -261,7 +268,9 @@ struct MiniMonthAgenda: View {
         // "now" applies only while viewing today and the event is in progress.
         let isNow = isViewingToday && event.start <= state.now && state.now < event.end
         return HStack(spacing: 10) {
-            Text(event.timeLabel)
+            // All-day entries (Key Date flags, date-only deadlines) have no clock time —
+            // "12 AM" would read as a real midnight block.
+            Text(event.isAllDay ? "ALL DAY" : event.timeLabel)
                 .atlasMono(size: 11, weight: .medium)
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 .frame(width: 52, alignment: .leading)

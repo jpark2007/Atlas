@@ -213,7 +213,13 @@ struct DashboardView: View {
                             .atlasMono(size: 11, weight: .medium)
                             .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     }
-                    if !task.spaceName.isEmpty {
+                    // A task's CLASS is its identity, so the class chip (in the class's
+                    // own color) is what the row wears. Only a task with no class falls
+                    // back to the space tag — the space itself still shows on the detail
+                    // page either way.
+                    if let className = state.taskClassChipText(for: task) {
+                        atlasTag(text: className, color: state.taskAccentColor(for: task))
+                    } else if !task.spaceName.isEmpty {
                         atlasTag(text: task.spaceName, color: task.spaceColor)
                     }
                 }
@@ -279,8 +285,9 @@ struct DashboardView: View {
 
             Button { state.route = .task(task.id) } label: {
                 HStack(spacing: 8) {
-                    // Colour still says WHOSE.
-                    Circle().fill(task.spaceColor).frame(width: 6, height: 6)
+                    // Colour still says WHOSE — the class's own colour when the task has a
+                    // class, its space's otherwise (same resolution as the rail and grid).
+                    Circle().fill(state.taskAccentColor(for: task)).frame(width: 6, height: 6)
                     Text(task.title)
                         .atlasFont(size: 14, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
