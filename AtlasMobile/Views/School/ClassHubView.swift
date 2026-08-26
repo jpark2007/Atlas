@@ -234,7 +234,7 @@ struct ClassHubView: View {
     // MARK: - Work
 
     private func workBlock(_ project: Project) -> some View {
-        let items = openWork(project)
+        let items = store.openWork(forClass: project)
         return section("Work", action: nil) {
             if items.isEmpty {
                 Text("Nothing due yet.")
@@ -263,20 +263,6 @@ struct ClassHubView: View {
                 }
             }
         }
-    }
-
-    /// This class's open tasks, soonest deadline first (undated last).
-    private func openWork(_ project: Project) -> [TaskItem] {
-        store.snapshot.tasks
-            .filter { !$0.done && $0.projectName.caseInsensitiveCompare(project.name) == .orderedSame }
-            .sorted { a, b in
-                switch (a.dueDate, b.dueDate) {
-                case let (x?, y?): return x != y ? x < y : a.title < b.title
-                case (nil, _?):    return false
-                case (_?, nil):    return true
-                case (nil, nil):   return a.title < b.title
-                }
-            }
     }
 
     private func toggle(_ task: TaskItem) {

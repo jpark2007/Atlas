@@ -7,8 +7,9 @@ import AtlasCore
 /// Structure: a caps header carrying the active term (with the term switcher tucked
 /// behind it as a menu, not a nav level), then that term's live classes, each pushing
 /// its class hub. Soft-archived classes are hidden; the prompts above the list are the
-/// framework's "you have a decision to make" moments — a finished term, and Canvas
-/// courses with no class yet.
+/// framework's "you have a decision to make" moments — currently a finished term.
+/// Canvas is set up on the Mac, so no Canvas prompt appears here (its synced coursework
+/// still shows normally).
 ///
 /// With School turned off the section renders nothing at all, so Tasks looks exactly
 /// like it did before School existed.
@@ -30,7 +31,6 @@ struct SchoolTasksSection: View {
     @State private var termOverride: UUID?
 
     @State private var presentWizard = false
-    @State private var presentCourseCatchUp = false
     @State private var editingTerm: Term?
 
     private var term: Term? {
@@ -66,14 +66,6 @@ struct SchoolTasksSection: View {
                     }
                 }
 
-                if !store.unlinkedCanvasCourses.isEmpty && term != nil {
-                    let n = store.unlinkedCanvasCourses.count
-                    promptRow(title: n == 1 ? "1 new course found" : "\(n) new courses found",
-                              detail: "Canvas is sending items Atlas has no class for.") {
-                        presentCourseCatchUp = true
-                    }
-                }
-
                 ForEach(termClasses) { klass in
                     classRow(klass)
                 }
@@ -89,10 +81,6 @@ struct SchoolTasksSection: View {
                 // With a semester already in place there's nothing to ask about being a
                 // student — go straight to "add your classes".
                 SemesterWizardSheet(startAt: term == nil ? .student : .door).environmentObject(store)
-            }
-            .sheet(isPresented: $presentCourseCatchUp) {
-                CanvasCourseChecklistSheet(term: term, courses: store.unlinkedCanvasCourses)
-                    .environmentObject(store)
             }
             .sheet(item: $editingTerm) { editing in
                 TermEditorSheet(term: editing,
@@ -141,8 +129,9 @@ struct SchoolTasksSection: View {
 
     // MARK: - Rows
 
-    /// A class row: color dot, name, trailing course code — and its open-work count, the
-    /// one thing a phone glance is actually for.
+    /// A class row: color dot, name, its open-work count, then the course code. The count
+    /// is the one thing a phone glance is actually for — a school task that has a class
+    /// lives here and on the class page, never in a generic bucket further down Tasks.
     private func classRow(_ klass: Project) -> some View {
         Button { onOpenClass(klass.id) } label: {
             HStack(spacing: 12) {
@@ -162,6 +151,15 @@ struct SchoolTasksSection: View {
                     }
                 }
                 Spacer(minLength: 8)
+                let open = store.openWork(forClass: klass).count
+                if open > 0 {
+                    Text("\(open)")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(MobileTheme.muted)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(MobileTheme.hairline))
+                }
                 if let code = klass.code, !code.isEmpty {
                     Text(code)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -178,16 +176,11 @@ struct SchoolTasksSection: View {
         .edHairlineBelow()
     }
 
-    /// "MWF · 10 AM–10:50 AM" when the class has a schedule, else its open-work count,
-    /// else nothing — never a placeholder that says the same as silence.
+    /// "MWF · 10 AM–10:50 AM" when the class has a schedule, else nothing — never a
+    /// placeholder that says the same as silence. The open-work count is its own
+    /// trailing badge, so it shows whether or not the class has meeting times.
     private func subtitle(_ klass: Project) -> String? {
-        if let first = klass.meetingPattern.first {
-            return MeetingPatternFormat.describe(first)
-        }
-        let open = store.snapshot.tasks.filter {
-            !$0.done && $0.projectName.caseInsensitiveCompare(klass.name) == .orderedSame
-        }.count
-        return open == 0 ? nil : "\(open) open"
+        klass.meetingPattern.first.map(MeetingPatternFormat.describe)
     }
 
     /// The zero state, compact: one row into the wizard. Turning School off in there (or

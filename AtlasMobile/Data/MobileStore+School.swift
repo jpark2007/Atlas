@@ -3,7 +3,7 @@ import AtlasCore
 
 /// The School framework's phone-side behaviour — the iOS twin of the Mac's
 /// `AppState+School`: the enable/hide preference, the term lifecycle, class
-/// creation/archival, and the Canvas-course catch-up list.
+/// creation/archival.
 ///
 /// Deliberately its own file and purely additive to `MobileStore`, so the School
 /// wave and the calendar wave never touch the same lines. The pure rules live in
@@ -84,7 +84,7 @@ extension MobileStore {
             ?? "School"
     }
 
-    /// Creates a class in `term`, returning it so the caller can link a Canvas course.
+    /// Creates a class in `term`, returning it to the caller.
     @discardableResult
     func addClass(name: String, code: String?, termID: UUID?, colorToken: String? = nil) -> Project? {
         let spaceName = schoolSpaceName()
@@ -148,55 +148,27 @@ extension MobileStore {
         }
     }
 
-    // MARK: - Canvas courses without a class
+    // MARK: - A class's work
 
-    /// Distinct Canvas course labels present in the synced feed.
-    var canvasCoursesInFeed: [String] {
-        let labels = snapshot.tasks.compactMap(\.canvasCourse) + snapshot.events.compactMap(\.canvasCourse)
-        return Array(Set(labels)).sorted()
-    }
-
-    /// Canvas courses no class is linked to yet — the wizard's checklist and the
-    /// "N new courses found" prompt read this.
-    var unlinkedCanvasCourses: [String] {
-        let linked = Set(snapshot.projects.compactMap(\.canvasCourse))
-        return canvasCoursesInFeed.filter { !linked.contains($0) }
-    }
-
-    /// Creates one class per selected Canvas course under `term`, linking each so that
-    /// course's already-imported items file under it (and future ones route there).
-    func createClasses(fromCanvasCourses courses: [String], term: Term?) {
-        for course in courses {
-            guard let created = addClass(name: course, code: nil, termID: term?.id) else { continue }
-            linkClassToCanvasCourse(projectID: created.id, course: course)
-        }
-    }
-
-    /// Links a class to a Canvas course, then re-files that course's already-imported
-    /// items under it. Persisting the link routes FUTURE items server-side; the local
-    /// arrays plus `remapCanvasCourse` handle the retroactive move — the same split the
-    /// Mac uses, so the sync runner's per-tick updates stay user-data-safe.
-    func linkClassToCanvasCourse(projectID: UUID, course: String) {
-        guard let i = snapshot.projects.firstIndex(where: { $0.id == projectID }) else { return }
-        snapshot.projects[i].canvasCourse = course
-        let project = snapshot.projects[i]
-        Task { try? await self.db.upsertProject(project) }
-
-        let color = project.colorToken.map { ColorToken.color(for: $0) } ?? project.spaceColor
-        for j in snapshot.events.indices where snapshot.events[j].canvasCourse == course {
-            snapshot.events[j].projectID = project.id
-            snapshot.events[j].spaceName = project.spaceName
-            snapshot.events[j].spaceID   = project.spaceID
-            snapshot.events[j].color     = color
-        }
-        for j in snapshot.tasks.indices where snapshot.tasks[j].canvasCourse == course {
-            snapshot.tasks[j].projectName = project.name
-            snapshot.tasks[j].spaceName   = project.spaceName
-            snapshot.tasks[j].spaceID     = project.spaceID
-            snapshot.tasks[j].spaceColor  = color
-        }
-        Task { [db] in
-            try? await db.remapCanvasCourse(course, toProject: project.id, spaceName: project.spaceName)
-        }
+    /// This class's OPEN tasks, soonest deadline first (undated last). The one predicate
+    /// the class row's count and the class page's Work list both read, so the badge can
+    /// never disagree with what opening the class shows. `projectID` is authoritative;
+    /// the name is the fallback for a task whose link predates the id column.
+    func openWork(forClass klass: Project) -> [TaskItem] {
+        snapshot.tasks
+            .filter { task in
+                guard !task.done else { return false }
+                if let pid = task.projectID { return pid == klass.id }
+                return !task.projectName.isEmpty
+                    && task.projectName.caseInsensitiveCompare(klass.name) == .orderedSame
+            }
+            .sorted { a, b in
+                switch (a.dueDate, b.dueDate) {
+                case let (x?, y?): return x != y ? x < y : a.title < b.title
+                case (nil, _?):    return false
+                case (_?, nil):    return true
+                case (nil, nil):   return a.title < b.title
+                }
+            }
     }
 }

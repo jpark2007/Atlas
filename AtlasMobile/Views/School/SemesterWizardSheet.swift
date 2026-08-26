@@ -10,8 +10,8 @@ import AtlasCore
 /// somewhere and Atlas's job is to go get it, not to make the student build a timetable
 /// by hand.
 ///
-/// The Canvas copy is phone-appropriate: on a phone you tap, and Canvas's calendar feed
-/// lives behind the desktop site, so the steps say so instead of pretending otherwise.
+/// Canvas is a Mac-only setup step: there is no connect flow here. Coursework Canvas
+/// already synced still shows everywhere on the phone.
 struct SemesterWizardSheet: View {
     @EnvironmentObject private var store: MobileStore
     @Environment(\.dismiss) private var dismiss
@@ -19,9 +19,6 @@ struct SemesterWizardSheet: View {
     enum Step {
         case student        // are you a student?
         case door           // how does your schedule already exist?
-        case canvas         // copy your Canvas calendar link
-        case importing      // the feed is connected; waiting for the first sync
-        case courses        // "create these as classes?"
         case manual         // type the classes
         case schoolLink     // a calendar link from the school/registrar
     }
@@ -39,8 +36,6 @@ struct SemesterWizardSheet: View {
     @State private var feedName = ""
     @State private var working = false
     @State private var error: String?
-    /// True once the wait for the first sync has run its course with nothing found.
-    @State private var importTimedOut = false
 
     @State private var manualRows: [ManualClass] = [ManualClass(), ManualClass(), ManualClass()]
 
@@ -57,9 +52,6 @@ struct SemesterWizardSheet: View {
                 switch step {
                 case .student:    studentStep
                 case .door:       doorStep
-                case .canvas:     canvasStep
-                case .importing:  importingStep
-                case .courses:    coursesStep
                 case .manual:     manualStep
                 case .schoolLink: schoolLinkStep
                 }
@@ -120,34 +112,13 @@ struct SemesterWizardSheet: View {
                "Fastest if you only have a few. Scan a syllabus afterward to fill in times and policies.") {
             step = .manual
         }
-        choice("Connect Canvas",
-               "Best for your assignments — they flow in automatically. Atlas finds your courses too; add times from your school calendar or a syllabus scan.") {
-            step = .canvas
-        }
         // The scan commits ONTO a class (times, info card, its work), so it needs one to
         // exist first — inside the wizard there is nothing to file it under yet.
         disabledChoice("I have a photo of my syllabus",
                        "Add the class first, then tap Scan a syllabus on its page — Atlas reads the times, the work and the policies off it.")
     }
 
-    // MARK: - Step 3a · Canvas
-
-    @ViewBuilder
-    private var canvasStep: some View {
-        prompt("Copy your Canvas calendar link",
-               "Canvas keeps it behind one screen. Once Atlas has it, it stays up to date on its own.")
-        VStack(alignment: .leading, spacing: 10) {
-            instruction(1, "Open Canvas in Safari and tap Calendar.")
-            instruction(2, "Tap Calendar Feed at the bottom of the page. On a phone you may need Request Desktop Website first.")
-            instruction(3, "Press and hold the link that appears, then Copy — it ends in .ics.")
-        }
-        .padding(.bottom, 20)
-        linkField("https://school.instructure.com/feeds/calendars/….ics", text: $feedURL)
-        actionButton(working ? "Connecting…" : "Bring in my Canvas") { connect(type: "canvas") }
-        backButton { step = .door }
-    }
-
-    // MARK: - Step 3b · school calendar link
+    // MARK: - Step 3 · school calendar link
 
     @ViewBuilder
     private var schoolLinkStep: some View {
@@ -155,55 +126,11 @@ struct SemesterWizardSheet: View {
                "A registrar or timetable feed. Atlas shows those events; it never edits them.")
         plainField("Name it (e.g. Registrar)", text: $feedName)
         linkField("https://….ics", text: $feedURL)
-        actionButton(working ? "Connecting…" : "Add this calendar") { connect(type: "ics") }
+        actionButton(working ? "Connecting…" : "Add this calendar") { connect() }
         backButton { step = .door }
     }
 
-    // MARK: - Step 4 · waiting for the first sync
-
-    private var importingStep: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            prompt(importTimedOut ? "Still waiting on your schedule" : "Bringing your schedule in…",
-                   importTimedOut
-                   ? "Your first sync can take a few minutes. Atlas will offer to create the classes as soon as the courses land."
-                   : "Atlas is reading the feed. This usually takes a moment.")
-            if !importTimedOut {
-                AtlasLoader(size: 26).padding(.bottom, 8)
-            }
-            actionButton("Done for now") { dismiss() }
-        }
-        .task(id: importTimedOut) {
-            guard !importTimedOut else { return }
-            // Server-side sync writes the items; a re-pull is the only way the client
-            // learns about them.
-            for _ in 0..<12 {
-                try? await Task.sleep(for: .seconds(5))
-                if Task.isCancelled { return }
-                await store.refresh()
-                if !store.unlinkedCanvasCourses.isEmpty {
-                    step = .courses
-                    return
-                }
-            }
-            importTimedOut = true
-        }
-    }
-
-    // MARK: - Step 5 · the courses Atlas found
-
-    @ViewBuilder
-    private var coursesStep: some View {
-        prompt("Atlas found your courses",
-               "Pick the ones to keep as classes. Their Canvas work files under them from now on.")
-        CanvasCourseChecklistBody(courses: store.unlinkedCanvasCourses) { chosen in
-            if !chosen.isEmpty {
-                store.createClasses(fromCanvasCourses: chosen, term: ensureTerm())
-            }
-            dismiss()
-        }
-    }
-
-    // MARK: - Step 6 · manual
+    // MARK: - Step 4 · manual
 
     @ViewBuilder
     private var manualStep: some View {
@@ -237,6 +164,11 @@ struct SemesterWizardSheet: View {
         .buttonStyle(.plain)
         .padding(.top, 12)
         actionButton("Create these classes") { createManual() }
+        Text("If your school gives you a calendar file to download, import it on the Mac app.")
+            .font(.system(size: 13, weight: .regular, design: .rounded))
+            .foregroundStyle(MobileTheme.muted)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.top, 14)
         backButton { step = .door }
     }
 
@@ -373,21 +305,16 @@ struct SemesterWizardSheet: View {
         return created
     }
 
-    private func connect(type: String) {
+    private func connect() {
         let url = feedURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if type == "canvas", !CanvasService.isValidFeedURL(url) {
-            error = "That doesn't look like a Canvas feed link. It's under Canvas → Calendar → Calendar Feed."
-            return
-        }
-        if type == "ics", !FeedService.isValidICSURL(url) {
+        if !FeedService.isValidICSURL(url) {
             error = "That doesn't look like a calendar link. It should start with https and usually ends in .ics."
             return
         }
         error = nil
         working = true
-        let displayName = type == "canvas"
-            ? "Canvas"
-            : (feedName.trimmingCharacters(in: .whitespaces).isEmpty ? "School calendar" : feedName)
+        let displayName = feedName.trimmingCharacters(in: .whitespaces).isEmpty
+            ? "School calendar" : feedName
         Task {
             guard let jwt = await store.validAccessToken() else {
                 error = "Sign in to Atlas first."
@@ -395,19 +322,15 @@ struct SemesterWizardSheet: View {
                 return
             }
             do {
-                try await feeds.connect(feedUrl: url, feedType: type, displayName: displayName,
+                try await feeds.connect(feedUrl: url, feedType: "ics", displayName: displayName,
                                         spaceName: store.schoolSpaceName(), jwt: jwt)
                 AtlasTips.ConnectSource.hasConnection = true
                 UserDefaults.standard.set(true, forKey: "checklist.connected")
                 feedURL = ""   // don't retain the capability URL in the field
-                if type == "canvas" {
-                    step = .importing
-                } else {
-                    // The feed's classes land as events; a term to hang them on so
-                    // School opens on "add your first class", not the wizard again.
-                    _ = ensureTerm()
-                    dismiss()
-                }
+                // The feed's classes land as events; a term to hang them on so
+                // School opens on "add your first class", not the wizard again.
+                _ = ensureTerm()
+                dismiss()
             } catch {
                 self.error = "Couldn't connect that link. Check it and your connection, then try again."
             }

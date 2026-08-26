@@ -136,7 +136,7 @@ final class MobileStore: ObservableObject {
     }
 
     /// A fresh Supabase access token for an authenticated edge-function call
-    /// (Canvas connect/disconnect/space). Refreshes an expired JWT first — mirrors
+    /// (calendar-feed connect/disconnect/space). Refreshes an expired JWT first — mirrors
     /// the `deleteAccount` path. nil ⇒ no session or the refresh token was rejected.
     func validAccessToken() async -> String? {
         await sessionStore.refreshIfNeeded()?.accessToken
@@ -238,8 +238,8 @@ final class MobileStore: ObservableObject {
 
     /// Sets `AtlasTips.ConnectSource.hasConnection` from the live connection rows — any
     /// Google account or a Canvas feed. A failed load coalesces to empty/nil, so on error
-    /// `hasConnection` becomes false and the tip's remaining rules still apply. The
-    /// successful iOS Canvas connect also sets it directly (Settings), so this mainly seeds
+    /// `hasConnection` becomes false and the tip's remaining rules still apply. A
+    /// successful in-app feed connect also sets it directly (Settings), so this mainly seeds
     /// the "already connected" case at launch — including connections made on another device.
     private func refreshConnectionTipState() async {
         guard session != nil else { return }
@@ -266,11 +266,21 @@ final class MobileStore: ObservableObject {
             }) { e.color = space.color }
             return e
         }
+        // A task's project link persists as `projectID`; `projectName` is the display
+        // copy `TaskRow.toDomain()` leaves empty, so re-derive it here (the Mac does the
+        // same in its bootstrap). Without this pass every class-linked task arrives with
+        // no project name — it falls out of its class and into a generic space bucket,
+        // and the class page's Work section reads empty.
+        let projectsByID = Dictionary(s.projects.map { ($0.id, $0) },
+                                      uniquingKeysWith: { first, _ in first })
         s.tasks = s.tasks.map { task in
             var t = task
             if let space = s.spaces.first(where: {
                 $0.name.caseInsensitiveCompare(t.spaceName) == .orderedSame
             }) { t.spaceColor = space.color }
+            if let pid = t.projectID, let project = projectsByID[pid] {
+                t.projectName = project.name
+            }
             return t
         }
         return s
