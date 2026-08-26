@@ -9,6 +9,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkRateLimit, clientIp, tooManyRequests } from "../_shared/rate_limit.ts";
+import { corsFor } from "../_shared/cors.ts";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -17,23 +18,17 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // field name can track the form.
 const HONEYPOT_FIELD = "referral_code";
 
-// This function is public (no JWT), so scope CORS to the landing origin rather
-// than `*` — only the marketing site should be able to POST from a browser.
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "https://atlaslm.vercel.app",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
 
-function json(payload: unknown, status: number): Response {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
 
 Deno.serve(async (req: Request) => {
+  // Per-request: the allowed origin depends on who is calling (see _shared/cors.ts).
+  const corsHeaders = corsFor(req);
+  const json = (payload: unknown, status: number): Response =>
+    new Response(JSON.stringify(payload), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }

@@ -910,3 +910,34 @@ h1, h2, .display {
   [data-anim="spaces"] .space__list[data-list="personal"] { display: none !important; }
   .why__lead em { background-size: 0 0 !important; }
 }
+
+/* ---- support form (support.html) ------------------------------------
+   Stacked rows rather than the waitlist's single inline field: a subject, an
+   address and a body. Borrows the waitlist's field skin so both forms feel
+   like the same site.
+   -------------------------------------------------------------------- */
+.support-form { margin: 1.6rem 0 2.6rem; }
+.support-form__row { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1.1rem; }
+.support-form label { font-size: 0.92rem; font-weight: 700; }
+.support-form__hint { font-weight: 500; color: var(--muted); }
+.support-form input[type="text"],
+.support-form input[type="email"],
+.support-form textarea {
+  width: 100%;
+  background: var(--paper);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 11px;
+  padding: 0.72em 1em;
+  font: inherit;
+  font-size: 1rem;
+  transition: border-color 0.15s var(--ease);
+}
+.support-form textarea { resize: vertical; min-height: 8.5rem; line-height: 1.5; }
+.support-form input::placeholder,
+.support-form textarea::placeholder { color: color-mix(in srgb, var(--muted) 75%, transparent); }
+.support-form input:focus,
+.support-form textarea:focus { border-color: var(--ink); outline: none; }
+.support-form input:focus-visible,
+.support-form textarea:focus-visible { outline: 2px solid var(--clay-text); outline-offset: 2px; }
+/* A sent message leaves the form on screen but out of the way of the answer. */
+.support-form[data-done="true"] .support-form__row { opacity: 0.55; }

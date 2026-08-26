@@ -132,6 +132,10 @@
     background: var(--ink-wash); margin-right: 0.4rem;
   }
   .report button { padding: 0.4rem 0.8rem; font-size: 0.85rem; }
+  .report__actions { display: inline-flex; gap: 0.5rem; }
+  /* Delete reads as the quieter, riskier option — it never competes with Resolve. */
+  .report__delete { opacity: 0.7; }
+  .report__delete:hover { opacity: 1; }
   .empty { color: var(--muted); font-style: italic; }
 
   .foot-actions { margin-top: 2.5rem; display: flex; gap: 0.75rem; align-items: center; }
@@ -469,16 +473,27 @@
       meta.appendChild(document.createTextNode(ageLabel(r.created_at)));
       foot.appendChild(meta);
 
-      if (resolved) {
-        const done = document.createElement("span");
-        done.textContent = "Resolved";
-        foot.appendChild(done);
-      } else {
-        const btn = document.createElement("button");
-        btn.textContent = "Resolve";
-        btn.addEventListener("click", () => resolveReport(r.id, btn));
-        foot.appendChild(btn);
-      }
+      // Actions live in one row: resolve/reopen (reversible) and delete (not).
+      const actions = document.createElement("span");
+      actions.className = "report__actions";
+
+      const primary = document.createElement("button");
+      primary.textContent = resolved ? "Reopen" : "Resolve";
+      primary.addEventListener("click", () =>
+        actOnReport(resolved ? "reopen" : "resolve", r.id, primary));
+      actions.appendChild(primary);
+
+      const del = document.createElement("button");
+      del.textContent = "Delete";
+      del.className = "report__delete";
+      del.addEventListener("click", () => {
+        // Permanent, so it asks. Resolve is the reversible option and sits right there.
+        if (!confirm("Delete this report for good? Resolving keeps it instead.")) return;
+        actOnReport("delete", r.id, del);
+      });
+      actions.appendChild(del);
+
+      foot.appendChild(actions);
       card.appendChild(foot);
       wrap.appendChild(card);
     }
@@ -501,14 +516,22 @@
     $("dash").hidden = false;
   }
 
-  async function resolveReport(id, btn) {
+  const ACTION_FAILED = {
+    resolve: "Couldn't resolve that.",
+    reopen: "Couldn't reopen that.",
+    delete: "Couldn't delete that.",
+  };
+
+  /// One round-trip per report action, then a reload so the card reflects the truth
+  /// on the server rather than a guess made here.
+  async function actOnReport(action, id, btn) {
     btn.disabled = true;
-    const { ok, status } = await callAdmin({ code: CODE, action: "resolve", reportId: id });
+    const { ok, status } = await callAdmin({ code: CODE, action, reportId: id });
     if (ok) { await loadStats($("dashStatus")); }
     else {
       btn.disabled = false;
       setStatus($("dashStatus"),
-        status === 429 ? "Too many requests — slow down." : "Couldn't resolve that.", "error");
+        status === 429 ? "Too many requests — slow down." : ACTION_FAILED[action], "error");
     }
   }
 

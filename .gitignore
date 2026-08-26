@@ -54,3 +54,6 @@ supabase/.temp/
 
 # Apple Sign in with Apple private keys — never commit
 *.p8
+
+# Playwright MCP scratch output (screenshots, page snapshots)
+.playwright-mcp/

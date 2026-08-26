@@ -15,6 +15,11 @@ const WAITLIST_ENDPOINT =
 const TRACK_DOWNLOAD_ENDPOINT =
   "https://jxrmozhgsebwtbdleyxp.supabase.co/functions/v1/track-download";
 
+/* SUPPORT_ENDPOINT — the support page's form. Files the message as a bug_reports
+   row (platform "web"), landing in the same owner dashboard as in-app reports. */
+const SUPPORT_ENDPOINT =
+  "https://jxrmozhgsebwtbdleyxp.supabase.co/functions/v1/support-request";
+
 const COPY = {
   idle: "Notify me",
   sending: "Adding you…",
@@ -270,4 +275,80 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       }
     });
   }
+})();
+
+/* ---- support form ---------------------------------------------------
+   Same shape as the waitlist: honeypot in, one status line out. Present only
+   on support.html, so bail quietly everywhere else.
+   -------------------------------------------------------------------- */
+(function initSupportForm() {
+  const form = document.querySelector("[data-support]");
+  if (!form) return;
+
+  const subject = form.querySelector('input[name="subject"]');
+  const email = form.querySelector('input[name="email"]');
+  const message = form.querySelector('textarea[name="message"]');
+  const honeypot = form.querySelector('input[name="referral_code"]');
+  const button = form.querySelector('button[type="submit"]');
+  const status = form.querySelector("[data-status]");
+  const idleLabel = button ? button.textContent : "Send it";
+
+  function setStatus(text, kind) {
+    if (!status) return;
+    status.textContent = text || "";
+    if (kind) status.dataset.kind = kind;
+    else delete status.dataset.kind;
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const body = (message.value || "").trim();
+    const addr = (email.value || "").trim();
+
+    if (body.length < 2) {
+      setStatus("Tell us what's happening first.", "error");
+      message.focus();
+      return;
+    }
+    // An address is optional, but a mistyped one means a reply that never lands.
+    if (addr !== "" && !EMAIL_RE.test(addr)) {
+      setStatus("That email doesn't look right. Mind checking it?", "error");
+      email.focus();
+      return;
+    }
+
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    button.textContent = "Sending…";
+    setStatus("", null);
+
+    try {
+      const res = await fetch(SUPPORT_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: body,
+          email: addr,
+          subject: (subject.value || "").trim(),
+          referral_code: (honeypot && honeypot.value) || "",
+        }),
+      });
+      if (!res.ok) throw new Error("Request failed: " + res.status);
+
+      form.dataset.done = "true";
+      message.value = "";
+      if (subject) subject.value = "";
+      setStatus(
+        addr
+          ? "Got it. We'll read this and write back."
+          : "Got it. We'll read this — add an email next time if you want a reply.",
+        "success",
+      );
+    } catch (err) {
+      setStatus("That didn't send. Give it another try?", "error");
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+      button.textContent = idleLabel;
+    }
+  });
 })();

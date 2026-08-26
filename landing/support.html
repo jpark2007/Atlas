@@ -2,8 +2,8 @@
 <html lang="en">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Terms of Use — Atlas</title>
-<meta name="description" content="The terms for using Atlas — a free prelaunch beta, provided as-is, your content stays yours." />
+<title>Support — Atlas</title>
+<meta name="description" content="Get help with Atlas — report a bug, ask a question, or tell us something is broken." />
 <meta name="theme-color" content="#fbfaf7" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -34,46 +34,53 @@
 <main id="main" class="legal">
   <div class="wrap legal__inner">
     <a class="legal__back" href="index.html">&larr; Back to Atlas</a>
-    <p class="kicker" style="margin-top:1.5rem">Terms of Use</p>
-    <h1 class="legal__title">The deal, in plain terms.</h1>
-    <p class="legal__date">Effective July 3, 2026</p>
+    <p class="kicker" style="margin-top:1.5rem">Support</p>
+    <h1 class="legal__title">Something broken? Tell us.</h1>
 
     <div class="prose">
-      <p>Atlas is built by Andrew Khalil and Jonah Park. Contact: <a href="mailto:drewkhalil@gmail.com">drewkhalil@gmail.com</a>.</p>
+      <h2>If you can open Atlas</h2>
+      <p>Use <strong>Report a Bug</strong> inside the app &mdash; on Mac it&rsquo;s in <strong>Settings &rarr; App &amp; Help</strong>, on iPhone in <strong>Settings &rarr; App &amp; Help</strong>. It&rsquo;s the fastest route: the report arrives with your app version and a tail of recent activity attached, which usually tells us what went wrong without a back-and-forth.</p>
 
-      <h2>What Atlas is</h2>
-      <p>Atlas is a native Mac and iPhone life manager &mdash; a unified calendar, spaces and projects, task capture with AI, and notes. It&rsquo;s in <strong>prelaunch beta</strong>: not everything works yet, and things will change. By downloading a beta build or signing up for updates, you agree to these terms.</p>
+      <h2>If you can&rsquo;t</h2>
+      <p>Use the form below. It reaches exactly the same place.</p>
 
-      <h2>Beta software, provided as-is</h2>
-      <p>Atlas is early beta. It may have bugs, go down, or lose or mis-sync data, and it may change without notice. We provide it <strong>&ldquo;as is,&rdquo; without warranties of any kind</strong>. Don&rsquo;t rely on Atlas as your only copy of anything important &mdash; keep your source calendars (Google, Apple, Canvas) as the record of truth.</p>
+      <form class="support-form" data-support novalidate>
+        <div class="support-form__row">
+          <label for="sp-subject">Subject <span class="support-form__hint">optional</span></label>
+          <input id="sp-subject" type="text" name="subject" maxlength="200" placeholder="Sync stopped working" autocomplete="off" />
+        </div>
+        <div class="support-form__row">
+          <label for="sp-email">Your email <span class="support-form__hint">optional &mdash; needed if you want a reply</span></label>
+          <input id="sp-email" type="email" name="email" maxlength="320" placeholder="you@email.com" autocomplete="email" />
+        </div>
+        <div class="support-form__row">
+          <label for="sp-message">What&rsquo;s happening?</label>
+          <textarea id="sp-message" name="message" rows="7" maxlength="4000" required
+            placeholder="What you were doing, what you expected, and what happened instead."></textarea>
+        </div>
+        <div class="visually-hidden" aria-hidden="true">
+          <label for="sp-referral">Referral code</label>
+          <input id="sp-referral" type="text" name="referral_code" tabindex="-1" autocomplete="off" />
+        </div>
+        <button class="btn btn--primary" type="submit">Send it</button>
+        <p class="wl-form__status" data-status role="status" aria-live="polite"></p>
+      </form>
 
-      <h2>Your account and responsibilities</h2>
-      <ul>
-        <li>You&rsquo;re responsible for keeping your login secure and for the content you put into Atlas.</li>
-        <li>Use Atlas lawfully. Don&rsquo;t try to break, overload, reverse-engineer, or gain unauthorized access to the service or to other users&rsquo; data.</li>
-        <li>When you connect Google or Canvas, you confirm you&rsquo;re allowed to access those accounts and you authorize Atlas to sync them as described in the <a href="privacy.html">Privacy Policy</a>.</li>
-      </ul>
+      <h2>Common questions</h2>
 
-      <h2>Your content is yours</h2>
-      <p>You keep all rights to the data you put into Atlas. You grant us only the limited permission needed to store, process, and sync it so the app can work for you &mdash; including sending the text you capture to our AI provider and syncing events to and from the calendars you connect. We don&rsquo;t claim ownership of your content and we don&rsquo;t sell it.</p>
+      <h3>My calendar isn&rsquo;t syncing.</h3>
+      <p>Open <strong>Settings &rarr; Calendars</strong>. Every source carries a live status dot &mdash; a stalled or errored connection says so there, and <strong>Reconnect</strong> on that account&rsquo;s row fixes most cases (a Google grant can expire if the password changed or access was revoked).</p>
 
-      <h2>Third-party services</h2>
-      <p>Atlas connects to services we don&rsquo;t control &mdash; Google Calendar, Canvas, Apple Calendar, and our AI provider. Your use of those services is governed by their own terms, and we&rsquo;re not responsible for them.</p>
+      <h3>How do I delete my account?</h3>
+      <p><strong>Settings &rarr; Account &rarr; Delete account</strong>, on either Mac or iPhone. It erases the account and everything in it &mdash; spaces, projects, tasks, events and notes &mdash; and it can&rsquo;t be undone. If you&rsquo;ve already removed the app and can&rsquo;t get in, send the form above and we&rsquo;ll do it for you.</p>
 
-      <h2>Availability, changes, and price</h2>
-      <p>This is a free prelaunch beta. We may add, change, or remove features, pause the service, or reset beta data as we build. We plan to offer paid features later; if pricing arrives, we&rsquo;ll make it clear before you could ever be charged. The beta does not charge you.</p>
+      <h3>Is my data sold or used for ads?</h3>
+      <p>No, and no. The <a href="privacy.html">privacy policy</a> spells out exactly what&rsquo;s stored and who can reach it.</p>
 
-      <h2>Ending use</h2>
-      <p>You can stop using Atlas at any time and ask us to delete your data (<a href="mailto:drewkhalil@gmail.com">drewkhalil@gmail.com</a>). We may suspend or end access if you misuse the service or where needed to protect Atlas and its users.</p>
+      <h3>How long until I hear back?</h3>
+      <p>Atlas is built by two people, so replies come from a human and usually within a couple of days. Reports without an email address still get read &mdash; we just can&rsquo;t write back.</p>
 
-      <h2>Liability</h2>
-      <p>To the fullest extent the law allows, Andrew Khalil and Jonah Park are not liable for indirect, incidental, or consequential damages, or for lost or mis-synced data, arising from your use of this beta. Atlas is offered without charge and without warranty.</p>
-
-      <h2>Changes to these terms</h2>
-      <p>We&rsquo;ll update the effective date when these terms change. Continuing to use Atlas after a change means you accept it.</p>
-
-      <h2>Contact</h2>
-      <p>Andrew Khalil and Jonah Park &mdash; <a href="mailto:drewkhalil@gmail.com">drewkhalil@gmail.com</a></p>
+      <p>Prefer email? <a href="mailto:drewkhalil@gmail.com">drewkhalil@gmail.com</a> reaches us too.</p>
     </div>
   </div>
 </main>

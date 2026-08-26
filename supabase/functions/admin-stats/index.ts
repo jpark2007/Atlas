@@ -7,6 +7,8 @@
 //     attempts per IP so the short code can't be brute-forced.
 //   • "stats"       → { totalUsers, dmgDownloads, mac, mobile, byPlatform, reports }
 //   • "resolve"     → marks bug_reports.id resolved.
+//   • "reopen"      → puts a resolved report back in the open list.
+//   • "delete"      → removes a report permanently (spam / duplicates).
 //   • "change_code" → verifies the current code, then stores the new code's hash.
 //
 // Public from the browser (the landing dashboard has no Supabase session), so
@@ -16,6 +18,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkRateLimit, clientIp, tooManyRequests } from "../_shared/rate_limit.ts";
+import { corsFor } from "../_shared/cors.ts";
 import {
   activesSeries,
   dailyCounts,
@@ -31,23 +34,19 @@ import {
 } from "../_shared/admin_stats.ts";
 
 // Public endpoint — scope CORS to the landing origin (mirrors waitlist).
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "https://atlaslm.vercel.app",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
 
-function json(payload: unknown, status: number): Response {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 Deno.serve(async (req: Request) => {
+  // Per-request: the allowed origin depends on who is calling (see _shared/cors.ts).
+  const corsHeaders = corsFor(req);
+  const json = (payload: unknown, status: number): Response =>
+    new Response(JSON.stringify(payload), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
@@ -98,6 +97,36 @@ Deno.serve(async (req: Request) => {
     if (error) {
       console.error("change_code failed:", error.message);
       return json({ error: "Could not change code" }, 500);
+    }
+    return json({ ok: true }, 200);
+  }
+
+  // Undo a resolve — a report closed by a mis-click has to be able to come back,
+  // otherwise the only recovery is the SQL editor.
+  if (action === "reopen") {
+    if (!reportId) return json({ error: "Missing reportId" }, 400);
+    const { error } = await supabase
+      .from("bug_reports")
+      .update({ status: "open", resolved_at: null })
+      .eq("id", reportId);
+    if (error) {
+      console.error("reopen failed:", error.message);
+      return json({ error: "Could not reopen report" }, 500);
+    }
+    return json({ ok: true }, 200);
+  }
+
+  // Permanent. Resolving is the reversible "put it away"; this is for spam and
+  // duplicates that shouldn't sit in the list at all. The dashboard confirms first.
+  if (action === "delete") {
+    if (!reportId) return json({ error: "Missing reportId" }, 400);
+    const { error } = await supabase
+      .from("bug_reports")
+      .delete()
+      .eq("id", reportId);
+    if (error) {
+      console.error("delete failed:", error.message);
+      return json({ error: "Could not delete report" }, 500);
     }
     return json({ ok: true }, 200);
   }
