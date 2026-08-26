@@ -6,8 +6,12 @@ struct AtlasWidgetsBundle: WidgetBundle {
     @WidgetBundleBuilder
     var body: some Widget {
         TodayWidget()
+        UpNextWidget()
+        WeekWidget()
+        ClassWidget()
         LockRectangularWidget()
         LockCircularWidget()
+        LockInlineWidget()
         controls
     }
 

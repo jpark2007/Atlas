@@ -12,7 +12,28 @@ enum WidgetSnapshotWriter {
         let cal = Calendar.current
         let day = cal.startOfDay(for: now)
 
-        let sections = AgendaBuilder.build(events: snapshot.events, tasks: snapshot.tasks, from: now, now: now)
+        // The School framework's synthesized class meetings are part of the day the app
+        // draws, so the widget's day must contain them too — through the SAME dedup as
+        // `MobileStore.displayEvents`, so a lecture that also arrived from Google doesn't
+        // land twice. Every event keeps the source it was ingested with.
+        let term = schoolEnabled ? TermSelection.active(in: snapshot.terms) : nil
+        // The active term's live classes; with no term yet (classes that predate the term
+        // model), every live class — so the "One class" picker is never empty.
+        let live = schoolEnabled ? snapshot.projects.filter { $0.isClass && $0.archivedAt == nil } : []
+        let classes = term.map { t in live.filter { $0.termID == t.id } } ?? live
+        let dayEvents = CalendarSync.collapsingDuplicates(
+            snapshot.events + (term.map { SchoolCalendar.meetingEvents(on: day, classes: classes, term: $0) } ?? []))
+
+        // Room per meeting, keyed by title + start — the agenda flattens events into
+        // `AgendaItem`, which carries neither location nor the event's own id.
+        var rooms: [String: String] = [:]
+        for meeting in term.map({ SchoolCalendar.meetings(on: day, classes: classes, term: $0) }) ?? [] {
+            if let location = meeting.location, !location.isEmpty {
+                rooms[roomKey(meeting.className, meeting.start)] = location
+            }
+        }
+
+        let sections = AgendaBuilder.build(events: dayEvents, tasks: snapshot.tasks, from: now, now: now)
         let items = (sections.first { cal.isDate($0.day, inSameDayAs: day) }?.items ?? [])
             .filter { !($0.kind == .task && $0.allDay) }   // due-only tasks are the "needs a time" pill
 
@@ -26,7 +47,8 @@ enum WidgetSnapshotWriter {
                 spaceName: item.spaceName,
                 spaceColorHex: hex(item.color),
                 startEpoch: start,
-                endEpoch: end)
+                endEpoch: end,
+                location: rooms[roomKey(item.title, item.date)])
         }
 
         let needTime = snapshot.tasks.filter { task in
@@ -41,7 +63,7 @@ enum WidgetSnapshotWriter {
 
         // Events still ahead today also count toward "N left" (aligns with ScheduleView's
         // leftCount): an event counts while it hasn't ended.
-        let liveEvents = snapshot.events.filter { event in
+        let liveEvents = dayEvents.filter { event in
             cal.isDate(event.start, inSameDayAs: day) && event.end > now
         }.count
 
@@ -55,7 +77,12 @@ enum WidgetSnapshotWriter {
             leftCount: needTime + timed + liveEvents,
             dateLabel: dateLabel(now),
             spaces: spaces,
-            generatedAt: now)
+            generatedAt: now,
+            week: week(classes: classes, term: term, tasks: snapshot.tasks, now: now, cal: cal),
+            classes: classes.map {
+                SharedSnapshot.ClassRef(id: $0.id.uuidString, name: $0.name, colorHex: hex(classColor($0)))
+            },
+            classWork: classWork(classes: classes, tasks: snapshot.tasks, now: now))
 
         shared.write()
         writeCache(snapshot)
@@ -122,8 +149,80 @@ enum WidgetSnapshotWriter {
             goals: [])
     }
 
+    // MARK: - School payloads
+
+    /// Whether the School framework is on — the same preference `MobileStore` reads.
+    /// Absent ⇒ on.
+    private static var schoolEnabled: Bool {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: MobileStore.schoolEnabledKey) != nil else { return true }
+        return defaults.bool(forKey: MobileStore.schoolEnabledKey)
+    }
+
+    /// Mon–Fri of the current school week: what meets each day and how much is due.
+    /// On the weekend it's the week AHEAD — Saturday's useful week is the next one.
+    private static func week(classes: [Project], term: Term?, tasks: [TaskItem],
+                             now: Date, cal: Calendar) -> [SharedSnapshot.WeekDay] {
+        let today = cal.startOfDay(for: now)
+        let weekday = cal.component(.weekday, from: today)     // 1 = Sunday
+        let toMonday: Int
+        switch weekday {
+        case 1:  toMonday = 1                                   // Sunday → tomorrow
+        case 7:  toMonday = 2                                   // Saturday → Monday
+        default: toMonday = -(weekday - 2)
+        }
+        guard let monday = cal.date(byAdding: .day, value: toMonday, to: today) else { return [] }
+
+        return (0..<5).compactMap { offset in
+            guard let day = cal.date(byAdding: .day, value: offset, to: monday) else { return nil }
+            let meets = term.map { SchoolCalendar.meetings(on: day, classes: classes, term: $0) } ?? []
+            let due = tasks.filter { task in
+                guard let dueDate = task.dueDate, !task.done else { return false }
+                return cal.isDate(dueDate, inSameDayAs: day)
+            }.count
+            return SharedSnapshot.WeekDay(
+                label: weekdayLabelFormatter.string(from: day),
+                startEpoch: day.timeIntervalSince1970,
+                meets: meets.map { meeting in
+                    let klass = classes.first { $0.id == meeting.classID }
+                    return SharedSnapshot.ClassChip(
+                        name: meeting.code ?? meeting.className,
+                        colorHex: hex(klass.map(classColor) ?? AtlasTheme.Colors.school))
+                },
+                dueCount: due)
+        }
+    }
+
+    /// Open work filed under a class, soonest due first (undated last). Capped: the
+    /// widget shows a handful, and the whole snapshot is one small JSON blob.
+    private static func classWork(classes: [Project], tasks: [TaskItem], now: Date) -> [SharedSnapshot.ClassWork] {
+        let ids = Set(classes.map(\.id))
+        return tasks
+            .filter { !$0.done && $0.projectID.map(ids.contains) == true }
+            .sorted { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }
+            .prefix(40)
+            .map { task in
+                SharedSnapshot.ClassWork(
+                    classId: task.projectID!.uuidString,
+                    title: task.title,
+                    dueLabel: TaskItem.dueLabel(for: task.dueDate, now: now),
+                    dueEpoch: task.dueDate?.timeIntervalSince1970 ?? 0)
+            }
+    }
+
+    /// A class's own tint, falling back to its space's — the rule `SchoolCalendar` uses.
+    private static func classColor(_ klass: Project) -> Color {
+        klass.colorToken.map { ColorToken.color(for: $0) } ?? klass.spaceColor
+    }
+
+    /// Key for the per-meeting room lookup: an agenda item only carries title + start.
+    private static func roomKey(_ title: String, _ start: Date) -> String {
+        "\(title)|\(start.timeIntervalSince1970)"
+    }
+
     // MARK: - Helpers
 
+    private static let weekdayLabelFormatter: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEE"; return f }()
     private static let clockHour: DateFormatter = { let f = DateFormatter(); f.dateFormat = "h a"; return f }()
     private static let clockHourMinute: DateFormatter = { let f = DateFormatter(); f.dateFormat = "h:mm a"; return f }()
     private static let dateLabelFormatter: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEE, MMM d"; return f }()
