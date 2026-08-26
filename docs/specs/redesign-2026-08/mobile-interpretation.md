@@ -24,3 +24,9 @@ All redesign phases are **Mac-first**; this doc accumulates the iOS take so mobi
 
 ## Phase 5 — Simplicity/IA
 - Settings mirror Mac's grouping/naming 1:1 (same words, same groups) so knowledge transfers between devices.
+
+## iOS parity backlog (Drew device-testing, 2026-08-25)
+- **Tasks page class navigation:** tapping a class row in the School section scroll-cycles through the whole list instead of opening/jumping to THAT class; back-arrow behavior off. A class tap should land directly on that class's own view.
+- **Duplicate School rendering:** the Tasks page shows the School framework section up top AND a legacy "SCHOOL" space group below with per-class subsections — mirror the Mac dedup: classes live only in the School section; the space list is Personal etc. only.
+- **iOS Settings IA:** Account is buried behind clicks — it should be visible at top (identity header, Mac-style), with secondary stuff max 1 click deep; generally match the Mac settings vibe.
+- Carried from earlier: AtlasLoader adoption (stock spinner + old "Nothing has arrived yet" ambiguity in mobile wizard), capture character cap, plain result rows/chips parity, wizard "Set up your semester" copy → "Add your classes".
