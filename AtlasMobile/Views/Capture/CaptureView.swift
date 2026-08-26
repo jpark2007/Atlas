@@ -31,6 +31,7 @@ struct CaptureView: View {
     @State private var thinkingText = ""
     @State private var dissolve = false
     @State private var showSettings = false
+    @State private var showClearConfirm = false
     @FocusState private var editorFocused: Bool
 
     @StateObject private var pending = PendingCaptureQueue()
@@ -55,10 +56,21 @@ struct CaptureView: View {
         .sheet(isPresented: $showSettings) {
             SettingsSheet().environmentObject(store)
         }
+        .confirmationDialog("Clear this capture?",
+                            isPresented: $showClearConfirm, titleVisibility: .visible) {
+            Button("Clear", role: .destructive) { clearDraft() }
+        }
         .task { await drainPending() }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active { Task { await drainPending() } }
+            // Backgrounded / interrupted while the mic is live: end it rather than
+            // dictate behind the user's back. Only when really listening, so the
+            // first-run permission dialogs can't cancel their own request.
+            else if speech.isListening { stopListening() }
         }
+        // Leaving the tab ends dictation — SwiftUI keeps this view alive, so without
+        // this the orange recording indicator burns over an unrelated screen.
+        .onDisappear(perform: stopDictationOnLeave)
         .onAppear {
             // "If I typed it, Atlas saved it" — an unsent draft survives an app kill.
             if phase == .empty, text.isEmpty { text = CaptureDraftStore.load() }
@@ -92,6 +104,16 @@ struct CaptureView: View {
     /// The most text one capture can hold, matching the Mac and the server.
     static let maxLength = 20_000
     static let atLimitMessage = "That's as much as one capture can hold"
+
+    /// The two "held for later" outcomes. Nothing was lost — but missing this notice
+    /// reads as a capture that vanished, so it gets the app's banner weight (13/medium
+    /// ink in a bordered capsule, as in `RootTabView`) instead of a caps caption.
+    static let queuedOfflineMessage = "Saved \u{2014} will sort when you\u{2019}re back online"
+    static let queuedServerMessage = "Saved \u{2014} will sort when servers are back"
+
+    private static func isQueuedMessage(_ note: String) -> Bool {
+        note == queuedOfflineMessage || note == queuedServerMessage
+    }
 
     // MARK: - Empty state (spec §4.2)
 
@@ -154,7 +176,18 @@ struct CaptureView: View {
 
             VStack(spacing: 18) {
                 if let note {
-                    Text(note).edCapsLabel()
+                    if Self.isQueuedMessage(note) {
+                        Text(note)
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(MobileTheme.ink)
+                            .multilineTextAlignment(.center)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 18)
+                            .background(Capsule().fill(MobileTheme.bg))
+                            .overlay(Capsule().strokeBorder(MobileTheme.hairline, lineWidth: 1))
+                    } else {
+                        Text(note).edCapsLabel()
+                    }
                 } else if !pending.items.isEmpty {
                     Text("Saved offline · \(pending.items.count) waiting").edCapsLabel()
                 }
@@ -172,17 +205,27 @@ struct CaptureView: View {
                     .buttonStyle(.plain)
                 }
 
-                Button { showManualAdd = true } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "plus")
-                        Text("Add manually")
+                HStack(spacing: 22) {
+                    Button { showManualAdd = true } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "plus")
+                            Text("Add manually")
+                        }
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .tracking(0.88)
+                        .textCase(.uppercase)
+                        .foregroundStyle(MobileTheme.ink)
                     }
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .tracking(0.88)
-                    .textCase(.uppercase)
-                    .foregroundStyle(MobileTheme.ink)
+                    .buttonStyle(.plain)
+
+                    // Only offered when there is a draft to throw away.
+                    if !trimmedText.isEmpty {
+                        Button { showClearConfirm = true } label: {
+                            Text("Clear").edCapsLabel()
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .buttonStyle(.plain)
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 28)
@@ -242,8 +285,37 @@ struct CaptureView: View {
         switch speech.state {
         case .denied:      permissionExplainer
         case .unavailable: unavailableNote
+        case .preparing:   preparingState
         default:           liveListening
         }
+    }
+
+    /// Before the mic is actually live — permissions are async, and on a fresh
+    /// install two system dialogs sit on top of this. Quiet: no live dot, no
+    /// waveform, nothing claiming to be hearing anything yet.
+    private var preparingState: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            Text("Getting ready").edCapsLabel()
+
+            Text("One moment…")
+                .font(.system(size: 22, weight: .regular, design: .rounded))
+                .foregroundStyle(MobileTheme.faint)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer()
+
+            Button { speech.stop(); phase = .empty } label: {
+                Text("Cancel")
+                    .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MobileTheme.ink)
+                    .frame(maxWidth: .infinity)
+                    .edOutlineControl()
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 28)
+        .padding(.top, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var liveListening: some View {
@@ -366,6 +438,19 @@ struct CaptureView: View {
         }
     }
 
+    /// End dictation when Capture goes away. The words are ROUTED through the same
+    /// flow as the Stop button — leaving the tab must never silently lose them.
+    private func stopDictationOnLeave() {
+        guard phase == .listening else { return }
+        if speech.isListening {
+            stopListening()
+        } else if speech.state == .preparing {
+            // Permission dialogs were still up — cancel before the mic ever opens.
+            speech.stop()
+            phase = .empty
+        }
+    }
+
     /// Begin listening immediately for an `atlas://capture?mic=1` deep link.
     private func consumeMicDeepLink() {
         guard store.autoStartMic else { return }
@@ -420,7 +505,7 @@ struct CaptureView: View {
                 text = ""
                 CaptureDraftStore.clear()
                 phase = .empty
-                note = "Saved — will sort when you’re back online"
+                note = Self.queuedOfflineMessage
             } catch AtlasAIError.tooLong {
                 // Server rejected the size (413) — a retry would 413 forever, so
                 // this stays an in-place error with the text kept in the field.
@@ -433,7 +518,7 @@ struct CaptureView: View {
                 text = ""
                 CaptureDraftStore.clear()
                 phase = .empty
-                note = "Saved — will sort when servers are back"
+                note = Self.queuedServerMessage
             } catch {
                 phase = .empty
                 note = "Couldn’t sort that. Try again."
@@ -463,6 +548,17 @@ struct CaptureView: View {
         CaptureDraftStore.save(lastRawText)
         note = nil
         phase = .empty
+    }
+
+    /// Throw away the draft in the compose field. A live mic is stopped first —
+    /// `SpeechCapture.start()` carries an unrouted transcript into the next session,
+    /// so leaving it listening would re-publish the words we just cleared. `stop()`
+    /// clears them, and the transcript here is deliberately not routed anywhere.
+    private func clearDraft() {
+        if speech.isListening { speech.stop() }
+        text = ""
+        CaptureDraftStore.clear()
+        note = nil
     }
 
     // MARK: - Recent capture referents

@@ -95,9 +95,10 @@ struct CaptureResultCard: View {
     private func row(_ item: Binding<CommittedItem>) -> some View {
         let value = item.wrappedValue
         return HStack(alignment: .top, spacing: 12) {
-            // Space-color edge (spec §4): routing is visible at a glance.
+            // Routing edge (spec §4): the linked class's own tint when there is one,
+            // else the space color.
             RoundedRectangle(cornerRadius: 1.5)
-                .fill(color(for: value.spaceName))
+                .fill(tint(for: value))
                 .frame(width: 3)
                 .padding(.vertical, 2)
 
@@ -362,6 +363,20 @@ struct CaptureResultCard: View {
     private func color(for spaceName: String) -> Color {
         spaces.first { $0.name.caseInsensitiveCompare(spaceName) == .orderedSame }?.color
             ?? MobileTheme.accent
+    }
+
+    /// The item's own color: the linked project's tint when it set one (the same
+    /// `colorToken ?? spaceColor` resolution the School rows and day grid use), else
+    /// the space color. Nothing here is hardcoded — an item with no project link keeps
+    /// its space's color.
+    private func tint(for item: CommittedItem) -> Color {
+        guard !item.projectName.isEmpty,
+              let project = spaces.flatMap(\.projects).first(where: {
+                  $0.name.caseInsensitiveCompare(item.projectName) == .orderedSame
+              }),
+              let token = project.colorToken
+        else { return color(for: item.spaceName) }
+        return ColorToken.color(for: token)
     }
 }
 
