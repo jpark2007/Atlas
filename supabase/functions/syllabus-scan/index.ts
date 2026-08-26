@@ -19,6 +19,12 @@
  *   "truncated"?: true
  * }
  *
+ * `dueISO`/`startISO` on the wire are full UTC instants, as they have always been.
+ * The MODEL answers in the student's LOCAL wall clock and `_shared/syllabus_scan.ts`
+ * does the timezone/DST conversion in code (`localToUtcISO`) — asking a model to do
+ * that arithmetic itself reliably landed dates a day early. The change is entirely
+ * inside the function; shipped clients see the same shape.
+ *
  * This endpoint COMMITS NOTHING. It returns a draft the client shows in the
  * review list (Phase 1 spec: draft → review → commit); the client writes the
  * accepted rows itself. `weekdays` uses Foundation's numbering (1 = Sunday …
@@ -125,8 +131,9 @@ Return a JSON OBJECT with this exact shape:
         {
           "kind": "task" | "event",  // assignment/reading/paper = task; exam/quiz/lab session = event
           "title": string,           // clean noun phrase, NO date words in it
-          "dueISO": string,          // tasks: full ISO-8601 UTC instant, e.g. "2026-09-12T04:00:00Z"
-          "startISO": string,        // events: full ISO-8601 UTC instant
+          "dueISO": string,          // tasks: LOCAL wall clock, "YYYY-MM-DDTHH:mm" (no Z, no
+                                     // offset), or "YYYY-MM-DD" when no time is stated
+          "startISO": string,        // events: LOCAL wall clock in the same shape
           "notes": string            // chapter numbers, weight, page counts (omit if none)
         }
       ]
@@ -140,9 +147,12 @@ Rules:
 - Every class MUST have an "items" array (use [] when the page lists no work).
 - Assignments, readings, papers, problem sets → "task" with "dueISO".
   Exams, quizzes, midterms, finals, labs, presentations → "event" with "startISO".
-- A stated clock time is SACRED: convert the LOCAL time in "${timezone}" to UTC by
-  adding the zone's offset, letting the calendar date roll forward when needed.
-  A due date with NO stated time = that LOCAL day at 00:00, converted to UTC.
+- A stated clock time is SACRED: copy it into "dueISO"/"startISO" exactly as the
+  syllabus prints it ("due Sept 12 at 11:59pm" → "2026-09-12T23:59"). Never round it,
+  never turn it into midnight.
+- NEVER do timezone arithmetic. Write every date and time as the student reads it off
+  their own calendar and clock — no "Z", no offset, no rolling the date forward. The
+  server converts to UTC. A due date with NO stated time is just "YYYY-MM-DD".
 - NEVER invent a date. If a date cannot be resolved confidently, omit "dueISO"/
   "startISO" and still emit the item — a dateless item is useful, a wrong one is not.
 - "meetingPattern" is the RECURRING weekly pattern only. A one-off exam date is an
@@ -325,7 +335,7 @@ Deno.serve(async (req: Request) => {
   try {
     const completion = await res.json();
     const content: string = completion?.choices?.[0]?.message?.content ?? "{}";
-    classes = normalizeClasses(JSON.parse(content));
+    classes = normalizeClasses(JSON.parse(content), timezone);
   } catch (err) {
     return jsonResponse({ error: "Could not parse model output as JSON", detail: String(err) }, 502);
   }

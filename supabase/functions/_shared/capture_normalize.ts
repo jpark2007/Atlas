@@ -22,6 +22,10 @@ const NAIVE_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?)
 const ABSOLUTE_RE = /(Z|[+-]\d{2}:?\d{2})$/i;
 
 const KINDS = new Set(["task", "event", "note"]);
+/** Weekday names, index-aligned with Date.getUTCDay(), for the sanity check. */
+const WEEKDAYS = [
+  "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+];
 /** A duration longer than a day is never a timed block — clamp it. */
 const MAX_DURATION_MIN = 1440;
 /** An end more than this far past the start is model garbage, not a long trip. */
@@ -125,6 +129,28 @@ function localTimePart(value: string, timeZone: string): string | null {
 }
 
 /**
+ * A DEADLINE with no stated time means the END of that local day, not its
+ * start. "due friday" is only late once Friday is over, so landing it on local
+ * midnight sorts it above everything on Friday and counts it late from 12:01 AM
+ * — a day early. A date-only value and an explicit local 00:00 both count as
+ * "no time stated" (the same reading that makes a 00:00 event start all-day);
+ * any real stated time is left exactly as the user said it.
+ *
+ * Events are deliberately NOT routed through here: an all-day event genuinely
+ * begins at local midnight. Only `dueISO` gets end-of-day.
+ *
+ * Returns a UTC instant like `localToUtcISO`, DST included — 23:59 is resolved
+ * in the zone, never by a fixed offset.
+ */
+export function deadlineToUtcISO(value: unknown, timeZone: string): string | null {
+  const utc = localToUtcISO(value, timeZone);
+  if (!utc) return null;
+  if (localTimePart(utc, timeZone) !== "00:00") return utc;
+  const day = localDatePart(utc, timeZone);
+  return day ? localToUtcISO(`${day}T23:59`, timeZone) : utc;
+}
+
+/**
  * The user's local date today, "YYYY-MM-DD". Exported for the prompt's
  * relative-date anchor and for the eval harness's fixed reference "now".
  */
@@ -169,6 +195,38 @@ function canonicalSpace(name: string, spaceNames: string[]): string {
   return spaceNames.find((s) => s.toLowerCase() === lower) ?? name;
 }
 
+/**
+ * When the model also names the weekday it meant ("friday"), check the date we
+ * resolved actually falls on it and log if not. Diagnostic only — we never
+ * "correct" the date from a word, because the word is as likely to be the wrong
+ * half of the pair. `weekday` itself never reaches the wire.
+ */
+function warnOnWeekdayMismatch(
+  item: Record<string, unknown>,
+  weekday: string,
+  timeZone: string,
+): void {
+  const want = weekday.toLowerCase();
+  if (!WEEKDAYS.includes(want)) return;
+  const iso = item.startISO ?? item.dueISO;
+  if (typeof iso !== "string") return;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return;
+  let got: string;
+  try {
+    got = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" })
+      .format(new Date(t)).toLowerCase();
+  } catch {
+    return;
+  }
+  if (got !== want) {
+    console.warn(
+      `capture: model said "${weekday}" but ${iso} is a ${got} in ${timeZone} ` +
+        `(item: ${String(item.title)})`,
+    );
+  }
+}
+
 export type NormalizeOptions = { timeZone: string; spaceNames?: string[] };
 
 /**
@@ -176,9 +234,12 @@ export type NormalizeOptions = { timeZone: string; spaceNames?: string[] };
  * these invariants hold no matter how the model misbehaves:
  *
  *  - only known keys survive; a blank title drops the item entirely
- *  - `kind` is always task|event|note (anything else → task)
+ *  - `kind` is always task|event|note, or "update" when the model echoed an id
+ *    from the existing-items list (anything else → task)
  *  - `spaceName` uses the user's exact spelling when it matches one of theirs
  *  - `dueISO`/`startISO`/`endISO` are UTC instants converted from local time
+ *  - a `dueISO` with no stated time is the END of that local day (23:59), never
+ *    its midnight — see `deadlineToUtcISO`
  *  - an all-day item's start (and multi-day end) sit on local midnight, and the
  *    end is the LAST day of the span (clients treat it as inclusive)
  *  - an `event` whose start landed on local midnight is all-day, not a meeting
@@ -201,18 +262,28 @@ export function normalizeCaptureItems(
     const title = str(raw.title);
     if (!title) continue;
 
+    // "update" is a real kind, but only with an id the model copied from the
+    // existing-items list — without one it is just a new task.
     const kindRaw = str(raw.kind).toLowerCase();
-    const kind = KINDS.has(kindRaw) ? kindRaw : "task";
+    const targetId = str(raw.targetId);
+    const kind = kindRaw === "update" && targetId
+      ? "update"
+      : (KINDS.has(kindRaw) ? kindRaw : "task");
 
     const item: Record<string, unknown> = {
       kind,
       title,
       spaceName: canonicalSpace(str(raw.spaceName), spaceNames),
     };
+    if (kind === "update") item.targetId = targetId;
     const project = str(raw.projectName);
     if (project) item.projectName = project;
     const notes = str(raw.notes);
     if (notes) item.notes = notes;
+    const confidence = Number(raw.confidence);
+    if (Number.isFinite(confidence)) {
+      item.confidence = Math.min(1, Math.max(0, confidence));
+    }
 
     // Fill the sibling date field before conversion so nothing is lost.
     let startLocal = str(raw.startISO);
@@ -244,11 +315,16 @@ export function normalizeCaptureItems(
         if (endDay && endDay > startDay) {
           item.endISO = localToUtcISO(`${endDay}T00:00`, tz);
         }
-        if (kind === "task") item.dueISO = item.startISO;
+        if (kind === "task") item.dueISO = deadlineToUtcISO(startDay, tz);
       }
     } else {
       const start = startLocal ? localToUtcISO(startLocal, tz) : null;
-      const due = dueLocal ? localToUtcISO(dueLocal, tz) : null;
+      // A deadline (task, or an update carrying a new deadline) with no stated
+      // time is end-of-day; an event's date/time is taken literally.
+      const isDeadline = kind === "task" || kind === "update";
+      const due = dueLocal
+        ? (isDeadline ? deadlineToUtcISO(dueLocal, tz) : localToUtcISO(dueLocal, tz))
+        : null;
       if (start) item.startISO = start;
       if (due) item.dueISO = due;
 
@@ -264,6 +340,7 @@ export function normalizeCaptureItems(
       }
     }
 
+    warnOnWeekdayMismatch(item, str(raw.weekday), tz);
     out.push(item);
   }
 

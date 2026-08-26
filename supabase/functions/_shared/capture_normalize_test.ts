@@ -183,12 +183,13 @@ Deno.test("normalizeCaptureItems leaves a real overnight event timed", () => {
   assertEquals(it.endISO, "2027-01-01T09:00:00.000Z");
 });
 
-Deno.test("normalizeCaptureItems does NOT all-day a midnight task deadline", () => {
+Deno.test("normalizeCaptureItems does NOT all-day a dateless-time task deadline", () => {
   const [it] = normalizeCaptureItems([{
     kind: "task", title: "Pset", spaceName: "School", dueISO: "2026-08-14",
   }], opts);
   assertEquals(it.isAllDay, undefined);
-  assertEquals(it.dueISO, "2026-08-14T07:00:00.000Z");
+  // LA, August (UTC-7): Aug 14 23:59 local.
+  assertEquals(it.dueISO, "2026-08-15T06:59:00.000Z");
 });
 
 // ── normalizeCaptureItems: repairs ─────────────────────────────
@@ -241,7 +242,8 @@ Deno.test("normalizeCaptureItems drops items with no title and keeps only known 
     null as unknown as Record<string, unknown>,
   ], opts);
   assertEquals(items.length, 1);
-  assertEquals(Object.keys(items[0]).sort(), ["kind", "spaceName", "title"]);
+  // `bogus` is gone; `confidence` survives — the clients decode it.
+  assertEquals(Object.keys(items[0]).sort(), ["confidence", "kind", "spaceName", "title"]);
 });
 
 Deno.test("normalizeCaptureItems mirrors a lone start onto a task's due date", () => {
@@ -276,4 +278,137 @@ Deno.test("normalizeCaptureItems tolerates a model that emitted UTC anyway", () 
   }], opts);
   assertEquals(it.startISO, "2026-08-12T00:30:00.000Z");
   assertEquals(it.isAllDay, undefined);
+});
+
+// ── The real America/New_York regressions ──────────────────────
+// Three captures from 2026-08-26 that the model's own UTC math got wrong: it
+// applied the clock shift but left the calendar date on the local day, landing
+// each deadline exactly 24h early. The model now reports local wall clock and
+// these convert in code. (NY = UTC-4 in August, UTC-5 in November.)
+const NY = "America/New_York";
+const nyOpts = { timeZone: NY, spaceNames: ["School"] };
+
+Deno.test("NY: 'problem set three due friday' lands on Friday night, not Thursday", () => {
+  const [it] = normalizeCaptureItems([{
+    kind: "task", title: "Problem set three", spaceName: "School",
+    dueISO: "2026-08-28T23:59", weekday: "friday",
+  }], nyOpts);
+  assertEquals(it.dueISO, "2026-08-29T03:59:00.000Z");
+});
+
+Deno.test("NY: 'reading response due thursday night' lands on Thursday", () => {
+  const [it] = normalizeCaptureItems([{
+    kind: "task", title: "Reading response", spaceName: "School",
+    dueISO: "2026-08-27T23:59", weekday: "thursday",
+  }], nyOpts);
+  assertEquals(it.dueISO, "2026-08-28T03:59:00.000Z");
+});
+
+Deno.test("NY: 'lab writeup due next monday' stays correct", () => {
+  const [it] = normalizeCaptureItems([{
+    kind: "task", title: "Lab writeup", spaceName: "School",
+    dueISO: "2026-08-31T23:59", weekday: "monday",
+  }], nyOpts);
+  assertEquals(it.dueISO, "2026-09-01T03:59:00.000Z");
+});
+
+// A deadline with NO stated time means the END of that local day. Landing it on
+// local midnight sorted it above everything that day and counted it late from
+// 12:01 AM — effectively a day early.
+Deno.test("NY summer: a date-only deadline lands at 23:59 local, not midnight", () => {
+  const [it] = normalizeCaptureItems([{
+    kind: "task", title: "Essay", spaceName: "School", dueISO: "2026-08-28",
+  }], nyOpts);
+  assertEquals(it.dueISO, "2026-08-29T03:59:00.000Z"); // EDT: Fri Aug 28, 11:59 PM
+});
+
+Deno.test("NY winter: a date-only deadline lands at 23:59 local (UTC-5)", () => {
+  const [it] = normalizeCaptureItems([{
+    kind: "task", title: "Final paper", spaceName: "School", dueISO: "2026-12-11",
+  }], nyOpts);
+  assertEquals(it.dueISO, "2026-12-12T04:59:00.000Z"); // EST: Fri Dec 11, 11:59 PM
+});
+
+Deno.test("NY: a deadline the model wrote as local midnight is end-of-day too", () => {
+  const [it] = normalizeCaptureItems([{
+    kind: "task", title: "Essay", spaceName: "School", dueISO: "2026-08-28T00:00",
+  }], nyOpts);
+  assertEquals(it.dueISO, "2026-08-29T03:59:00.000Z");
+});
+
+Deno.test("NY: a deadline WITH a stated time keeps that exact time", () => {
+  const [a] = normalizeCaptureItems([{
+    kind: "task", title: "Essay", spaceName: "School", dueISO: "2026-08-28T15:00",
+  }], nyOpts);
+  assertEquals(a.dueISO, "2026-08-28T19:00:00.000Z"); // 3:00 PM EDT
+  const [b] = normalizeCaptureItems([{
+    kind: "task", title: "Quiz", spaceName: "School", dueISO: "2026-08-28T23:59",
+  }], nyOpts);
+  assertEquals(b.dueISO, "2026-08-29T03:59:00.000Z");
+});
+
+Deno.test("NY: an all-day EVENT still starts at local midnight", () => {
+  const [flagged] = normalizeCaptureItems([{
+    kind: "event", title: "Trip", spaceName: "Personal",
+    startISO: "2026-08-28", isAllDay: true,
+  }], nyOpts);
+  assertEquals(flagged.isAllDay, true);
+  assertEquals(flagged.startISO, "2026-08-28T04:00:00.000Z"); // Fri Aug 28, 12:00 AM
+  assertEquals(flagged.dueISO, undefined);
+
+  const [inferred] = normalizeCaptureItems([{
+    kind: "event", title: "Game", spaceName: "Personal", startISO: "2026-08-28",
+  }], nyOpts);
+  assertEquals(inferred.isAllDay, true);
+  assertEquals(inferred.startISO, "2026-08-28T04:00:00.000Z");
+});
+
+Deno.test("NY uses EDT (UTC-4) in summer and EST (UTC-5) in winter", () => {
+  assertEquals(localToUtcISO("2026-08-28T23:59", NY), "2026-08-29T03:59:00.000Z");
+  assertEquals(localToUtcISO("2026-11-20T23:59", NY), "2026-11-21T04:59:00.000Z");
+});
+
+Deno.test("NY: an 11:59 PM deadline the night before a DST change keeps its own day", () => {
+  // Nov 1 2026 is fall-back day; Oct 31 23:59 is still EDT, Nov 1 23:59 is EST.
+  assertEquals(localToUtcISO("2026-10-31T23:59", NY), "2026-11-01T03:59:00.000Z");
+  assertEquals(localToUtcISO("2026-11-01T23:59", NY), "2026-11-02T04:59:00.000Z");
+});
+
+// ── normalizeCaptureItems: fields the wire contract needs kept ──
+Deno.test("normalizeCaptureItems keeps an update item's kind and targetId", () => {
+  const [it] = normalizeCaptureItems([{
+    kind: "update", targetId: "abc-123", title: "Essay", spaceName: "School",
+    dueISO: "2026-08-28T23:59",
+  }], nyOpts);
+  assertEquals(it.kind, "update");
+  assertEquals(it.targetId, "abc-123");
+  assertEquals(it.dueISO, "2026-08-29T03:59:00.000Z");
+});
+
+Deno.test("normalizeCaptureItems downgrades an update with no id to a task", () => {
+  const [it] = normalizeCaptureItems([
+    { kind: "update", title: "Essay", spaceName: "School" },
+  ], nyOpts);
+  assertEquals(it.kind, "task");
+  assertEquals(it.targetId, undefined);
+});
+
+Deno.test("normalizeCaptureItems keeps confidence, clamped to 0…1", () => {
+  const [a, b, c] = normalizeCaptureItems([
+    { kind: "task", title: "A", spaceName: "School", confidence: 0.4 },
+    { kind: "task", title: "B", spaceName: "School", confidence: 7 },
+    { kind: "task", title: "C", spaceName: "School" },
+  ], nyOpts);
+  assertEquals(a.confidence, 0.4);
+  assertEquals(b.confidence, 1);
+  assertEquals(c.confidence, undefined);
+});
+
+Deno.test("normalizeCaptureItems never puts `weekday` on the wire", () => {
+  const [it] = normalizeCaptureItems([{
+    kind: "task", title: "Essay", spaceName: "School",
+    dueISO: "2026-08-28T23:59", weekday: "monday",  // deliberate mismatch → warns
+  }], nyOpts);
+  assertEquals(it.weekday, undefined);
+  assertEquals(it.dueISO, "2026-08-29T03:59:00.000Z");
 });

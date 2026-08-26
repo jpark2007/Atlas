@@ -21,6 +21,10 @@
  *   [{ kind: "update", targetId, title, spaceName, dueISO?, notes?, confidence? }, ...]
  *   A client that doesn't know "update" treats it as an unknown kind and still
  *   saves a task, so nothing is ever lost.
+ *   Every *ISO field on the wire is a full UTC instant, as it has always been.
+ *   The MODEL now answers in the user's LOCAL wall clock and `_shared/
+ *   capture_normalize.ts` does the timezone/DST conversion in code — a change
+ *   entirely inside the function, invisible to shipped clients.
  *
  * The model splits a multi-item paragraph ("essay due thu, gym 3x, dinner sunday")
  * into multiple objects. When `spaces` is supplied, the user's real Space + project
@@ -39,6 +43,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkRateLimit, tooManyRequests } from "../_shared/rate_limit.ts";
 import { chunkText, dedupeItems, userContentForChunk } from "../_shared/capture_chunking.ts";
 import { applyClassBackstop, classAliasHint } from "../_shared/capture_class_match.ts";
+import { dateAnchorBlock, normalizeCaptureItems } from "../_shared/capture_normalize.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -107,14 +112,35 @@ function projectLabel(p: ContextProject): string | null {
 }
 
 /**
+ * The client sends existing deadlines as UTC instants. Show them to the model as
+ * the user's LOCAL wall clock, both because that's how the user thinks about
+ * them and so the block never models a "Z" value the answer must not copy.
+ */
+function localDueLabel(dueISO: string, timezone: string): string {
+  const t = Date.parse(dueISO);
+  if (Number.isNaN(t)) return dueISO;
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      weekday: "short", year: "numeric", month: "short", day: "numeric",
+      hour: "numeric", minute: "2-digit", hour12: true,
+    }).format(new Date(t));
+  } catch {
+    return dueISO;
+  }
+}
+
+/**
  * Render the "things you already have" block. Each line carries the id the model
  * must echo back in `targetId` when the capture refers to that item. Omitted
  * entirely when the client sent nothing, so the prompt stays short.
  */
-function deadlinesBlock(deadlines: ContextDeadline[]): string {
+function deadlinesBlock(deadlines: ContextDeadline[], timezone: string): string {
   if (!deadlines.length) return "";
   const lines = deadlines.map((d) =>
-    `    • id=${d.id} · "${d.title}"${d.projectName ? ` · ${d.projectName}` : ""} · due ${d.dueISO}`
+    `    • id=${d.id} · "${d.title}"${d.projectName ? ` · ${d.projectName}` : ""} · due ${
+      localDueLabel(d.dueISO, timezone)
+    }`
   );
   return `
 
@@ -210,7 +236,10 @@ function buildSystemPrompt(
   return `You are Atlas, a personal life-management AI. \
 The user's timezone is ${now.tz}. Right now, the user's LOCAL date and time is: ${now.text}. \
 Resolve ALL dates and times ("tomorrow", "next Friday", "tonight", "at 5:30") in the \
-user's LOCAL time first, then convert to UTC for output. \
+user's LOCAL time and report them as LOCAL WALL-CLOCK values. Do NOT convert to UTC \
+and do NOT write a "Z" or a "+00:00" offset — the server does that conversion. \
+Use this calendar to look up which date a weekday name means — never compute it yourself:
+${dateAnchorBlock(new Date(), now.tz)}
 Given a user's free-text capture, classify it and split it into one or more items. \
 A single paragraph can contain MULTIPLE items (e.g. "essay due thursday, gym 3x this \
 week, dinner with mom sunday" → three items). Return ONLY a JSON object of the form \
@@ -223,11 +252,13 @@ Each element of "items" matches this schema:
   "spaceName": string,        // see routing rules below
   "projectName": string|null, // REQUIRED KEY on every item: the exact project/class name
                               // from the routing list, or null. Never leave it out.
-  "dueISO"?: string,          // Full ISO 8601 UTC instant converted from the user's local time,
-                              // e.g. a 5:30 PM PDT deadline → "2026-07-03T00:30:00Z" (tasks)
-  "startISO"?: string,        // Full ISO 8601 UTC instant, converted the same way (events)
-  "endISO"?: string,          // Full ISO 8601 UTC instant for the event's END, only when an
+  "dueISO"?: string,          // LOCAL wall clock, "YYYY-MM-DDTHH:MM" — no Z, no offset.
+                              // A 5:30 PM deadline on July 2 → "2026-07-02T17:30" (tasks)
+  "startISO"?: string,        // LOCAL wall clock in the same shape (events)
+  "endISO"?: string,          // LOCAL wall clock for the event's END, only when an
                               // explicit end/finish time is stated; else omit and durationMin governs
+  "weekday"?: string,         // the weekday name you intended for the date above ("friday"),
+                              // when the capture named one — a check, never a substitute
   "durationMin"?: number,     // duration in minutes (events, default 60 if not specified)
   "isAllDay"?: boolean,       // true for an event on a date with NO stated clock time (all-day)
   "notes"?: string,           // extra detail / body text (notes, or longer event notes)
@@ -237,7 +268,7 @@ Each element of "items" matches this schema:
 }
 
 Routing:
-${spacesBlock(spaces)}${deadlinesBlock(deadlines)}${recentBlock(recent)}
+${spacesBlock(spaces)}${deadlinesBlock(deadlines, now.tz)}${recentBlock(recent)}
 
 Rules:
 - Split distinct to-dos / events / notes into SEPARATE items. A single self-contained
@@ -249,8 +280,8 @@ Rules:
   list appears above, and only with an id copied exactly from it)
 - If an item is ambiguous, prefer "task".
 - STATED TIMES ARE SACRED. If the user states a clock time ("at 5:30", "by noon",
-  "8pm"), it MUST appear in dueISO (tasks) or startISO (events), converted from the
-  user's LOCAL time to UTC. NEVER return a date-only/midnight value when a time was stated.
+  "8pm"), it MUST appear in dueISO (tasks) or startISO (events), as the user's LOCAL
+  wall clock. NEVER return a date-only/midnight value when a time was stated.
 - PRESERVE STATED MINUTES EXACTLY. "3:30" means minute 30 — NEVER round to the hour and
   NEVER alter a stated start or end time. A time range may be written compactly ("3:30-6",
   "3:30–6pm", "2-3"): parse BOTH endpoints, and a single am/pm suffix applies to BOTH
@@ -260,22 +291,20 @@ Rules:
   time above, use PM (e.g. if it is already 7 AM local, "5:30 today" and "at 7" mean PM).
 - For a bare time with NO AM/PM on a FUTURE date, prefer the daytime reading (roughly
   7 AM–9 PM) unless context clearly indicates otherwise.
-- Convert to UTC by ADDING the user's offset from UTC, and let the CALENDAR DATE roll
-  forward when the local time is afternoon/evening. For a UTC-behind zone like the
-  Americas, a PM local time usually lands on the NEXT UTC day: e.g. 5:30 PM local on
-  July 2 in a UTC-7 zone → "2026-07-03T00:30:00Z" (date advances to the 3rd), and 7 PM
-  local that day → "2026-07-03T02:00:00Z". Never leave the date on the local day if the
-  UTC instant has already crossed midnight. This applies even when the user says "today":
-  a deadline "at 5:30 today" still carries the correct UTC date, which may be tomorrow.
+- NEVER do timezone arithmetic. Write the date and time exactly as the user would read
+  them off their own clock and calendar: "5:30 PM today" is "<today's date>T17:30". No
+  offsets, no UTC, no rolling the date forward — the server converts.
+- Take every weekday's date from the calendar above. "Friday" is the FIRST listed Friday
+  on or after today; "next Friday" is the following one.
 - A time-bound errand or commitment ("pick him up at 5:30", "call mom at 8") is an
   "event" starting at that local time — not a floating task with no deadline.
-- A deadline WITHOUT a stated time ("due Friday") = that LOCAL day at 00:00 user-local,
-  converted to UTC.
+- A deadline WITHOUT a stated time ("due Friday") = the END of that LOCAL day, "23:59"
+  (the server enforces this too — a bare date is never a midnight deadline).
 - If an event states an explicit END/finish time ("2–3pm", "from 9 to 10:30", "ends at 4"),
-  put that end as "endISO" (converted to UTC the same way). Otherwise OMIT endISO and let
+  put that end as "endISO" (local wall clock, same shape). Otherwise OMIT endISO and let
   durationMin govern. NEVER invent an end time.
 - An event on a DATE with NO stated clock time ("game on Saturday", "trip July 5") is
-  all-day: set "isAllDay": true and put that LOCAL day's midnight (UTC-converted) in startISO.
+  all-day: set "isAllDay": true and put that LOCAL day's midnight in startISO.
 - A pasted SCHEDULE listing several dated sessions (a season, syllabus, itinerary, class
   list) becomes ONE event per listed session — each with its own date/time. Only make items
   for sessions that carry an actual date; never invent dates or times for unlisted ones.
@@ -502,6 +531,17 @@ Deno.serve(async (req: Request) => {
   // exact spelling, and recover the class from the item's own text when the model
   // left it null. Only ever attaches a class the text names UNAMBIGUOUSLY.
   items = applyClassBackstop(items, spaces);
+
+  // The model reports LOCAL wall-clock times; the timezone arithmetic (with real
+  // IANA/DST data) happens HERE, deterministically — a cheap model gets that math
+  // wrong often enough to land items a day off. The wire shape is unchanged:
+  // dueISO/startISO/endISO still leave as full UTC instants.
+  items = normalizeCaptureItems(items, {
+    timeZone: timezone,
+    spaceNames: (spaces ?? [])
+      .map((s) => (typeof s?.name === "string" ? s.name.trim() : ""))
+      .filter((n) => n.length > 0),
+  });
 
   // Defensive abuse bound ONLY (chunking already removes any normal cap). When it
   // actually trims, flag it via a response header; the body stays a bare array.

@@ -7,6 +7,8 @@
  * the OpenRouter call.
  */
 
+import { deadlineToUtcISO, localToUtcISO } from "./capture_normalize.ts";
+
 // Defensive output bounds only — a real syllabus is one class with tens of items.
 export const MAX_CLASSES = 20;
 export const MAX_ITEMS = 200;
@@ -24,8 +26,19 @@ export function base64ByteLength(b64: string): number {
  * decodes ONE stable shape no matter how the model phrased its JSON. Anything
  * unusable (a block missing times, an item missing a title) is dropped rather
  * than passed through as a half-item the review list can't render.
+ *
+ * The model reports item dates as LOCAL wall clock in `timeZone` ("2026-09-12T23:59");
+ * a due date with no stated time resolves to the end of that local day (23:59);
+ * `localToUtcISO` does the timezone/DST arithmetic here, in code, and the wire
+ * contract stays what it always was — a full UTC instant. A model that ignores
+ * the instruction and emits an absolute value passes through unshifted, never
+ * double-converted. An unparseable date is dropped, keeping the item: the review
+ * list lets the user fill it in, and a wrong date is worse than none.
  */
-export function normalizeClasses(parsed: unknown): Record<string, unknown>[] {
+export function normalizeClasses(
+  parsed: unknown,
+  timeZone = "UTC",
+): Record<string, unknown>[] {
   const raw = Array.isArray(parsed)
     ? parsed
     : (parsed && typeof parsed === "object" &&
@@ -91,8 +104,10 @@ export function normalizeClasses(parsed: unknown): Record<string, unknown>[] {
           kind: it.kind === "event" ? "event" : "task",
           title,
         };
-        const dueISO = str(it.dueISO);
-        const startISO = str(it.startISO);
+        // A due date with no stated time is the END of that local day, not its
+        // midnight (see `deadlineToUtcISO`); a start time is taken literally.
+        const dueISO = deadlineToUtcISO(str(it.dueISO), timeZone);
+        const startISO = localToUtcISO(str(it.startISO), timeZone);
         const notes = str(it.notes);
         if (dueISO) item.dueISO = dueISO;
         if (startISO) item.startISO = startISO;
