@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 120" width="340" height="120">
+  <rect width="340" height="120" rx="18" fill="#1a191d"/>
+  <text x="170" y="78" text-anchor="middle" font-family="Futura, Avenir Next, Helvetica Neue, sans-serif"
+        font-size="58" font-weight="600" letter-spacing="2" fill="#d97757">atlas</text>
+  <rect x="96" y="86" width="148" height="5" rx="2.5" fill="#d97757" opacity="0.45"/>
+</svg>

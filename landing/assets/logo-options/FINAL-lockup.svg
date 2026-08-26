@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 140" width="780" height="140">
+  <rect width="780" height="140" fill="#fbfaf7"/>
+  <g transform="translate(20,16) scale(0.88)">
+    <rect width="120" height="120" rx="27" fill="#1a191d"/>
+    <defs><clipPath id="G"><path d="M 60 15 L 102 104 L 79 104 L 73.5 91 L 46.5 91 L 41 104 L 18 104 Z M 60 54 L 51.5 76 L 68.5 76 Z"/></clipPath></defs>
+    <g clip-path="url(#G)">
+      <rect width="120" height="120" fill="#e79070"/>
+      <path d="M 0 120 L 128 14 L 128 128 L 0 128 Z" fill="#a3402f"/>
+    </g>
+  </g>
+  <text x="148" y="88" font-family="Futura, Avenir Next, Helvetica Neue, sans-serif"
+        font-size="44" font-weight="600" letter-spacing="0.5" fill="#1a191d">Atlas Life Manager</text>
+</svg>
