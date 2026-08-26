@@ -179,6 +179,23 @@ h1, h2, .display {
   font-size: 1.32rem;
   letter-spacing: -0.01em;
 }
+/* The second half of the wordmark lockup. Google's branding review compares the
+   name on the consent screen against the name on the homepage, so the header has
+   to read "Atlas Life Manager" — but "Atlas" stays the loud half. */
+.brand__suffix {
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-left: 0.42rem;
+  align-self: center;
+  white-space: nowrap;
+}
+.site-foot__brand .brand__suffix { display: block; margin: -0.3rem 0 0.5rem; }
+@media (max-width: 520px) { .brand__suffix { font-size: 0.62rem; letter-spacing: 0.05em; margin-left: 0.3rem; } }
+
 .brand__beta {
   font-size: 9.5px;
   font-weight: 800;
