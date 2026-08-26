@@ -143,13 +143,13 @@ struct MonthPageView: View {
     /// Colored per space like the month dots.
     private var previewItems: [DayItem] {
         var items: [DayItem] = []
-        for ev in store.snapshot.events where cal.isDate(ev.start, inSameDayAs: pickedDay) {
+        for ev in displayEvents(on: pickedDay) {
             items.append(DayItem(id: ev.id,
                                  sortMinute: ev.isAllDay ? -1 : minutesOf(ev.start),
                                  time: ev.isAllDay ? "All day" : timeLabel(ev.start),
                                  title: ev.title, color: ev.color))
         }
-        for t in store.snapshot.tasks where !t.done {
+        for t in store.snapshot.tasks where !t.done && inFilter(t.spaceName) {
             if let at = t.scheduledAt, cal.isDate(at, inSameDayAs: pickedDay) {
                 items.append(DayItem(id: t.id, sortMinute: minutesOf(at),
                                      time: timeLabel(at), title: t.title, color: t.spaceColor))
@@ -161,6 +161,23 @@ struct MonthPageView: View {
             }
         }
         return items.sorted { $0.sortMinute < $1.sortMinute }
+    }
+
+    /// The blocks that actually land on `day` — the SAME `MobileStore.displayEvents(on:)`
+    /// pool the Schedule's timeline/grid draw (Atlas events + synthesized class meetings +
+    /// read-only Apple events + Key Date flags, duplicates collapsed), narrowed to the day
+    /// and honoured through the shared space filter. Reading `snapshot.events` directly
+    /// here is what made the month disagree with the day.
+    private func displayEvents(on day: Date) -> [CalendarEvent] {
+        store.displayEvents(on: day)
+            .filter { cal.isDate($0.start, inSameDayAs: day) && inFilter($0.spaceName) }
+    }
+
+    /// The Schedule header's "ALL" space dropdown, applied here too.
+    private func inFilter(_ spaceName: String) -> Bool {
+        guard let id = store.spaceFilter,
+              let name = store.snapshot.spaces.first(where: { $0.id == id })?.name else { return true }
+        return spaceName.caseInsensitiveCompare(name) == .orderedSame
     }
 
     private func minutesOf(_ date: Date) -> Int {
@@ -251,10 +268,10 @@ struct MonthPageView: View {
         func add(_ name: String, _ color: Color) {
             if seen.insert(name.lowercased()).inserted { colors.append(color) }
         }
-        for ev in store.snapshot.events where cal.isDate(ev.start, inSameDayAs: day) {
+        for ev in displayEvents(on: day) {
             add(ev.spaceName, ev.color)
         }
-        for t in store.snapshot.tasks where !t.done {
+        for t in store.snapshot.tasks where !t.done && inFilter(t.spaceName) {
             if let at = t.scheduledAt, cal.isDate(at, inSameDayAs: day) { add(t.spaceName, t.spaceColor) }
             else if let due = t.dueDate, cal.isDate(due, inSameDayAs: day) { add(t.spaceName, t.spaceColor) }
         }

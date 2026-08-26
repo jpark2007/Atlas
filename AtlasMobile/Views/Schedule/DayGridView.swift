@@ -44,6 +44,11 @@ struct DayGridView: View {
     @State private var moveMinutes = 0
     @State private var moveBase: Int?
 
+    // The tapped deadline stack (nil = none) and, once a row in its sheet is picked,
+    // the task to open — handed to `onOpen` on dismiss so the two sheets don't collide.
+    @State private var openStack: DeadlineStack?
+    @State private var pendingOpen: TaskItem?
+
     private var canvasHeight: CGFloat { hourHeight * 24 }
     private var dayStart: Date { cal.startOfDay(for: day) }
     private var isToday: Bool { cal.isDateInToday(day) }
@@ -60,6 +65,13 @@ struct DayGridView: View {
         // Day-swipe while a block is armed would strand the confirm/cancel circles
         // subject-less on the new day; cancel the move instead.
         .onChange(of: day) { _, _ in if armedID != nil { cancelMove() } }
+        .sheet(item: $openStack, onDismiss: {
+            if let t = pendingOpen { pendingOpen = nil; onOpen(.task(t)) }
+        }) { stack in
+            DeadlineStackSheet(time: caps(minute: stack.minute), tasks: stack.tasks) {
+                pendingOpen = $0
+            }
+        }
     }
 
     // MARK: - All-day chips (pinned above the scroll)
@@ -115,7 +127,7 @@ struct DayGridView: View {
         return ZStack(alignment: .topLeading) {
             hourColumn(width: width)                                   // rail + rules (real layout = scroll anchors)
             ForEach(blocks) { blockView($0) }
-            ForEach(deadlines) { deadlineMarker($0, width: width) }
+            ForEach(deadlineStacks) { deadlineMarker($0, width: width) }
             if isToday { nowLine(width: width) }
             placementChip(width: width)
         }
@@ -283,6 +295,19 @@ struct DayGridView: View {
         var id: UUID { task.id }
     }
 
+    /// One visual slot. Untimed deadlines all land at end-of-day, so several markers
+    /// routinely share a position and used to draw on top of each other; deadlines
+    /// close enough to collide are collapsed into a single stack.
+    private struct DeadlineStack: Identifiable {
+        let minute: Int
+        let tasks: [TaskItem]           // earliest first, ties alphabetical
+        var id: UUID { tasks[0].id }
+    }
+
+    /// A marker is ~16 pt tall, which at 56 pt/hour is a little over 17 minutes — so
+    /// anything within 15 minutes of a slot's first deadline would overlap it.
+    private let deadlineSlot = 15
+
     private var deadlines: [Deadline] {
         tasks.compactMap { t in
             guard !t.done, t.scheduledAt == nil, let due = t.dueDate,
@@ -291,15 +316,45 @@ struct DayGridView: View {
         }
     }
 
-    private func deadlineMarker(_ d: Deadline, width: CGFloat) -> some View {
-        let y = CGFloat(d.minute) * hourHeight / 60
+    private var deadlineStacks: [DeadlineStack] {
+        let sorted = deadlines.sorted {
+            ($0.minute, $0.task.title.lowercased()) < ($1.minute, $1.task.title.lowercased())
+        }
+        var stacks: [DeadlineStack] = []
+        var run: [Deadline] = []
+        func flush() {
+            guard let first = run.first else { return }
+            stacks.append(DeadlineStack(minute: first.minute, tasks: run.map(\.task)))
+            run = []
+        }
+        for d in sorted {
+            if let first = run.first, d.minute - first.minute > deadlineSlot { flush() }
+            run.append(d)
+        }
+        flush()
+        return stacks
+    }
+
+    private func deadlineMarker(_ stack: DeadlineStack, width: CGFloat) -> some View {
+        let y = CGFloat(stack.minute) * hourHeight / 60
+        let extra = stack.tasks.count - 1
         return VStack(alignment: .trailing, spacing: 2) {
-            Text(d.task.title)
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .tracking(0.6).textCase(.uppercase)
-                .foregroundStyle(AtlasTheme.Colors.danger)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            HStack(spacing: 6) {
+                Text(stack.tasks[0].title)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .tracking(0.6).textCase(.uppercase)
+                    .foregroundStyle(AtlasTheme.Colors.danger)
+                    .lineLimit(1)
+                if extra > 0 {
+                    Text("+\(extra)")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(AtlasTheme.Colors.danger)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(AtlasTheme.Colors.danger.opacity(0.16)))
+                        .fixedSize()
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
             HStack(spacing: 4) {
                 Image(systemName: "flag.fill")
                     .font(.system(size: 9, weight: .bold))
@@ -309,7 +364,9 @@ struct DayGridView: View {
         }
         .frame(width: max(0, width - railWidth - 12), alignment: .trailing)
         .contentShape(Rectangle())
-        .onTapGesture { onOpen(.task(d.task)) }
+        .onTapGesture {
+            if extra > 0 { openStack = stack } else { onOpen(.task(stack.tasks[0])) }
+        }
         .offset(x: railWidth, y: y - 16)
     }
 
@@ -526,4 +583,72 @@ struct DayGridView: View {
     private func timeCaps(_ blk: Block) -> String {
         "\(caps(minute: blk.startMin)) – \(caps(minute: blk.endMin))"
     }
+}
+
+/// Every deadline sharing one slot on the grid. The line itself can only show a
+/// preview, so this is where the rest of them are readable and pickable; tapping a
+/// row hands that task back to the day view, which opens the usual `ItemDetailSheet`.
+private struct DeadlineStackSheet: View {
+    let time: String
+    let tasks: [TaskItem]
+    let onPick: (TaskItem) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Due \(time)").edScreenTitle()
+                    Text("\(tasks.count) deadlines").edCapsLabel()
+                }
+                Spacer()
+                Button { dismiss() } label: { Text("Close").edCapsLabel() }
+                    .buttonStyle(.plain)
+            }
+
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    ForEach(tasks) { task in
+                        Button {
+                            onPick(task)
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Circle().fill(task.spaceColor).frame(width: 8, height: 8)
+                                Text(task.title)
+                                    .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(MobileTheme.ink)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                                Spacer(minLength: 8)
+                                if let due = task.dueDate {
+                                    Text(Self.timeFormat.string(from: due))
+                                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                        .foregroundStyle(AtlasTheme.Colors.danger)
+                                        .fixedSize()
+                                }
+                            }
+                            .padding(.vertical, 12)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        Rectangle().fill(MobileTheme.hairline).frame(height: 1)
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 28)
+        .padding(.top, 28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(MobileTheme.bg.ignoresSafeArea())
+    }
+
+    private static let timeFormat: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f
+    }()
 }

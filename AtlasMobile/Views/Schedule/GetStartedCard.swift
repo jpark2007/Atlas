@@ -33,11 +33,12 @@ struct GetStartedCard: View {
                             .foregroundStyle(MobileTheme.faint)
                     }.buttonStyle(.plain)
                 }
-                row(connected, "Connect Google or Canvas")
+                row(connected, "Connect a calendar")
                 row(captured, "Capture your first task")
                 row(scheduled, "Put something on the calendar")
                 row(month, "Peek at month view")
-                row(widgetAdded, "Add the Atlas widget", soft: true)
+                row(widgetAdded, "Add an Atlas widget", soft: true,
+                    detail: "Home and lock screen. Touch and hold the home screen, tap +, then search Atlas.")
             }
             .padding(16)
             .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(MobileTheme.bg))
@@ -49,14 +50,23 @@ struct GetStartedCard: View {
         }
     }
 
-    private func row(_ done: Bool, _ title: String, soft: Bool = false) -> some View {
-        HStack(spacing: 10) {
+    private func row(_ done: Bool, _ title: String, soft: Bool = false,
+                     detail: String? = nil) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: done ? "checkmark.circle.fill" : "circle")
                 .foregroundStyle(done ? MobileTheme.ink : MobileTheme.faint)
-            Text(title + (soft ? "  ·  optional" : ""))
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(done ? MobileTheme.muted : MobileTheme.ink)
-                .strikethrough(done, color: MobileTheme.muted)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title + (soft ? "  ·  optional" : ""))
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(done ? MobileTheme.muted : MobileTheme.ink)
+                    .strikethrough(done, color: MobileTheme.muted)
+                if let detail, !done {
+                    Text(detail)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(MobileTheme.faint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Spacer()
         }
     }
@@ -64,7 +74,8 @@ struct GetStartedCard: View {
     /// Soft auto-check: WidgetCenter reports installed widget kinds. No signal if
     /// none added — stays a plain instruction row (never blocks completion).
     private func checkWidget() async {
-        let atlasKinds: Set<String> = ["AtlasToday", "AtlasLockRect", "AtlasLockCircular"]
+        let atlasKinds: Set<String> = ["AtlasToday", "AtlasUpNext", "AtlasWeek", "AtlasClass",
+                                       "AtlasLockRect", "AtlasLockCircular", "AtlasInline"]
         // iOS 17 has only the completion-handler form; wrap it in a continuation.
         let infos: [WidgetInfo] = await withCheckedContinuation { cont in
             WidgetCenter.shared.getCurrentConfigurations { result in

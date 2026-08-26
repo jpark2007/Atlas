@@ -139,7 +139,11 @@ struct ItemDetailSheet: View {
             }
         } else {
             startSection
-            field("Duration") { durationPicker }
+            if isAllDayEvent {
+                labeledRow("Duration", "All-day")
+            } else {
+                field("Duration") { durationPicker }
+            }
         }
 
         field("Notes") { notesEditor }
@@ -222,17 +226,20 @@ struct ItemDetailSheet: View {
         }
     }
 
-    /// Event start — day (graphical) + time (wheel); events always carry a time.
+    /// Event start — day (graphical) + time (wheel). An all-day event has no
+    /// clock time, so it picks a day only.
     private var startSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Start").edCapsLabel()
             DatePicker("", selection: $startDay, displayedComponents: .date)
                 .datePickerStyle(.graphical)
                 .tint(MobileTheme.accentText)
-            DatePicker("", selection: $startTime, displayedComponents: .hourAndMinute)
-                .datePickerStyle(.wheel)
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
+            if !isAllDayEvent {
+                DatePicker("", selection: $startTime, displayedComponents: .hourAndMinute)
+                    .datePickerStyle(.wheel)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
+            }
         }
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -390,6 +397,11 @@ struct ItemDetailSheet: View {
 
     private var isTask: Bool { if case .task = detail { return true }; return false }
 
+    private var isAllDayEvent: Bool {
+        if case .event(let e) = detail, e.isAllDay { return true }
+        return false
+    }
+
     private var isGoogleEvent: Bool {
         if case .event(let e) = detail, e.source == .google { return true }
         return false
@@ -498,11 +510,25 @@ struct ItemDetailSheet: View {
                 updated.color = space.color
             }
             updated.notes = notes.isEmpty ? nil : notes
-            let day = cal.startOfDay(for: startDay)
-            let c = cal.dateComponents([.hour, .minute], from: startTime)
-            let start = cal.date(bySettingHour: c.hour ?? 0, minute: c.minute ?? 0, second: 0, of: day) ?? e.start
-            updated.start = start
-            updated.end = start.addingTimeInterval(Double(durationMin) * 60)
+            if e.isAllDay {
+                // All-day events carry no clock time — stamping one would turn them
+                // into a timed block. Sources anchor the day differently, so shift
+                // by whole days off the event's own anchor instead of rebuilding it.
+                // Same day picked (the common case) = start/end untouched.
+                let days = cal.dateComponents([.day],
+                                              from: cal.startOfDay(for: e.start),
+                                              to: cal.startOfDay(for: startDay)).day ?? 0
+                if days != 0 {
+                    updated.start = cal.date(byAdding: .day, value: days, to: e.start) ?? e.start
+                    updated.end = cal.date(byAdding: .day, value: days, to: e.end) ?? e.end
+                }
+            } else {
+                let day = cal.startOfDay(for: startDay)
+                let c = cal.dateComponents([.hour, .minute], from: startTime)
+                let start = cal.date(bySettingHour: c.hour ?? 0, minute: c.minute ?? 0, second: 0, of: day) ?? e.start
+                updated.start = start
+                updated.end = start.addingTimeInterval(Double(durationMin) * 60)
+            }
             Task { await store.updateEvent(updated) }
         }
         MobileTheme.Haptic.success()
