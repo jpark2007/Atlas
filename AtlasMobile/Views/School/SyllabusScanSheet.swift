@@ -161,7 +161,7 @@ struct SyllabusScanSheet: View {
 
     private var scanningStep: some View {
         VStack(spacing: 12) {
-            ProgressView().tint(MobileTheme.muted)
+            AtlasLoader(size: 26)
             Text("Reading \(pages.count) \(pages.count == 1 ? "page" : "pages")…")
                 .font(.system(size: 14, weight: .medium, design: .rounded))
                 .foregroundStyle(MobileTheme.muted)

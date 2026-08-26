@@ -23,8 +23,12 @@ struct TasksView: View {
     /// check) before sliding out, so completion is felt, not a blink.
     @State private var justCompleted: Set<UUID> = []
 
+    /// The class-hub push, driven explicitly — see `SchoolTasksSection`'s note on why
+    /// the class rows can't be `NavigationLink`s from inside a List row.
+    @State private var classPath: [UUID] = []
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $classPath) {
             content
                 .navigationDestination(for: UUID.self) { id in
                     ClassHubView(classID: id).environmentObject(store)
@@ -57,7 +61,7 @@ struct TasksView: View {
                 spaceList
             } else if openTasks.isEmpty {
                 ScrollView {
-                    SchoolTasksSection()
+                    SchoolTasksSection { classPath.append($0) }
                     emptyContent
                         .frame(maxWidth: .infinity)
                         .padding(.top, 120)
@@ -93,7 +97,7 @@ struct TasksView: View {
     @ViewBuilder
     private var emptyContent: some View {
         if store.loading {
-            ProgressView().tint(MobileTheme.muted)
+            AtlasLoader(size: 26)
         } else if grouping == "due" {
             Text("No upcoming deadlines").edCapsLabel()
         } else {
@@ -186,7 +190,7 @@ struct TasksView: View {
     /// School at the top of the list — self-padded, so it drops into either list as one
     /// full-bleed row. Renders nothing when School is off.
     private var schoolRow: some View {
-        SchoolTasksSection()
+        SchoolTasksSection { classPath.append($0) }
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
@@ -351,19 +355,37 @@ struct TasksView: View {
         let projectGroups: [(projectName: String, tasks: [TaskItem])]
     }
 
+    /// Live classes, keyed lowercased — the names `SchoolTasksSection` already lists at
+    /// the top of this screen. With School on, a class belongs to that section and
+    /// nowhere else; listing it again under its space is the same class twice. Mirrors
+    /// the Mac's `visibleSpaces`. Empty when School is off, so nothing is hidden.
+    private var classNamesShownBySchool: Set<String> {
+        guard store.schoolEnabled else { return [] }
+        return Set(store.snapshot.projects
+            .filter { $0.isClass && $0.archivedAt == nil }
+            .map { $0.name.lowercased() })
+    }
+
     /// Hierarchical space → project groups, in snapshot (sort) order. ALL spaces
     /// render — even empty ones — so a fresh account sees its structure. Project rows
     /// come from the snapshot (so projects with zero tasks still appear), unioned with
     /// any project name that only exists on a task (never drop one). openTasks are
     /// already remapped, so every task matches exactly one real space.
+    ///
+    /// Live classes are the one exception: they're filtered out here (School shows them
+    /// above), and a space left with nothing but classes drops out rather than rendering
+    /// an empty "School" section under the School one.
     private var spaceGroups: [SpaceGroup] {
         let tasks = openTasks
-        return store.snapshot.spaces.filter { inFilter($0.name) }.map { space in
+        let hidden = classNamesShownBySchool
+        return store.snapshot.spaces.filter { inFilter($0.name) }.compactMap { space -> SpaceGroup? in
             let inSpace = tasks.filter { $0.spaceName.caseInsensitiveCompare(space.name) == .orderedSame }
             let loose = sortedByDue(inSpace.filter { $0.projectName.isEmpty })
-            let named = inSpace.filter { !$0.projectName.isEmpty }
+            let named = inSpace.filter { !$0.projectName.isEmpty
+                                        && !hidden.contains($0.projectName.lowercased()) }
             let snapshotProjectNames = store.snapshot.projects
-                .filter { $0.spaceName.caseInsensitiveCompare(space.name) == .orderedSame }
+                .filter { $0.spaceName.caseInsensitiveCompare(space.name) == .orderedSame
+                          && !hidden.contains($0.name.lowercased()) }
                 .map(\.name)
             // De-dupe case-insensitively (a snapshot project and a task's projectName
             // differing only in case must not produce two rows); snapshot casing wins.
@@ -375,6 +397,13 @@ struct TasksView: View {
             let projectGroups = displayNameByKey.values
                 .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
                 .map { name in (projectName: name, tasks: sortedByDue(named.filter { $0.projectName.caseInsensitiveCompare(name) == .orderedSame })) }
+            // A space whose only content was live classes has nothing left to say.
+            let heldOnlyClasses = !hidden.isEmpty && loose.isEmpty && projectGroups.isEmpty
+                && store.snapshot.projects.contains {
+                    $0.spaceName.caseInsensitiveCompare(space.name) == .orderedSame
+                    && hidden.contains($0.name.lowercased())
+                }
+            if heldOnlyClasses { return nil }
             return SpaceGroup(spaceName: space.name, looseTasks: loose, projectGroups: projectGroups)
         }
     }

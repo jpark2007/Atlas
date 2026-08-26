@@ -11,10 +11,19 @@ import AtlasCore
 /// courses with no class yet.
 ///
 /// With School turned off the section renders nothing at all, so Tasks looks exactly
-/// like it did before School existed. The host supplies the `navigationDestination`
-/// for `UUID` (→ `ClassHubView`).
+/// like it did before School existed.
+///
+/// Opening a class is a callback, not a `NavigationLink`: this whole section renders as
+/// ONE row of the Tasks `List`, and a List row owns its own tap handling — links nested
+/// inside it get their taps swallowed or misrouted to a sibling. The host pushes onto
+/// its own navigation path instead, which behaves identically in the List and in the
+/// empty-state ScrollView.
 struct SchoolTasksSection: View {
     @EnvironmentObject private var store: MobileStore
+
+    /// Push this class's hub. Owned by the host so the path survives this section
+    /// being rebuilt inside a List row.
+    let onOpenClass: (UUID) -> Void
 
     /// Which term the list is showing when the user has looked away from "now". Session
     /// state, exactly like the Mac's `schoolTermOverride`.
@@ -135,7 +144,7 @@ struct SchoolTasksSection: View {
     /// A class row: color dot, name, trailing course code — and its open-work count, the
     /// one thing a phone glance is actually for.
     private func classRow(_ klass: Project) -> some View {
-        NavigationLink(value: klass.id) {
+        Button { onOpenClass(klass.id) } label: {
             HStack(spacing: 12) {
                 Circle()
                     .fill(klass.colorToken.map { ColorToken.color(for: $0) } ?? klass.spaceColor)
@@ -187,7 +196,7 @@ struct SchoolTasksSection: View {
         Button { presentWizard = true } label: {
             HStack(spacing: 10) {
                 Image(systemName: "plus.circle.dotted").font(.system(size: 15, weight: .medium))
-                Text(term == nil ? "Set up your semester" : "Add your first class")
+                Text("Add your classes")
                     .font(.system(size: 15, weight: .medium, design: .rounded))
                 Spacer()
             }

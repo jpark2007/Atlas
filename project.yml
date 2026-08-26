@@ -155,7 +155,12 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.atlaslm.AtlasMobile
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: AtlasMobile/AtlasMobile.entitlements
-        TARGETED_DEVICE_FAMILY: "1,2"
+        # iPhone only for 1.0 — the layouts are phone-shaped, and shipping iPad would
+        # put a stretched phone UI in front of App Review. iPad still runs it in
+        # compatibility mode. The App Store version is iOS-local: the Mac ships on its
+        # own channel (DMG + Sparkle) and stays on its own MARKETING_VERSION.
+        TARGETED_DEVICE_FAMILY: "1"
+        MARKETING_VERSION: "1.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Explicit Info.plist (below) so we can register the atlas:// URL scheme —
         # Xcode's INFOPLIST_KEY_* mechanism can't emit CFBundleURLTypes.
@@ -201,7 +206,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.atlaslm.AtlasMobile.widgets
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: AtlasMobileWidgets/AtlasMobileWidgets.entitlements
-        TARGETED_DEVICE_FAMILY: "1,2"
+        # Matches the app it embeds in — both must agree or the archive is rejected.
+        TARGETED_DEVICE_FAMILY: "1"
+        MARKETING_VERSION: "1.0"
         SKIP_INSTALL: YES
         GENERATE_INFOPLIST_FILE: NO
     info:

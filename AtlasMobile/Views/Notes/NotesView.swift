@@ -58,7 +58,7 @@ struct NotesView: View {
     @ViewBuilder
     private var emptyContent: some View {
         if store.loading {
-            ProgressView().tint(MobileTheme.muted)
+            AtlasLoader(size: 26)
         } else {
             Text("no notes yet").edCapsLabel()
         }

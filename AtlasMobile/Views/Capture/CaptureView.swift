@@ -74,11 +74,24 @@ struct CaptureView: View {
         Binding(
             get: { text },
             set: { newValue in
+                // Refuse past the cap rather than truncating — the words stay whole and
+                // the field simply stops, with one line saying why. Same ceiling the Mac
+                // field and the capture function enforce (it 413s past it), so nobody
+                // types into a guaranteed failure.
+                guard newValue.count <= Self.maxLength else {
+                    withAnimation { note = Self.atLimitMessage }
+                    return
+                }
+                if note == Self.atLimitMessage { note = nil }
                 text = newValue
                 CaptureDraftStore.save(newValue)
             }
         )
     }
+
+    /// The most text one capture can hold, matching the Mac and the server.
+    static let maxLength = 20_000
+    static let atLimitMessage = "That's as much as one capture can hold"
 
     // MARK: - Empty state (spec §4.2)
 

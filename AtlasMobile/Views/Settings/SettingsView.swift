@@ -87,7 +87,10 @@ struct SettingsView: View {
     var body: some View {
         List {
             Section {
-                navRow("Account") { accountPage }
+                identityRow
+            }
+            Section {
+                // No "Account" row here — the identity header above IS the way in.
                 navRow("Calendars") { calendarsPage }
                 navRow("Capture & Tasks") { capturePage }
                 navRow("Notes & Files") { notesFilesPage }
@@ -107,6 +110,33 @@ struct SettingsView: View {
     }
 
     // MARK: - Hub rows & subpages
+
+    /// Who you're signed in as, at the top of the hub — an identity header (avatar +
+    /// address), not another settings row. Mirrors the Mac's Account column, where the
+    /// account reads as a person rather than a preference. Tapping it opens the same
+    /// Account page the row below does, so sign-out and delete stay one tap away.
+    private var identityRow: some View {
+        NavigationLink { accountPage } label: {
+            HStack(spacing: 12) {
+                Circle().fill(MobileTheme.accent.opacity(0.15))
+                    .frame(width: 40, height: 40)
+                    .overlay(Image(systemName: "person.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(MobileTheme.accent))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(store.session?.user.email ?? "Your account")
+                        .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(MobileTheme.ink)
+                        .lineLimit(1)
+                    Text("Account, sign out, delete")
+                        .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(MobileTheme.faint)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .rowStyle()
+    }
 
     /// A top-level hub row: a plain-List NavigationLink (its own trailing disclosure
     /// chevron) that pushes a detail subpage within the Settings NavigationStack.

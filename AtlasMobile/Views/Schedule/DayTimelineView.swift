@@ -115,7 +115,7 @@ struct DayTimelineView: View {
     @ViewBuilder
     private var emptyContent: some View {
         if loading {
-            ProgressView().tint(MobileTheme.muted)
+            AtlasLoader(size: 26)
         } else {
             Text("Nothing scheduled")
                 .edCapsLabel()

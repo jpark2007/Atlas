@@ -84,7 +84,7 @@ struct SemesterWizardSheet: View {
 
     private var header: some View {
         HStack(alignment: .top) {
-            Text("Set up your semester").edScreenTitle()
+            Text("Add your classes").edScreenTitle()
             Spacer(minLength: 12)
             Button { dismiss() } label: { Text("Close").edCapsLabel() }
                 .buttonStyle(.plain)
@@ -163,12 +163,12 @@ struct SemesterWizardSheet: View {
 
     private var importingStep: some View {
         VStack(alignment: .leading, spacing: 0) {
-            prompt(importTimedOut ? "Nothing has arrived yet" : "Bringing your schedule in…",
+            prompt(importTimedOut ? "Still waiting on your schedule" : "Bringing your schedule in…",
                    importTimedOut
                    ? "Your first sync can take a few minutes. Atlas will offer to create the classes as soon as the courses land."
                    : "Atlas is reading the feed. This usually takes a moment.")
             if !importTimedOut {
-                ProgressView().tint(MobileTheme.muted).padding(.bottom, 8)
+                AtlasLoader(size: 26).padding(.bottom, 8)
             }
             actionButton("Done for now") { dismiss() }
         }

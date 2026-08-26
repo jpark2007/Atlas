@@ -43,6 +43,9 @@ struct ClassHubView: View {
         .background(MobileTheme.bg.ignoresSafeArea())
         .navigationTitle(project?.name ?? "Class")
         .navigationBarTitleDisplayMode(.inline)
+        // Tasks draws its own title row and hides the bar on the stack's ROOT; a pushed
+        // page has to ask for it back or it arrives with no title and no back button.
+        .toolbar(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
