@@ -676,7 +676,7 @@ h1, h2, .display {
    Legal pages (privacy / terms)
    ===================================================================== */
 .legal { padding: clamp(2.5rem, 6vw, 4.5rem) 0 clamp(3rem, 7vw, 5rem); }
-.legal__inner { max-width: 720px; }
+.legal__inner { max-width: 1240px; }
 .legal__title {
   font-size: clamp(2.2rem, 5vw, 3.4rem);
   margin: 0.4em 0 0.35em;
@@ -686,7 +686,26 @@ h1, h2, .display {
   text-transform: uppercase; color: var(--clay-text);
   margin-bottom: 2.5rem;
 }
+
+/* Wide screens: masthead parks in a sticky left rail, prose takes the rest. */
+@media (min-width: 1000px) {
+  .legal__inner {
+    display: grid;
+    grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+    column-gap: clamp(3rem, 6vw, 6rem);
+    align-items: start;
+  }
+  .legal__inner > *:not(.prose) { grid-column: 1; }
+  .legal__masthead {
+    grid-column: 1; grid-row: 1;
+    position: sticky; top: 5.5rem;
+  }
+  .legal__masthead .legal__date { margin-bottom: 0; }
+  .prose { grid-column: 2; grid-row: 1 / -1; }
+}
+
 .prose { font-size: 1.04rem; }
+.prose > *:first-child { margin-top: 0; }
 .prose > * + * { margin-top: 1.05rem; }
 .prose h2 {
   font-size: clamp(1.35rem, 2.4vw, 1.75rem);
@@ -708,6 +727,26 @@ h1, h2, .display {
 .prose strong { font-weight: 800; color: var(--ink); }
 .prose a { color: var(--clay-text); border-bottom: 1px solid var(--clay-wash-strong); }
 .prose a:hover { border-color: var(--clay-text); }
+.prose code {
+  font-size: 0.86em; font-weight: 700;
+  padding: 0.1em 0.4em; border-radius: 5px;
+  background: var(--clay-wash); color: var(--clay-text);
+}
+
+/* Google scope disclosures: one card per permission, so a reader can scan them. */
+.prose ul.scopes { padding-left: 0; gap: 0.85rem; }
+.prose ul.scopes > li {
+  list-style: none;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--clay);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--clay-wash) 45%, transparent);
+}
+.prose ul.scopes em { font-style: normal; font-weight: 800; color: var(--ink); }
+@media (min-width: 1240px) {
+  .prose ul.scopes { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; }
+}
 .legal__back {
   display: inline-flex; align-items: center; gap: 0.4em;
   font-weight: 700; font-size: 0.92rem; color: var(--muted);

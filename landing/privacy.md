@@ -1,6 +1,6 @@
 # Atlas Privacy Policy
 
-**Effective date: July 23, 2026**
+**Effective date: August 27, 2026**
 
 Atlas is built by Andrew Khalil and Jonah Park. The best way to reach us is **Report a Bug** inside Atlas, where signed-in users can send questions or issues straight to us. If you can't get into the app, email **drewkhalil@gmail.com**.
 
@@ -12,6 +12,23 @@ Atlas is a native Mac and iPhone life manager, currently in **prelaunch beta**. 
 - We use it to run the app for you. **We don't sell your data and we don't use it for advertising.**
 - Connections you choose to add (Google Calendar, Canvas) are stored encrypted on our server and used only to sync your calendar.
 - You can delete your account and its data from **Settings** inside Atlas. If you've already removed the app, email **drewkhalil@gmail.com** and we'll do it for you.
+
+## Google user data: what Atlas accesses and how it is used
+
+This section states, permission by permission, exactly which Google user data Atlas requests, what Atlas does with it, and how long it is kept. Atlas requests these permissions only when you choose to connect a Google account; if you never connect one, Atlas requests none of them.
+
+- **See and edit events on your Google calendars** (`calendar.events`) — *What Atlas accesses:* the events on the calendars you choose to sync, including their titles, times, locations, and descriptions. *How Atlas uses it:* to show your Google events inside Atlas alongside your other calendars, and to write back events you create or edit in Atlas so both stay matched. This runs on our server so the sync continues while the app is closed.
+- **View your calendars and events** (`calendar.readonly`) — *What Atlas accesses:* the list of calendars in your Google account, including their names, and read access to their events. *How Atlas uses it:* to show you a checklist of your calendars at connect time so you can pick which ones sync, and to read event details during sync. Atlas does not use this permission to modify anything.
+- **See and edit only the specific Google Drive files you use with Atlas** (`drive.file`) — *What Atlas accesses:* only files you personally pick through Google's own file picker, or that Atlas creates for you — including the content of a Google Doc you link to an Atlas note. *How Atlas uses it:* to import a file you selected into a project, and to keep a linked note and its Google Doc in sync in both directions. Atlas never receives access to your whole Drive and never sees files you have not explicitly picked.
+- **Your email address and Google account identifier** (`email`, `openid`) — *What Atlas accesses:* the email address of the Google account you connect, plus a stable identifier for it. *How Atlas uses it:* solely to identify and label which Google account is connected, so you can tell your accounts apart in Settings. Atlas does not request access to your name, profile picture, contacts, or any other profile information.
+
+**How this data is handled.** Google data is stored in your own account's rows in our Supabase database, protected by per-account row-level security. Your Google **refresh token** is stored encrypted in Supabase Vault, reachable only by our server, and is never returned to any app or client. Google data is used **only** to provide the calendar sync, file import, and note-sync features described above and visible to you in the app.
+
+**What Atlas never does with Google data.** We do not sell it. We do not use it for advertising or to build advertising profiles. We do not use it to train AI or machine-learning models. We do not transfer it to third parties except as needed to provide these features to you. No human at Atlas reads your Google data except with your explicit consent, to provide support you have asked for, to keep the service secure, or where required by law.
+
+**How long it is kept, and how to remove it.** Synced Google events and linked note content remain in your account for as long as your account exists and the connection is active. Disconnecting Google inside Atlas immediately deletes the stored refresh token and stops all further access. Deleting your Atlas account from **Settings** removes your account and its data, including data synced from Google. You can also revoke Atlas's access at any time from your Google Account at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+
+Atlas's use and transfer of information received from Google APIs to any other app adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.
 
 ## The waitlist
 
@@ -35,11 +52,11 @@ If you connect Google Calendar, Atlas keeps your events in sync in both directio
 
 ### Choosing which calendars sync
 
-When you connect Google Calendar, Atlas also lists the calendars in your account so you can pick which ones to sync with per-calendar checkboxes. This uses a read-only calendar-list permission, and it shows only the names of your calendars so you stay in control of what syncs.
+When you connect Google Calendar, Atlas also lists the calendars in your account so you can pick which ones to sync with per-calendar checkboxes. This uses Google's read-only calendar permission, which lets Atlas see your calendar names and read event details, so you stay in control of what syncs. Atlas never modifies anything through this permission.
 
 ### Your Google account
 
-When you connect Google, Atlas reads your account's basic profile, meaning your name and email address, so it can identify the connected account and label it in the app. That is the only thing this sign-in permission gives us.
+When you connect Google, Atlas reads the **email address** of that account and a stable identifier for it, so it can identify the connected account and label it in the app. That is the only thing this sign-in permission gives us — Atlas does not request your name, profile picture, or contacts.
 
 ### Google Docs (two-way note sync)
 
