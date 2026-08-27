@@ -1072,17 +1072,23 @@ final class AppState: ObservableObject {
     // MARK: - Calendar / capture surface (shared by Stage 1 screens)
 
     /// Events occurring on the given day, sorted by start time.
+    ///
+    /// Buckets by `bucketDate(in:)`, never by `start`: an all-day event is a floating date
+    /// anchored at UTC midnight (`AllDayDate`), so reading its raw instant in the local
+    /// calendar lands it on the previous day everywhere west of Greenwich.
     func events(on day: Date) -> [CalendarEvent] {
-        events
-            .filter { Calendar.current.isDate($0.start, inSameDayAs: day) }
+        let cal = Calendar.current
+        return events
+            .filter { cal.isDate($0.bucketDate(in: cal), inSameDayAs: day) }
             .sorted { $0.start < $1.start }
     }
 
     /// External (read-only) events occurring on the given day, sorted by start time.
     /// Mirrors `events(on:)` but draws from the non-persisted `externalEvents` pool.
     func externalEvents(on day: Date) -> [CalendarEvent] {
-        externalEvents
-            .filter { Calendar.current.isDate($0.start, inSameDayAs: day) }
+        let cal = Calendar.current
+        return externalEvents
+            .filter { cal.isDate($0.bucketDate(in: cal), inSameDayAs: day) }
             .sorted { $0.start < $1.start }
     }
 

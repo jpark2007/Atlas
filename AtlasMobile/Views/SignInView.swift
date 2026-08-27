@@ -101,8 +101,12 @@ struct SignInView: View {
                 // Apple's own artwork (SIWA HIG forbids a hand-rolled applelogo
                 // button). `.whiteOutline` is the outlined, unfilled variant — it
                 // sits on the cream ground without breaking the "never a fill" rule.
+                // `ASAuthorizationAppleIDButton` has no intrinsic height, so a *minimum*
+                // let the VStack hand it every spare point — barely noticeable on a
+                // phone, a 1000 pt slab on an iPad. The height is exact.
                 AppleSignInButton(action: signInWithApple)
-                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .frame(height: 48)
+                    .frame(maxWidth: .infinity)
                     .disabled(busy)
                     .opacity(busy ? 0.4 : 1)
 
@@ -132,6 +136,9 @@ struct SignInView: View {
         .padding(.top, 84)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(MobileTheme.bg.ignoresSafeArea())
+        // A sign-in form has one comfortable measure; on iPad it is a centred column,
+        // not a 1366 pt-wide email field.
+        .edContentColumn(460)
     }
 
     @ViewBuilder

@@ -1,5 +1,10 @@
 # 11 — Mobile Companion (iOS)
 
+**Status 2026-08-27:** this doc's "Status/Next" line and out-of-scope list are historical
+(Phase 0, 2026-07-01). iOS has since shipped v1.0 (submitted, then pulled from review) and the
+v1.1 batch (`docs/specs/v1.1-plan.md`) is code-complete, including iPad support — the "iPhone
+companion" framing and device scope below no longer reflect current state. Kept as history.
+
 **A deliberately-minimal iPhone companion: capture on the go, glance at your day.**
 
 - **Status:** **Phase 0 COMPLETE (2026-07-01)** — the shared `AtlasCore` Swift package + a minimal `AtlasMobile` iOS target build green on **both** platforms; iOS signs in against the same Supabase. Next: **Phase 1 = the Capture screen.** Structure/flows in this spec still stand; only the *visual style* is being re-decided (see §9–§10).

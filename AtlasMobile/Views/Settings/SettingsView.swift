@@ -23,6 +23,9 @@ struct SettingsSheet: View {
                     }
                 }
         }
+        // iPad presents this in a page-sheet card; without an explicit detent it lands as a
+        // short slab. `.large` is the phone's implicit height anyway, so nothing moves there.
+        .edSheetDetents([.large], preferringLarge: true)
     }
 }
 
@@ -48,23 +51,19 @@ struct SettingsView: View {
     @State private var googleConns: [GoogleConnection] = []
     @State private var docsConn: AtlasDB.GoogleDocsConnection?
 
-    /// Shared multi-feed connect client (AtlasCore, platform-neutral) — full manage from
-    /// the phone: add an ICS calendar / re-space / disconnect.
+    /// Shared feed client (AtlasCore, platform-neutral) — re-space / disconnect an
+    /// existing by-link calendar. Adding one is Mac-only (see `calendarsSection`).
     @StateObject private var feeds = FeedService()
     /// Subscribed calendar feeds (`calendar_feeds`) — generic ICS. Canvas feeds are set
     /// up on the Mac and never surfaced here; their synced items still show everywhere.
     @State private var calendarFeeds: [CalendarFeedRow] = []
-    // Generic ICS feed connect + per-row edit state.
-    @State private var icsName = ""
-    @State private var icsURL = ""
-    @State private var icsSpaceName = ""
-    @State private var icsWorking = false
-    @State private var icsError: String?
-    @State private var showICSHelp = false        // "Not sure if your app has one?" disclosure
     @State private var feedRowWorking: UUID?
     @State private var feedRowError: String?
     /// The feed the disconnect confirmation dialog is armed for.
     @State private var feedToDisconnect: CalendarFeedRow?
+    /// Which Apple calendars show in Atlas — same device-local semantics as the Mac's
+    /// picker (`AppleCalendarSelection`).
+    @AppStorage(AppleCalendarSelection.hiddenKey) private var appleHiddenCalendarIds = ""
 
     // Delete-account state (mirrors the Mac SettingsView pattern).
     @State private var showDeleteConfirm = false
@@ -73,8 +72,7 @@ struct SettingsView: View {
 
     private let leadOptions = [0, 5, 15, 30, 60]
 
-    // Onboarding tips (rule-gated in AtlasTips): connect a source, report a bug (beta).
-    @State private var connectTip = AtlasTips.ConnectSource()
+    // Onboarding tip (rule-gated in AtlasTips): report a bug (beta).
     @State private var bugTip = AtlasTips.ReportBug()
 
     /// The hub: each row pushes a detail subpage. `.task`/`.onChange` live here on the
@@ -493,6 +491,15 @@ struct SettingsView: View {
     private var calendarsSection: some View {
         Section {
             AppleCalendarConnectRow()
+            if !store.appleCalendarEnabled {
+                Text("Already connected Apple Calendar on Mac? Connect it here too — Apple requires calendar access to be granted separately on each device.")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(MobileTheme.faint)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .rowStyle()
+            }
+            applePicker
 
             googleAccountsBlock
             linkedCalendarsBlock
@@ -510,8 +517,50 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .rowStyle()
         } header: { header("Calendars") } footer: {
-            footer("Turn on the calendars you want to see in Atlas. Where Atlas can write back, pick which space's events get sent there.")
+            footer("Turn on the calendars you want to see in Atlas. Feeds added by link are managed in Atlas for Mac.")
         }
+    }
+
+    /// Which Apple calendars show in Atlas — device-local, mirroring the Mac's in-app
+    /// picker (`Atlas/Views/Auth/SettingsView.swift`). Only shown once there's more than
+    /// one calendar to choose between.
+    @ViewBuilder
+    private var applePicker: some View {
+        let cals = store.eventKit.readableCalendars()
+        if store.appleCalendarEnabled && cals.count > 1 {
+            let hidden = AppleCalendarSelection.decode(appleHiddenCalendarIds)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Choose which Apple calendars show in Atlas. This phone only.")
+                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(MobileTheme.faint)
+                ForEach(cals, id: \.id) { cal in
+                    let shown = !hidden.contains(cal.id)
+                    Button { toggleAppleCalendar(cal.id) } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: shown ? "checkmark.square.fill" : "square")
+                                .foregroundStyle(shown ? MobileTheme.ink : MobileTheme.faint)
+                            Text(cal.title).rowLabel().lineLimit(1)
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                if hidden.count == cals.count {
+                    Text("Every calendar is unchecked, so no Apple events show.")
+                        .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(MobileTheme.warning)
+                }
+            }
+            .rowStyle()
+        }
+    }
+
+    private func toggleAppleCalendar(_ id: String) {
+        var hidden = AppleCalendarSelection.decode(appleHiddenCalendarIds)
+        if hidden.contains(id) { hidden.remove(id) } else { hidden.insert(id) }
+        appleHiddenCalendarIds = AppleCalendarSelection.encode(hidden)
+        store.refreshAppleEvents(around: Date())
     }
 
     // ── Google accounts (shown here, managed on the Mac) ────────────────
@@ -534,13 +583,14 @@ struct SettingsView: View {
         }
     }
 
-    // ── Calendars added by link — one block each, then the add form ─────
+    // ── Calendars added by link — one block each ─────────────────────────
+    // Adding a new one is Mac-only (same `feeds-connect` function); a feed added there
+    // already appears here.
     @ViewBuilder
     private var linkedCalendarsBlock: some View {
         ForEach(linkedFeeds) { feed in
             feedRows(feed)
         }
-        icsConnectForm
     }
 
     // ── Atlas itself ───────────────────────────────────────────────────
@@ -608,94 +658,6 @@ struct SettingsView: View {
         calendarFeeds.filter { $0.isServerOwned && $0.feedType != "canvas" }
     }
 
-    /// "Add a calendar by link" — display name + calendar link + destination space.
-    /// Connects an `ics`-type feed.
-    @ViewBuilder
-    private var icsConnectForm: some View {
-        Text("Add a calendar by link").rowLabel().rowStyle()
-
-        TextField("Calendar name (e.g. Schoology)", text: $icsName)
-            .textFieldStyle(.plain)
-            .font(.system(size: 15, weight: .regular, design: .rounded))
-            .foregroundStyle(MobileTheme.ink)
-            .tint(MobileTheme.accent)
-            .rowStyle()
-
-        TextField("https://…/calendar.ics", text: $icsURL)
-            .textFieldStyle(.plain)
-            .font(.system(size: 15, weight: .regular, design: .rounded))
-            .foregroundStyle(MobileTheme.ink)
-            .tint(MobileTheme.accent)
-            .autocorrectionDisabled()
-            .textInputAutocapitalization(.never)
-            .keyboardType(.URL)
-            .rowStyle()
-
-        if !store.snapshot.spaces.isEmpty {
-            Menu {
-                ForEach(store.snapshot.spaces) { space in
-                    Button(space.name) { icsSpaceName = space.name }
-                }
-            } label: {
-                HStack {
-                    Text("Put these events in").rowLabel()
-                    Spacer()
-                    Text(icsSpaceName).rowValue()
-                    chevron
-                }
-            }
-            .rowStyle()
-            .onAppear {
-                if !store.snapshot.spaces.contains(where: { $0.name == icsSpaceName }) {
-                    icsSpaceName = store.snapshot.spaces.first?.name ?? ""
-                }
-            }
-        }
-
-        if let icsError {
-            Text(icsError)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(MobileTheme.danger)
-                .rowStyle()
-        }
-
-        Button { connectICS() } label: {
-            Text(icsWorking ? "Adding…" : "Add calendar")
-                .font(.system(size: 15.5, weight: .semibold, design: .rounded))
-                .foregroundStyle(MobileTheme.ink)
-                .frame(maxWidth: .infinity)
-                .edOutlineControl()
-        }
-        .buttonStyle(.plain)
-        .disabled(icsWorking)
-        .rowStyle()
-        .popoverTip(connectTip)
-
-        Text("Paste a calendar link copied from another app.")
-            .font(.system(size: 13, weight: .medium, design: .rounded))
-            .foregroundStyle(MobileTheme.faint)
-            .rowStyle()
-
-        Button { withAnimation { showICSHelp.toggle() } } label: {
-            HStack(spacing: 4) {
-                Text("Not sure if your app has one?")
-                Image(systemName: showICSHelp ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-            }
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
-            .foregroundStyle(MobileTheme.accent)
-        }
-        .buttonStyle(.plain)
-        .rowStyle()
-
-        if showICSHelp {
-            Text("Search Google for ‘[app name] calendar link’ to see if it does and how to copy it. In Schoology: Calendar, then iCal or Calendar Feed. These calendars are shown in Atlas, not editable.")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(MobileTheme.faint)
-                .rowStyle()
-        }
-    }
-
     /// One connected by-link calendar as a unified-list block: name + type
     /// badge + status, an inline destination-space picker (PATCH), and Disconnect
     /// (DELETE, via the confirmation dialog). These are read-in sources, so they get no
@@ -759,40 +721,6 @@ struct SettingsView: View {
     }
 
     // MARK: Feed actions (shared AtlasCore FeedService; refresh status on success)
-
-    /// Connects a generic ICS calendar as an `ics`-type feed (read-only events only).
-    private func connectICS() {
-        let name = icsName.trimmingCharacters(in: .whitespaces)
-        let url = icsURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else {
-            icsError = "Give this calendar a name so you can tell it apart."
-            return
-        }
-        guard FeedService.isValidICSURL(url) else {
-            icsError = "That doesn't look like a calendar link. It should start with https and usually ends in .ics."
-            return
-        }
-        icsError = nil
-        icsWorking = true
-        Task {
-            guard let jwt = await store.validAccessToken() else {
-                icsError = "Sign in to Atlas to add a calendar."
-                icsWorking = false
-                return
-            }
-            do {
-                try await feeds.connect(feedUrl: url, feedType: "ics",
-                                        displayName: name, spaceName: icsSpaceName, jwt: jwt)
-                await AtlasTipEvents.connectedSource.donate()
-                AtlasTips.ConnectSource.hasConnection = true
-                await loadConnections()
-                icsName = ""; icsURL = ""   // don't retain the capability URL
-            } catch {
-                icsError = "Couldn't add that calendar. Check the link and your connection, then try again."
-            }
-            icsWorking = false
-        }
-    }
 
     /// Re-routes a feed's unmatched items to a new space (PATCH `feeds-connect`).
     private func updateFeedSpace(_ feed: CalendarFeedRow, to newName: String) {

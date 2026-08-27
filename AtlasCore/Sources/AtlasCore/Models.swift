@@ -266,6 +266,10 @@ public struct Project: Identifiable {
     public var meetingPattern: [MeetingBlock] = []
     /// The syllabus-scan "Class info" card (0042); `nil` until a syllabus is scanned.
     public var classInfo: ClassInfoCard? = nil
+    /// Where the document this class's scan was read from is kept, in the private
+    /// `syllabi` bucket (0044). `nil` ⇒ nothing stored (every class scanned before this
+    /// existed). A rescan overwrites the same object, so this path is stable.
+    public var syllabusPath: String? = nil
 
     public init(id: UUID = UUID(), name: String, code: String? = nil, isClass: Bool, spaceName: String, spaceColor: Color, meetingInfo: String? = nil, instructor: String? = nil, canvasSynced: Bool = false, overview: String = "", colorToken: String? = nil, canvasCourse: String? = nil, assignments: [TaskItem] = [], notes: [NoteRef] = [], pinned: [PinnedResource] = [], backlinks: [Backlink] = [], spaceID: UUID? = nil, termID: UUID? = nil, archivedAt: Date? = nil, meetingPattern: [MeetingBlock] = [], classInfo: ClassInfoCard? = nil) {
         self.id = id
@@ -394,9 +398,25 @@ public struct CalendarEvent: Identifiable {
 
     /// True when `start` carries a specific clock time (not midnight) — lets a deadline pill
     /// show "5:00 PM" instead of a bare all-day "due today".
+    ///
+    /// An all-day event never has one, and asking `Calendar.current` would get it wrong: the
+    /// canonical all-day anchor is UTC midnight (see `AllDayDate`), which reads as 5 PM in Los
+    /// Angeles and 9 AM in Tokyo. Only a genuinely timed instant is measured locally — that is
+    /// the point of a timed event.
     public var hasSpecificTime: Bool {
+        guard !isAllDay else { return false }
         let cal = Calendar.current
         return cal.component(.hour, from: start) != 0 || cal.component(.minute, from: start) != 0
+    }
+
+    /// The instant this event sorts and buckets by in `calendar` — the one thing every
+    /// day-grouper should ask, instead of reading `start` directly.
+    ///
+    /// A timed event IS its instant. An all-day event is a floating date anchored at UTC
+    /// midnight (`AllDayDate`), so it buckets by that date re-anchored to `calendar` —
+    /// otherwise it lands a day early anywhere west of Greenwich.
+    public func bucketDate(in calendar: Calendar) -> Date {
+        isAllDay ? AllDayDate.localDay(of: start, calendar: calendar) : start
     }
 
     /// "1h 15m" / "1h" / "45m" — human duration.

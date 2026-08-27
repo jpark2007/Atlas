@@ -139,12 +139,17 @@ final class EventKitService {
             // events are labeled (they previously showed unlabeled — the Apple labeling gap).
             let recurring = ekEvent.hasRecurrenceRules
             let editable = (ekEvent.calendar?.allowsContentModifications ?? false) && !recurring
+            let rawStart: Date = ekEvent.startDate
+            let rawEnd: Date = ekEvent.endDate ?? rawStart.addingTimeInterval(3600)
+            let (start, end) = ekEvent.isAllDay
+                ? Self.normalizedAllDay(start: rawStart, end: rawEnd)
+                : (rawStart, rawEnd)
             return CalendarEvent(
                 id: stableUUID(from: ekEvent.eventIdentifier ?? UUID().uuidString),
                 title: ekEvent.title ?? "Untitled",
                 subtitle: ekEvent.calendar?.title ?? "",
-                start: ekEvent.startDate,
-                end: ekEvent.endDate ?? ekEvent.startDate.addingTimeInterval(3600),
+                start: start,
+                end: end,
                 color: AtlasTheme.Colors.textSecondary,
                 spaceName: defaultSpaceName,
                 // Carry existing notes so an in-Atlas edit round-trips them instead of
@@ -157,6 +162,34 @@ final class EventKitService {
                 isRecurring: recurring
             )
         }
+    }
+
+    // MARK: - All-day normalization (the EventKit boundary)
+    //
+    // EventKit is the one source that speaks a different all-day dialect: it hands back
+    // LOCAL midnight and an INCLUSIVE last day (23:59:59). Atlas's canonical encoding is
+    // UTC midnight of the intended calendar date with an EXCLUSIVE end — what Google, ICS
+    // and the editors all store (`AllDayDate`). Both directions are converted here so
+    // nothing downstream, and nothing in Apple Calendar, ever sees the other convention.
+
+    /// EventKit all-day pair → canonical (UTC midnight, exclusive UTC midnight).
+    private static func normalizedAllDay(start: Date, end: Date) -> (Date, Date) {
+        let cal = Calendar.current
+        let startDay = AllDayDate.anchor(forDayOf: start, in: cal)
+        // Step back a second before reading the last day, so both shapes EventKit uses
+        // (23:59:59 on the last day, or the next day's midnight) name the same day.
+        let lastDay = AllDayDate.anchor(forDayOf: max(end.addingTimeInterval(-1), start), in: cal)
+        let exclusiveEnd = AllDayDate.utc.date(byAdding: .day, value: 1, to: lastDay) ?? lastDay
+        return (startDay, max(exclusiveEnd, startDay))
+    }
+
+    /// Canonical all-day pair → what EventKit expects (local midnight, inclusive last day).
+    private static func eventKitAllDay(start: Date, end: Date) -> (Date, Date) {
+        let cal = Calendar.current
+        let startDay = AllDayDate.localDay(of: start, calendar: cal)
+        let endDay = AllDayDate.localDay(of: end, calendar: cal)
+        let inclusiveEnd = cal.date(byAdding: .day, value: -1, to: endDay) ?? startDay
+        return (startDay, max(inclusiveEnd, startDay))
     }
 
     // MARK: - Write (Track C mirror)
@@ -226,8 +259,11 @@ final class EventKitService {
     /// create + update so both stay in lockstep.
     private func apply(_ event: CalendarEvent, to ekEvent: EKEvent) {
         ekEvent.title = event.title
-        ekEvent.startDate = event.start
-        ekEvent.endDate = event.end
+        let (start, end) = event.isAllDay
+            ? Self.eventKitAllDay(start: event.start, end: event.end)
+            : (event.start, event.end)
+        ekEvent.startDate = start
+        ekEvent.endDate = end
         ekEvent.notes = event.notes
         ekEvent.isAllDay = event.isAllDay
     }

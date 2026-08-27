@@ -30,8 +30,18 @@ struct EventEditorSheet: View {
         _title             = State(initialValue: seed.title)
         _selectedSpaceName = State(initialValue: seed.spaceName)
         _isAllDay          = State(initialValue: seed.isAllDay)
-        _startDate         = State(initialValue: seed.start)
-        _endDate           = State(initialValue: seed.end)
+        // An all-day event is anchored at UTC midnight (`AllDayDate`); the date field speaks
+        // local dates, so it is shown the day the event NAMES, not the raw instant — which
+        // reads as the previous evening anywhere west of Greenwich. `save()` re-anchors.
+        _startDate         = State(initialValue: seed.isAllDay
+                                   ? AllDayDate.localDay(of: seed.start, calendar: .current)
+                                   : seed.start)
+        // The stored all-day end is EXCLUSIVE (Mon–Wed ends Thu 00:00Z); the field speaks
+        // the INCLUSIVE last day the event covers, so it reads "ends Wednesday".
+        _endDate           = State(initialValue: seed.isAllDay
+                                   ? AllDayDate.localDay(of: AllDayDate.utc.date(byAdding: .day, value: -1, to: seed.end) ?? seed.end,
+                                                         calendar: .current)
+                                   : seed.end)
         _notes             = State(initialValue: seed.notes ?? "")
     }
 
@@ -48,17 +58,29 @@ struct EventEditorSheet: View {
         .sheet(isPresented: $showRefPicker) {
             AttachReferencePicker(projectID: seed.projectID, selection: $referenceSelection)
         }
-        .onChange(of: startDate) { _, newStart in
-            // Keep end >= start + 15 minutes when start shifts past end
-            if endDate <= newStart {
+        .onChange(of: startDate) { oldStart, newStart in
+            // Moving to another day carries a multi-day span along. Then clamp: all-day ends
+            // are inclusive, so ending on the start day is valid; a timed event needs a real
+            // length, so bump it an hour past a start that overtook it.
+            let cal = Calendar.current
+            let days = cal.dateComponents([.day], from: cal.startOfDay(for: oldStart),
+                                          to: cal.startOfDay(for: newStart)).day ?? 0
+            if days != 0 { endDate = cal.date(byAdding: .day, value: days, to: endDate) ?? endDate }
+            if isAllDay {
+                if endDate < newStart { endDate = newStart }
+            } else if endDate <= newStart {
                 endDate = Calendar.current.date(byAdding: .hour, value: 1, to: newStart) ?? newStart
             }
         }
         .onChange(of: isAllDay) { _, allDay in
             if allDay {
                 // Snap to day boundaries for all-day events
-                startDate = Calendar.current.startOfDay(for: startDate)
-                endDate   = Calendar.current.startOfDay(for: endDate > startDate ? endDate : startDate)
+                let day = Calendar.current.startOfDay(for: startDate)
+                startDate = day
+                endDate   = Calendar.current.startOfDay(for: max(endDate, day))
+            } else if endDate <= startDate {
+                // Leaving all-day: a same-day inclusive end is not a valid timed span.
+                endDate = Calendar.current.date(byAdding: .hour, value: 1, to: startDate) ?? startDate
             }
         }
     }
@@ -143,11 +165,11 @@ struct EventEditorSheet: View {
                     AtlasDateField(date: $startDate, includesTime: !isAllDay)
                 }
 
-                // ── End date / time (timed events only) ───────────────────
-                if !isAllDay {
-                    field("Ends") {
-                        AtlasDateField(date: $endDate, includesTime: true, minDate: startDate)
-                    }
+                // ── End date / time ───────────────────────────────────────
+                // All-day shows a date only, and it is the LAST day the event covers —
+                // a Mon–Wed conference reads "ends Wednesday". `save()` makes it exclusive.
+                field("Ends") {
+                    AtlasDateField(date: $endDate, includesTime: !isAllDay, minDate: startDate)
                 }
 
                 // ── Notes ─────────────────────────────────────────────────
@@ -234,12 +256,18 @@ struct EventEditorSheet: View {
             : selectedSpaceName
         let color = state.calendarSpaceColor(named: finalSpaceName)
 
-        // All-day events span exactly one calendar day (midnight → midnight).
+        // An all-day event is a floating date, not an instant: it is stored at UTC midnight
+        // of the picked calendar date, with an EXCLUSIVE end — the convention Google and ICS
+        // already write (`AllDayDate`). The picker holds the INCLUSIVE last day, so the
+        // stored end is the day after it.
+        let finalStart: Date
         let finalEnd: Date
         if isAllDay {
-            let dayStart = Calendar.current.startOfDay(for: startDate)
-            finalEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+            finalStart = AllDayDate.anchor(forDayOf: startDate, in: .current)
+            let lastDay = AllDayDate.anchor(forDayOf: max(endDate, startDate), in: .current)
+            finalEnd = AllDayDate.utc.date(byAdding: .day, value: 1, to: lastDay) ?? finalStart
         } else {
+            finalStart = startDate
             finalEnd = endDate > startDate ? endDate : startDate.addingTimeInterval(3600)
         }
 
@@ -247,7 +275,7 @@ struct EventEditorSheet: View {
             id: seed.id,
             title: trimmedTitle,
             subtitle: "",
-            start: startDate,
+            start: finalStart,
             end: finalEnd,
             color: color,
             spaceName: finalSpaceName,

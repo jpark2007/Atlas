@@ -63,6 +63,77 @@ final class ICSFileTests: XCTestCase {
         """), calendar: calendar).isEmpty)
     }
 
+    // MARK: - Timezones
+    //
+    // The server parser (supabase/functions/_shared/ics.ts) reads the same files. Both must
+    // land on the same instant, so the assertions here mirror ics_test.ts.
+
+    private func utc(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: Int = 0) -> Date {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        return c.date(from: DateComponents(year: year, month: month, day: day,
+                                           hour: hour, minute: minute))!
+    }
+
+    private func firstStart(_ dtstart: String, calendarLines: String = "") -> Date? {
+        ICSFile.events(in: ics("""
+        \(calendarLines)BEGIN:VEVENT\r
+        SUMMARY:Organic Chemistry\r
+        \(dtstart)\r
+        END:VEVENT
+        """), calendar: calendar).first?.start
+    }
+
+    /// Exchange-published exports write Windows zone names, which `TimeZone(identifier:)`
+    /// does not know. Unmapped they fell back to the reader's zone — right only for a
+    /// student who happens to be in the school's.
+    func testWindowsTZIDResolvesToTheRightInstant() {
+        // Jan 15 is Eastern standard time (UTC-5): 09:00 there is 14:00Z.
+        XCTAssertEqual(firstStart("DTSTART;TZID=Eastern Standard Time:20260115T090000"),
+                       utc(2026, 1, 15, 14))
+        // Same TZID in September, when the zone is on daylight time (UTC-4).
+        XCTAssertEqual(firstStart("DTSTART;TZID=Eastern Standard Time:20260901T090000"),
+                       utc(2026, 9, 1, 13))
+        // A different zone entirely, so the reader's own zone cannot be what answered.
+        XCTAssertEqual(firstStart("DTSTART;TZID=Pacific Standard Time:20260115T090000"),
+                       utc(2026, 1, 15, 17))
+    }
+
+    func testOutlookDisplayFormTZIDResolves() {
+        XCTAssertEqual(firstStart(#"DTSTART;TZID="(UTC-05:00) Eastern Time (US & Canada)":20260115T090000"#),
+                       utc(2026, 1, 15, 14))
+        XCTAssertEqual(firstStart(#"DTSTART;TZID="(UTC-08:00) Pacific Time (US and Canada)":20260115T090000"#),
+                       utc(2026, 1, 15, 17))
+    }
+
+    /// A floating time means 9am wall clock. When the file names its own zone, that is the
+    /// wall it meant — and it is the only thing the server can read it against, so honoring
+    /// it here is what keeps the two parsers on the same instant.
+    func testFloatingTimeUsesTheCalendarsDeclaredZone() {
+        XCTAssertEqual(firstStart("DTSTART:20260115T090000",
+                                  calendarLines: "X-WR-TIMEZONE:America/Los_Angeles\r\n"),
+                       utc(2026, 1, 15, 17))
+        // A Windows name in X-WR-TIMEZONE is mapped the same way a TZID is.
+        XCTAssertEqual(firstStart("DTSTART:20260115T090000",
+                                  calendarLines: "X-WR-TIMEZONE:Eastern Standard Time\r\n"),
+                       utc(2026, 1, 15, 14))
+    }
+
+    /// With no zone declared anywhere, the reader's own zone is the wall clock — a
+    /// timetable's "09:00" is 9am where the student is reading it.
+    func testFloatingTimeWithNoDeclaredZoneIsLocal() {
+        XCTAssertEqual(firstStart("DTSTART:20260115T090000"), at(2026, 1, 15, 9))
+    }
+
+    /// An unrecognized zone name must not throw or silently invent an offset; it degrades
+    /// to the same reading a file with no zone at all gets.
+    func testUnknownTZIDDegradesToLocal() {
+        XCTAssertEqual(firstStart("DTSTART;TZID=Middle Earth Standard Time:20260115T090000"),
+                       at(2026, 1, 15, 9))
+        XCTAssertNil(ICSFile.timeZone(forTZID: "Middle Earth Standard Time"))
+        XCTAssertEqual(ICSFile.timeZone(forTZID: "America/Chicago")?.identifier, "America/Chicago")
+    }
+
     // MARK: - Weekly RRULE
 
     func testWeeklyRuleGivesItsByDays() {

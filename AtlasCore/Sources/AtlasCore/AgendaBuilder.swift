@@ -45,12 +45,17 @@ public enum AgendaBuilder {
         let dayStart = calendar.startOfDay(for: from)
         var items: [AgendaItem] = []
 
-        for ev in events where ev.start >= dayStart {
+        for ev in events {
+            // All-day events sort and group by their own calendar date, not by their raw
+            // UTC-midnight instant — which lands on the previous day west of Greenwich, and
+            // gets eaten by the past filter on the very day it belongs to.
+            let date = ev.bucketDate(in: calendar)
+            guard date >= dayStart else { continue }
             items.append(AgendaItem(
                 id: ev.id,
                 kind: .event,
                 title: ev.title,
-                date: ev.start,
+                date: date,
                 endDate: ev.end,
                 allDay: ev.isAllDay,
                 color: ev.color,

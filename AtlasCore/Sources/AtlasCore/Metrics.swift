@@ -104,13 +104,13 @@ public struct AtlasMetrics {
         // ── Events ─────────────────────────────────────────────────────────
         // Only the counted week matters, so narrow before merging and deduping.
         let stored = events.filter {
-            !$0.isWorkBlock && !$0.isDeadline && weekInterval.contains($0.start)
+            !$0.isWorkBlock && !$0.isDeadline && weekInterval.contains($0.bucketDate(in: calendar))
         }
         let counted = CalendarSync.collapsingDuplicates(
             stored + classMeetings(in: weekInterval, classes: classes, term: term, calendar: calendar),
             calendar: calendar
         )
-        let eventsToday    = counted.filter { calendar.isDate($0.start, inSameDayAs: now) }.count
+        let eventsToday    = counted.filter { calendar.isDate($0.bucketDate(in: calendar), inSameDayAs: now) }.count
         let eventsThisWeek = counted.count
 
         // ── Per-space task load ────────────────────────────────────────────

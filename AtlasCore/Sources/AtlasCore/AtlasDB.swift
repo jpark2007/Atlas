@@ -322,6 +322,9 @@ public struct ProjectRow: Codable {
     public var meetingPattern: [MeetingBlock]?
     /// Syllabus-scan info card (0042) — jsonb object. nil/absent ⇒ never scanned.
     public var classInfo: ClassInfoCard?
+    /// Object path of the kept syllabus in the private `syllabi` bucket (0044).
+    /// nil/absent ⇒ no document stored.
+    public var syllabusPath: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
@@ -341,6 +344,7 @@ public struct ProjectRow: Codable {
         case archivedAt     = "archived_at"
         case meetingPattern = "meeting_pattern"
         case classInfo      = "class_info"
+        case syllabusPath   = "syllabus_path"
     }
 
     public init(domain p: Project) {
@@ -362,6 +366,7 @@ public struct ProjectRow: Codable {
         // is one state, not two.
         self.meetingPattern = p.meetingPattern.isEmpty ? nil : p.meetingPattern
         self.classInfo      = p.classInfo
+        self.syllabusPath   = p.syllabusPath
     }
 
     public func toDomain() -> Project {
@@ -378,6 +383,7 @@ public struct ProjectRow: Codable {
         project.archivedAt     = archivedAt
         project.meetingPattern = meetingPattern ?? []
         project.classInfo      = classInfo
+        project.syllabusPath   = syllabusPath
         return project
     }
 }

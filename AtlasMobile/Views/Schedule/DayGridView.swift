@@ -29,6 +29,10 @@ struct DayGridView: View {
     var onMoveTask: (TaskItem, Int) -> Void = { _, _ in }
     var onMoveEvent: (CalendarEvent, Int) -> Void = { _, _ in }
 
+    /// False while this grid is a neighbour page in the day pager rather than the day on
+    /// screen. A grid that stops being shown drops any lifted block (see `body`).
+    var isShown = true
+
     private let hourHeight: CGFloat = 56
     private let railWidth: CGFloat = 66
     private let minBlockHeight: CGFloat = 26
@@ -62,9 +66,11 @@ struct DayGridView: View {
             if placing != nil { placementControls }
             else if armedID != nil { moveControls }
         }
-        // Day-swipe while a block is armed would strand the confirm/cancel circles
-        // subject-less on the new day; cancel the move instead.
+        // Leaving this day while a block is armed would strand the confirm/cancel circles
+        // subject-less; cancel the move instead. Either the day under this grid changed,
+        // or the pager moved on and this grid is no longer the day on screen.
         .onChange(of: day) { _, _ in if armedID != nil { cancelMove() } }
+        .onChange(of: isShown) { _, shown in if !shown && armedID != nil { cancelMove() } }
         .sheet(item: $openStack, onDismiss: {
             if let t = pendingOpen { pendingOpen = nil; onOpen(.task(t)) }
         }) { stack in
@@ -77,7 +83,7 @@ struct DayGridView: View {
     // MARK: - All-day chips (pinned above the scroll)
 
     private var allDayEvents: [CalendarEvent] {
-        events.filter { $0.isAllDay && overlapsDay($0.start, $0.end) }
+        events.filter { $0.isAllDay && coversAllDay($0) }
     }
 
     private var allDayRow: some View {
@@ -555,9 +561,23 @@ struct DayGridView: View {
         return min(max(m, 0), 1425)                                    // clamp 00:00–23:45
     }
 
+    /// Overlap for TIMED events, which are absolute instants and so compare against the
+    /// local day's real boundaries.
     private func overlapsDay(_ start: Date, _ end: Date) -> Bool {
         let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
         return end > dayStart && start < dayEnd
+    }
+
+    /// Overlap for ALL-DAY events, which are floating dates anchored at UTC midnight
+    /// (`AllDayDate`) with an exclusive end. Compared as instants against the local day
+    /// they straddle its boundary and paint two days — the day-off bug. Compare calendar
+    /// dates in the frame they were written in instead.
+    private func coversAllDay(_ ev: CalendarEvent) -> Bool {
+        let target = AllDayDate.anchor(forDayOf: day, in: cal)
+        let first = AllDayDate.utcDay(of: ev.start)
+        // A zero-length all-day row (some sources write end == start) still covers its day.
+        let endExclusive = max(AllDayDate.utcDay(of: ev.end), first.addingTimeInterval(86_400))
+        return target >= first && target < endExclusive
     }
 
     private func hasClockTime(_ date: Date) -> Bool {

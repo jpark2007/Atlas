@@ -230,9 +230,16 @@ struct CaptureResultCard: View {
                   var event = store.snapshot.events.first(where: { $0.id == item.id }) else { return }
             let cal = Calendar.current
             let length = event.end.timeIntervalSince(event.start)
-            let time = cal.dateComponents([.hour, .minute], from: event.start)
-            let moved = cal.date(bySettingHour: time.hour ?? 0, minute: time.minute ?? 0,
+            let moved: Date
+            if event.isAllDay {
+                // An all-day event has no clock time to carry over, and its anchor is UTC
+                // midnight of the date it names (`AllDayDate`) — never a local midnight.
+                moved = AllDayDate.anchor(forDayOf: date, in: cal)
+            } else {
+                let time = cal.dateComponents([.hour, .minute], from: event.start)
+                moved = cal.date(bySettingHour: time.hour ?? 0, minute: time.minute ?? 0,
                                  second: 0, of: cal.startOfDay(for: date)) ?? date
+            }
             event.start = moved
             event.end = moved.addingTimeInterval(length)
             Task { await store.updateEvent(event) }

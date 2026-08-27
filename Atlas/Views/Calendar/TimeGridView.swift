@@ -581,67 +581,90 @@ struct DayCalendarView: View {
         return markers.filter { $0.y + Self.contentTopInset > bottom }
     }
 
+    /// All-day items ride the strip above the grid, never the column — an all-day event is a
+    /// day label, not an occupancy. Deadlines are excluded: their hairline markers inside the
+    /// column already say what's due, and the week view's "N due" cap is a jump target that
+    /// would do nothing here.
+    private var stripEvents: [CalendarEvent] {
+        events.filter { $0.isAllDay && !$0.isDeadline }
+    }
+
+    /// Height the strip takes out of the scroll viewport (0 when it renders nothing) — the
+    /// below-the-fold due count is measured against the grid, not the whole pane.
+    private var stripHeight: CGFloat {
+        stripEvents.isEmpty ? 0 : CalendarLayout.allDayRowHeight + 4
+    }
+
     var body: some View {
         GeometryReader { outer in
-            ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    ZStack(alignment: .topLeading) {
-                        HStack(alignment: .top, spacing: 0) {
-                            HourGutter()
-                            DayColumnView(
-                                date: date,
-                                events: events,
-                                now: now,
-                                isToday: Calendar.current.isDateInToday(date),
-                                onTapEmpty: onTapEmpty,
-                                onTapEvent: onTapEvent,
-                                onDragEvent: onDragEvent,
-                                onDropEvent: onDropEvent,
-                                linkedTaskID: linkedTaskID,
-                                onLinkTask: onLinkTask,
-                                onToggleTask: onToggleTask,
-                                onMoreTime: onMoreTime,
-                                plannedLabel: plannedLabel
-                            )
-                        }
-                        .padding(.trailing, 8)
-                        .padding(.top, Self.contentTopInset)
-                        .padding(.bottom, 16)
-
-                        // Zero-height sentinel anchored at the current-time Y so that
-                        // scrollTo("nowAnchor", anchor: .center) lands precisely on "now".
-                        nowSentinel
-                        // Anchor at the first below-the-fold due marker — the edge-chip's
-                        // jump target.
-                        if let first = belowViewport.first { dueSentinel(at: first.y) }
-                    }
-                    .background(
-                        GeometryReader { g in
-                            Color.clear.preference(
-                                key: DayScrollOffsetKey.self,
-                                value: -g.frame(in: .named("dayGridScroll")).minY
-                            )
-                        }
-                    )
-                }
-                .coordinateSpace(name: "dayGridScroll")
-                .onPreferenceChange(DayScrollOffsetKey.self) { scrollOffset = $0 }
-                .onAppear {
-                    viewportHeight = outer.size.height
-                    scrollToNowIfVisible(proxy: proxy)
-                }
-                .onChange(of: outer.size.height) { _, h in viewportHeight = h }
-                // Sticky bottom edge-chip: due markers exist below the fold. Nothing is
-                // hidden or collapsed — the chip is a nudge plus a jump, and the markers
-                // themselves stay the source of truth.
-                .overlay(alignment: .bottom) {
-                    if !belowViewport.isEmpty {
-                        DueBelowChip(count: belowViewport.reduce(0) { $0 + $1.count }) {
-                            withAnimation(.easeOut(duration: 0.25)) {
-                                proxy.scrollTo("dueAnchor", anchor: .center)
+            VStack(spacing: 0) {
+                AllDayRowView(
+                    days: [date],
+                    columnWidth: max(0, outer.size.width - CalendarLayout.gutterWidth - 6 - 8),
+                    now: now,
+                    eventsProvider: { _ in stripEvents }
+                )
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        ZStack(alignment: .topLeading) {
+                            HStack(alignment: .top, spacing: 0) {
+                                HourGutter()
+                                DayColumnView(
+                                    date: date,
+                                    events: events,
+                                    now: now,
+                                    isToday: Calendar.current.isDateInToday(date),
+                                    onTapEmpty: onTapEmpty,
+                                    onTapEvent: onTapEvent,
+                                    onDragEvent: onDragEvent,
+                                    onDropEvent: onDropEvent,
+                                    linkedTaskID: linkedTaskID,
+                                    onLinkTask: onLinkTask,
+                                    onToggleTask: onToggleTask,
+                                    onMoreTime: onMoreTime,
+                                    plannedLabel: plannedLabel
+                                )
                             }
+                            .padding(.trailing, 8)
+                            .padding(.top, Self.contentTopInset)
+                            .padding(.bottom, 16)
+
+                            // Zero-height sentinel anchored at the current-time Y so that
+                            // scrollTo("nowAnchor", anchor: .center) lands precisely on "now".
+                            nowSentinel
+                            // Anchor at the first below-the-fold due marker — the edge-chip's
+                            // jump target.
+                            if let first = belowViewport.first { dueSentinel(at: first.y) }
                         }
-                        .padding(.bottom, 10)
+                        .background(
+                            GeometryReader { g in
+                                Color.clear.preference(
+                                    key: DayScrollOffsetKey.self,
+                                    value: -g.frame(in: .named("dayGridScroll")).minY
+                                )
+                            }
+                        )
+                    }
+                    .coordinateSpace(name: "dayGridScroll")
+                    .onPreferenceChange(DayScrollOffsetKey.self) { scrollOffset = $0 }
+                    .onAppear {
+                        viewportHeight = outer.size.height - stripHeight
+                        scrollToNowIfVisible(proxy: proxy)
+                    }
+                    .onChange(of: outer.size.height) { _, h in viewportHeight = h - stripHeight }
+                    .onChange(of: stripHeight) { _, h in viewportHeight = outer.size.height - h }
+                    // Sticky bottom edge-chip: due markers exist below the fold. Nothing is
+                    // hidden or collapsed — the chip is a nudge plus a jump, and the markers
+                    // themselves stay the source of truth.
+                    .overlay(alignment: .bottom) {
+                        if !belowViewport.isEmpty {
+                            DueBelowChip(count: belowViewport.reduce(0) { $0 + $1.count }) {
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    proxy.scrollTo("dueAnchor", anchor: .center)
+                                }
+                            }
+                            .padding(.bottom, 10)
+                        }
                     }
                 }
             }

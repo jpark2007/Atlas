@@ -228,6 +228,14 @@ extension AppState {
         applyClassEdit(project)
     }
 
+    /// Points a class at the syllabus document kept for it in the `syllabi` bucket (0044).
+    /// Written only after the upload succeeded — a pointer to nothing is worse than none.
+    func setSyllabusPath(projectID: UUID, path: String?) {
+        guard var project = project(projectID) else { return }
+        project.syllabusPath = path
+        applyClassEdit(project)
+    }
+
     /// Soft-archives (or restores) a class. Its tasks and notes stay queryable — a term
     /// ending never wipes coursework.
     func setClassArchived(projectID: UUID, archived: Bool) {

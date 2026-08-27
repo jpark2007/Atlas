@@ -148,12 +148,18 @@ public enum SchoolCalendar {
         calendar: Calendar = .current
     ) -> [CalendarEvent] {
         keyDates(on: day, in: term, calendar: calendar).map { keyDate in
-            CalendarEvent(
+            // A Key Date is stored and reasoned about as a local `YYYY-MM-DD` (`TermDay`), but
+            // once it becomes a CalendarEvent it is an all-day event like any other and wears
+            // the canonical UTC-midnight anchor — otherwise the registrar's "Labor Day" and the
+            // Google copy of the same holiday can never dedupe. The id still keys off the local
+            // day string, so it stays stable across this change.
+            let anchor = AllDayDate.anchor(forDayOf: keyDate.date, in: calendar)
+            return CalendarEvent(
                 id: CalendarSync.stableUUID(from: "key-date-\(term.id.uuidString)-\(keyDate.label)-\(TermDay.string(from: keyDate.date))"),
                 title: keyDate.label,
                 subtitle: term.name,
-                start: calendar.startOfDay(for: keyDate.date),
-                end: calendar.startOfDay(for: keyDate.date),
+                start: anchor,
+                end: anchor,
                 color: AtlasTheme.Colors.textSecondary,
                 spaceName: spaceName,
                 isAllDay: true,

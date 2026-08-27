@@ -95,7 +95,7 @@ struct ScheduleView: View {
         .sheet(item: $manualPrefill) { prefill in
             ManualAddSheet(prefill: prefill)
                 .environmentObject(store)
-                .presentationDetents([.medium, .large])
+                .edSheetDetents([.medium, .large], preferringLarge: true)
         }
         .sheet(isPresented: $showSettings) {
             SettingsSheet().environmentObject(store)
@@ -114,15 +114,20 @@ struct ScheduleView: View {
         .onReceive(store.eventKit.changeNotification) { _ in
             store.refreshAppleEvents(around: selectedDay)
         }
-        .onChange(of: selectedDay) { _, day in store.refreshAppleEvents(around: day) }
+        .onChange(of: selectedDay) { _, day in
+            store.refreshAppleEvents(around: day)
+            // Leaving the day (chevron / Today / month jump) abandons any lifted block —
+            // the page it belongs to cancels its own move, this releases the FAB.
+            if blockMoveActive { blockMoveActive = false }
+        }
         .onAppear {
             store.refreshAppleEvents(around: selectedDay)
             consumeFocusToday(); consumePlacement()
-            AtlasTips.DragToSchedule.hasUnscheduled = !needsTime.isEmpty
+            AtlasTips.DragToSchedule.hasUnscheduled = !needsTime(on: selectedDay).isEmpty
             if !spotlightDone { spotlightActive = true }   // first Schedule visit only
         }
-        .onChange(of: needsTime.count) { _, _ in
-            AtlasTips.DragToSchedule.hasUnscheduled = !needsTime.isEmpty
+        .onChange(of: needsTime(on: selectedDay).count) { _, _ in
+            AtlasTips.DragToSchedule.hasUnscheduled = !needsTime(on: selectedDay).isEmpty
         }
         .onChange(of: store.scheduleFocusToday) { _, _ in consumeFocusToday() }
         .onChange(of: store.pendingPlacement?.id) { _, _ in consumePlacement() }
@@ -254,105 +259,119 @@ struct ScheduleView: View {
         .transition(.opacity.combined(with: .scale(scale: 0.8)))
     }
 
+    /// The three days the pager keeps live: yesterday, the shown day, tomorrow. Paging
+    /// is unbounded (there is no first or last day), so there is no edge to rubber-band.
+    private var pageDays: [Date] {
+        [-1, 0, 1].compactMap { cal.date(byAdding: .day, value: $0, to: selectedDay) }
+    }
+
     private var listBody: some View {
         // TimelineView re-evaluates every minute so the NOW rail advances.
         TimelineView(.everyMinute) { context in
-            List {
-                if spotlightDone {
-                    GetStartedCard()
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                }
-                // Late is pinned above today's work — never scrolled past, never rolled.
-                if cal.isDateInToday(selectedDay) {
-                    LateGroup(items: lateItems,
-                              onToggle: toggleByID,
-                              onOpen: { id in
-                                  if let task = store.snapshot.tasks.first(where: { $0.id == id }) {
-                                      detail = .task(task)
-                                  }
-                              },
-                              onReschedule: { date in
-                                  Task { await store.rescheduleLateItems(to: date) }
-                              })
-                }
-                NeedsTimeSection(tasks: needsTime,
-                                 onSetTime: { timing = $0 },
-                                 onOpen: { detail = .task($0) },
-                                 onPlace: { showPlace = true },
-                                 onLongPress: { store.pendingPlacement = $0 })
-                    .onboardingTip(dragTip, when: spotlightDone)
-                DayTimelineView(
-                    day: selectedDay,
-                    now: context.date,
-                    events: filteredEvents,
-                    tasks: filteredTasks,
-                    loading: store.loading,
-                    onToggle: toggle,
-                    onDelete: delete,
-                    onOpen: { detail = $0 },
-                    onDeleteEvent: deleteEvent
-                )
-                // Apple Calendar lives on the phone, not the server, so it's connected
-                // per-device. Shown until it is — the permanent toggle belongs in the
-                // Settings calendar list (see AppleCalendarConnectRow).
-                if !store.appleCalendarEnabled {
-                    AppleCalendarConnectRow(day: selectedDay)
-                        .environmentObject(store)
-                        .listRowInsets(EdgeInsets(top: 14, leading: 28, bottom: 14, trailing: 28))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .contentMargins(.bottom, 160, for: .scrollContent)
-            .refreshable { await store.refresh() }
-            .simultaneousGesture(daySwipe)
+            DayPager(pages: pageDays.map { DayPage(day: $0, content: listPage(day: $0, now: context.date)) },
+                     enabled: !blockMoveActive,
+                     onCommit: changeDay)
         }
+    }
+
+    /// One day of the list view. Everything it draws comes from `day`, never
+    /// `selectedDay` — the neighbours are real, live pages, not snapshots.
+    private func listPage(day: Date, now: Date) -> some View {
+        let center = cal.isDate(day, inSameDayAs: selectedDay)
+        return List {
+            if spotlightDone {
+                GetStartedCard()
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            }
+            // Late is pinned above today's work — never scrolled past, never rolled.
+            if cal.isDateInToday(day) {
+                LateGroup(items: lateItems,
+                          onToggle: toggleByID,
+                          onOpen: { id in
+                              if let task = store.snapshot.tasks.first(where: { $0.id == id }) {
+                                  detail = .task(task)
+                              }
+                          },
+                          onReschedule: { date in
+                              Task { await store.rescheduleLateItems(to: date) }
+                          })
+            }
+            NeedsTimeSection(tasks: needsTime(on: day),
+                             onSetTime: { timing = $0 },
+                             onOpen: { detail = .task($0) },
+                             onPlace: { showPlace = true },
+                             onLongPress: { store.pendingPlacement = $0 })
+                // Only the shown page anchors the tip — three copies would fight.
+                .onboardingTip(dragTip, when: spotlightDone && center)
+            DayTimelineView(
+                day: day,
+                now: now,
+                events: events(on: day),
+                tasks: filteredTasks,
+                loading: store.loading,
+                onToggle: toggle,
+                onDelete: delete,
+                onOpen: { detail = $0 },
+                onDeleteEvent: deleteEvent
+            )
+            // Apple Calendar lives on the phone, not the server, so it's connected
+            // per-device. Shown until it is — the permanent toggle belongs in the
+            // Settings calendar list (see AppleCalendarConnectRow).
+            if !store.appleCalendarEnabled {
+                AppleCalendarConnectRow(day: day)
+                    .environmentObject(store)
+                    .listRowInsets(EdgeInsets(top: 14, leading: 28, bottom: 14, trailing: 28))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.bottom, 160, for: .scrollContent)
+        .refreshable { await store.refresh() }
     }
 
     private var gridBody: some View {
         // TimelineView re-evaluates every minute so the NOW line advances.
         TimelineView(.everyMinute) { context in
-            VStack(spacing: 0) {
-                if spotlightDone { GetStartedCard() }
-                NeedsTimeSection(tasks: needsTime,
-                                 onSetTime: { timing = $0 },
-                                 onOpen: { detail = .task($0) },
-                                 onPlace: { showPlace = true },
-                                 onLongPress: { store.pendingPlacement = $0 },
-                                 compact: true)
-                    .onboardingTip(dragTip, when: spotlightDone)
-                DayGridView(
-                    day: selectedDay,
-                    now: context.date,
-                    events: store.gridColored(filteredEvents),
-                    tasks: store.gridColored(tasks: filteredTasks),
-                    onOpen: { detail = $0 },
-                    onToggle: toggle,
-                    placing: placing,
-                    placeMinutes: $placeMinutes,
-                    onConfirmPlace: confirmPlace,
-                    onCancelPlace: { withAnimation(MobileTheme.spring) { placing = nil } },
-                    blockMoveActive: $blockMoveActive,
-                    onMoveTask: moveTask,
-                    onMoveEvent: moveEvent
-                )
-            }
-            .simultaneousGesture(daySwipe)
+            DayPager(pages: pageDays.map { DayPage(day: $0, content: gridPage(day: $0, now: context.date)) },
+                     enabled: !blockMoveActive,
+                     onCommit: changeDay)
         }
     }
 
-    /// Horizontal fling changes the day (stays usable while placing).
-    private var daySwipe: some Gesture {
-        DragGesture(minimumDistance: 30, coordinateSpace: .local)
-            .onEnded { value in
-                guard abs(value.translation.width) > abs(value.translation.height) * 1.5,
-                      abs(value.translation.width) > 50 else { return }
-                changeDay(value.translation.width < 0 ? 1 : -1)
-            }
+    /// One day of the grid view. The placement chip and the block-move binding belong to
+    /// the shown day only — a neighbour page never carries a live chip.
+    private func gridPage(day: Date, now: Date) -> some View {
+        let center = cal.isDate(day, inSameDayAs: selectedDay)
+        return VStack(spacing: 0) {
+            if spotlightDone { GetStartedCard() }
+            NeedsTimeSection(tasks: needsTime(on: day),
+                             onSetTime: { timing = $0 },
+                             onOpen: { detail = .task($0) },
+                             onPlace: { showPlace = true },
+                             onLongPress: { store.pendingPlacement = $0 },
+                             compact: true)
+                .onboardingTip(dragTip, when: spotlightDone && center)
+            DayGridView(
+                day: day,
+                now: now,
+                events: store.gridColored(events(on: day)),
+                tasks: store.gridColored(tasks: filteredTasks),
+                onOpen: { detail = $0 },
+                onToggle: toggle,
+                placing: center ? placing : nil,
+                placeMinutes: center ? $placeMinutes : .constant(placeMinutes),
+                onConfirmPlace: confirmPlace,
+                onCancelPlace: { withAnimation(MobileTheme.spring) { placing = nil } },
+                blockMoveActive: center ? $blockMoveActive : .constant(false),
+                onMoveTask: moveTask,
+                onMoveEvent: moveEvent,
+                isShown: center
+            )
+        }
     }
 
     // MARK: - Data (space-filtered)
@@ -370,18 +389,18 @@ struct ScheduleView: View {
     /// The day's display pool: Atlas events + synthesized class meetings + read-only Apple
     /// events, already collapsed by the shared dedup (`MobileStore.displayEvents`), then
     /// space-filtered here.
-    private var filteredEvents: [CalendarEvent] {
-        store.displayEvents(on: selectedDay).filter { inFilter($0.spaceName) }
+    private func events(on day: Date) -> [CalendarEvent] {
+        store.displayEvents(on: day).filter { inFilter($0.spaceName) }
     }
     private var filteredTasks: [TaskItem] { store.snapshot.tasks.filter { inFilter($0.spaceName) } }
 
-    /// Tasks due on the shown day that truly need a time — date-only due, unscheduled.
+    /// Tasks due on `day` that truly need a time — date-only due, unscheduled.
     /// Clock-timed due tasks are deadlines and render on the timeline/grid instead.
-    private var needsTime: [TaskItem] {
+    private func needsTime(on day: Date) -> [TaskItem] {
         filteredTasks
             .filter { task in
                 guard let due = task.dueDate, task.scheduledAt == nil, !task.done,
-                      cal.isDate(due, inSameDayAs: selectedDay) else { return false }
+                      cal.isDate(due, inSameDayAs: day) else { return false }
                 let c = cal.dateComponents([.hour, .minute], from: due)
                 return (c.hour ?? 0) == 0 && (c.minute ?? 0) == 0
             }
@@ -407,13 +426,17 @@ struct ScheduleView: View {
             return false
         }.count
 
-        let events = filteredEvents.filter { event in
-            guard cal.isDate(event.start, inSameDayAs: selectedDay) else { return false }
-            if cal.isDateInToday(selectedDay) { return event.end > now }     // today: not yet ended
+        let dayEvents = events(on: selectedDay).filter { event in
+            guard cal.isDate(event.bucketDate(in: cal), inSameDayAs: selectedDay) else { return false }
+            if cal.isDateInToday(selectedDay) {
+                // An all-day event has no clock time to be past, so it counts all day; its
+                // end is a UTC midnight, which would otherwise retire it mid-afternoon.
+                return event.isAllDay || event.end > now                     // today: not yet ended
+            }
             return selectedDay > cal.startOfDay(for: now)                    // future day: all; past: none
         }.count
 
-        return tasks + events
+        return tasks + dayEvents
     }
 
     private static let dayLabelFormatter: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEEE, MMM d"; return f }()
@@ -422,9 +445,12 @@ struct ScheduleView: View {
 
     // MARK: - Actions
 
+    /// Step a day, from a chevron tap or a completed swipe. Deliberately unanimated:
+    /// the pager owns swipe motion (it re-centres itself around the new day), and a
+    /// chevron's page swap would cross-fade rather than slide.
     private func changeDay(_ delta: Int) {
         if let next = cal.date(byAdding: .day, value: delta, to: selectedDay) {
-            withAnimation(.easeInOut(duration: 0.18)) { selectedDay = next }
+            selectedDay = next
         }
     }
 
@@ -531,5 +557,134 @@ struct ScheduleView: View {
         guard let task = store.pendingPlacement else { return }
         store.pendingPlacement = nil
         beginPlacing(task)
+    }
+}
+
+// MARK: - Day pager
+
+/// One page of `DayPager`: a day and the already-built view that draws it. The content
+/// is a value, built by the parent — the pager never rebuilds it, so a 60/120 Hz drag
+/// costs nothing beyond an `offset`.
+struct DayPage<Content: View>: Identifiable {
+    let day: Date
+    let content: Content
+    var id: Date { day }
+}
+
+/// A finger-tracking horizontal pager over exactly three live day pages
+/// (previous / shown / next). The strip sits at `-width`, so the shown page fills the
+/// viewport and both neighbours are real, rendered content one screen away — nothing is
+/// loaded mid-swipe, and no snapshot is faked.
+///
+/// **Composing with drag-to-schedule.** The schedule owns a hand-rolled `DragGesture`
+/// for placing and moving blocks (see `DayGridView`; the native drag APIs misbehave —
+/// CLAUDE.md). This gesture must never eat it, so:
+/// • it attaches with `simultaneousGesture`, the only form that co-exists with the
+///   List/ScrollView pans this view wraps;
+/// • it **axis-locks once per drag**: the first 12 pt decide. A drag that is not clearly
+///   horizontal is marked `.rejected` and ignored for its whole lifetime, so a vertical
+///   block-move or chip drag can never nudge the day sideways;
+/// • while a block is lifted for a move, the parent passes `enabled: false` and the
+///   gesture is masked out entirely — the lifted block owns every drag on screen.
+///
+/// Paging is unbounded (there is no first or last day), so there is no edge to
+/// rubber-band against; every drag has a real page under it in both directions.
+struct DayPager<Content: View>: View {
+    let pages: [DayPage<Content>]        // previous, shown, next — in that order
+    let enabled: Bool
+    let onCommit: (Int) -> Void          // -1 back a day, +1 forward
+
+    @State private var dragX: CGFloat = 0
+    @State private var lock = Lock.undecided
+
+    private enum Lock { case undecided, horizontal, rejected }
+
+    /// The middle page — the day the schedule is actually on.
+    private var shownDay: Date? { pages.count == 3 ? pages[1].day : nil }
+
+    /// The first 12 pt of travel decide the axis, and a drag must be clearly sideways
+    /// (1.6× more horizontal than vertical) to page at all.
+    private let activation: CGFloat = 12
+    private let dominance: CGFloat = 1.6
+    /// Release past 30 % of the width completes; below that, a flick still completes if
+    /// the projected (velocity-carried) travel would have cleared 60 %.
+    private let commitFraction: CGFloat = 0.3
+    private let flickFraction: CGFloat = 0.6
+    /// …but a fraction alone would make a 900 pt iPad page demand a 270 pt drag. Both
+    /// thresholds are capped so the gesture costs roughly the same travel at any width.
+    /// The ceilings sit just above what the fractions resolve to on the widest iPhone
+    /// (440 pt → 132 / 264), so on every phone the fraction still wins and the feel of
+    /// the swipe is byte-for-byte what it was.
+    private let commitCeiling: CGFloat = 140
+    private let flickCeiling: CGFloat = 280
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            HStack(spacing: 0) {
+                ForEach(pages) { page in
+                    page.content
+                        .frame(width: w)
+                        // A neighbour is on screen mid-swipe; a tap there would act on the
+                        // wrong day. Only the shown page takes touches. (The flag sits on
+                        // the pages, never on the container — disabling hit testing on the
+                        // container would kill the swipe gesture itself.)
+                        .allowsHitTesting(page.day == shownDay)
+                }
+            }
+            .offset(x: -w + dragX)
+            .simultaneousGesture(swipe(width: w), including: enabled ? .all : .subviews)
+        }
+        .clipped()
+    }
+
+    private func swipe(width w: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: activation, coordinateSpace: .local)
+            .onChanged { value in
+                switch lock {
+                case .undecided:
+                    let dx = value.translation.width, dy = value.translation.height
+                    guard max(abs(dx), abs(dy)) >= activation else { return }
+                    lock = abs(dx) > abs(dy) * dominance ? .horizontal : .rejected
+                    if lock == .horizontal { dragX = dx }
+                    // Safety net: a previous drag cancelled without `onEnded` (another
+                    // recognizer claimed it) would leave the strip parked off-centre.
+                    else if dragX != 0 { withAnimation(MobileTheme.spring) { dragX = 0 } }
+                case .horizontal:
+                    dragX = value.translation.width
+                case .rejected:
+                    break
+                }
+            }
+            .onEnded { value in
+                let wasHorizontal = lock == .horizontal
+                lock = .undecided
+                guard wasHorizontal, w > 0 else { return }
+
+                let dx = value.translation.width
+                let projected = value.predictedEndTranslation.width
+                let flicked = projected.sign == dx.sign
+                    && abs(projected) > min(w * flickFraction, flickCeiling)
+                guard abs(dx) > min(w * commitFraction, commitCeiling) || flicked else {
+                    withAnimation(MobileTheme.spring) { dragX = 0 }   // released short — snap back
+                    return
+                }
+                commit(dx < 0 ? 1 : -1, width: w)
+            }
+    }
+
+    /// Land the swipe without a seam: advance the day and, in the same unanimated
+    /// transaction, re-anchor `dragX` so the incoming page stays exactly where the finger
+    /// left it (it moves from slot `1 + delta` to slot 1, a shift of `delta * width`).
+    /// Only then animate the remaining distance home.
+    private func commit(_ delta: Int, width w: CGFloat) {
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            onCommit(delta)
+            dragX += CGFloat(delta) * w
+        }
+        withAnimation(MobileTheme.spring) { dragX = 0 }
+        MobileTheme.Haptic.selection()
     }
 }

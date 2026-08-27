@@ -67,7 +67,7 @@ struct SetTimeSheet: View {
         .padding(.top, 28)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(MobileTheme.bg.ignoresSafeArea())
-        .presentationDetents([.medium])
+        .edSheetDetents([.medium])
     }
 
     /// Set `scheduledAt` to the picked day at the chosen clock time.

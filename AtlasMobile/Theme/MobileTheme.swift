@@ -92,4 +92,77 @@ extension View {
                 .frame(height: 1)
         }
     }
+
+    /// Centres a screen in a capped column at **regular** horizontal width so an iPad
+    /// gets a page, not a stretched phone. Compact width is returned untouched — and
+    /// since the phone build is portrait-locked (`UISupportedInterfaceOrientations`),
+    /// compact is the only class an iPhone ever reports. The same rule handles iPad
+    /// Slide Over / narrow Split View, which report compact: they simply get the phone
+    /// layout, which is correct at that size.
+    ///
+    /// `wide` is an optional larger cap used only when the column genuinely has the room
+    /// (a landscape iPad); portrait keeps `maxWidth`, so the page never loses its gutters.
+    func edContentColumn(_ maxWidth: CGFloat = 720, wide: CGFloat? = nil) -> some View {
+        modifier(EdContentColumn(maxWidth: maxWidth, wide: wide))
+    }
+
+    /// Sheet detents as authored on the phone, plus `.large` at regular width. iPad
+    /// presents a sheet inside a fixed page-sheet card, where a `.medium`-only sheet is
+    /// a short slab with no way to grow. `preferringLarge` goes further and makes `.large`
+    /// the *only* regular-width detent, so a full form opens showing all of itself instead
+    /// of a clipped half-card.
+    func edSheetDetents(_ detents: Set<PresentationDetent>, preferringLarge: Bool = false) -> some View {
+        modifier(EdSheetDetents(detents: detents, preferringLarge: preferringLarge))
+    }
+}
+
+/// See `View.edContentColumn`.
+private struct EdContentColumn: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var hSize
+    let maxWidth: CGFloat
+    let wide: CGFloat?
+
+    /// Measured width of the full page (not the column), so the wide cap keys off the
+    /// space actually available rather than an iPad model or an orientation notification.
+    @State private var available: CGFloat = 0
+
+    /// Every iPad portrait is ≤ 1024 pt wide and every landscape ≥ 1133, so this splits
+    /// the two without naming a device.
+    private var cap: CGFloat {
+        guard let wide, available >= 1100 else { return maxWidth }
+        return wide
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if hSize == .regular {
+            content
+                .frame(maxWidth: cap)
+                .frame(maxWidth: .infinity)
+                // The screens paint their own ground inside the column; this paints the
+                // gutters the same paper so the page reads as one sheet, not a card.
+                .background(MobileTheme.bg.ignoresSafeArea())
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear { available = geo.size.width }
+                            .onChange(of: geo.size.width) { _, w in available = w }
+                    }
+                )
+        } else {
+            content
+        }
+    }
+}
+
+/// See `View.edSheetDetents`.
+private struct EdSheetDetents: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var hSize
+    let detents: Set<PresentationDetent>
+    let preferringLarge: Bool
+
+    func body(content: Content) -> some View {
+        guard hSize == .regular else { return content.presentationDetents(detents) }
+        return content.presentationDetents(preferringLarge ? [.large] : detents.union([.large]))
+    }
 }

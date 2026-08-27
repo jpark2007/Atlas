@@ -1,5 +1,12 @@
 # Running: iOS Interpretation of the 2026-08 Redesign
 
+**Status 2026-08-27:** the separate v1.1 batch (`docs/specs/v1.1-plan.md`) shipped
+code-complete (uncommitted): all-day/timezone fix, ICS TZID fix, iOS settings sweep
+(per-calendar Apple picker, ICS-add UI removed), class-info card editor, continuous day
+swipe, and iPad support. The iOS parity backlog items below (class navigation, duplicate
+School rendering) are from an earlier 2026-08-25 pass and are not confirmed fixed by this
+note — check current code before assuming their status.
+
 All redesign phases are **Mac-first**; this doc accumulates the iOS take so mobile ships the same mental model, natively. Update alongside each phase doc.
 
 ## Phase 1 — School

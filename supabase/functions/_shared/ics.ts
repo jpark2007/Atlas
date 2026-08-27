@@ -85,6 +85,120 @@ export function parseLine(line: string): PropLine | null {
   return { name, params, value };
 }
 
+// ── Windows/Outlook zone names → IANA ─────────────────────────────────────────
+
+/**
+ * Exchange-published feeds (registrar and school calendars) write Windows zone names
+ * in TZID instead of IANA ids. `Intl` throws on those, the parse used to fall through,
+ * and the wall clock was then read as UTC — a 4-5 hour shift that can roll the date.
+ *
+ * Curated from CLDR's windowsZones: the Windows ids ("Eastern Standard Time") plus the
+ * display form Outlook also emits ("(UTC-05:00) Eastern Time (US & Canada)"), whose
+ * zone half is a territory name rather than a Windows id. Keys are normalized by
+ * `normalizeZoneKey`. Not exhaustive by design — an unlisted name still degrades to the
+ * old fall-through rather than throwing.
+ */
+const WINDOWS_ZONES: Record<string, string> = {
+  // North America
+  "eastern standard time": "America/New_York",
+  "eastern daylight time": "America/New_York",
+  "eastern time (us & canada)": "America/New_York",
+  "us eastern standard time": "America/Indiana/Indianapolis",
+  "indiana (east)": "America/Indiana/Indianapolis",
+  "central standard time": "America/Chicago",
+  "central daylight time": "America/Chicago",
+  "central time (us & canada)": "America/Chicago",
+  "central standard time (mexico)": "America/Mexico_City",
+  "canada central standard time": "America/Regina",
+  "saskatchewan": "America/Regina",
+  "mountain standard time": "America/Denver",
+  "mountain daylight time": "America/Denver",
+  "mountain time (us & canada)": "America/Denver",
+  "us mountain standard time": "America/Phoenix",
+  "arizona": "America/Phoenix",
+  "mountain standard time (mexico)": "America/Mazatlan",
+  "pacific standard time": "America/Los_Angeles",
+  "pacific daylight time": "America/Los_Angeles",
+  "pacific time (us & canada)": "America/Los_Angeles",
+  "pacific standard time (mexico)": "America/Tijuana",
+  "alaskan standard time": "America/Anchorage",
+  "alaska": "America/Anchorage",
+  "aleutian standard time": "America/Adak",
+  "hawaiian standard time": "Pacific/Honolulu",
+  "hawaii": "Pacific/Honolulu",
+  "atlantic standard time": "America/Halifax",
+  "atlantic time (canada)": "America/Halifax",
+  "newfoundland standard time": "America/St_Johns",
+  "newfoundland": "America/St_Johns",
+  "central america standard time": "America/Guatemala",
+  // South America
+  "sa pacific standard time": "America/Bogota",
+  "sa eastern standard time": "America/Cayenne",
+  "sa western standard time": "America/La_Paz",
+  "e. south america standard time": "America/Sao_Paulo",
+  "argentina standard time": "America/Argentina/Buenos_Aires",
+  "pacific sa standard time": "America/Santiago",
+  // Europe / Africa
+  "utc": "UTC",
+  "coordinated universal time": "UTC",
+  "gmt standard time": "Europe/London",
+  "dublin, edinburgh, lisbon, london": "Europe/London",
+  "greenwich standard time": "Atlantic/Reykjavik",
+  "w. europe standard time": "Europe/Berlin",
+  "romance standard time": "Europe/Paris",
+  "central europe standard time": "Europe/Budapest",
+  "central european standard time": "Europe/Warsaw",
+  "gtb standard time": "Europe/Bucharest",
+  "e. europe standard time": "Europe/Chisinau",
+  "fle standard time": "Europe/Kiev",
+  "russian standard time": "Europe/Moscow",
+  "turkey standard time": "Europe/Istanbul",
+  "israel standard time": "Asia/Jerusalem",
+  "egypt standard time": "Africa/Cairo",
+  "south africa standard time": "Africa/Johannesburg",
+  "w. central africa standard time": "Africa/Lagos",
+  "e. africa standard time": "Africa/Nairobi",
+  // Asia / Pacific
+  "arabian standard time": "Asia/Dubai",
+  "arab standard time": "Asia/Riyadh",
+  "iran standard time": "Asia/Tehran",
+  "pakistan standard time": "Asia/Karachi",
+  "india standard time": "Asia/Kolkata",
+  "chennai, kolkata, mumbai, new delhi": "Asia/Kolkata",
+  "bangladesh standard time": "Asia/Dhaka",
+  "se asia standard time": "Asia/Bangkok",
+  "singapore standard time": "Asia/Singapore",
+  "china standard time": "Asia/Shanghai",
+  "taipei standard time": "Asia/Taipei",
+  "tokyo standard time": "Asia/Tokyo",
+  "korea standard time": "Asia/Seoul",
+  "w. australia standard time": "Australia/Perth",
+  "aus central standard time": "Australia/Darwin",
+  "cen. australia standard time": "Australia/Adelaide",
+  "aus eastern standard time": "Australia/Sydney",
+  "e. australia standard time": "Australia/Brisbane",
+  "tasmania standard time": "Australia/Hobart",
+  "new zealand standard time": "Pacific/Auckland",
+};
+
+/** Lookup key for WINDOWS_ZONES: drop a leading "(UTC-05:00) " / "(GMT+01:00) " display
+ *  prefix, collapse whitespace, spell "and" as "&", lower-case. */
+function normalizeZoneKey(s: string): string {
+  return s
+    .replace(/^\((?:UTC|GMT)[+\-−]\d{1,2}:?\d{2}\)\s*/i, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\band\b/gi, "&")
+    .toLowerCase();
+}
+
+/** A TZID in the form `Intl` understands. IANA ids pass through untouched; Windows /
+ *  Outlook names are mapped; anything unrecognized is returned as-is so the caller's
+ *  existing try/catch still degrades it gracefully. */
+export function resolveTZID(tzid: string): string {
+  return WINDOWS_ZONES[normalizeZoneKey(tzid)] ?? tzid.trim();
+}
+
 /** Offset (localWall − UTC) in ms of `tzid` at the instant `utcDate`. Uses Intl
  *  formatToParts to read the zone's wall-clock, then differences it against UTC. */
 export function tzOffsetMs(tzid: string, utcDate: Date): number {
@@ -125,10 +239,15 @@ export interface ICSDate {
  *                                        (the app's server all-day convention,
  *                                        identical to google-sync's interval()).
  *   • "YYYYMMDDTHHMMSSZ"               → exact UTC instant.
- *   • TZID=Zone; "YYYYMMDDTHHMMSS"     → wall time resolved through the zone → UTC.
- *   • floating "YYYYMMDDTHHMMSS"       → no tz on the server → read as UTC.
+ *   • TZID=Zone; "YYYYMMDDTHHMMSS"     → wall time resolved through the zone → UTC
+ *                                        (Windows/Outlook zone names mapped first).
+ *   • floating "YYYYMMDDTHHMMSS"       → wall time in `floatingZone` — the calendar's own
+ *                                        X-WR-TIMEZONE — and only UTC if the file names
+ *                                        no zone at all. A floating 09:00 in a school feed
+ *                                        means 9am wall clock, which is also what the
+ *                                        client parser (ICSFile.swift) reads it as.
  */
-export function parseICSDate(value: string, params: Map<string, string>): ICSDate | null {
+export function parseICSDate(value: string, params: Map<string, string>, floatingZone?: string): ICSDate | null {
   const m = value.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/);
   if (!m) return null;
   const [, y, mo, d, hh, mi, ss, z] = m;
@@ -139,12 +258,13 @@ export function parseICSDate(value: string, params: Map<string, string>): ICSDat
   if (z === "Z") {
     return { iso: new Date(`${y}-${mo}-${d}T${hh}:${mi}:${ss}Z`).toISOString(), allDay: false };
   }
-  const tzid = params.get("TZID");
-  if (tzid) {
-    const inst = zonedWallToUTC(Number(y), Number(mo), Number(d), Number(hh), Number(mi), Number(ss), tzid);
+  const zone = params.get("TZID") ?? floatingZone;
+  if (zone) {
+    const inst = zonedWallToUTC(Number(y), Number(mo), Number(d), Number(hh), Number(mi), Number(ss), resolveTZID(zone));
     if (inst) return { iso: inst.toISOString(), allDay: false };
   }
-  // Floating: no Z, no (valid) TZID. The server has no per-user tz — read as UTC.
+  // Nothing named a zone (no Z, no TZID, no X-WR-TIMEZONE) — or the one named is
+  // unknown to Intl. The server has no reader to be local to, so read as UTC.
   return { iso: new Date(`${y}-${mo}-${d}T${hh}:${mi}:${ss}Z`).toISOString(), allDay: false };
 }
 
@@ -162,10 +282,19 @@ export interface VEvent {
 export function parseICS(raw: string): VEvent[] {
   const events: VEvent[] = [];
   let cur: VEvent | null = null;
+  // Calendar-scope default zone. Google and Outlook write X-WR-TIMEZONE above the
+  // VEVENTs; it is the only thing that tells the server what a floating time meant.
+  let calendarTZ: string | undefined;
   for (const line of unfold(raw)) {
     if (line === "BEGIN:VEVENT") { cur = {}; continue; }
     if (line === "END:VEVENT") { if (cur) events.push(cur); cur = null; continue; }
-    if (!cur) continue;
+    if (!cur) {
+      if (/^X-WR-TIMEZONE[;:]/i.test(line)) {
+        const tz = parseLine(line)?.value.trim();
+        if (tz) calendarTZ = tz;
+      }
+      continue;
+    }
     const p = parseLine(line);
     if (!p) continue;
     switch (p.name) {
@@ -174,8 +303,8 @@ export function parseICS(raw: string): VEvent[] {
       case "DESCRIPTION": cur.description = unescapeText(p.value); break;
       case "LOCATION":    cur.location = unescapeText(p.value); break;
       case "URL":         cur.url = p.value.trim(); break;
-      case "DTSTART":     cur.dtstart = parseICSDate(p.value, p.params); break;
-      case "DTEND":       cur.dtend = parseICSDate(p.value, p.params); break;
+      case "DTSTART":     cur.dtstart = parseICSDate(p.value, p.params, calendarTZ); break;
+      case "DTEND":       cur.dtend = parseICSDate(p.value, p.params, calendarTZ); break;
     }
   }
   return events;

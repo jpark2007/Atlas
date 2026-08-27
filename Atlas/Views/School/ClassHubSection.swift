@@ -12,6 +12,9 @@ struct ClassHubSection: View {
 
     @State private var presentMeetingEditor = false
     @State private var presentSyllabusScan = false
+    @State private var presentClassInfo = false
+    @State private var presentClassInfoEditing = false
+    @State private var presentSyllabusFile = false
     @State private var editingInstructor = false
     @State private var draftInstructor = ""
 
@@ -35,6 +38,17 @@ struct ClassHubSection: View {
         .sheet(isPresented: $presentSyllabusScan) {
             SyllabusScanSheet(project: project)
         }
+        .sheet(isPresented: $presentClassInfo) {
+            ClassInfoSheet(project: project, startEditing: presentClassInfoEditing)
+        }
+        .sheet(isPresented: $presentSyllabusFile) {
+            SyllabusPreviewSheet(project: project)
+        }
+    }
+
+    private func openClassInfo(editing: Bool) {
+        presentClassInfoEditing = editing
+        presentClassInfo = true
     }
 
     // MARK: - Chips
@@ -134,16 +148,51 @@ struct ClassHubSection: View {
     /// nothing here is computed, and Atlas never asks what you scored.
     private func classInfoCard(_ info: ClassInfoCard) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("CLASS INFO").atlasCapsLabel()
-            if !info.gradeWeights.isEmpty {
-                infoGroup("How it's graded", info.gradeWeights)
+            HStack(spacing: 12) {
+                Text("CLASS INFO").atlasCapsLabel()
+                Spacer()
+                syllabusFileButton
+                Button { openClassInfo(editing: true) } label: {
+                    Text("Edit")
+                        .atlasFont(size: 12, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
+                }
+                .buttonStyle(.plain)
             }
-            if !info.policies.isEmpty {
-                infoGroup("Policies", info.policies)
+            // The card summarises; the full wording of a policy is what you're held to,
+            // so the whole block opens the detail rather than only an ellipsis would.
+            Button { openClassInfo(editing: false) } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    if !info.gradeWeights.isEmpty {
+                        infoGroup("How it's graded", info.gradeWeights)
+                    }
+                    if !info.policies.isEmpty {
+                        infoGroup("Policies", info.policies)
+                    }
+                    if let hours = info.officeHours, !hours.isEmpty {
+                        infoGroup("Office hours", [hours])
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            if let hours = info.officeHours, !hours.isEmpty {
-                infoGroup("Office hours", [hours])
+            .buttonStyle(.plain)
+            .help("Open the full class info")
+        }
+    }
+
+    /// Only offered once a scan has actually stored a document — a dead button on every
+    /// hand-made class would be worse than none.
+    @ViewBuilder
+    private var syllabusFileButton: some View {
+        if project.syllabusPath != nil {
+            Button { presentSyllabusFile = true } label: {
+                Text("View syllabus")
+                    .atlasFont(size: 12, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
             }
+            .buttonStyle(.plain)
+            .help("Open the file this class's scan was read from")
         }
     }
 
@@ -155,8 +204,11 @@ struct ClassHubSection: View {
             ForEach(lines, id: \.self) { line in
                 HStack(alignment: .top, spacing: 6) {
                     Text("·").atlasFont(size: 13)
+                    // Two lines on the card; the detail shows the policy in full.
                     Text(line)
                         .atlasFont(size: 13, design: .rounded)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .foregroundStyle(AtlasTheme.Colors.textSecondary)
@@ -171,16 +223,25 @@ struct ClassHubSection: View {
                 .atlasFont(size: 13, weight: .medium, design: .rounded)
                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
-            Button { presentSyllabusScan = true } label: {
-                Text("Scan a syllabus")
-                    .atlasFont(size: 13, weight: .medium, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textSecondary)
-                    .padding(.horizontal, 14).padding(.vertical, 7)
-                    .overlay(RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
-                        .strokeBorder(AtlasTheme.Colors.border,
-                                      style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            HStack(spacing: 10) {
+                Button { presentSyllabusScan = true } label: {
+                    Text("Scan a syllabus")
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .overlay(RoundedRectangle(cornerRadius: AtlasTheme.Radius.control, style: .continuous)
+                            .strokeBorder(AtlasTheme.Colors.border,
+                                          style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                }
+                .buttonStyle(.plain)
+                // No syllabus to hand is not a reason to have no card.
+                Button { openClassInfo(editing: true) } label: {
+                    Text("Write it in")
+                        .atlasFont(size: 12, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 }

@@ -1,5 +1,10 @@
 # Handoff — Google Verification + iOS App Store (2026-08-25, late)
 
+**Status 2026-08-27: superseded.** iOS 1.0 was pulled from App Store review — 1.1 (with iPad
+support, no longer iPhone-only) is now the launch build, see `docs/specs/v1.1-plan.md`. Google
+OAuth verification is still pending; the privacy-policy fix referenced elsewhere was deployed
+2026-08-27. Test counts and commit-state below are a historical snapshot, not current.
+
 Written so a fresh session (or a fresh you, after a restart) can pick this up cold.
 Two tracks run in parallel: **Google OAuth verification** and **iOS 1.0 submission**.
 

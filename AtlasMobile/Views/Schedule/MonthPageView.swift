@@ -170,7 +170,9 @@ struct MonthPageView: View {
     /// here is what made the month disagree with the day.
     private func displayEvents(on day: Date) -> [CalendarEvent] {
         store.displayEvents(on: day)
-            .filter { cal.isDate($0.start, inSameDayAs: day) && inFilter($0.spaceName) }
+            // `bucketDate`, not `start`: an all-day event is a floating date anchored at
+            // UTC midnight and reads as the previous day if compared as an instant.
+            .filter { cal.isDate($0.bucketDate(in: cal), inSameDayAs: day) && inFilter($0.spaceName) }
     }
 
     /// The Schedule header's "ALL" space dropdown, applied here too.

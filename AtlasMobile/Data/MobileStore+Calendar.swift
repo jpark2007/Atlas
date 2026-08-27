@@ -49,8 +49,11 @@ extension MobileStore {
         let cal = Calendar.current
         let start = cal.date(byAdding: .day, value: -7, to: cal.startOfDay(for: day)) ?? day
         let end = cal.date(byAdding: .day, value: 8, to: cal.startOfDay(for: day)) ?? day
+        let hidden = AppleCalendarSelection.decode(
+            UserDefaults.standard.string(forKey: AppleCalendarSelection.hiddenKey) ?? "")
         appleEvents = eventKit.fetchEvents(start: start, end: end,
-                                           defaultSpaceName: appleDefaultSpaceName)
+                                           defaultSpaceName: appleDefaultSpaceName,
+                                           hiddenCalendarIds: hidden)
     }
 
     /// The space an Apple event lands in: the user's first space, so it renders in the
@@ -63,9 +66,14 @@ extension MobileStore {
     // MARK: - The display pool
 
     /// Everything the day's list/grid should draw: Atlas-native events, synthesized class
-    /// meetings, and read-only Apple events — run through the SAME shared pipeline as the
-    /// Mac (`excludingOwnMirrors` → `collapsingDuplicates`), then term Key Date flags
-    /// appended outside dedup (a flag labels a day; it is never a second copy of a block).
+    /// meetings, read-only Apple events, and term Key Date flags — all run through the SAME
+    /// shared pipeline as the Mac (`excludingOwnMirrors` → `collapsingDuplicates`).
+    ///
+    /// Key Date flags used to sit *outside* dedup, on the reasoning that a flag labels a day
+    /// and is never a second copy of a block. That is now handled inside dedup instead: an
+    /// all-day event matches only another all-day event on the same UTC calendar date, so a
+    /// registrar "Labor Day" flag collapses with the Google/Apple copy of the same holiday
+    /// (the whole point), while a pure label like "Add/drop ends" can never absorb a meeting.
     func displayEvents(on day: Date) -> [CalendarEvent] {
         // Drop any Apple event that is really one of our own mirrors, already shown natively.
         let ownAppleIDs = Set(snapshot.events.compactMap(\.appleEventId))
@@ -73,8 +81,8 @@ extension MobileStore {
         let external = CalendarSync.excludingOwnMirrors(external: appleEvents,
                                                         ownGoogleIDs: [],
                                                         ownAppleIDs: ownAppleIDs)
-        let pool = snapshot.events + external + classMeetingEvents(on: day)
-        return CalendarSync.collapsingDuplicates(pool) + keyDateFlags(on: day)
+        let pool = snapshot.events + external + classMeetingEvents(on: day) + keyDateFlags(on: day)
+        return CalendarSync.collapsingDuplicates(pool)
     }
 
     // MARK: - School synthesis (shared helpers)

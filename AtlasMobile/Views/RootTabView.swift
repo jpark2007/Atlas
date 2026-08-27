@@ -7,20 +7,27 @@ enum MobileTab: Hashable {
 /// The signed-in shell: Schedule / Capture / Tasks / Notes tabs. Each screen carries its
 /// own inline gear (→ Settings sheet), so no per-tab NavigationStack. A top error
 /// banner surfaces `store.lastError`. Opens on Schedule. Deep links switch tabs.
+///
+/// **iPad (v1.1).** The tabs stay tabs — four peer surfaces with no parent/child
+/// relationship between them, so a `NavigationSplitView` sidebar would only add a
+/// permanent column of four words. What changes at regular width is the column each
+/// tab draws into (`edContentColumn`): the schedule gets the widest page because its
+/// day grid is the one thing that genuinely uses horizontal room, capture the
+/// narrowest because it is a single centred hero.
 struct RootTabView: View {
     @EnvironmentObject private var store: MobileStore
     @State private var selection: MobileTab = .schedule
 
     var body: some View {
         TabView(selection: $selection) {
-            tab(ScheduleView(),
+            tab(ScheduleView(), column: 900, wide: 1040,
                 tag: .schedule, label: "Schedule", symbol: "calendar")
-            tab(CaptureView(),
+            tab(CaptureView(), column: 620,
                 tag: .capture, label: "Capture", symbol: "mic")
             // School has no tab of its own: it's a section at the top of Tasks.
-            tab(TasksView(),
+            tab(TasksView(), column: 720,
                 tag: .tasks, label: "Tasks", symbol: "checklist")
-            tab(NotesView(),
+            tab(NotesView(), column: 720,
                 tag: .notes, label: "Notes", symbol: "note.text")
         }
         .tint(MobileTheme.ink)
@@ -64,8 +71,10 @@ struct RootTabView: View {
         }
     }
 
-    private func tab(_ content: some View, tag: MobileTab, label: String, symbol: String) -> some View {
+    private func tab(_ content: some View, column: CGFloat, wide: CGFloat? = nil,
+                     tag: MobileTab, label: String, symbol: String) -> some View {
         content
+            .edContentColumn(column, wide: wide)
             .tabItem { Label(label, systemImage: symbol) }
             .tag(tag)
     }

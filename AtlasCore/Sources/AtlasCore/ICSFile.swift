@@ -268,6 +268,9 @@ public enum ICSFile {
         var inEvent = false
         var summary: String?, location: String?, rrule: String?
         var start: Date?, end: Date?
+        // Calendar-scope default zone, written above the VEVENTs by Google and Outlook.
+        // It is what a floating time in this file meant, when the file bothers to say.
+        var calendarZone: TimeZone?
 
         for line in unfold(raw) {
             guard let prop = property(line) else { continue }
@@ -282,11 +285,12 @@ public enum ICSFile {
                                         until: weeklyUntil(rrule, calendar: calendar)))
                 }
                 inEvent = false
+            case "X-WR-TIMEZONE" where !inEvent: calendarZone = timeZone(forTZID: prop.value)
             case "SUMMARY"  where inEvent: summary = unescape(prop.value)
             case "LOCATION" where inEvent: location = unescape(prop.value).isEmpty ? nil : unescape(prop.value)
             case "RRULE"    where inEvent: rrule = prop.value
-            case "DTSTART"  where inEvent: start = date(prop, calendar: calendar)
-            case "DTEND"    where inEvent: end = date(prop, calendar: calendar)
+            case "DTSTART"  where inEvent: start = date(prop, calendar: calendar, floatingZone: calendarZone)
+            case "DTEND"    where inEvent: end = date(prop, calendar: calendar, floatingZone: calendarZone)
             default: break
             }
         }
@@ -380,13 +384,115 @@ public enum ICSFile {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// `20260901T100000` / `…Z` / `VALUE=DATE`. A floating time (no Z, no TZID) is read
-    /// as local wall time — which is what a timetable means by "10:00".
-    private static func date(_ prop: Property, calendar: Calendar) -> Date? {
+    /// Windows/Outlook zone names → IANA. Exchange-published registrar exports write these
+    /// in TZID instead of an IANA id, and `TimeZone(identifier:)` returns nil for them.
+    /// Curated from CLDR's windowsZones — the Windows ids plus the display form Outlook
+    /// also emits ("(UTC-05:00) Eastern Time (US & Canada)"). Kept in step with the same
+    /// table in `supabase/functions/_shared/ics.ts`, which the feed parser uses.
+    private static let windowsZones: [String: String] = [
+        "eastern standard time": "America/New_York",
+        "eastern daylight time": "America/New_York",
+        "eastern time (us & canada)": "America/New_York",
+        "us eastern standard time": "America/Indiana/Indianapolis",
+        "indiana (east)": "America/Indiana/Indianapolis",
+        "central standard time": "America/Chicago",
+        "central daylight time": "America/Chicago",
+        "central time (us & canada)": "America/Chicago",
+        "central standard time (mexico)": "America/Mexico_City",
+        "canada central standard time": "America/Regina",
+        "saskatchewan": "America/Regina",
+        "mountain standard time": "America/Denver",
+        "mountain daylight time": "America/Denver",
+        "mountain time (us & canada)": "America/Denver",
+        "us mountain standard time": "America/Phoenix",
+        "arizona": "America/Phoenix",
+        "mountain standard time (mexico)": "America/Mazatlan",
+        "pacific standard time": "America/Los_Angeles",
+        "pacific daylight time": "America/Los_Angeles",
+        "pacific time (us & canada)": "America/Los_Angeles",
+        "pacific standard time (mexico)": "America/Tijuana",
+        "alaskan standard time": "America/Anchorage",
+        "alaska": "America/Anchorage",
+        "aleutian standard time": "America/Adak",
+        "hawaiian standard time": "Pacific/Honolulu",
+        "hawaii": "Pacific/Honolulu",
+        "atlantic standard time": "America/Halifax",
+        "atlantic time (canada)": "America/Halifax",
+        "newfoundland standard time": "America/St_Johns",
+        "newfoundland": "America/St_Johns",
+        "central america standard time": "America/Guatemala",
+        "sa pacific standard time": "America/Bogota",
+        "sa eastern standard time": "America/Cayenne",
+        "sa western standard time": "America/La_Paz",
+        "e. south america standard time": "America/Sao_Paulo",
+        "argentina standard time": "America/Argentina/Buenos_Aires",
+        "pacific sa standard time": "America/Santiago",
+        "utc": "UTC",
+        "coordinated universal time": "UTC",
+        "gmt standard time": "Europe/London",
+        "dublin, edinburgh, lisbon, london": "Europe/London",
+        "greenwich standard time": "Atlantic/Reykjavik",
+        "w. europe standard time": "Europe/Berlin",
+        "romance standard time": "Europe/Paris",
+        "central europe standard time": "Europe/Budapest",
+        "central european standard time": "Europe/Warsaw",
+        "gtb standard time": "Europe/Bucharest",
+        "e. europe standard time": "Europe/Chisinau",
+        "fle standard time": "Europe/Kiev",
+        "russian standard time": "Europe/Moscow",
+        "turkey standard time": "Europe/Istanbul",
+        "israel standard time": "Asia/Jerusalem",
+        "egypt standard time": "Africa/Cairo",
+        "south africa standard time": "Africa/Johannesburg",
+        "w. central africa standard time": "Africa/Lagos",
+        "e. africa standard time": "Africa/Nairobi",
+        "arabian standard time": "Asia/Dubai",
+        "arab standard time": "Asia/Riyadh",
+        "iran standard time": "Asia/Tehran",
+        "pakistan standard time": "Asia/Karachi",
+        "india standard time": "Asia/Kolkata",
+        "chennai, kolkata, mumbai, new delhi": "Asia/Kolkata",
+        "bangladesh standard time": "Asia/Dhaka",
+        "se asia standard time": "Asia/Bangkok",
+        "singapore standard time": "Asia/Singapore",
+        "china standard time": "Asia/Shanghai",
+        "taipei standard time": "Asia/Taipei",
+        "tokyo standard time": "Asia/Tokyo",
+        "korea standard time": "Asia/Seoul",
+        "w. australia standard time": "Australia/Perth",
+        "aus central standard time": "Australia/Darwin",
+        "cen. australia standard time": "Australia/Adelaide",
+        "aus eastern standard time": "Australia/Sydney",
+        "e. australia standard time": "Australia/Brisbane",
+        "tasmania standard time": "Australia/Hobart",
+        "new zealand standard time": "Pacific/Auckland",
+    ]
+
+    /// The zone a TZID names. IANA ids resolve directly; a Windows/Outlook name is mapped
+    /// first. Nil when the name is unrecognized, so the caller falls back rather than
+    /// silently trusting a zone it never found.
+    static func timeZone(forTZID tzid: String) -> TimeZone? {
+        if let zone = TimeZone(identifier: tzid) { return zone }
+        let key = tzid
+            .replacingOccurrences(of: "^\\((?:UTC|GMT)[+-]?\\d{1,2}:?\\d{2}\\)\\s*", with: "",
+                                  options: [.regularExpression, .caseInsensitive])
+            .trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\band\\b", with: "&",
+                                  options: [.regularExpression, .caseInsensitive])
+            .lowercased()
+        return windowsZones[key].flatMap(TimeZone.init(identifier:))
+    }
+
+    /// `20260901T100000` / `…Z` / `VALUE=DATE`. A floating time (no Z, no TZID) is read as
+    /// wall time in `floatingZone` — the calendar's own X-WR-TIMEZONE — and otherwise in
+    /// the reader's own zone, which is what a timetable means by "10:00". The feed parser
+    /// (`supabase/functions/_shared/ics.ts`) reads floating times the same way.
+    private static func date(_ prop: Property, calendar: Calendar, floatingZone: TimeZone? = nil) -> Date? {
         let value = prop.value
         let zone: TimeZone = value.hasSuffix("Z")
             ? TimeZone(identifier: "UTC")!
-            : prop.params["TZID"].flatMap(TimeZone.init(identifier:)) ?? calendar.timeZone
+            : prop.params["TZID"].flatMap(timeZone(forTZID:)) ?? floatingZone ?? calendar.timeZone
 
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

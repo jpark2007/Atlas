@@ -20,6 +20,9 @@ struct SyllabusScanSheet: View {
 
     @State private var phase: Phase = .pick
     @State private var pages: [ScannedPage] = []
+    /// The files the user actually picked, kept verbatim. The pages above are rasterized
+    /// for the model; THIS is what gets stored so the syllabus can be read again later.
+    @State private var sources: [SyllabusPages.Source] = []
     @State private var groups: [SyllabusDraftGroup] = []
     @State private var truncated = false
     /// The one inline message line — never a dialog on top of this dialog.
@@ -408,6 +411,7 @@ struct SyllabusScanSheet: View {
             do {
                 pages.append(contentsOf: try SyllabusPages.read(url, limit: room)
                     .map { ScannedPage(label: $0.label, image: $0.image) })
+                if let source = try? SyllabusPages.source(url) { sources.append(source) }
             } catch {
                 message = "Couldn't read \(url.lastPathComponent)."
             }
@@ -511,7 +515,34 @@ struct SyllabusScanSheet: View {
                 }
             }
         }
+        keepTheSyllabus()
         dismiss()
+    }
+
+    /// Store the document this scan was read from, so the class page can show it later.
+    /// Best-effort and fire-and-forget: the scan's real product is already committed, and
+    /// a storage hiccup must never cost the user their review. The pointer is written only
+    /// after the upload succeeds.
+    private func keepTheSyllabus() {
+        let targets = groups.compactMap(\.targetClassID)
+        // The syllabus belongs to the class you were standing on, unless the scan was
+        // filed somewhere else entirely.
+        guard let owner = targets.contains(project.id) ? project.id : targets.first,
+              let file = SyllabusPages.package(sources),
+              let session = auth.session else { return }
+
+        Task { @MainActor in
+            do {
+                let path = try await SyllabusStorage.upload(file.data,
+                                                            contentType: file.contentType,
+                                                            fileExtension: file.fileExtension,
+                                                            projectID: owner,
+                                                            session: session)
+                state.setSyllabusPath(projectID: owner, path: path)
+            } catch {
+                AtlasLog.append("syllabus upload failed: \(error)")
+            }
+        }
     }
 
     private func classColor(_ klass: Project) -> Color {
@@ -561,5 +592,51 @@ enum SyllabusPages {
         guard let tiff = image.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff) else { return nil }
         return rep.representation(using: .png, properties: [:])
+    }
+
+    // MARK: - Keeping the original
+
+    /// One file exactly as the user picked it — never the rasterized pages. This is what
+    /// gets stored, so a policy can be re-read in the professor's own document.
+    struct Source {
+        let name: String
+        let data: Data
+        let isPDF: Bool
+        var fileExtension: String { (name as NSString).pathExtension.lowercased() }
+    }
+
+    static func source(_ url: URL) throws -> Source {
+        let isPDF = UTType(filenameExtension: url.pathExtension)?.conforms(to: .pdf) == true
+        return Source(name: url.lastPathComponent, data: try Data(contentsOf: url), isPDF: isPDF)
+    }
+
+    /// The single object to store for a scan. One picked file is kept byte-for-byte; a
+    /// handful of pages become one PDF, because a class has one syllabus, not five.
+    static func package(_ sources: [Source]) -> (data: Data, contentType: String, fileExtension: String)? {
+        guard !sources.isEmpty else { return nil }
+        if sources.count == 1 {
+            let only = sources[0]
+            let ext = only.fileExtension.isEmpty ? (only.isPDF ? "pdf" : "png") : only.fileExtension
+            let mime = UTType(filenameExtension: ext)?.preferredMIMEType
+                ?? (only.isPDF ? "application/pdf" : "image/png")
+            return (only.data, mime, ext)
+        }
+        guard let merged = mergedPDF(sources) else { return nil }
+        return (merged, "application/pdf", "pdf")
+    }
+
+    private static func mergedPDF(_ sources: [Source]) -> Data? {
+        let out = PDFDocument()
+        for source in sources {
+            if source.isPDF, let doc = PDFDocument(data: source.data) {
+                for index in 0..<doc.pageCount {
+                    guard let page = doc.page(at: index) else { continue }
+                    out.insert(page, at: out.pageCount)
+                }
+            } else if let image = NSImage(data: source.data), let page = PDFPage(image: image) {
+                out.insert(page, at: out.pageCount)
+            }
+        }
+        return out.pageCount > 0 ? out.dataRepresentation() : nil
     }
 }

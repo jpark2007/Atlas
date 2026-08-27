@@ -14,6 +14,9 @@ struct ClassHubView: View {
 
     @State private var presentMeetingEditor = false
     @State private var presentSyllabusScan = false
+    @State private var presentClassInfo = false
+    @State private var presentClassInfoEditing = false
+    @State private var presentSyllabusFile = false
     @State private var editingNote: Note?
     @State private var detail: ItemDetailSheet.Detail?
     @State private var showArchiveConfirm = false
@@ -50,6 +53,10 @@ struct ClassHubView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("Scan a syllabus") { presentSyllabusScan = true }
+                    if project?.syllabusPath != nil {
+                        Button("View syllabus") { presentSyllabusFile = true }
+                    }
+                    Button("Edit class info") { openClassInfo(editing: true) }
                     Button(project?.meetingPattern.isEmpty == false ? "Edit meeting times" : "Add meeting times") {
                         presentMeetingEditor = true
                     }
@@ -69,6 +76,17 @@ struct ClassHubView: View {
         .sheet(isPresented: $presentSyllabusScan) {
             if let project {
                 SyllabusScanSheet(project: project).environmentObject(store)
+            }
+        }
+        .sheet(isPresented: $presentClassInfo) {
+            if let project {
+                ClassInfoSheet(project: project, startEditing: presentClassInfoEditing)
+                    .environmentObject(store)
+            }
+        }
+        .sheet(isPresented: $presentSyllabusFile) {
+            if let project {
+                SyllabusPreviewSheet(project: project).environmentObject(store)
             }
         }
         .sheet(item: $editingNote) { note in
@@ -182,10 +200,24 @@ struct ClassHubView: View {
     @ViewBuilder
     private func classInfoBlock(_ project: Project) -> some View {
         if let info = project.classInfo, !SyllabusDraft.isEmpty(info) {
-            section("Class info", action: ("Rescan", { presentSyllabusScan = true })) {
-                if !info.gradeWeights.isEmpty { infoGroup("How it's graded", info.gradeWeights) }
-                if !info.policies.isEmpty { infoGroup("Policies", info.policies) }
-                if let hours = info.officeHours, !hours.isEmpty { infoGroup("Office hours", [hours]) }
+            section("Class info", action: ("Edit", { openClassInfo(editing: true) })) {
+                // The card summarises; the full wording of a policy is what you're held
+                // to, so the whole block opens the detail.
+                VStack(alignment: .leading, spacing: 0) {
+                    if !info.gradeWeights.isEmpty { infoGroup("How it's graded", info.gradeWeights) }
+                    if !info.policies.isEmpty { infoGroup("Policies", info.policies) }
+                    if let hours = info.officeHours, !hours.isEmpty { infoGroup("Office hours", [hours]) }
+                    HStack(spacing: 6) {
+                        Text("Read it all")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundStyle(MobileTheme.accentText)
+                    .padding(.top, 12)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { openClassInfo(editing: false) }
             }
         } else {
             section("Class info", action: nil) {
@@ -207,8 +239,21 @@ struct ClassHubView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 6)
+                // No syllabus to hand is not a reason to have no card.
+                Button { openClassInfo(editing: true) } label: {
+                    Text("Write it in yourself")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(MobileTheme.accentText)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 12)
             }
         }
+    }
+
+    private func openClassInfo(editing: Bool) {
+        presentClassInfoEditing = editing
+        presentClassInfo = true
     }
 
     /// Static syllabus facts, in the syllabus's own words. Explicitly NOT grade tracking:
@@ -221,8 +266,11 @@ struct ClassHubView: View {
             ForEach(lines, id: \.self) { line in
                 HStack(alignment: .top, spacing: 7) {
                     Text("·").font(.system(size: 14))
+                    // Two lines on the card; the detail shows the policy in full.
                     Text(line)
                         .font(.system(size: 14, weight: .regular, design: .rounded))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .foregroundStyle(MobileTheme.muted)

@@ -51,7 +51,7 @@ struct CaptureView: View {
         .sheet(isPresented: $showManualAdd) {
             ManualAddSheet()
                 .environmentObject(store)
-                .presentationDetents([.medium, .large])
+                .edSheetDetents([.medium, .large], preferringLarge: true)
         }
         .sheet(isPresented: $showSettings) {
             SettingsSheet().environmentObject(store)
@@ -597,10 +597,11 @@ struct CaptureView: View {
             let start: Date
             let end: Date
             if draft.isAllDay {
-                // All-day: one calendar day, midnight → next midnight (matches Mac).
-                let cal = Calendar.current
-                start = cal.startOfDay(for: rawStart)
-                end = cal.date(byAdding: .day, value: 1, to: start) ?? start
+                // All-day: one calendar day, anchored at UTC midnight of that date with an
+                // exclusive end — the canonical encoding every source and consumer agrees on
+                // (`AllDayDate`). A local midnight here would read as the previous day.
+                start = AllDayDate.anchor(forDayOf: rawStart, in: .current)
+                end = start.addingTimeInterval(86_400)
             } else {
                 start = rawStart
                 if let stated = draft.end, stated > rawStart {

@@ -21,9 +21,16 @@ extension View {
 /// The dim + cutout overlay. `step` 0 highlights the toggle, 1 the calendar glyph.
 /// `onSkip` finishes immediately. Anchors come from the ScheduleView header.
 struct CalendarSpotlightOverlay: View {
+    @Environment(\.horizontalSizeClass) private var hSize
     let step: Int
     let anchors: [String: CGRect]
     let onSkip: () -> Void
+
+    /// At regular width this overlay lives inside `edContentColumn`, so it is narrower than
+    /// the screen: the dim has to spill past both edges to cover the gutters, and the
+    /// anchors (captured in global space) have to be pulled back into the column's space.
+    /// Both are no-ops on the phone, where the column is the screen.
+    private var spill: CGFloat { hSize == .regular ? 2000 : 0 }
 
     private var holeID: String { step == 0 ? "toggle" : "calendar" }
     private var caption: String {
@@ -35,17 +42,21 @@ struct CalendarSpotlightOverlay: View {
             // Guard: the preference may not have been delivered on the first frame.
             // Drawing a cutout at .zero would flash a hole at the origin — skip until real.
             if let raw = anchors[holeID], raw != .zero {
-                let hole = raw.insetBy(dx: -8, dy: -8)
+                let dx = hSize == .regular ? -geo.frame(in: .global).minX : 0
+                let hole = raw.insetBy(dx: -8, dy: -8).offsetBy(dx: dx, dy: 0)
                 ZStack(alignment: .topLeading) {
                     Rectangle().fill(Color.black.opacity(0.55))
                         .mask(
                             Rectangle()
                                 .overlay(RoundedRectangle(cornerRadius: 10)
                                     .frame(width: hole.width, height: hole.height)
-                                    .position(x: hole.midX, y: hole.midY)
+                                    .position(x: hole.midX + spill, y: hole.midY)
                                     .blendMode(.destinationOut))
                                 .compositingGroup()
                         )
+                        // Negative padding widens the dim past the column into the gutters;
+                        // `spill` above keeps the cutout aligned inside the wider rect.
+                        .padding(.horizontal, -spill)
                         .ignoresSafeArea()
                         .allowsHitTesting(false)   // taps pass through to the real control
 

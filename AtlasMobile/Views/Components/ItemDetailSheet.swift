@@ -38,6 +38,9 @@ struct ItemDetailSheet: View {
     // Event-only
     @State private var startDay: Date
     @State private var startTime: Date
+    /// The last day the event covers, read INCLUSIVELY — an all-day Mon–Wed event shows
+    /// Wednesday here even though it is stored with an exclusive Thursday end.
+    @State private var endDay: Date
     @State private var durationMin: Int
 
     @State private var showDeleteConfirm = false
@@ -64,14 +67,24 @@ struct ItemDetailSheet: View {
             // Event fields unused for a task.
             _startDay = State(initialValue: Date())
             _startTime = State(initialValue: Date())
+            _endDay = State(initialValue: Date())
             _durationMin = State(initialValue: 60)
         case .event(let e):
             _title = State(initialValue: e.title)
             _spaceName = State(initialValue: e.spaceName)
             _notes = State(initialValue: e.notes ?? "")
-            _startDay = State(initialValue: e.start)
+            // The day picker shows the date the event *reads* as. For an all-day event that
+            // is its bucket date, not its UTC-midnight anchor (which reads as the day before).
+            _startDay = State(initialValue: e.bucketDate(in: .current))
             _startTime = State(initialValue: e.start)
-            _durationMin = State(initialValue: max(15, Int(e.end.timeIntervalSince(e.start) / 60)))
+            // A timed event splits into a clock length + the day its end lands on; an all-day
+            // one is stored with an EXCLUSIVE end, so the last day it covers is the day before.
+            let split = EventDuration.split(start: e.start, end: e.end, calendar: .current)
+            _endDay = State(initialValue: e.isAllDay
+                            ? AllDayDate.localDay(of: AllDayDate.utc.date(byAdding: .day, value: -1, to: e.end) ?? e.end,
+                                                  calendar: .current)
+                            : split.endDay)
+            _durationMin = State(initialValue: split.minutes)
             // Task fields unused for an event.
             _projectName = State(initialValue: "")
             _hasDue = State(initialValue: false)
@@ -100,6 +113,14 @@ struct ItemDetailSheet: View {
             .padding(.top, 28)
         }
         .background(MobileTheme.bg.ignoresSafeArea())
+        .onChange(of: startDay) { oldStart, newStart in
+            // Moving an event carries its span along, and the end can never precede the start.
+            let cal = Calendar.current
+            let days = cal.dateComponents([.day], from: cal.startOfDay(for: oldStart),
+                                          to: cal.startOfDay(for: newStart)).day ?? 0
+            if days != 0 { endDay = cal.date(byAdding: .day, value: days, to: endDay) ?? endDay }
+            if endDay < cal.startOfDay(for: newStart) { endDay = newStart }
+        }
         .presentationDetents([.medium, .large])
         .confirmationDialog("Delete this \(isTask ? "task" : "event")?",
                             isPresented: $showDeleteConfirm, titleVisibility: .visible) {
@@ -139,6 +160,7 @@ struct ItemDetailSheet: View {
             }
         } else {
             startSection
+            field("Ends") { endDayPicker }
             if isAllDayEvent {
                 labeledRow("Duration", "All-day")
             } else {
@@ -244,6 +266,17 @@ struct ItemDetailSheet: View {
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .edHairlineBelow()
+    }
+
+    /// The last day the event covers — a compact date pill, so a conference or a trip can
+    /// run past its start day. Inclusive: picking Wednesday means the event ends Wednesday.
+    private var endDayPicker: some View {
+        DatePicker("", selection: $endDay,
+                   in: Calendar.current.startOfDay(for: startDay)...,
+                   displayedComponents: .date)
+            .datePickerStyle(.compact)
+            .labelsHidden()
+            .tint(MobileTheme.accentText)
     }
 
     private var durationPicker: some View {
@@ -511,23 +544,23 @@ struct ItemDetailSheet: View {
             }
             updated.notes = notes.isEmpty ? nil : notes
             if e.isAllDay {
-                // All-day events carry no clock time — stamping one would turn them
-                // into a timed block. Sources anchor the day differently, so shift
-                // by whole days off the event's own anchor instead of rebuilding it.
-                // Same day picked (the common case) = start/end untouched.
-                let days = cal.dateComponents([.day],
-                                              from: cal.startOfDay(for: e.start),
-                                              to: cal.startOfDay(for: startDay)).day ?? 0
-                if days != 0 {
-                    updated.start = cal.date(byAdding: .day, value: days, to: e.start) ?? e.start
-                    updated.end = cal.date(byAdding: .day, value: days, to: e.end) ?? e.end
-                }
+                // All-day events carry no clock time — stamping one would turn them into a
+                // timed block. Both ends are re-anchored to UTC midnight of the picked day
+                // (`AllDayDate`), and the picked end day is INCLUSIVE, so the stored end —
+                // which is exclusive — is the day after it.
+                let start = AllDayDate.anchor(forDayOf: startDay, in: cal)
+                let lastDay = AllDayDate.anchor(forDayOf: max(endDay, startDay), in: cal)
+                updated.start = start
+                updated.end = AllDayDate.utc.date(byAdding: .day, value: 1, to: lastDay) ?? start
             } else {
                 let day = cal.startOfDay(for: startDay)
                 let c = cal.dateComponents([.hour, .minute], from: startTime)
                 let start = cal.date(bySettingHour: c.hour ?? 0, minute: c.minute ?? 0, second: 0, of: day) ?? e.start
                 updated.start = start
-                updated.end = start.addingTimeInterval(Double(durationMin) * 60)
+                // Duration sets the clock time it ends at; the end day carries it onto a
+                // later date, so a multi-day event is simply end > start on another day.
+                updated.end = EventDuration.end(start: start, minutes: durationMin,
+                                                endDay: endDay, calendar: cal)
             }
             Task { await store.updateEvent(updated) }
         }

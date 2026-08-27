@@ -162,6 +162,14 @@ public enum CalendarSync {
     }
 
     private static func timesMatch(_ a: CalendarEvent, _ b: CalendarEvent, calendar: Calendar) -> Bool {
+        // All-day events are floating dates, not instants (see `AllDayDate`): two copies of the
+        // same holiday agree when they name the same calendar date, and instant proximity says
+        // nothing useful about them. A mixed pair never matches — "Labor Day" the flag and a
+        // meeting named "Labor Day" are different things, however much they overlap.
+        if a.isAllDay || b.isAllDay {
+            guard a.isAllDay, b.isAllDay else { return false }
+            return AllDayDate.utcDay(of: a.start) == AllDayDate.utcDay(of: b.start)
+        }
         if abs(a.start.timeIntervalSince(b.start)) <= sameStartTolerance { return true }
         guard calendar.isDate(a.start, inSameDayAs: b.start) else { return false }
         let overlap = min(a.end, b.end).timeIntervalSince(max(a.start, b.start))

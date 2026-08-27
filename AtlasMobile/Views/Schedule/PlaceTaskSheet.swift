@@ -66,7 +66,7 @@ struct PlaceTaskSheet: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(MobileTheme.bg.ignoresSafeArea())
-        .presentationDetents([.medium])
+        .edSheetDetents([.medium])
     }
 
     /// Editorial outlined row — icon + label + a trailing plus, matching the sheet.

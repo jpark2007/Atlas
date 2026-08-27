@@ -22,8 +22,18 @@ struct CalendarEventDetailView: View {
     init(item: CalendarEvent) {
         self.item = item
         _title = State(initialValue: item.title)
-        _start = State(initialValue: item.start)
-        _end = State(initialValue: item.end)
+        // An all-day event is anchored at UTC midnight (`AllDayDate`); the date field and the
+        // read-only label speak local dates, so both are shown the day the event NAMES rather
+        // than the raw instant — which reads as the previous evening west of Greenwich.
+        _start = State(initialValue: item.isAllDay
+                       ? AllDayDate.localDay(of: item.start, calendar: .current)
+                       : item.start)
+        // The stored all-day end is EXCLUSIVE (Mon–Wed ends Thu 00:00Z); the field and the
+        // read-only label speak the INCLUSIVE last day, so both read "ends Wednesday".
+        _end = State(initialValue: item.isAllDay
+                     ? AllDayDate.localDay(of: AllDayDate.utc.date(byAdding: .day, value: -1, to: item.end) ?? item.end,
+                                           calendar: .current)
+                     : item.end)
         _descriptionText = State(initialValue: item.notes ?? "")
         _selectedSpaceName = State(initialValue: item.spaceName)
         _noteID = State(initialValue: item.noteID)
@@ -73,6 +83,20 @@ struct CalendarEventDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(AtlasTheme.Colors.bgBase)
+        .onChange(of: start) { oldStart, newStart in
+            // Moving to another day carries a multi-day span along, then the end is clamped:
+            // an all-day end is inclusive (ending on the start day is a one-day event), a
+            // timed one needs a real length.
+            let cal = Calendar.current
+            let days = cal.dateComponents([.day], from: cal.startOfDay(for: oldStart),
+                                          to: cal.startOfDay(for: newStart)).day ?? 0
+            if days != 0 { end = cal.date(byAdding: .day, value: days, to: end) ?? end }
+            if item.isAllDay {
+                if end < newStart { end = newStart }
+            } else if end <= newStart {
+                end = cal.date(byAdding: .hour, value: 1, to: newStart) ?? newStart
+            }
+        }
         .sheet(item: $editingNote) { note in
             NoteEditorView(note: note)
                 .frame(width: 560, height: 540)
@@ -182,13 +206,13 @@ struct CalendarEventDetailView: View {
                     AtlasDateField(date: $start, includesTime: !item.isAllDay)
                 }
             }
-            if !item.isAllDay {
-                fieldGroup("ENDS") {
-                    if isReadOnly {
-                        readOnlyDate(end)
-                    } else {
-                        AtlasDateField(date: $end, includesTime: true, minDate: start)
-                    }
+            fieldGroup("ENDS") {
+                if isReadOnly {
+                    readOnlyDate(end)
+                } else {
+                    // All-day picks the LAST day covered (inclusive); `save()` stores the
+                    // exclusive end the canonical encoding wants.
+                    AtlasDateField(date: $end, includesTime: !item.isAllDay, minDate: start)
                 }
             }
             if canEditSpace {
@@ -391,11 +415,16 @@ struct CalendarEventDetailView: View {
     }
 
     private func save() {
+        // All-day: re-anchor the picked local dates to canonical UTC midnight (`AllDayDate`).
+        // The ENDS field holds the INCLUSIVE last day, so the stored end is the day after it.
+        let finalStart: Date
         let finalEnd: Date
         if item.isAllDay {
-            let dayStart = Calendar.current.startOfDay(for: start)
-            finalEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+            finalStart = AllDayDate.anchor(forDayOf: start, in: .current)
+            let lastDay = AllDayDate.anchor(forDayOf: max(end, start), in: .current)
+            finalEnd = AllDayDate.utc.date(byAdding: .day, value: 1, to: lastDay) ?? finalStart
         } else {
+            finalStart = start
             finalEnd = end > start ? end : start.addingTimeInterval(3600)
         }
         let desc = descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -408,7 +437,7 @@ struct CalendarEventDetailView: View {
         } else {
             var updated = item
             updated.title = title
-            updated.start = start
+            updated.start = finalStart
             updated.end = finalEnd
             updated.notes = desc
             updated.noteID = noteID

@@ -63,8 +63,11 @@ enum WidgetSnapshotWriter {
 
         // Events still ahead today also count toward "N left" (aligns with ScheduleView's
         // leftCount): an event counts while it hasn't ended.
+        // All-day events bucket by their own calendar date (`bucketDate`) — their UTC-midnight
+        // anchor reads as the previous day locally — and have no clock time to be past, so
+        // they count for the whole day rather than expiring at their UTC-midnight end.
         let liveEvents = dayEvents.filter { event in
-            cal.isDate(event.start, inSameDayAs: day) && event.end > now
+            cal.isDate(event.bucketDate(in: cal), inSameDayAs: day) && (event.isAllDay || event.end > now)
         }.count
 
         let spaces = snapshot.spaces.map {

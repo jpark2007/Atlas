@@ -8,6 +8,7 @@ import AtlasCore
 struct ManualAddSheet: View {
     @EnvironmentObject private var store: MobileStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var hSize
 
     @State private var mode = "task"        // "task" | "event"
     @State private var title = ""
@@ -20,9 +21,16 @@ struct ManualAddSheet: View {
     // Event-only
     @State private var eventDay = Date()
     @State private var startTime = Date()
+    @State private var isAllDay = false
+    /// The day the event ends on — same as the start day unless it runs over, which is how
+    /// a conference or a trip is entered.
+    @State private var endDay = Date()
     @State private var durationMin = 60
 
-    private var durations: [Int] { EventDuration.options(including: durationMin) }
+    /// All-day has its own toggle in this sheet, so the ladder's 24-hour rung is dropped —
+    /// one control per decision. (`EventDuration` keeps it for `ItemDetailSheet`, which
+    /// must still be able to show an existing exactly-24-hour event.)
+    private var durations: [Int] { EventDuration.options(including: durationMin).filter { $0 != 1440 } }
 
     /// Optional slot-press prefill (Wave-3 §w5): a preselected kind, the shown
     /// schedule day, and a pressed slot time. `nil` ⇒ a blank sheet, so the plain
@@ -40,6 +48,7 @@ struct ManualAddSheet: View {
         if let day = p.day {
             _dueDay = State(initialValue: day)
             _eventDay = State(initialValue: day)
+            _endDay = State(initialValue: day)
             _hasDue = State(initialValue: true)      // a shown day means the task is due that day
         }
         if let minute = p.minute {
@@ -95,8 +104,12 @@ struct ManualAddSheet: View {
 
                     dueSection
                 } else {
+                    allDayToggle
                     startSection
-                    field("Duration") { durationPicker }
+                    field("Ends") { endDayPicker }
+                    if !isAllDay {
+                        field("Duration") { durationPicker }
+                    }
                 }
 
                 Button(action: add) {
@@ -123,6 +136,14 @@ struct ManualAddSheet: View {
         }
         .background(MobileTheme.bg.ignoresSafeArea())
         .onAppear { if spaceID == nil { spaceID = store.spaceFilter ?? spaces.first?.id } }
+        .onChange(of: eventDay) { oldDay, newDay in
+            // Moving the start carries the span along; the end can never precede the start.
+            let cal = Calendar.current
+            let days = cal.dateComponents([.day], from: cal.startOfDay(for: oldDay),
+                                          to: cal.startOfDay(for: newDay)).day ?? 0
+            if days != 0 { endDay = cal.date(byAdding: .day, value: days, to: endDay) ?? endDay }
+            if endDay < cal.startOfDay(for: newDay) { endDay = newDay }
+        }
     }
 
     // MARK: - Pieces
@@ -152,21 +173,58 @@ struct ManualAddSheet: View {
         .buttonStyle(.plain)
     }
 
-    /// Event start — day (graphical) + time (wheel); mirrors ItemDetailSheet.
+    /// All-day switch — the same toggle row the task form's "Due date" uses.
+    private var allDayToggle: some View {
+        Toggle(isOn: $isAllDay.animation()) {
+            Text("All day").edCapsLabel()
+        }
+        .tint(MobileTheme.ink)
+        .padding(.vertical, 14)
+        .edHairlineBelow()
+    }
+
+    /// Event start — day (graphical) + time (wheel); mirrors ItemDetailSheet. An all-day
+    /// event carries no clock time, so it picks a day only. At regular width the two sit
+    /// side by side: the iPad card is wide but short, and stacking them is what pushed
+    /// Duration and the Add button below the fold.
     private var startSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Start").edCapsLabel()
-            DatePicker("", selection: $eventDay, displayedComponents: .date)
-                .datePickerStyle(.graphical)
-                .tint(MobileTheme.accentText)
-            DatePicker("", selection: $startTime, displayedComponents: .hourAndMinute)
-                .datePickerStyle(.wheel)
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
+            if hSize == .regular && !isAllDay {
+                HStack(alignment: .top, spacing: 20) {
+                    dayPicker
+                    timePicker.frame(width: 200)
+                }
+            } else {
+                dayPicker
+                if !isAllDay { timePicker.frame(maxWidth: .infinity) }
+            }
         }
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .edHairlineBelow()
+    }
+
+    private var dayPicker: some View {
+        DatePicker("", selection: $eventDay, displayedComponents: .date)
+            .datePickerStyle(.graphical)
+            .tint(MobileTheme.accentText)
+    }
+
+    private var timePicker: some View {
+        DatePicker("", selection: $startTime, displayedComponents: .hourAndMinute)
+            .datePickerStyle(.wheel)
+            .labelsHidden()
+    }
+
+    /// The day the event ends — a compact date pill, so an event can run past its start day.
+    private var endDayPicker: some View {
+        DatePicker("", selection: $endDay,
+                   in: Calendar.current.startOfDay(for: eventDay)...,
+                   displayedComponents: .date)
+            .datePickerStyle(.compact)
+            .labelsHidden()
+            .tint(MobileTheme.accentText)
     }
 
     private var durationPicker: some View {
@@ -276,13 +334,29 @@ struct ManualAddSheet: View {
         let cal = Calendar.current
 
         if mode == "event" {
-            let day = cal.startOfDay(for: eventDay)
-            let c = cal.dateComponents([.hour, .minute], from: startTime)
-            let start = cal.date(bySettingHour: c.hour ?? 9, minute: c.minute ?? 0, second: 0, of: day) ?? day
-            let end = start.addingTimeInterval(Double(durationMin) * 60)
+            let start: Date
+            let end: Date
+            if isAllDay {
+                // An all-day event is a floating date, not an instant: both ends are UTC
+                // midnight of the picked calendar day (`AllDayDate`), and the stored end is
+                // EXCLUSIVE while the picker reads inclusively — so a Mon–Wed trip stores
+                // Thursday.
+                start = AllDayDate.anchor(forDayOf: eventDay, in: cal)
+                let lastDay = AllDayDate.anchor(forDayOf: max(endDay, eventDay), in: cal)
+                end = AllDayDate.utc.date(byAdding: .day, value: 1, to: lastDay) ?? start
+            } else {
+                let day = cal.startOfDay(for: eventDay)
+                let c = cal.dateComponents([.hour, .minute], from: startTime)
+                start = cal.date(bySettingHour: c.hour ?? 9, minute: c.minute ?? 0, second: 0, of: day) ?? day
+                // Duration sets the clock time it ends at; the end day carries it onto a later
+                // date, so a multi-day event is simply end > start on another day.
+                end = EventDuration.end(start: start, minutes: durationMin,
+                                        endDay: endDay, calendar: cal)
+            }
             let event = CalendarEvent(
                 title: clean, subtitle: "", start: start, end: end,
-                color: space.color, spaceName: space.name, source: .atlas)
+                color: space.color, spaceName: space.name,
+                isAllDay: isAllDay, source: .atlas)
             Task { await store.addEvent(event) }
             dismiss()
             return

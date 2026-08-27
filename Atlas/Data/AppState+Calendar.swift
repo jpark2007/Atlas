@@ -99,10 +99,14 @@ extension AppState {
     /// three can never disagree about what is on a day.
     ///
     /// Store events (Atlas/Google/Canvas) + scheduled work-blocks + task deadline
-    /// markers + synthesized class meetings + read-only Apple externals, collapsed so
-    /// the same real block arriving from several calendars shows once. Key Date flags
-    /// stay OUT of dedup: a term flag labels the day, it is never a second copy of an
-    /// event, so it must not absorb (or be absorbed by) anything.
+    /// markers + synthesized class meetings + read-only Apple externals + term Key Date
+    /// flags, collapsed so the same real block arriving from several calendars shows once.
+    ///
+    /// Key Date flags now go THROUGH dedup rather than around it: a registrar holiday and
+    /// the Google/Apple copy of the same holiday are one day-label, not two. That is safe
+    /// because a match needs both a normalized-title match AND — for all-day items — the
+    /// same UTC calendar date, so a pure label like "Add/drop ends" can never absorb a
+    /// timed block. The flag is the Atlas-native copy, so dedup keeps it as the winner.
     ///
     /// Each event keeps its own source and read-only attribution — merging never
     /// relabels where something came from.
@@ -112,8 +116,8 @@ extension AppState {
             + deadlineEvents(on: day)
             + classMeetingEvents(on: day)
             + externalEvents(on: day)
-        return CalendarSync.collapsingDuplicates(pool, workSessionPrefix: workSessionTitlePrefix)
             + keyDateFlags(on: day)
+        return CalendarSync.collapsingDuplicates(pool, workSessionPrefix: workSessionTitlePrefix)
     }
 
     /// Deadline markers for `day`: one per open task whose `dueDate` falls there, plus a
