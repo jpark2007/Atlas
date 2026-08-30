@@ -2,7 +2,7 @@
 
 Voice: plain, confident, warm. Reads like a magazine intro, not an ad.
 Everything below describes what the app does *today*. Nothing here promises a
-feature that isn't built. Prelaunch beta, two students, Mac + iPhone.
+feature that isn't built. Prelaunch beta, two students, Mac + iPhone + iPad.
 
 ---
 
@@ -12,7 +12,7 @@ feature that isn't built. Prelaunch beta, two students, Mac + iPhone.
 Your life doesn't fit in six apps. It fits here.
 
 **Subline:**
-Atlas is a native Mac and iPhone app that gathers Apple Calendar, Google
+Atlas is a native Mac, iPhone, and iPad app that gathers Apple Calendar, Google
 Calendar, and Canvas into one timeline — then turns a plain-English brain-dump
 into tasks and events, filed where they belong. Built by two students. In beta
 now.
@@ -56,14 +56,15 @@ show up as their own projects, assignments and due dates already in place. One
 app, but the parts of your life don't bleed into each other unless you want them
 to.
 
-### 4 — The phone companion
+### 4 — The phone & tablet companion
 
 **Kicker:** THE MOBILE FRONT DOOR
 
-The Mac app is where you plan. The iPhone is for the moment a thought lands while
-you're in line for coffee: open it, dump the thought, glance at what's next,
-check something off. It's deliberately small — capture and glance, nothing to
-get lost in. Whatever you add on your phone is waiting for you on the Mac.
+The Mac app is where you plan. The iPhone and iPad are for the moment a thought
+lands while you're in line for coffee: open it, dump the thought, glance at
+what's next, check something off. It's deliberately small — capture and glance,
+nothing to get lost in. Whatever you add on iPhone or iPad is waiting for you
+on the Mac.
 
 ---
 
@@ -102,7 +103,7 @@ Both buttons are visibly present but inactive before launch.
 
 - Mac button label: Download for Mac
   - Sub-label / badge: Coming soon
-- iPhone button label: Get it on iPhone
+- iPhone button label: Get it on iPhone & iPad
   - Sub-label / badge: Coming soon
 
 **Optional caption under the pair:** In private beta with our first testers.
@@ -112,7 +113,7 @@ Waitlist first, apps next.
 
 ## Footer
 
-- Atlas — a life manager for Mac and iPhone.
+- Atlas — a life manager for Mac, iPhone, and iPad.
 - Made by Andrew Khalil and Jonah Park.
 - drewkhalil@gmail.com
 - Privacy · Terms   (relative links: /privacy, /terms)

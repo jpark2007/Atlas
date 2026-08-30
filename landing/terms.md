@@ -6,7 +6,7 @@ Atlas is built by Andrew Khalil and Jonah Park. Contact: **drewkhalil@gmail.com*
 
 ## What Atlas is
 
-Atlas is a native Mac and iPhone life manager — a unified calendar, spaces and projects, task capture with AI, and notes. It's in **prelaunch beta**: not everything works yet, and things will change. By joining the waitlist or using a beta build, you agree to these terms.
+Atlas is a native Mac, iPhone, and iPad life manager — a unified calendar, spaces and projects, task capture with AI, and notes. It's in **prelaunch beta**: not everything works yet, and things will change. By joining the waitlist or using a beta build, you agree to these terms.
 
 ## Beta software, provided as-is
 

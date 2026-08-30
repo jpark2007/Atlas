@@ -4,7 +4,7 @@
 
 Atlas is built by Andrew Khalil and Jonah Park. The best way to reach us is **Report a Bug** inside Atlas, where signed-in users can send questions or issues straight to us. If you can't get into the app, email **drewkhalil@gmail.com**.
 
-Atlas is a native Mac and iPhone life manager, currently in **prelaunch beta**. This policy explains what we collect, why, and who touches it. We've kept it specific to what Atlas actually does — no filler about cookies or trackers we don't use.
+Atlas is a native Mac, iPhone, and iPad life manager, currently in **prelaunch beta**. This policy explains what we collect, why, and who touches it. We've kept it specific to what Atlas actually does — no filler about cookies or trackers we don't use.
 
 ## The short version
 
@@ -95,7 +95,7 @@ No system is perfectly secure, and this is beta software — see the caveat belo
 
 ## Deleting your data
 
-You can delete your account and everything in it from **Settings** inside Atlas, on either the Mac or iPhone app. That removes your account and its data for good. If you can no longer get into the app, email **drewkhalil@gmail.com** and we'll delete it for you. You can also disconnect Google or Canvas inside Atlas at any time, which immediately removes the stored credential for that connection.
+You can delete your account and everything in it from **Settings** inside Atlas, on the Mac, iPhone, or iPad app. That removes your account and its data for good. If you can no longer get into the app, email **drewkhalil@gmail.com** and we'll delete it for you. You can also disconnect Google or Canvas inside Atlas at any time, which immediately removes the stored credential for that connection.
 
 ## Children
 
