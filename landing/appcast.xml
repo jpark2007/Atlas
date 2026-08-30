@@ -20,6 +20,14 @@
       it with the genuine values.
     -->
     <item>
+      <title>0.11.0</title>
+      <pubDate>Sun, 30 Aug 2026 02:33:55 +0000</pubDate>
+      <sparkle:version>0.11.0</sparkle:version>
+      <sparkle:shortVersionString>0.11.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://www.atlaslm.net/downloads/Atlas-0.11.0.dmg" length="9208567" type="application/x-apple-diskimage" sparkle:edSignature="ZQYnc3GkB0VbLr7RtRm1coavY8WkWga2smENIFxc3nEKm2bJLq23erXYhGCYDybJaJPcp3KXmiCN975CDxjoCA==" />
+    </item>
+    <item>
       <title>0.10.1</title>
       <pubDate>Tue, 25 Aug 2026 19:06:26 +0000</pubDate>
       <sparkle:version>0.10.1</sparkle:version>
