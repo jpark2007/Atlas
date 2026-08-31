@@ -202,12 +202,14 @@ struct CaptureResultCard: View {
             task.spaceName = spaceName
             task.spaceID = spaces.first { $0.name == spaceName }?.id
             task.spaceColor = color(for: spaceName)
+            task.projectID = store.projectID(spaceName: spaceName, projectName: projectName)
             task.projectName = projectName
             Task { await store.updateTask(task) }
         case .event:
             guard var event = store.snapshot.events.first(where: { $0.id == item.id }) else { return }
             event.spaceName = spaceName
             event.spaceID = spaces.first { $0.name == spaceName }?.id
+            event.projectID = store.projectID(spaceName: spaceName, projectName: projectName)
             event.color = color(for: spaceName)
             Task { await store.updateEvent(event) }
         }
@@ -270,6 +272,7 @@ struct CaptureResultCard: View {
                                 dueDate: due,
                                 spaceColor: color(for: spaceName),
                                 spaceName: spaceName,
+                                projectID: store.projectID(spaceName: spaceName, projectName: item.projectName),
                                 projectName: item.projectName,
                                 notes: notes)
             Task { await store.addTask(task) }
@@ -284,6 +287,7 @@ struct CaptureResultCard: View {
                                       notes: notes.isEmpty ? nil : notes,
                                       source: .atlas)
             event.spaceID = space?.id
+            event.projectID = store.projectID(spaceName: spaceName, projectName: item.projectName)
             Task { await store.addEvent(event) }
             replace(item, with: CommittedItem(id: event.id, kind: .event, title: event.title,
                                               spaceName: spaceName, projectName: item.projectName,

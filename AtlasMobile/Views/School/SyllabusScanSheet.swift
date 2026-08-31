@@ -537,6 +537,7 @@ struct SyllabusScanSheet: View {
                     task.spaceName   = klass.spaceName
                     task.spaceColor  = classColor(klass)
                     task.spaceID     = klass.spaceID
+                    task.projectID   = klass.id
                     task.projectName = klass.name
                     task.notes       = item.notes ?? ""
                     Task { await store.addTask(task) }

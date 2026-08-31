@@ -520,6 +520,8 @@ struct ItemDetailSheet: View {
                 updated.spaceColor = space.color
             }
             updated.projectName = projectName.trimmingCharacters(in: .whitespacesAndNewlines)
+            updated.projectID = store.projectID(spaceName: updated.spaceName,
+                                                projectName: updated.projectName)
             updated.notes = notes
             if hasDue {
                 let day = cal.startOfDay(for: dueDay)

@@ -57,19 +57,21 @@ final class NotificationScheduler: NSObject, ObservableObject, UNUserNotificatio
 
     // MARK: - UNUserNotificationCenterDelegate
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                            willPresent notification: UNNotification) async
+    // Both delegate callbacks stay on the MAIN actor (no `nonisolated`). A nonisolated
+    // async witness lets the bridged ObjC completion handler resume on a cooperative-pool
+    // thread, and UIKit's main-thread-only work behind a notification tap then aborts
+    // (SIGABRT on roughly every other tap).
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) async
         -> UNNotificationPresentationOptions {
         [.banner, .sound]
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                            didReceive response: UNNotificationResponse) async {
-        let deepLink = response.notification.request.content.userInfo["deepLink"] as? String
-        await MainActor.run {
-            guard let deepLink, let url = URL(string: deepLink) else { return }
-            if let onDeepLink { onDeepLink(url) } else { pendingURL = url }   // buffer until wired
-        }
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse) async {
+        guard let deepLink = response.notification.request.content.userInfo["deepLink"] as? String,
+              let url = URL(string: deepLink) else { return }
+        if let onDeepLink { onDeepLink(url) } else { pendingURL = url }   // buffer until wired
     }
 }
 

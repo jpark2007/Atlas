@@ -379,6 +379,8 @@ struct ManualAddSheet: View {
             dueDate: due,
             spaceColor: space.color,
             spaceName: space.name,
+            projectID: store.projectID(spaceName: space.name,
+                                       projectName: tag.trimmingCharacters(in: .whitespacesAndNewlines)),
             projectName: tag.trimmingCharacters(in: .whitespacesAndNewlines)
         )
         Task { await store.addTask(task) }

@@ -549,7 +549,7 @@ public struct TaskItem: Identifiable {
     /// "Canvas" (rule 5). Round-trips through `TaskRow`.
     public var feedType: String? = nil
 
-    public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, completedAt: Date? = nil, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, appleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectName: String = "", notes: String = "", spaceID: UUID? = nil, assigneeID: UUID? = nil, createdByID: UUID? = nil, canvasUID: String? = nil) {
+    public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, completedAt: Date? = nil, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, appleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectID: UUID? = nil, projectName: String = "", notes: String = "", spaceID: UUID? = nil, assigneeID: UUID? = nil, createdByID: UUID? = nil, canvasUID: String? = nil) {
         self.id = id
         self.title = title
         self.dueLabel = dueLabel
@@ -564,6 +564,7 @@ public struct TaskItem: Identifiable {
         self.appleEventId = appleEventId
         self.spaceColor = spaceColor
         self.spaceName = spaceName
+        self.projectID = projectID
         self.projectName = projectName
         self.notes = notes
         self.spaceID = spaceID

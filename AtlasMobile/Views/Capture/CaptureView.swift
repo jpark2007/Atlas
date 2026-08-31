@@ -613,7 +613,9 @@ struct CaptureView: View {
             let event = CalendarEvent(
                 title: draft.title, subtitle: "", start: start, end: end,
                 color: color, spaceName: spaceName, notes: draft.notes,
-                isAllDay: draft.isAllDay, source: .atlas)
+                isAllDay: draft.isAllDay,
+                projectID: store.projectID(spaceName: spaceName, projectName: draft.projectName ?? ""),
+                source: .atlas)
             Task { await store.addEvent(event) }
             donateCapture()
             return CommittedItem(id: event.id, kind: .event, title: event.title,
@@ -630,6 +632,7 @@ struct CaptureView: View {
                 durationMin: draft.durationMin,
                 spaceColor: color,
                 spaceName: spaceName,
+                projectID: store.projectID(spaceName: spaceName, projectName: draft.projectName ?? ""),
                 projectName: draft.projectName ?? "",
                 notes: notes)
             Task { await store.addTask(task) }

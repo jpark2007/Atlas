@@ -131,13 +131,20 @@ public enum NotificationPlanner {
 
         // 4. Overdue nudge — one summary at the next digest time.
         if prefs.overdue {
-            let overdueCount = snapshot.tasks.filter { allowed($0.spaceName) && $0.isOverdue(now: now) }.count
-            if overdueCount > 0, let fire = nextDigestTime(prefs: prefs, now: now, cal: cal) {
+            // Oldest miss first — that's the one worth naming.
+            let overdue = snapshot.tasks
+                .filter { allowed($0.spaceName) && $0.isOverdue(now: now) }
+                .sorted { ($0.dueDate ?? .distantPast) < ($1.dueDate ?? .distantPast) }
+            if let first = overdue.first, let fire = nextDigestTime(prefs: prefs, now: now, cal: cal) {
+                let others = overdue.count - 1
+                let body = others == 0
+                    ? "\(first.title) is late"
+                    : "\(first.title) is late — and \(pluralized(others, "other"))"
                 planned.append(PlannedNotification(
                     id: "overdue-\(dayKey(fire, cal: cal))",
                     fireDate: fire,
                     title: "Overdue",
-                    body: "\(pluralized(overdueCount, "task")) overdue",
+                    body: body,
                     deepLink: "atlas://today"))
             }
         }

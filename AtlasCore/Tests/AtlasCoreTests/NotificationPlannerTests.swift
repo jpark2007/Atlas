@@ -175,6 +175,38 @@ final class NotificationPlannerTests: XCTestCase {
         XCTAssertTrue(result.contains { $0.id.hasPrefix("overdue-") })
     }
 
+    func test_overdueNudge_namesTheSingleLateTask() {
+        let late = task("Read chapter 4", space: "School", due: at(6, 30, 0, 0))
+        let snap = makeSnapshot(tasks: [late])
+        let result = NotificationPlanner.plan(snapshot: snap, prefs: defaultPrefs(),
+                                              now: now, horizonDays: 7)
+        let nudge = result.first { $0.id.hasPrefix("overdue-") }
+        XCTAssertEqual(nudge?.title, "Overdue")
+        XCTAssertEqual(nudge?.body, "Read chapter 4 is late")
+    }
+
+    func test_overdueNudge_namesOldestAndCountsOneOther() {
+        let older = task("Lab report", space: "School", due: at(6, 28, 9, 0))
+        let newer = task("Read chapter 4", space: "School", due: at(6, 30, 9, 0))
+        // Newest first on the way in, so the body proves the planner sorts by due date.
+        let snap = makeSnapshot(tasks: [newer, older])
+        let result = NotificationPlanner.plan(snapshot: snap, prefs: defaultPrefs(),
+                                              now: now, horizonDays: 7)
+        let nudge = result.first { $0.id.hasPrefix("overdue-") }
+        XCTAssertEqual(nudge?.body, "Lab report is late — and 1 other")
+    }
+
+    func test_overdueNudge_countsSeveralOthers() {
+        let tasks = [task("Lab report", space: "School", due: at(6, 28, 9, 0)),
+                     task("Read chapter 4", space: "School", due: at(6, 29, 9, 0)),
+                     task("Problem set", space: "School", due: at(6, 30, 9, 0))]
+        let snap = makeSnapshot(tasks: tasks)
+        let result = NotificationPlanner.plan(snapshot: snap, prefs: defaultPrefs(),
+                                              now: now, horizonDays: 7)
+        let nudge = result.first { $0.id.hasPrefix("overdue-") }
+        XCTAssertEqual(nudge?.body, "Lab report is late — and 2 others")
+    }
+
     func test_overdueOff_excludesNudge() {
         let late = task("Late", space: "School", due: at(6, 30, 0, 0))
         let snap = makeSnapshot(tasks: [late])

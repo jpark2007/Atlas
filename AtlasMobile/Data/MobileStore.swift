@@ -417,6 +417,19 @@ final class MobileStore: ObservableObject {
         }
     }
 
+    /// The id of the project named `projectName` inside `spaceName`, or nil when the
+    /// name is empty or matches nothing. This id — not the name — is what persists
+    /// (`tasks.project_id` / `events.project_id`); writing only the name is what used
+    /// to lose the class on the next snapshot load. Mirrors the Mac's
+    /// `AppState.project(spaceName:projectName:)`.
+    func projectID(spaceName: String, projectName: String) -> UUID? {
+        guard !projectName.isEmpty else { return nil }
+        return snapshot.projects.first {
+            $0.name.caseInsensitiveCompare(projectName) == .orderedSame
+                && $0.spaceName.caseInsensitiveCompare(spaceName) == .orderedSame
+        }?.id
+    }
+
     // MARK: - Deep links
 
     /// Record a parsed deep link (and apply its space filter). `RootTabView` reacts
