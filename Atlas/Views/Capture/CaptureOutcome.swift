@@ -7,6 +7,10 @@ import Foundation
 enum CaptureOutcome: Equatable {
     case task(hasDate: Bool)
     case event
+    /// A repeating event expanded into `count` real sessions. Distinct from `.event` so
+    /// the confirmation reports the whole series — "added 1 event" after typing a
+    /// recurring schedule would read as a failure.
+    case eventSeries(count: Int)
     case note
     case updated    // attached to an item the user already had, instead of duplicating it
     case degraded   // AI unreachable / unparseable → saved as a plain task
@@ -15,6 +19,7 @@ enum CaptureOutcome: Equatable {
         switch self {
         case .task(let hasDate): return hasDate ? "✓ Added task · due set" : "✓ Added task"
         case .event:             return "✓ Added event"
+        case .eventSeries(let n): return "✓ Added \(n) repeating events"
         case .note:              return "✓ Added note"
         case .updated:           return "✓ Updated what you already had"
         case .degraded:          return "⚠︎ AI offline — saved as plain task"

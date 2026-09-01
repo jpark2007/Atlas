@@ -452,6 +452,27 @@ public struct CalendarEvent: Identifiable {
     /// note. Each entry is the loser's own ingest-stamped source, never a guessed label.
     public var duplicateSources: [EventSource] = []
 
+    /// Shared id of every materialized instance of one repeating series (migration
+    /// 0046), `nil` for a one-off. Atlas expands a recurrence into real rows rather
+    /// than re-deriving them each render, so THIS is what makes "all events in the
+    /// series" addressable: edit/delete scope, and the series badge on a tile.
+    ///
+    /// Distinct from a CLASS's schedule: a class's meetings are derived on the fly
+    /// from `Project.meetingPattern` by `SchoolCalendar` (term-bounded, break-aware)
+    /// and are never stored as rows. This is the general case — a standing meeting,
+    /// a weekly shift, "gym every Tuesday" — that belongs to no class.
+    public var seriesID: UUID? = nil
+
+    /// The series' pattern as an RRULE fragment (`FREQ=WEEKLY;BYDAY=MO,WE,FR;
+    /// UNTIL=20261212`), carried on every instance so any one of them can describe
+    /// the whole series without a lookup. Parse with `RecurrenceRule(rruleText:)`.
+    public var recurrenceRule: String? = nil
+
+    /// True when this event belongs to a repeating series — what the detail view and
+    /// the delete flow branch on. Distinct from `isRecurring`, which means "an expanded
+    /// instance of an EXTERNAL (Google) recurring event" and stays read-only.
+    public var isSeriesMember: Bool { seriesID != nil }
+
     public init(id: UUID = UUID(), title: String, subtitle: String, start: Date, end: Date, color: Color, spaceName: String, notes: String? = nil, isAllDay: Bool = false, projectID: UUID? = nil, noteID: UUID? = nil, isReadOnly: Bool = false, source: EventSource = .atlas, googleEventId: String? = nil, appleEventId: String? = nil, isRecurring: Bool = false, isWorkBlock: Bool = false, isDeadline: Bool = false, deadlineTaskID: UUID? = nil, isHistory: Bool = false, spaceID: UUID? = nil, googleConnectionId: UUID? = nil) {
         self.id = id
         self.title = title

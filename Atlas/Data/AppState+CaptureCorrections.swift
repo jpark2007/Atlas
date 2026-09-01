@@ -203,9 +203,20 @@ extension AppState {
 
     /// Per-item Undo: revert just this item and drop it from its capture entry.
     func undoCapturedItem(_ item: CaptureHistoryItem, inEntry entryID: UUID) {
-        revert(item)
+        // One chip stands for a whole repeating series, so undoing it takes back every
+        // session — reverting only the representative would leave the rest stranded on
+        // the calendar with no chip left to remove them.
+        var reverted: Set<UUID> = [item.id]
+        if item.kind == .event,
+           let event = events.first(where: { $0.id == item.id }),
+           let sid = event.seriesID {
+            reverted = Set(events.filter { $0.seriesID == sid }.map(\.id))
+            deleteSeries(event, scope: .allEvents)
+        } else {
+            revert(item)
+        }
         guard let e = captureHistory.firstIndex(where: { $0.id == entryID }) else { return }
-        captureHistory[e].items.removeAll { $0.id == item.id }
+        captureHistory[e].items.removeAll { reverted.contains($0.id) }
         if captureHistory[e].items.isEmpty { captureHistory[e].undoneAt = Date() }
         persistCaptureHistoryIfPossible()
     }

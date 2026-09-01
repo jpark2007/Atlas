@@ -13,7 +13,14 @@ struct CaptureContext: Equatable {
 /// the same surface will later be backed by Supabase (see docs/specs/01-architecture.md).
 @MainActor
 final class AppState: ObservableObject {
-    @Published var route: Route = .dashboard
+    /// Navigating away from the event detail page clears the item it was showing.
+    /// `calendarDetailItem` is one of the flags `isEditInFlight` reads, and the sidebar
+    /// sets `route` directly without touching it — so without this, opening one event
+    /// detail and then clicking anything in the sidebar left the flag set for the rest
+    /// of the session and silently stopped EVERY background re-pull.
+    @Published var route: Route = .dashboard {
+        didSet { if route != .calendarDetail { calendarDetailItem = nil } }
+    }
 
     @Published var userName: String = "Jordan"
     @Published var spaces: [Space] = MockData.spaces
@@ -306,6 +313,8 @@ final class AppState: ObservableObject {
     /// surfaces what the server crons wrote (Google every 5 min, feeds every 15) instead
     /// of staying stale until relaunch. Invalidated in `deinit` alongside `clockTimer`.
     private var backgroundRefreshTimer: Timer?
+    /// Pending retry of a re-pull that was deferred because an editor was open.
+    private var deferredRefreshTask: Task<Void, Never>?
 
     /// Serializes background re-pulls so an overlapping tick (e.g. a foreground trigger
     /// firing while the timer's pull is still in flight) can't race a second `loadAll`.
@@ -357,6 +366,19 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Re-attempts a re-pull that `isEditInFlight` turned away, every 20 s until the
+    /// editor closes. Single-flight (the task is replaced, not stacked) and self-
+    /// cancelling once the pull runs, so an editor left open for an hour costs one
+    /// sleeping task rather than a queue of them.
+    private func scheduleDeferredRefresh() {
+        deferredRefreshTask?.cancel()
+        deferredRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(20))
+            guard !Task.isCancelled else { return }
+            await self?.refreshFromServer()
+        }
+    }
+
     /// True while the user has an editor / edit-bearing sheet open, so a background
     /// re-pull would swap the model arrays out from under in-flight work. Uses the
     /// existing presentation flags (least invasive check — no new tracking). The note
@@ -388,7 +410,13 @@ final class AppState: ObservableObject {
     func refreshFromServer() async {
         guard let db, loadedUserID != nil else { return }  // signed in and past bootstrap
         guard !isRefreshingFromServer else { return }      // one pull at a time
-        guard !isEditInFlight else { return }              // don't stomp open editors
+        // Don't stomp open editors — but a deferred tick must come BACK. Without the
+        // retry, closing an editor a second after a tick meant waiting out the whole
+        // 5-minute interval with stale data on screen.
+        guard !isEditInFlight else {
+            scheduleDeferredRefresh()
+            return
+        }
         isRefreshingFromServer = true
         defer { isRefreshingFromServer = false }
         do {
@@ -1452,6 +1480,113 @@ final class AppState: ObservableObject {
         if let removed {
             pushDeletedEventToApple(removed)
         }
+        schedulePublish()
+    }
+
+    // MARK: - Repeating series
+    //
+    // Atlas materializes a general recurrence into real dated rows sharing a `seriesID`
+    // (see `RecurrenceRule`), so a series is just "the events with this id" — no second
+    // code path for the grids, sync, or availability to learn. A CLASS's schedule is a
+    // different thing entirely: those meetings are derived on the fly from
+    // `Project.meetingPattern` by `SchoolCalendar`, term-bounded and break-aware, and
+    // never stored. This is the general case that belongs to no class.
+    //
+    // What a series DOES need is scope: touching one session must be able to mean this
+    // one, this one onward, or all of them.
+
+    /// Appends many events at once — the expansion of one repeating series, or any bulk
+    /// create. Identical to `addEvent` per row (space→connection routing, Apple mirror,
+    /// availability republish) except the Supabase write is ONE batched upsert instead
+    /// of N, so a long series is a single round-trip.
+    func addEvents(_ newEvents: [CalendarEvent]) {
+        guard !newEvents.isEmpty else { return }
+        let routed = newEvents.map { event -> CalendarEvent in
+            var event = event
+            event.googleConnectionId = connectionId(forSpaceId: event.spaceID)
+            return event
+        }
+        events.append(contentsOf: routed)
+        Task { try? await self.db?.upsertEvents(routed) }
+        for event in routed { pushNewEventToApple(event) }
+        schedulePublish()
+    }
+
+    /// The instances of `event`'s series that `scope` selects, in date order. Empty for a
+    /// one-off — callers fall back to the single-event path.
+    func seriesInstances(of event: CalendarEvent, scope: SeriesScope) -> [CalendarEvent] {
+        guard let sid = event.seriesID else { return [] }
+        return events
+            .filter { $0.seriesID == sid }
+            .filter { scope != .thisAndFollowing || $0.start >= event.start }
+            .sorted { $0.start < $1.start }
+    }
+
+    /// Deletes part or all of a repeating series. `.thisEvent` is the ordinary single
+    /// delete (cancelling one session doesn't cancel the series); the other two scopes
+    /// drop their instances in ONE server statement, then echo each removal to the
+    /// Apple mirror exactly as `deleteEvent` does.
+    func deleteSeries(_ event: CalendarEvent, scope: SeriesScope) {
+        guard let sid = event.seriesID, scope != .thisEvent else {
+            deleteEvent(id: event.id)
+            return
+        }
+        let doomed = seriesInstances(of: event, scope: scope)
+        guard !doomed.isEmpty else { return }
+        let ids = Set(doomed.map(\.id))
+        events.removeAll { ids.contains($0.id) }
+
+        let from: Date? = scope == .thisAndFollowing ? event.start : nil
+        Task { try? await self.db?.deleteEventSeries(seriesID: sid, from: from) }
+        for removed in doomed { pushDeletedEventToApple(removed) }
+        schedulePublish()
+    }
+
+    /// Applies an edit made on ONE session to the rest of its series.
+    ///
+    /// Each other instance keeps its own DATE and takes `edited`'s title, space, notes
+    /// and — crucially — its time of day and duration. That is what "the meeting moves to
+    /// 11am" means: every remaining session shifts to 11am on its own day, not all of
+    /// them onto one date. Wall-clock time is re-applied per day, so a series spanning a
+    /// DST change stays at 11am throughout.
+    func updateSeries(_ edited: CalendarEvent, scope: SeriesScope) {
+        guard edited.seriesID != nil, scope != .thisEvent else {
+            updateEvent(edited)
+            return
+        }
+        // The edited session itself always takes the edit verbatim, including any date
+        // change the user made to it.
+        updateEvent(edited)
+
+        let cal = Calendar.current
+        let time = cal.dateComponents([.hour, .minute], from: edited.start)
+        let duration = edited.end.timeIntervalSince(edited.start)
+        let siblings = seriesInstances(of: edited, scope: scope).filter { $0.id != edited.id }
+
+        var changed: [CalendarEvent] = []
+        for var instance in siblings {
+            guard let newStart = cal.date(bySettingHour: time.hour ?? 0,
+                                          minute: time.minute ?? 0,
+                                          second: 0,
+                                          of: instance.start) else { continue }
+            instance.title = edited.title
+            instance.notes = edited.notes
+            instance.spaceName = edited.spaceName
+            instance.spaceID = edited.spaceID
+            instance.color = edited.color
+            instance.isAllDay = edited.isAllDay
+            instance.recurrenceRule = edited.recurrenceRule
+            instance.start = newStart
+            instance.end = newStart.addingTimeInterval(duration)
+            instance.googleConnectionId = connectionId(forSpaceId: instance.spaceID)
+            if let i = events.firstIndex(where: { $0.id == instance.id }) {
+                events[i] = instance
+            }
+            changed.append(instance)
+        }
+        guard !changed.isEmpty else { return }
+        Task { try? await self.db?.upsertEvents(changed) }
+        for instance in changed { pushUpdatedEventToApple(instance) }
         schedulePublish()
     }
 
