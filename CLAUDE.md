@@ -1,5 +1,27 @@
 # Atlas — Working Agreement
 
+> ## ⚠️ PENDING DEPLOY — tell the user before they test capture (as of 2026-09-02)
+>
+> Repeating events + six sync fixes merged to `main` in PR #5 (`f371b84`), but **two
+> deploy steps have NOT been run**:
+>
+> 1. **The `capture` edge function is not deployed.** The live function still serves the
+>    OLD prompt, so a repeating capture ("yoga every Tuesday until Dec 12") against the
+>    live backend gives the OLD behavior — the code in the repo is not what answered the
+>    request. Deploy with `supabase functions deploy capture`, but **only after** a build
+>    containing this code has shipped: the new prompt returns one item with a
+>    `recurrence` field instead of enumerated sessions, so older installed builds would
+>    create a single event where they used to create several.
+> 2. **Migration `0046_event_recurrence.sql` is not applied** (`supabase db push`).
+>    Safe to run any time — additive, nullable, no backfill. Until it is, a repeating
+>    capture won't persist its `series_id`/`recurrence_rule`, so scope editing breaks
+>    after a reload.
+>
+> Full context, including what still needs a visual pass and what was deliberately left
+> open: `docs/handoff-2026-09-02-recurrence-and-sync.md`.
+>
+> **Delete this block once both steps are done.**
+
 Atlas is a native **macOS SwiftUI** app (deployment target **macOS 14**, XcodeGen project `Atlas.xcodeproj`). This file captures how to work in it well. **User instructions always override anything here.** These guidelines bias toward caution over speed; for trivial tasks, use judgment.
 
 ## 1. Think before coding
