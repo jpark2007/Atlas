@@ -1,104 +1,35 @@
 /* =====================================================================
    Atlas vs. ___ — a plain comparison article.
-   Self-contained: this file does not depend on the marketing site's CSS.
+   Loads AFTER /styles.css: the site's header, footer and base live there.
+   Everything below dresses the article itself, so its tokens are scoped to
+   .cmp and never reach the shared chrome.
    ===================================================================== */
 
-/* ---- reset ----------------------------------------------------------- */
-*, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
-body,
-h1, h2, h3, h4, p, ul, ol, li, figure, blockquote, dl, dd { margin: 0; padding: 0; }
-ul, ol { list-style: none; }
-img, svg { max-width: 100%; }
-button { font: inherit; color: inherit; }
-table { border-collapse: collapse; }
-
-:root {
+.cmp {
   --ink: #16181d;
   --ink-2: #333740;
   --grey: #5b6270;
   --grey-2: #767d8b;
-  --line: #e3e6ea;
-  --line-2: #cfd4db;
-  --wash: #f6f7f9;
+  --line: #e6e2da;
+  --line-2: #d3cec4;
+  --wash: #f3f1ec;
   --link: #1a5fd0;
   --link-hover: #12429a;
   --yes: #1a7f4b;
   --no: #a2a8b2;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
-  --head-h: 52px;
-}
+  --head-h: 62px;
 
-html { scroll-behavior: smooth; }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-
-body {
-  background: #fff;
   color: var(--ink);
   font-family: var(--sans);
   font-size: 16px;
   line-height: 1.6;
-  -webkit-font-smoothing: antialiased;
 }
-
-a { color: var(--link); text-decoration: none; }
-a:hover { color: var(--link-hover); text-decoration: underline; }
-
-.skip {
-  position: absolute;
-  left: -9999px;
-  top: 0;
-  background: #fff;
-  color: var(--ink);
-  padding: 0.6rem 1rem;
-  border: 1px solid var(--line-2);
-  z-index: 50;
-}
-.skip:focus { left: 0.5rem; top: 0.5rem; }
-
-.visually-hidden {
-  position: absolute;
-  width: 1px; height: 1px;
-  padding: 0; margin: -1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
-
-/* ---- shell ----------------------------------------------------------- */
-.wrap {
-  width: 100%;
-  max-width: 1200px;
-  margin-inline: auto;
-  padding-inline: clamp(1rem, 3vw, 2rem);
-}
-
-/* ---- header ---------------------------------------------------------- */
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  background: #fff;
-  border-bottom: 1px solid var(--line);
-}
-.topbar__inner {
-  height: var(--head-h);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-.topbar__mark {
-  font-size: 0.95rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-}
-.topbar__mark:hover { color: var(--ink); text-decoration: none; }
-.topbar__dl { font-size: 0.88rem; }
+.cmp h1, .cmp h2, .cmp h3 { font-family: var(--sans); letter-spacing: normal; }
+.cmp ul, .cmp ol { list-style: none; }
+.cmp table { border-collapse: collapse; }
+.cmp a { color: var(--link); text-decoration: none; }
+.cmp a:hover { color: var(--link-hover); text-decoration: underline; }
 
 /* ---- page ------------------------------------------------------------ */
 .cmp { padding: clamp(1.6rem, 3.5vw, 2.6rem) 0 clamp(2.5rem, 5vw, 3.5rem); }
@@ -238,6 +169,7 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
 
 table.cmp-table {
   width: 100%;
+  background: #fff;
   min-width: 460px;
   font-size: 0.93rem;
   border: 1px solid var(--line);
@@ -309,9 +241,9 @@ table.cmp-table {
 .legend__item { display: inline-flex; align-items: center; gap: 0.4em; }
 
 /* ---- article body ---------------------------------------------------- */
-.prose > section + section { margin-top: 1.7rem; }
+.article > section + section { margin-top: 1.7rem; }
 
-.prose h2 {
+.article h2 {
   font-size: clamp(1.15rem, 1.9vw, 1.32rem);
   font-weight: 700;
   letter-spacing: -0.012em;
@@ -320,8 +252,8 @@ table.cmp-table {
   margin-bottom: 0.9rem;
   border-bottom: 1px solid var(--line);
 }
-.prose p { max-width: 90ch; color: var(--ink-2); }
-.prose p + p { margin-top: 0.8rem; }
+.article p { max-width: 90ch; color: var(--ink-2); }
+.article p + p { margin-top: 0.8rem; }
 
 .verdict {
   display: block;
@@ -355,16 +287,16 @@ table.cmp-table {
 
 /* Two columns on wide screens: verdict beside the paragraphs. */
 @media (min-width: 1000px) {
-  .prose > section:not(.bottom-line) {
+  .article > section:not(.bottom-line) {
     display: grid;
     grid-template-columns: minmax(0, 250px) minmax(0, 1fr);
     column-gap: 2.5rem;
     align-items: start;
   }
-  .prose > section:not(.bottom-line) > h2 { grid-column: 1 / -1; }
-  .prose > section:not(.bottom-line) > .verdict { grid-column: 1; margin-bottom: 0; }
-  .prose > section:not(.bottom-line) > p { grid-column: 2; }
-  .prose > section:not(.bottom-line) > p + p { margin-top: 0.8rem; }
+  .article > section:not(.bottom-line) > h2 { grid-column: 1 / -1; }
+  .article > section:not(.bottom-line) > .verdict { grid-column: 1; margin-bottom: 0; }
+  .article > section:not(.bottom-line) > p { grid-column: 2; }
+  .article > section:not(.bottom-line) > p + p { margin-top: 0.8rem; }
 }
 
 /* ---- faq ------------------------------------------------------------- */
@@ -423,15 +355,6 @@ table.cmp-table {
   margin-top: 1rem;
   font-size: 0.92rem;
 }
-
-/* ---- footer ---------------------------------------------------------- */
-.foot {
-  border-top: 1px solid var(--line);
-  padding: 1.1rem 0;
-  font-size: 0.83rem;
-  color: var(--grey-2);
-}
-.foot span[aria-hidden] { color: var(--line-2); padding: 0 0.35em; }
 
 /* ---- responsive ------------------------------------------------------ */
 @media (max-width: 700px) {

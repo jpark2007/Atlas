@@ -30,8 +30,9 @@ one timeline, on every device you own.
 **CTAs:** Download for Mac · Apple's "Download on the App Store" badge
 **Hint under them:** Free · macOS 14 or later
 
-**Image:** the Mac dashboard, with the iPhone today view lapping its lower-right
-corner.
+**Image:** the Mac dashboard in a MacBook, with the iPhone today view standing
+in front of its right third and breaking past the base. On a phone the Mac shows
+a crop — the clock and the late banner — and the iPhone stays in front of it.
 
 ---
 
@@ -42,13 +43,16 @@ Each is one screenshot, one outcome headline, and at most three lines.
 ### 1 — One timeline
 
 **Kicker:** ONE TIMELINE
-**Headline:** Every calendar you already use, in one week.
+**Headline:** Every calendar you already use, in one day.
 
-Apple Calendar, Google, and Canvas each hold part of your week. Atlas shows all
-of them together, and Google edits sync both ways.
+Apple Calendar, Google, and Canvas each hold part of your week. Atlas draws them
+on the same grid, and Google edits sync both ways.
 
-**Image:** Settings › Calendars, listing Apple, two Google accounts, Canvas,
-and Atlas as sources.
+**Image:** the day view, with three source pills — Canvas, Apple Calendar,
+Google — pinned by a leader line to three real events, so the claim is visible
+rather than asserted. The pills are an illustration of where a week comes from;
+they are annotations on the page, not labels the app draws. Two of the three
+show on a phone.
 
 ### 2 — Plan the day
 
@@ -58,7 +62,9 @@ and Atlas as sources.
 Anything without a time waits in the Unscheduled tray. Drop one on an open hour
 and Atlas books the work session for you.
 
-**Image:** the day view beside the Unscheduled tray.
+**Image:** the day view beside the Unscheduled tray. On a phone, a crop of the
+tray itself — the "Drag one onto the grid" line, the overdue chips — against a
+strip of the grid.
 
 ### 3 — Class hub
 
@@ -68,36 +74,68 @@ and Atlas books the work session for you.
 Atlas reads meeting times, grading weights, and course policies off the PDF,
 then files every Canvas assignment underneath them.
 
-**Image:** a class page built from a scanned syllabus.
+**Image:** a class page built from a scanned syllabus. On a phone, a crop of
+the title, the Canvas course, the meeting times, and the grading percentages.
 
-### 4 — Mac and iPhone
+---
 
-**Kicker:** MAC AND IPHONE
-**Headline:** Catch it on your phone. Plan it on your Mac.
+## Capture (the animated demo)
 
-Type or say the thought while you walk to class. Atlas sorts it into tasks and
-events, and it's waiting when you sit down.
+**Kicker:** CAPTURE
+**Headline:** One sentence becomes three things in your week.
 
-**Image:** three iPhone screens in a row — capture sorted, today, tasks by class.
+Type it the way you'd say it. Atlas reads the class, the due date, and the
+repeat, then files each piece where it belongs.
+
+**Button:** Replay
+
+**The demo** is CSS and `main.js` — no video, no GIF. A capture box types
+"chem lab report due friday, gym tue and thu at 7, call advisor about spring
+classes", holds a beat on "Atlas is sorting…", then the sentence dims and three
+filed rows slide in:
+
+- Chem lab report — General Chemistry · Deadline · Fri
+- Gym — Personal · Repeats · Tue & Thu · 7:00 AM
+- Call advisor about spring classes — Personal · To do · No date
+
+It runs once when it scrolls into view; Replay restarts it. Under reduced motion
+(or with JS off) the rows and the finished sentence are already in the markup, so
+the section renders as its own end state and the Replay button never appears.
+
+---
+
+## And from your phone
+
+**Heading:** And from your phone, on the walk back.
+
+**Image:** three iPhone screens — capture sorted, today, tasks by class. On a
+phone they become a swipeable strip: one screen nearly full width with the next
+peeking, scrolling inside the strip rather than the page.
 
 ---
 
 ## Menu bar (the page's one ink block)
 
 **Kicker:** MENU BAR
-**Headline:** Your day, one click from anywhere.
+**Headline:** Check the whole day without opening the app.
 
 The month and today's list sit behind the menu-bar icon, with Quick Capture
-right there. The app stays closed.
+right there.
 
-**Image:** the menu-bar popover, cropped to itself.
+**Image:** the menu-bar popover, cropped to itself, with two callouts and
+nothing else:
+
+- A leader line into today's list: "Every calendar from every space, in one list"
+- Keycaps `⌥` `Space` labelled "Quick Capture from any app". That is the app's
+  real global hotkey (`HotkeyDefaults` in `Atlas/Services/HotkeyService.swift`) —
+  if it ever changes, change it here too.
 
 ---
 
 ## Why we built it
 
 **Kicker:** WHY WE BUILT IT
-**Signature:** Andrew Khalil & Jonah Park
+**Signature:** Two students, one app
 **Byline:** Two students, one app
 
 **Pull line:** We wanted *one place that holds all of it* and does the filing.
@@ -131,8 +169,8 @@ Desktop only — a phone just taps the badge.
 
 ## Footer
 
-- Atlas — a life manager for Mac, iPhone, and iPad. Built in the open.
-- Made by Andrew Khalil and Jonah Park.
+- Atlas — a planner for Mac, iPhone, and iPad.
+- Two students, one app.
 - drewkhalil@gmail.com
 - Support · Privacy · Terms · Compare · Owners
 - © 2026 Atlas

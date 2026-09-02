@@ -1,13 +1,7 @@
 /* =====================================================================
-   Atlas landing — waitlist + scroll reveals. No dependencies.
+   Atlas landing — download beacon, scroll reveals, support form.
+   No dependencies.
    ===================================================================== */
-
-/* --------------------------------------------------------------------
-   WAITLIST_ENDPOINT — the Supabase edge function the form POSTs to.
-   Deployed live (no-verify-jwt); nothing else here needs editing.
-   -------------------------------------------------------------------- */
-const WAITLIST_ENDPOINT =
-  "https://jxrmozhgsebwtbdleyxp.supabase.co/functions/v1/waitlist";
 
 /* TRACK_DOWNLOAD_ENDPOINT — a non-blocking beacon fired when the "Download for
    Mac" button is clicked, so the owner dashboard can count DMG downloads. Never
@@ -20,74 +14,7 @@ const TRACK_DOWNLOAD_ENDPOINT =
 const SUPPORT_ENDPOINT =
   "https://jxrmozhgsebwtbdleyxp.supabase.co/functions/v1/support-request";
 
-const COPY = {
-  idle: "Notify me",
-  sending: "Adding you…",
-  success: "You're in. We'll email you when there's news worth sharing.",
-  errorGeneral: "That didn't go through. Give it another try?",
-  errorEmail: "Hmm, that doesn't look like an email. Mind checking it?",
-};
-
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/* ---- waitlist form -------------------------------------------------- */
-(function initWaitlist() {
-  const form = document.querySelector("[data-waitlist]");
-  if (!form) return;
-
-  const input = form.querySelector('input[type="email"]');
-  const honeypot = form.querySelector('input[name="referral_code"]');
-  const button = form.querySelector('button[type="submit"]');
-  const status = form.querySelector("[data-status]");
-  const idleLabel = (button && button.textContent.trim()) || COPY.idle;
-
-  function setStatus(message, kind) {
-    if (!status) return;
-    status.textContent = message || "";
-    if (kind) status.dataset.kind = kind;
-    else delete status.dataset.kind;
-  }
-
-  function resetButton() {
-    button.disabled = false;
-    button.removeAttribute("aria-busy");
-    button.textContent = idleLabel;
-  }
-
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const email = (input.value || "").trim();
-
-    if (!EMAIL_RE.test(email)) {
-      setStatus(COPY.errorEmail, "error");
-      input.focus();
-      return;
-    }
-
-    button.disabled = true;
-    button.setAttribute("aria-busy", "true");
-    button.textContent = COPY.sending;
-    setStatus("", null);
-
-    try {
-      const res = await fetch(WAITLIST_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, referral_code: (honeypot && honeypot.value) || "" }),
-      });
-
-      if (!res.ok) throw new Error("Request failed: " + res.status);
-
-      form.dataset.done = "true";
-      input.value = "";
-      setStatus(COPY.success, "success");
-    } catch (err) {
-      // Never leave the button stuck in "Adding you…".
-      setStatus(COPY.errorGeneral, "error");
-      resetButton();
-    }
-  });
-})();
 
 /* ---- download beacon ------------------------------------------------
    Count DMG downloads without getting in the way. `sendBeacon` (POST, no
@@ -131,7 +58,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   /* --- prep: split display headlines into word masks --- */
   document
-    .querySelectorAll(".hero__title, .feature__title, .band__title, .waitlist__title")
+    .querySelectorAll(".hero__title, .feature__title, .capture__title, .band__title, .cta-band__title")
     .forEach(splitWords);
 
   /* --- prep: wrap each kicker's label so it can settle after the dash --- */
@@ -197,9 +124,161 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   }
 })();
 
+/* ---- capture demo ---------------------------------------------------
+   Four beats, all driven off one `data-state` on the stage:
+     typing  — the sentence writes itself, character by character
+     reading — a sweep crosses the box and lights the tokens Atlas found
+     flying  — each lit token flies (FLIP: measured start → measured target)
+               out of the sentence into the card that will hold it
+     done    — the cards stand, "3 added to your week" confirms, then a fade
+               resets and the whole thing runs again.
+   The finished sentence and cards are already in the markup, so this only
+   runs when motion is allowed; otherwise the section is its own end state.
+   It starts when the stage is at least half on screen, and starts over from
+   the top whenever it leaves and comes back. Replay restarts it by hand.
+   -------------------------------------------------------------------- */
+(function initCaptureDemo() {
+  const stage = document.querySelector("[data-capture]");
+  if (!stage || !document.documentElement.classList.contains("anim")) return;
+
+  const line = stage.querySelector("[data-cap-line]");
+  const fliers = stage.querySelector("[data-cap-fliers]");
+  const replay = document.querySelector("[data-capture-replay]");
+  const toks = Array.from(line.querySelectorAll(".cap-tok"));
+  const lands = Array.from(stage.querySelectorAll("[data-land]"));
+
+  /* The sentence's own child nodes, each with its finished text, so the
+     typewriter refills them in order instead of rebuilding the markup. */
+  const segs = Array.from(line.childNodes)
+    .filter((n) => n.nodeType === 3 || n.classList.contains("cap-tok"))
+    .map((node) => ({ node, text: node.textContent }));
+  const chars = segs.reduce((n, s) => n + s.text.length, 0);
+
+  const timers = [];
+  let typer = null;
+  let onScreen = false;
+
+  const at = (ms, fn) => timers.push(setTimeout(fn, ms));
+
+  function halt() {
+    timers.splice(0).forEach(clearTimeout);
+    if (typer) { clearInterval(typer); typer = null; }
+  }
+
+  function typed(n) {
+    let left = n;
+    for (const s of segs) {
+      const take = Math.max(0, Math.min(s.text.length, left));
+      s.node.textContent = s.text.slice(0, take);
+      left -= take;
+    }
+  }
+
+  function reset() {
+    halt();
+    stage.dataset.state = "idle";
+    typed(0);
+    toks.forEach((t) => t.classList.remove("is-lit", "is-gone"));
+    lands.forEach((el) => { el.style.opacity = ""; });
+    fliers.textContent = "";
+  }
+
+  /* FLIP: measure where each token is, measure where it is going, then send
+     a copy of it along that vector while the real one dims out. */
+  function fly() {
+    const base = stage.getBoundingClientRect();
+    toks.forEach((tok, i) => {
+      const target = lands[i];
+      if (!target) return;
+      const from = tok.getBoundingClientRect();
+      const to = target.getBoundingClientRect();
+      const css = getComputedStyle(tok);
+
+      const el = document.createElement("span");
+      el.className = "cap-flier";
+      el.textContent = tok.textContent;
+      el.style.left = from.left - base.left + "px";
+      el.style.top = from.top - base.top + "px";
+      el.style.fontSize = css.fontSize;
+      el.style.color = css.color;
+      el.style.background = css.backgroundColor;
+      fliers.appendChild(el);
+
+      const scale = Math.max(0.3, Math.min(1, to.width / Math.max(from.width, 1)));
+      const dx = to.left - from.left;
+      const dy = to.top - from.top;
+
+      tok.classList.add("is-gone");
+      target.style.opacity = "0";
+      at(40 + i * 110, () => {
+        el.style.transform = "translate(" + dx + "px," + dy + "px) scale(" + scale + ")";
+        el.style.opacity = "0.9";
+      });
+      at(40 + i * 110 + 640, () => {
+        el.remove();
+        target.style.opacity = "1";
+      });
+    });
+  }
+
+  function run() {
+    reset();
+    stage.dataset.state = "typing";
+    let n = 0;
+    typer = setInterval(() => {
+      typed(++n);
+      if (n < chars) return;
+      clearInterval(typer);
+      typer = null;
+      sort();
+    }, 24);
+  }
+
+  function sort() {
+    at(280, () => { stage.dataset.state = "reading"; });
+    toks.forEach((t, i) => at(500 + i * 195, () => t.classList.add("is-lit")));
+
+    const read = 500 + toks.length * 195 + 250;
+    at(read, () => { stage.dataset.state = "flying"; fly(); });
+
+    const landed = read + 40 + (toks.length - 1) * 110 + 640;
+    at(landed + 140, () => { stage.dataset.state = "done"; });
+    at(landed + 3200, () => { stage.dataset.state = "fading"; });
+    at(landed + 3800, () => { if (onScreen) run(); else reset(); });
+  }
+
+  if (replay) {
+    replay.hidden = false;
+    replay.addEventListener("click", run);
+  }
+
+  reset();
+
+  /* Half of the stage on screen starts it. On a phone the stage can be taller
+     than the window, so ask for whatever share of it a window can actually
+     show, capped at half. */
+  const share = Math.max(
+    0.08,
+    Math.min(0.5, (window.innerHeight * 0.55) / Math.max(stage.offsetHeight, 1))
+  );
+  new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.intersectionRatio >= share - 0.001) {
+          if (!onScreen) { onScreen = true; run(); }
+        } else if (entry.intersectionRatio === 0 && onScreen) {
+          onScreen = false;
+          reset();
+        }
+      });
+    },
+    { threshold: [0, share] }
+  ).observe(stage);
+})();
+
 /* ---- support form ---------------------------------------------------
-   Same shape as the waitlist: honeypot in, one status line out. Present only
-   on support.html, so bail quietly everywhere else.
+   A honeypot in, one status line out. Present only on support.html, so bail
+   quietly everywhere else.
    -------------------------------------------------------------------- */
 (function initSupportForm() {
   const form = document.querySelector("[data-support]");

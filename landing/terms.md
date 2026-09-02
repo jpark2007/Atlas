@@ -1,12 +1,12 @@
 # Atlas Terms of Use
 
-**Effective date: July 3, 2026**
+**Effective date: September 2, 2026**
 
-Atlas is built by Andrew Khalil and Jonah Park. Contact: **drewkhalil@gmail.com**.
+Atlas is built by two students. Contact: **drewkhalil@gmail.com**.
 
 ## What Atlas is
 
-Atlas is a native Mac, iPhone, and iPad life manager — a unified calendar, spaces and projects, task capture with AI, and notes. It's **free**, and it's still changing. By joining the waitlist or downloading Atlas, you agree to these terms.
+Atlas is a native Mac, iPhone, and iPad life manager — a unified calendar, spaces and projects, task capture with AI, and notes. It's **free**, and it's still changing. The iPhone and iPad app comes from Apple's App Store; the Mac app is a direct download that keeps itself up to date from our site. By downloading Atlas or creating an account, you agree to these terms.
 
 ## Provided as-is
 
@@ -16,15 +16,15 @@ Atlas is young software. It may have bugs, go down, or lose or mis-sync data, an
 
 - You're responsible for keeping your login secure and for the content you put into Atlas.
 - Use Atlas lawfully. Don't try to break, overload, reverse-engineer, or gain unauthorized access to the service or to other users' data.
-- When you connect Google or Canvas, you confirm you're allowed to access those accounts and you authorize Atlas to sync them as described in the [Privacy Policy](privacy.md).
+- When you connect Google, Canvas, or another calendar feed, you confirm you're allowed to access those accounts and you authorize Atlas to sync them as described in the [Privacy Policy](privacy.md).
 
 ## Your content is yours
 
-You keep all rights to the data you put into Atlas. You grant us only the limited permission needed to store, process, and sync it so the app can work for you — including sending the text you capture to our AI provider and syncing events to and from the calendars you connect. We don't claim ownership of your content and we don't sell it.
+You keep all rights to the data you put into Atlas. You grant us only the limited permission needed to store, process, and sync it so the app can work for you — including sending the text you capture and the syllabus pages you scan to our AI provider, and syncing events to and from the calendars you connect. We don't claim ownership of your content and we don't sell it.
 
 ## Third-party services
 
-Atlas connects to services we don't control — Google Calendar, Canvas, Apple Calendar, and our AI provider. Your use of those services is governed by their own terms, and we're not responsible for them.
+Atlas connects to services we don't control — Google Calendar, Canvas and any other calendar feed you add, Apple Calendar, and our AI provider. Your use of those services is governed by their own terms, and we're not responsible for them.
 
 ## Availability, changes, and price
 
@@ -36,7 +36,7 @@ You can stop using Atlas at any time and ask us to delete your data (**drewkhali
 
 ## Liability
 
-To the fullest extent the law allows, Andrew Khalil and Jonah Park are not liable for indirect, incidental, or consequential damages, or for lost or mis-synced data, arising from your use of Atlas. Atlas is offered without charge and without warranty.
+To the fullest extent the law allows, the makers of Atlas are not liable for indirect, incidental, or consequential damages, or for lost or mis-synced data, arising from your use of Atlas. Atlas is offered without charge and without warranty.
 
 ## Changes to these terms
 
@@ -44,4 +44,4 @@ We'll update the effective date when these terms change. Continuing to use Atlas
 
 ## Contact
 
-Andrew Khalil and Jonah Park — **drewkhalil@gmail.com**
+Atlas support — **drewkhalil@gmail.com**

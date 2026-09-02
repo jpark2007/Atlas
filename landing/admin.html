@@ -4,31 +4,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Atlas — Owner dashboard</title>
 <meta name="robots" content="noindex, nofollow" />
+<meta name="description" content="Private dashboard for the people who make Atlas. Nothing here is public." />
 <meta name="theme-color" content="#fbfaf7" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,340..600;1,9..144,340..600&family=Nunito:ital,wght@0,400..800;1,400..700&display=swap" rel="stylesheet" />
 <link rel="icon" type="image/png" href="/assets/favicon-32.png" />
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+<link rel="stylesheet" href="/styles.css" />
 
 <style>
-  :root {
-    --paper: #fbfaf7;
-    --ink: #1a191d;
-    --muted: #6c6a72;
-    --hairline: rgba(0, 0, 0, 0.08);
-    --hairline-strong: rgba(0, 0, 0, 0.14);
-    --ink-wash: rgba(26, 25, 29, 0.05);
-    --serif: "Fraunces", Georgia, "Times New Roman", serif;
-    --sans: "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--paper); color: var(--ink);
-    font-family: var(--sans); -webkit-font-smoothing: antialiased;
-    line-height: 1.5;
-  }
-  .wrap { width: min(920px, 92vw); margin: 0 auto; }
+  /* Tokens, reset and base come from /styles.css. Everything here is the
+     dashboard's own furniture. */
+  body { font-size: 16px; line-height: 1.5; }
+  .wrap { width: min(920px, 92vw); margin-inline: auto; padding-inline: 0; }
   main { padding: clamp(2.5rem, 8vh, 5rem) 0 4rem; }
 
   h1 {
@@ -131,8 +120,17 @@
     text-transform: uppercase; padding: 0.1rem 0.45rem; border-radius: 6px;
     background: var(--ink-wash); margin-right: 0.4rem;
   }
-  .report button { padding: 0.4rem 0.8rem; font-size: 0.85rem; }
-  .report__actions { display: inline-flex; gap: 0.5rem; }
+  .report button,
+  .report__reply { padding: 0.4rem 0.8rem; font-size: 0.85rem; }
+  .report__actions { display: inline-flex; gap: 0.5rem; align-items: center; }
+  /* Reply is an <a href="mailto:"> wearing the ghost button's clothes. */
+  .report__reply {
+    font-family: var(--sans); font-weight: 700; line-height: 1.5;
+    border-radius: 10px; border: 1px solid var(--hairline-strong);
+    background: transparent; color: var(--ink); text-decoration: none;
+    white-space: nowrap; transition: opacity 0.15s var(--ease);
+  }
+  .report__reply:hover { opacity: 0.7; }
   /* Delete reads as the quieter, riskier option — it never competes with Resolve. */
   .report__delete { opacity: 0.7; }
   .report__delete:hover { opacity: 1; }
@@ -477,6 +475,15 @@
       const actions = document.createElement("span");
       actions.className = "report__actions";
 
+      // A reply only exists when there is somewhere to send it.
+      if (r.contact_email) {
+        const reply = document.createElement("a");
+        reply.className = "report__reply";
+        reply.textContent = "Reply";
+        reply.href = replyMailto(r);
+        actions.appendChild(reply);
+      }
+
       const primary = document.createElement("button");
       primary.textContent = resolved ? "Reopen" : "Resolve";
       primary.addEventListener("click", () =>
@@ -497,6 +504,28 @@
       card.appendChild(foot);
       wrap.appendChild(card);
     }
+  }
+
+  /// A pre-written reply: the reporter's own words quoted back, a blank for
+  /// the status line, and the sign-off. The quote is capped so the mailto URL
+  /// stays inside what mail clients will open.
+  const QUOTE_MAX = 1500;
+  function replyMailto(r) {
+    const raw = (r.message || "").trim();
+    const body = raw.length > QUOTE_MAX ? raw.slice(0, QUOTE_MAX) + "…" : raw;
+    const quoted = body.split("\n").map((l) => "> " + l).join("\n");
+    const text =
+      "Hi,\n\n" +
+      "Thanks for reporting this to Atlas support.\n\n" +
+      quoted + "\n\n" +
+      "[FIXED IN / STATUS]\n\n" +
+      "— Drew\n" +
+      "Atlas support";
+    return (
+      "mailto:" + encodeURIComponent(r.contact_email) +
+      "?subject=" + encodeURIComponent("Re: your Atlas report") +
+      "&body=" + encodeURIComponent(text)
+    );
   }
 
   async function loadStats(statusEl) {

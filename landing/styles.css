@@ -1,7 +1,7 @@
 /* =====================================================================
    Atlas — landing styles
    "Editorial minimal, in print." Cream paper, ink, one clay accent.
-   Shared by index.html, privacy.html, terms.html.
+   Shared by every page on the site.
    ===================================================================== */
 
 /* ---- tokens --------------------------------------------------------- */
@@ -22,8 +22,6 @@
   --sans: "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   --wrap: 1180px;
-  /* how far a feature screenshot runs past the text column, out to the page edge */
-  --bleed: calc(var(--gutter) + max(0px, (100vw - var(--wrap)) / 2));
   --gutter: clamp(1.25rem, 5vw, 4rem);
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
@@ -218,7 +216,7 @@ h1, h2, .display {
 /* =====================================================================
    Hero
    ===================================================================== */
-.hero { padding-top: clamp(3rem, 7vw, 5.5rem); padding-bottom: clamp(2.5rem, 6vw, 4.5rem); }
+.hero { padding-top: clamp(2.6rem, 5.5vw, 4.6rem); padding-bottom: clamp(2.2rem, 4.5vw, 3.6rem); }
 .hero__lede { max-width: calc(var(--wrap)); }
 .hero__title {
   font-size: clamp(2.6rem, 6.2vw, 4.7rem);
@@ -249,49 +247,179 @@ h1, h2, .display {
   color: var(--muted);
 }
 
-/* The dashboard sits full-bleed-ish under the lede; the iPhone shot laps its
-   lower-right corner as a flat card — no device chrome, no perspective. */
-.hero__stage { margin-top: clamp(2.5rem, 5vw, 3.6rem); }
+/* The Mac holds the left of the stage; the iPhone stands in front of its
+   right third, tall enough to break past the base. Two machines, one week.
+   The bottom margin (a % of the stage width) is the room the phone needs to
+   hang below — a margin, not padding, so it can't feed back into the
+   percentage the phone is positioned by. */
+.hero__stage { margin-top: clamp(2.2rem, 4vw, 3rem); }
 .shot--hero {
   position: relative;
-  max-width: 1000px;
-  margin-inline: auto;
-  padding-bottom: 2.5%;
+  margin-bottom: 5%;
 }
+.shot--hero .laptop { width: 87%; }
 .shot--hero .shot__phone {
   position: absolute;
-  right: 2%;
-  bottom: 0;
-  width: 15%;
-  min-width: 96px;
-  border-radius: 12px;
-}
-@media (max-width: 720px) {
-  .shot--hero { padding-bottom: 0; }
-  .shot--hero .shot__phone { display: none; }
+  right: 2.5%;
+  bottom: -8.5%;
+  width: 24.5%;
+  min-width: 84px;
 }
 
 /* =====================================================================
-   Screenshots
-   Every product image gets the same skin: hairline, small radius, one soft
-   shadow. Aspect ratios come from the files\' own width/height attributes.
+   Device frames
+   Every screenshot is worn by the machine it came from, drawn in CSS so it
+   scales crisply and stays in the paper/ink palette: one radius, one bezel,
+   one shadow across the whole page.
    ===================================================================== */
 .shot { margin: 0; }
-.shot img {
+.shot img { width: 100%; height: auto; }
+
+/* --- MacBook: a slim ink rim, rounded lid, flat base lip. Whole-window
+   screenshots only — a cropped region is not a screen, so it never gets one.
+   The rim is capped in px so it stays a rim at every size instead of growing
+   into a slab on the wide hero. */
+.laptop { display: flex; flex-direction: column; align-items: center; }
+.laptop__screen {
+  position: relative;
   width: 100%;
-  height: auto;
+  padding: clamp(3px, 0.68%, 8px);
+  border-radius: clamp(7px, 1.15%, 14px);
+  background: var(--ink);
+  box-shadow: 0 22px 46px -26px rgba(26, 25, 29, 0.6);
+}
+.laptop__screen img,
+.laptop__screen picture { border-radius: clamp(3px, 0.6%, 7px); display: block; }
+/* the camera notch: the lid's rim dipping a few pixels over the screen */
+.laptop__screen::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 11%;
+  height: calc(clamp(3px, 0.68%, 8px) + 5px);
+  border-radius: 0 0 5px 5px;
+  background: var(--ink);
+}
+.laptop__base {
+  width: 109%;
+  height: clamp(9px, 1.15vw, 15px);
+  border-radius: 0 0 10px 10px;
+  background: var(--ink);
+  box-shadow:
+    inset 0 1.5px 0 color-mix(in srgb, var(--paper) 30%, var(--ink)),
+    0 12px 22px -14px rgba(26, 25, 29, 0.6);
+}
+.laptop__base::after {
+  content: "";
+  display: block;
+  width: 11%;
+  height: 32%;
+  margin-inline: auto;
+  border-radius: 0 0 4px 4px;
+  background: color-mix(in srgb, var(--paper) 22%, var(--ink));
+}
+
+/* --- iPhone: a light-metal edge outside a thin ink bezel, one continuous
+   corner. The screen radius is the body radius less the rim, so the two
+   curves stay concentric the way they are on the device. */
+.iphone {
+  position: relative;
+  padding: clamp(1px, 0.95%, 3px);
+  border: 1px solid color-mix(in srgb, var(--paper) 46%, #8b8880);
+  border-radius: 13.5%/6.2%;
+  background: var(--ink);
+  box-shadow: 0 22px 40px -20px rgba(26, 25, 29, 0.5);
+}
+.iphone img { border-radius: 12.4%/5.85%; }
+.iphone__island {
+  position: absolute;
+  top: 2.3%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 29%;
+  aspect-ratio: 3.9;
+  border-radius: 999px;
+  background: var(--ink);
+}
+
+/* --- a cropped region of a window: hairline, radius, shadow, no chrome --- */
+.shot--plain img {
   border: 1px solid var(--hairline-strong);
   border-radius: 10px;
   box-shadow: 0 16px 34px -22px rgba(26, 25, 29, 0.4);
-  background: var(--paper);
 }
+
+/* --- something that already has its own shape (the menu-bar popover) --- */
+.shot--float img {
+  border-radius: 14px;
+  box-shadow: 0 20px 44px -24px rgba(0, 0, 0, 0.7);
+}
+
 .phones {
   display: flex;
   gap: clamp(0.5rem, 1.4vw, 0.9rem);
   align-items: flex-start;
 }
 .phones .shot { flex: 1 1 0; min-width: 0; }
-.phones .shot img { border-radius: 12px; }
+
+/* =====================================================================
+   Source tags — three pills pinned to real events on the day grid, so the
+   "one timeline" claim is visible instead of asserted. Anchored in
+   percentages of the image, so they track it at every width.
+   ===================================================================== */
+.tagmap { position: relative; }
+.srctag {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+.srctag__lead {
+  width: clamp(14px, 2.4vw, 34px);
+  height: 1px;
+  background: var(--ink);
+  opacity: 0.42;
+  flex: none;
+}
+.srctag__lead::before {
+  content: "";
+  display: block;
+  width: 5px;
+  height: 5px;
+  margin: -2px 0 0 -2px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+.srctag__pill {
+  font-family: var(--sans);
+  font-size: clamp(9px, 0.85vw, 11px);
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.5em 0.66em;
+  border-radius: 7px;
+  background: var(--paper);
+  border: 1px solid var(--hairline-strong);
+  box-shadow: 0 3px 10px -4px rgba(26, 25, 29, 0.45);
+}
+.srctag__pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c, var(--ink));
+  flex: none;
+}
 
 /* =====================================================================
    Section rules
@@ -333,24 +461,291 @@ h1, h2, .display {
 }
 .feature__figure { min-width: 0; }
 
-/* A screenshot boxed beside a paragraph reads like a screenshot. Each one runs
-   off the page edge instead, squared where it leaves — deliberate framing, and
-   the extra width is what makes the app's own type legible. */
+/* A window boxed beside a paragraph reads like a pasted screenshot. Each one
+   runs out past the text column all the way to the viewport edge on its own
+   side instead — the extra width is what makes the app's own type legible.
+   The 16px held back is the scrollbar, so the bleed never starts a sideways
+   scroll of the page. */
 @media (min-width: 861px) {
+  .feature__inner { --bleed: calc(var(--gutter) + max(0px, (100vw - var(--wrap)) / 2 - 16px)); }
   .feature__inner--figright .feature__figure { margin-right: calc(-1 * var(--bleed)); }
   .feature__inner--figleft .feature__figure { margin-left: calc(-1 * var(--bleed)); }
-  .feature__inner--figright .feature__figure img {
-    border-right: 0;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-  }
-  .feature__inner--figleft .feature__figure img {
-    border-left: 0;
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-  }
-  /* the phone row keeps its card edges — it is three objects, not one plane */
-  .feature__inner .phones img { border: 1px solid var(--hairline-strong); border-radius: 12px; }
+  /* the phone row keeps its own edges — three objects, not one plane, so it
+     stays inside the column instead of running off the page */
+  .feature__inner--figleft .phones { margin-left: 0; }
+  .feature__inner--figright .phones { margin-right: 0; }
+}
+
+/* =====================================================================
+   Capture demo — the sentence sorts itself
+   The page's centrepiece. A grained paper stage holds the capture box; the
+   sentence types itself, a reading sweep lights the tokens Atlas found, and
+   those tokens fly out of the sentence into three filed cards. Every state
+   is a `data-state` on the stage and every animated rule sits under `.anim`,
+   so with JS off or motion off the section renders as the finished result.
+   ===================================================================== */
+.capture { padding: clamp(2.4rem, 5vw, 4rem) 0 clamp(2rem, 4vw, 3rem); }
+.capture__sticky { display: flex; align-items: center; }
+.capture__head { text-align: center; margin: 0 auto clamp(1.5rem, 3vw, 2.4rem); }
+.capture__head .kicker { justify-content: center; }
+.capture__title {
+  font-size: clamp(1.9rem, 4vw, 3rem);
+  max-width: 20ch;
+  margin: 0 auto 0.85rem;
+}
+.capture__body { color: var(--muted); max-width: 46ch; margin-inline: auto; font-size: 1.04rem; }
+.capture__replay {
+  display: block;
+  margin: 1.2rem auto 0;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--clay-text);
+  border-bottom: 1px solid currentColor;
+  line-height: 1.5;
+}
+.capture__replay:hover { color: var(--ink); }
+
+/* --- the stage: paper, hairline, and a little grain of its own -------- */
+.cap-stage {
+  position: relative;
+  max-width: 900px;
+  margin-inline: auto;
+  padding: clamp(1rem, 2.4vw, 1.7rem);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 22px;
+  background: linear-gradient(180deg, #fff, var(--paper) 62%);
+  box-shadow: 0 34px 64px -44px rgba(26, 25, 29, 0.6);
+}
+.cap-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 140px 140px;
+}
+
+/* the capture box, in the app's paper-and-hairline style */
+.cap-card {
+  position: relative;
+  overflow: hidden;
+  background: var(--paper);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 16px;
+  padding: 1rem 1.2rem 1.15rem;
+}
+.cap-card__label {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted);
+  margin-bottom: 0.55rem;
+}
+.cap-card__line {
+  font-size: clamp(1.05rem, 2.1vw, 1.45rem);
+  line-height: 1.55;
+  min-height: 3.1em;
+}
+.cap-card__caret {
+  display: none;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.18em;
+  background: var(--clay);
+}
+
+/* the words Atlas found, lit in place before they leave the sentence */
+.cap-tok {
+  border-radius: 7px;
+  padding: 0.08em 0.2em;
+  margin: 0 -0.2em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  background: color-mix(in srgb, var(--c) 20%, transparent);
+  box-shadow: inset 0 -0.13em 0 color-mix(in srgb, var(--c) 60%, transparent);
+  color: color-mix(in srgb, var(--c) 55%, var(--ink));
+}
+
+/* the reading pass */
+.cap-sweep {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(100deg, transparent 42%, var(--clay-wash-strong) 50%, transparent 58%);
+  background-size: 260% 100%;
+  background-position: 130% 0;
+}
+
+/* --- the three filed cards ------------------------------------------- */
+.cap-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+.cap-out {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  padding: 0.75rem 0.85rem;
+  min-height: 5.4em;
+}
+.cap-out__bar {
+  flex: none;
+  width: 3px;
+  align-self: stretch;
+  min-height: 2.4em;
+  border-radius: 2px;
+  background: var(--c, var(--ink));
+}
+.cap-out__title { font-weight: 700; font-size: 0.96rem; line-height: 1.35; }
+.cap-out__chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
+[data-land] { transition: opacity 0.28s var(--ease); }
+.chip {
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.42em 0.6em;
+  border-radius: 7px;
+  background: var(--ink-wash);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.chip--class {
+  background: color-mix(in srgb, var(--c) 24%, var(--paper));
+  color: color-mix(in srgb, var(--c) 62%, var(--ink));
+}
+
+/* --- the confirmation ------------------------------------------------- */
+.cap-done {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+.cap-done__check {
+  display: grid;
+  place-items: center;
+  width: 19px; height: 19px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--clay);
+  color: var(--paper);
+}
+.cap-done__check svg { width: 12px; height: 12px; }
+
+/* --- the words in flight (JS builds these, one per token) ------------- */
+.cap-fliers { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.cap-flier {
+  position: absolute;
+  top: 0; left: 0;
+  white-space: nowrap;
+  border-radius: 7px;
+  padding: 0.08em 0.2em;
+  transform-origin: 0 0;
+  will-change: transform;
+  transition: transform 0.62s cubic-bezier(0.5, 0, 0.18, 1), opacity 0.62s var(--ease);
+}
+
+/* --- states (only under .anim; otherwise the end state stands) -------- */
+.anim .cap-card__caret { display: inline-block; }
+.anim [data-capture][data-state="typing"] .cap-card__caret { animation: cap-blink 1s steps(1) infinite; }
+.anim [data-capture]:not([data-state="typing"]) .cap-card__caret { display: none; }
+@keyframes cap-blink { 50% { opacity: 0; } }
+
+/* unlit until the reading pass reaches them */
+.anim .cap-tok {
+  background: transparent;
+  box-shadow: inset 0 -0.13em 0 transparent;
+  color: inherit;
+  transition: background-color 0.3s var(--ease), box-shadow 0.3s var(--ease), color 0.3s var(--ease), opacity 0.3s var(--ease);
+}
+.anim .cap-tok.is-lit {
+  background: color-mix(in srgb, var(--c) 20%, transparent);
+  box-shadow: inset 0 -0.13em 0 color-mix(in srgb, var(--c) 60%, transparent);
+  color: color-mix(in srgb, var(--c) 55%, var(--ink));
+}
+.anim .cap-tok.is-gone { opacity: 0.16; }
+
+.anim [data-capture][data-state="reading"] .cap-sweep {
+  opacity: 1;
+  animation: cap-sweep 1.15s var(--ease) forwards;
+}
+@keyframes cap-sweep { to { background-position: -70% 0; } }
+
+/* Before they fill, the three cards wait as empty slots — the space is
+   already spoken for, so nothing jumps when the words land in it. */
+.anim .cap-out {
+  border-style: dashed;
+  background: transparent;
+  transition: background-color 0.45s var(--ease), border-color 0.45s var(--ease);
+}
+.anim .cap-out > * {
+  opacity: 0;
+  transform: translateY(18px) scale(0.97);
+  transition: opacity 0.45s var(--ease), transform 0.45s var(--ease);
+  transition-delay: calc(var(--i) * 0.09s);
+}
+.anim [data-capture]:not([data-state="idle"]):not([data-state="typing"]):not([data-state="reading"]) .cap-out {
+  border-style: solid;
+  background: var(--paper);
+}
+.anim [data-capture]:not([data-state="idle"]):not([data-state="typing"]):not([data-state="reading"]) .cap-out > * {
+  opacity: 1;
+  transform: none;
+}
+
+.anim .cap-done {
+  opacity: 0;
+  transform: translateY(7px);
+  transition: opacity 0.4s var(--ease), transform 0.4s var(--ease);
+}
+.anim [data-capture][data-state="done"] .cap-done,
+.anim [data-capture][data-state="fading"] .cap-done { opacity: 1; transform: none; }
+
+/* the reset between loops: everything dips out, then the sentence starts over */
+.anim [data-capture][data-state="fading"] .cap-card,
+.anim [data-capture][data-state="fading"] .cap-cards,
+.anim [data-capture][data-state="fading"] .cap-done {
+  opacity: 0;
+  transition: opacity 0.5s var(--ease);
+}
+
+@media (max-width: 760px) {
+  .cap-cards { grid-template-columns: 1fr; }
+  .cap-out__title { font-size: 0.92rem; }
+}
+
+/* One viewport of scroll with the stage pinned — desktop only, where the
+   stage is comfortably shorter than the window. */
+@media (min-width: 861px) {
+  .capture__track { min-height: 195vh; }
+  .capture__sticky { position: sticky; top: 0; min-height: 100vh; }
+}
+
+/* =====================================================================
+   And from your phone — the three iPhone screens under the demo
+   ===================================================================== */
+.phones-band { padding: clamp(1.4rem, 3vw, 2.4rem) 0 clamp(2.4rem, 4vw, 3.4rem); }
+.phones-band__title {
+  font-family: var(--serif);
+  font-weight: 520;
+  letter-spacing: -0.021em;
+  font-size: clamp(1.25rem, 2vw, 1.6rem);
+  margin-bottom: 1.4rem;
+  max-width: 26ch;
 }
 
 /* =====================================================================
@@ -359,24 +754,62 @@ h1, h2, .display {
 .band {
   background: var(--ink);
   color: var(--paper);
-  padding: clamp(3rem, 6vw, 4.5rem) 0;
-  margin-top: clamp(3.2rem, 7vw, 6rem);
+  padding: clamp(2.8rem, 5vw, 4rem) 0;
+  margin-top: clamp(2.6rem, 5vw, 4.4rem);
 }
 .band__inner {
   display: grid;
-  grid-template-columns: minmax(0, 230px) minmax(0, 1fr);
-  gap: clamp(2rem, 6vw, 5rem);
+  grid-template-columns: minmax(0, 215px) minmax(0, 152px) minmax(0, 1fr);
+  gap: clamp(1.1rem, 2.6vw, 2.4rem);
   align-items: center;
 }
-.band__figure img {
-  border-color: rgba(251, 250, 247, 0.16);
-  box-shadow: 0 20px 44px -24px rgba(0, 0, 0, 0.7);
-}
+.band__figure { position: relative; }
+.band__figure img { box-shadow: 0 20px 44px -20px rgba(0, 0, 0, 0.75); }
 .band .kicker { color: rgba(251, 250, 247, 0.6); }
 .band__title { font-size: clamp(1.7rem, 3vw, 2.5rem); max-width: 16ch; margin-bottom: 0.8rem; }
 .band__body { color: rgba(251, 250, 247, 0.66); max-width: 44ch; font-size: 1.04rem; }
-@media (max-width: 700px) {
-  .band__inner { grid-template-columns: minmax(0, 150px) minmax(0, 1fr); gap: 1.5rem; }
+
+/* --- the two things the popover is actually for ---------------------- */
+.band__keys {
+  margin-top: 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  color: rgba(251, 250, 247, 0.72);
+}
+.keycaps { display: inline-flex; gap: 0.3rem; flex: none; }
+.keycaps kbd {
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.46em 0.6em;
+  border-radius: 7px;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+}
+/* the caption that points at today's list inside the popover */
+.band__point {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  color: rgba(251, 250, 247, 0.72);
+}
+.band__point::before {
+  content: "";
+  width: clamp(16px, 2.6vw, 40px);
+  height: 1px;
+  flex: none;
+  background: rgba(251, 250, 247, 0.4);
+}
+
+@media (max-width: 860px) {
+  .band__inner { grid-template-columns: 1fr; }
+  .band__point { max-width: 34ch; }
 }
 
 /* =====================================================================
@@ -408,52 +841,31 @@ h1, h2, .display {
 .why__body p:last-child { color: var(--muted); max-width: 56ch; }
 
 /* =====================================================================
-   Waitlist
+   Get Atlas (closing band)
    ===================================================================== */
-.waitlist { padding: clamp(3.2rem, 7vw, 5.5rem) 0; }
-.waitlist__inner { max-width: 640px; }
-.waitlist__title {
+.cta-band { padding: clamp(3.2rem, 7vw, 5.5rem) 0; }
+.cta-band__inner { max-width: 640px; }
+.cta-band__title {
   font-size: clamp(2rem, 4vw, 3.1rem);
   max-width: 18ch;
   margin-bottom: 0.7rem;
 }
-.waitlist__sub { color: var(--muted); max-width: 46ch; font-size: 1.06rem; }
-.wl-form { margin-top: 1.8rem; }
-.wl-form__row {
-  display: flex;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-}
-.wl-form input[type="email"] {
-  flex: 1 1 240px;
-  min-width: 0;
-  background: var(--paper);
-  border: 1px solid var(--hairline-strong);
-  border-radius: 11px;
-  padding: 0.72em 1em;
-  font-size: 1rem;
-  transition: border-color 0.15s var(--ease);
-}
-.wl-form input[type="email"]::placeholder { color: color-mix(in srgb, var(--muted) 75%, transparent); }
-.wl-form input[type="email"]:focus { border-color: var(--ink); outline: none; }
-.wl-form input[type="email"]:focus-visible { outline: 2px solid var(--clay-text); outline-offset: 2px; }
-.wl-form .btn { flex: 0 0 auto; }
-.wl-form__reassure { margin-top: 0.85rem; font-size: 0.88rem; color: var(--muted); }
-.wl-form__status {
+.cta-band__sub { color: var(--muted); max-width: 46ch; font-size: 1.06rem; }
+
+/* Form status line, shared by any form on the site. */
+.form__status {
   margin-top: 0.9rem;
   font-size: 0.98rem;
   font-weight: 700;
   min-height: 1.4em;
 }
-.wl-form__status[data-kind="error"] { color: var(--clay-text); }
-.wl-form__status[data-kind="success"] {
+.form__status[data-kind="error"] { color: var(--clay-text); }
+.form__status[data-kind="success"] {
   color: var(--ink);
   font-family: var(--serif);
   font-weight: 500;
   font-size: 1.25rem;
 }
-.wl-form[data-done="true"] .wl-form__row,
-.wl-form[data-done="true"] .wl-form__reassure { display: none; }
 
 /* =====================================================================
    App teasers
@@ -542,7 +954,7 @@ h1, h2, .display {
   margin-bottom: 2.5rem;
 }
 
-/* Wide screens: masthead parks in a sticky left rail, prose takes the rest. */
+/* Wide screens: masthead sits in a sticky left rail, prose takes the rest. */
 @media (min-width: 1000px) {
   .legal__inner {
     display: grid;
@@ -708,11 +1120,47 @@ h1, h2, .display {
   .site-foot__meta { text-align: left; }
 }
 
+/* ---------------------------------------------------------------------
+   Phone layout (≤640): not the desktop page shrunk.
+   Every Mac shot swaps to a crop of the one region that carries the
+   message (see the <picture> sources in index.html), each crop runs nearly
+   edge to edge so the app's own type stays around 9-10px, and a whole
+   window never wears a laptop — a crop is not a screen.
+   --------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .hero .shot--hero,
+  .feature__figure { margin-inline: calc(12px - var(--gutter)); }
+
+  /* the same two machines, smaller: the Mac narrows and the phone still
+     stands in front of it, so the hero keeps its composition on a phone */
+  .shot--hero { margin-bottom: 7.5%; }
+  .shot--hero .laptop { width: 79%; }
+  .shot--hero .shot__phone { width: 26.5%; right: 0; bottom: -10%; }
+
+  /* the day grid is a narrower crop on a phone, so the tags re-anchor and
+     the third one steps out rather than crowd the two that matter */
+  .srctag { left: var(--xm, var(--x)); }
+  .srctag--apple { display: none; }
+
+  /* three phones side by side are three unreadable phones. One nearly full
+     width, the next peeking, swiped through — scrolling inside the strip,
+     never the page. */
+  .phones {
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: 0.75rem;
+    margin-inline: calc(-1 * var(--gutter));
+    padding: 0 var(--gutter) 0.4rem;
+    scrollbar-width: none;
+  }
+  .phones::-webkit-scrollbar { display: none; }
+  .phones .shot { flex: 0 0 76%; scroll-snap-align: center; }
+}
+
 @media (max-width: 560px) {
   .site-nav a:not(.site-nav__cta) { display: none; }
   .hero__title { font-size: clamp(2.4rem, 11vw, 3.2rem); }
-  .wl-form__row { flex-direction: column; align-items: stretch; }
-  .wl-form .btn { width: 100%; }
   .teasers__btns { flex-direction: column; }
   .app-btn { width: 100%; }
 }
@@ -729,9 +1177,7 @@ h1, h2, .display {
 }
 
 /* ---- support form (support.html) ------------------------------------
-   Stacked rows rather than the waitlist's single inline field: a subject, an
-   address and a body. Borrows the waitlist's field skin so both forms feel
-   like the same site.
+   Stacked rows: a subject, an address and a body.
    -------------------------------------------------------------------- */
 .support-form { margin: 1.6rem 0 2.6rem; }
 .support-form__row { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1.1rem; }

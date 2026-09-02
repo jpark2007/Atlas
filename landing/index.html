@@ -64,16 +64,25 @@
 
     <div class="wrap hero__stage">
       <figure class="shot shot--hero" data-reveal style="--d:.1s">
-        <img class="shot__img"
-             src="/assets/screens/hero-dashboard-1600.webp"
-             srcset="/assets/screens/hero-dashboard-1600.webp 1600w, /assets/screens/hero-dashboard-2400.webp 2400w"
-             sizes="(max-width: 1080px) 92vw, 1000px"
-             width="1600" height="1000"
-             alt="The Atlas dashboard on a Mac: a large clock, a banner listing three late assignments, today's focus list, and this month's calendar." />
-        <img class="shot__phone"
-             src="/assets/screens/phone-today-600.webp"
-             width="600" height="1301" loading="lazy"
-             alt="Atlas on iPhone showing today's classes and two late items." />
+        <div class="laptop">
+          <div class="laptop__screen">
+            <picture>
+              <source media="(max-width: 640px)" srcset="/assets/screens/hero-dashboard-m.webp" width="800" height="449" />
+              <img class="shot__img"
+                   src="/assets/screens/hero-dashboard-1600.webp"
+                   srcset="/assets/screens/hero-dashboard-1600.webp 1600w, /assets/screens/hero-dashboard-2400.webp 2400w"
+                   sizes="(max-width: 1080px) 92vw, 1050px"
+                   width="1600" height="1000"
+                   alt="The Atlas dashboard on a Mac: a large clock, a banner listing three late assignments, today's focus list, and this month's calendar." />
+            </picture>
+          </div>
+          <div class="laptop__base" aria-hidden="true"></div>
+        </div>
+        <div class="iphone shot__phone">
+          <span class="iphone__island" aria-hidden="true"></span>
+          <img src="/assets/screens/phone-today-600.webp" width="600" height="1301" loading="lazy"
+               alt="Atlas on iPhone showing today's classes and two late items." />
+        </div>
       </figure>
     </div>
   </section>
@@ -86,15 +95,30 @@
       <div class="wrap feature__inner feature__inner--figright">
         <div class="feature__text" data-reveal>
           <p class="kicker">One timeline</p>
-          <h2 class="feature__title">Every calendar you already use, in one week.</h2>
+          <h2 class="feature__title">Every calendar you already use, in one day.</h2>
           <p class="feature__body">
             Apple Calendar, Google, and Canvas each hold part of your week.
-            Atlas shows all of them together, and Google edits sync both ways.
+            Atlas draws them on the same grid, and Google edits sync both ways.
           </p>
         </div>
-        <figure class="shot feature__figure" data-reveal style="--d:.08s">
-          <img src="/assets/screens/sources-1600.webp" width="1600" height="709" loading="lazy"
-               alt="Atlas settings listing four calendar sources: Apple Calendar, two Google accounts, Canvas, and Atlas itself." />
+        <figure class="shot shot--plain feature__figure tagmap" data-reveal style="--d:.08s">
+          <picture>
+            <source media="(max-width: 640px)" srcset="/assets/screens/timeline-day-m.webp" width="760" height="780" />
+            <img src="/assets/screens/timeline-day-1900.webp"
+                 srcset="/assets/screens/timeline-day-1200.webp 1200w, /assets/screens/timeline-day-1900.webp 1900w"
+                 sizes="(max-width: 860px) 94vw, 62vw"
+                 width="1900" height="966" loading="lazy"
+                 alt="A Wednesday in the Atlas day view: General Chemistry at 11, Calc I Life&amp;Soc Sci at 2 with the NOW marker across it, and the EMSOP Involvement Fair at 4 — labelled to show three calendar sources sharing one grid." />
+          </picture>
+          <span class="srctag srctag--canvas" style="--x:20%; --y:13.4%; --xm:34%" aria-hidden="true">
+            <i class="srctag__lead"></i><b class="srctag__pill" style="--c:#d97757">Canvas</b>
+          </span>
+          <span class="srctag srctag--apple" style="--x:20%; --y:48.6%" aria-hidden="true">
+            <i class="srctag__lead"></i><b class="srctag__pill" style="--c:#6c6a72">Apple Calendar</b>
+          </span>
+          <span class="srctag srctag--google" style="--x:23%; --y:72.5%; --xm:40%" aria-hidden="true">
+            <i class="srctag__lead"></i><b class="srctag__pill" style="--c:#4a6ea3">Google</b>
+          </span>
         </figure>
       </div>
     </section>
@@ -112,9 +136,12 @@
             an open hour and Atlas books the work session for you.
           </p>
         </div>
-        <figure class="shot feature__figure" data-reveal style="--d:.08s">
-          <img src="/assets/screens/day-tray-1600.webp" width="1600" height="955" loading="lazy"
-               alt="A day view in Atlas beside the Unscheduled tray, which holds three overdue items and two due this week." />
+        <figure class="shot shot--plain feature__figure" data-reveal style="--d:.08s">
+          <picture>
+            <source media="(max-width: 640px)" srcset="/assets/screens/day-tray-m.webp" width="700" height="932" />
+            <img src="/assets/screens/day-tray-1600.webp" width="1600" height="822" loading="lazy"
+                 alt="A day view in Atlas beside the Unscheduled tray, which reads &quot;Drag one onto the grid to plan a work session&quot; above three overdue items and two due this week." />
+          </picture>
         </figure>
       </div>
     </section>
@@ -132,52 +159,127 @@
             the PDF, then files every Canvas assignment underneath them.
           </p>
         </div>
-        <figure class="shot feature__figure" data-reveal style="--d:.08s">
-          <img src="/assets/screens/class-hub-1600.webp" width="1600" height="968" loading="lazy"
-               alt="A class page in Atlas showing the linked Canvas course, meeting times and rooms, grading percentages, and policies pulled from a scanned syllabus." />
+        <figure class="shot shot--plain feature__figure" data-reveal style="--d:.08s">
+          <picture>
+            <source media="(max-width: 640px)" srcset="/assets/screens/class-hub-m.webp" width="760" height="642" />
+            <img src="/assets/screens/class-hub-1600.webp" width="1600" height="861" loading="lazy"
+                 alt="A class page in Atlas showing the linked Canvas course, meeting times and rooms, grading percentages, and policies pulled from a scanned syllabus." />
+          </picture>
         </figure>
       </div>
     </section>
 
     <hr class="rule wrap-rule" data-reveal />
 
-    <!-- 4 · Phone -->
-    <section class="feature">
-      <div class="wrap feature__inner feature__inner--figleft">
-        <div class="feature__text" data-reveal>
-          <p class="kicker">Mac and iPhone</p>
-          <h2 class="feature__title">Catch it on your phone. Plan it on your Mac.</h2>
-          <p class="feature__body">
-            Type or say the thought while you walk to class. Atlas sorts it into
-            tasks and events, and it&rsquo;s waiting when you sit down.
-          </p>
-        </div>
-        <div class="feature__figure phones" data-reveal style="--d:.08s">
-          <figure class="shot"><img src="/assets/screens/phone-capture-600.webp" width="600" height="1301" loading="lazy"
-               alt="Atlas on iPhone confirming four items it sorted out of one note, each with a class and a due date." /></figure>
-          <figure class="shot"><img src="/assets/screens/phone-today-600.webp" width="600" height="1301" loading="lazy"
-               alt="Atlas on iPhone showing today's schedule with the current class marked NOW." /></figure>
-          <figure class="shot"><img src="/assets/screens/phone-tasks-600.webp" width="600" height="1301" loading="lazy"
-               alt="Atlas on iPhone listing tasks grouped by class and by personal space." /></figure>
+  </div>
+
+  <!-- ───────────────────── CAPTURE DEMO ─────────────────────
+       The page's centrepiece: one sentence types itself, Atlas reads it,
+       and the read tokens fly out into three filed cards. Every state is a
+       `data-state` on the stage; the markup is the finished result, so with
+       JS off or motion off the section stands as its own end state. -->
+  <section class="capture" id="capture">
+    <div class="capture__track">
+      <div class="capture__sticky">
+        <div class="wrap">
+          <header class="capture__head" data-reveal>
+            <p class="kicker">Capture</p>
+            <h2 class="capture__title">One sentence becomes three things in your week.</h2>
+            <p class="capture__body">
+              Type it the way you&rsquo;d say it. Atlas reads the class, the due
+              date, and the repeat, then files each piece where it belongs.
+            </p>
+          </header>
+
+          <div class="cap-stage" data-capture data-state="done" data-reveal style="--d:.08s">
+            <div class="cap-card">
+              <p class="cap-card__label">Quick Capture</p>
+              <p class="cap-card__line" data-cap-line><span class="cap-tok" style="--c:#ad8cd4">chem lab report</span> <span class="cap-tok" style="--c:#b04f2f">due friday</span>, <span class="cap-tok" style="--c:#76b791">gym tue and thu at 7</span>, <span class="cap-tok" style="--c:#76b791">call advisor about spring classes</span><span class="cap-card__caret" aria-hidden="true"></span></p>
+              <span class="cap-sweep" aria-hidden="true"></span>
+            </div>
+
+            <ul class="cap-cards">
+              <li class="cap-out" style="--c:#ad8cd4; --i:0">
+                <span class="cap-out__bar" aria-hidden="true"></span>
+                <div>
+                  <p class="cap-out__title" data-land>Chem lab report</p>
+                  <p class="cap-out__chips">
+                    <span class="chip chip--class">General Chemistry</span>
+                    <span class="chip" data-land>Due Fri</span>
+                  </p>
+                </div>
+              </li>
+              <li class="cap-out" style="--c:#76b791; --i:1">
+                <span class="cap-out__bar" aria-hidden="true"></span>
+                <div>
+                  <p class="cap-out__title" data-land>Gym</p>
+                  <p class="cap-out__chips">
+                    <span class="chip chip--class">Personal</span>
+                    <span class="chip">Repeats Tue &amp; Thu &middot; 7:00 AM</span>
+                  </p>
+                </div>
+              </li>
+              <li class="cap-out" style="--c:#76b791; --i:2">
+                <span class="cap-out__bar" aria-hidden="true"></span>
+                <div>
+                  <p class="cap-out__title" data-land>Call advisor about spring classes</p>
+                  <p class="cap-out__chips">
+                    <span class="chip chip--class">Personal</span>
+                    <span class="chip">To do</span>
+                  </p>
+                </div>
+              </li>
+            </ul>
+
+            <p class="cap-done">
+              <span class="cap-done__check" aria-hidden="true">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5 6.5 11.5 12.5 5" /></svg>
+              </span>
+              3 added to your week
+            </p>
+
+            <div class="cap-fliers" data-cap-fliers aria-hidden="true"></div>
+          </div>
+
+          <button class="capture__replay" type="button" data-capture-replay hidden>Replay</button>
         </div>
       </div>
-    </section>
+    </div>
+  </section>
 
-  </div>
+  <!-- ───────────────────── PHONE ROW ───────────────────── -->
+  <section class="phones-band">
+    <div class="wrap">
+      <h3 class="phones-band__title" data-reveal>And from your phone, on the walk back.</h3>
+      <div class="phones" data-reveal style="--d:.06s">
+        <figure class="shot iphone"><span class="iphone__island" aria-hidden="true"></span><img src="/assets/screens/phone-capture-600.webp" srcset="/assets/screens/phone-capture-600.webp 600w, /assets/screens/phone-capture-900.webp 900w" sizes="(max-width: 640px) 76vw, 22vw" width="600" height="1301" loading="lazy"
+             alt="Atlas on iPhone confirming four items it sorted out of one note, each with a class and a due date." /></figure>
+        <figure class="shot iphone"><span class="iphone__island" aria-hidden="true"></span><img src="/assets/screens/phone-today-600.webp" srcset="/assets/screens/phone-today-600.webp 600w, /assets/screens/phone-today-900.webp 900w" sizes="(max-width: 640px) 76vw, 22vw" width="600" height="1301" loading="lazy"
+             alt="Atlas on iPhone showing today's schedule with the current class marked NOW." /></figure>
+        <figure class="shot iphone"><span class="iphone__island" aria-hidden="true"></span><img src="/assets/screens/phone-tasks-600.webp" srcset="/assets/screens/phone-tasks-600.webp 600w, /assets/screens/phone-tasks-900.webp 900w" sizes="(max-width: 640px) 76vw, 22vw" width="600" height="1301" loading="lazy"
+             alt="Atlas on iPhone listing tasks grouped by class and by personal space." /></figure>
+      </div>
+    </div>
+  </section>
 
   <!-- ───────────────────── MENU BAR ───────────────────── -->
   <section class="band">
     <div class="wrap band__inner">
-      <figure class="shot band__figure" data-reveal>
-        <img src="/assets/screens/menubar-660.webp" width="660" height="992" loading="lazy"
+      <figure class="shot shot--float band__figure" data-reveal>
+        <img src="/assets/screens/menubar-660.webp" width="660" height="981" loading="lazy"
              alt="The Atlas menu-bar popover: this month's calendar above today's four events, with Quick Capture underneath." />
       </figure>
+      <p class="band__point" data-reveal style="--d:.04s">Every calendar from every space, in one list</p>
       <div class="band__text" data-reveal style="--d:.08s">
         <p class="kicker">Menu bar</p>
-        <h2 class="band__title">Your day, one click from anywhere.</h2>
+        <h2 class="band__title">Check the whole day without opening the app.</h2>
         <p class="band__body">
           The month and today&rsquo;s list sit behind the menu-bar icon, with
-          Quick Capture right there. The app stays closed.
+          Quick Capture right there.
+        </p>
+        <p class="band__keys">
+          <span class="keycaps"><kbd>&#8997;</kbd><kbd>Space</kbd></span>
+          Quick Capture from any app
         </p>
       </div>
     </div>
@@ -188,8 +290,8 @@
     <div class="wrap why__inner">
       <div class="why__aside" data-reveal>
         <p class="kicker">Why we built it</p>
-        <p class="why__sig">Andrew Khalil<br />&amp; Jonah Park</p>
-        <p class="why__role">Two students, one app</p>
+        <p class="why__sig">Two students</p>
+        <p class="why__role">one app</p>
       </div>
       <div class="why__body" data-reveal>
         <p class="why__lead">
@@ -207,11 +309,11 @@
   <hr class="rule wrap-rule" data-reveal />
 
   <!-- ───────────────────── DOWNLOAD ───────────────────── -->
-  <section class="waitlist" id="download">
-    <div class="wrap waitlist__inner" data-reveal>
+  <section class="cta-band" id="download">
+    <div class="wrap cta-band__inner" data-reveal>
       <p class="kicker">Get Atlas</p>
-      <h2 class="waitlist__title">Atlas is out on Mac, iPhone, and iPad.</h2>
-      <p class="waitlist__sub">
+      <h2 class="cta-band__title">Atlas is out on Mac, iPhone, and iPad.</h2>
+      <p class="cta-band__sub">
         No invite, no waiting. Download the Mac app, or get it on the App Store
         for iPhone and iPad, and start today.
       </p>
@@ -245,10 +347,10 @@
   <div class="wrap site-foot__inner">
     <div class="site-foot__brand">
       <span class="brand__word">Atlas</span><span class="brand__suffix">Life Manager</span>
-      <p>A life manager for Mac, iPhone, and iPad. Built in the open.</p>
+      <p>A planner for Mac, iPhone, and iPad.</p>
     </div>
     <div class="site-foot__meta">
-      <p>Made by Andrew Khalil and Jonah Park.</p>
+      <p>Two students, one app.</p>
       <p><a href="mailto:drewkhalil@gmail.com">drewkhalil@gmail.com</a></p>
       <p class="site-foot__links">
         <a href="/support.html">Support</a>

@@ -2437,7 +2437,7 @@ function renderArticle() {
     `<section class="bottom-line">
       <h2>The bottom line</h2>
       ${a.bottom.map(p => `<p>${esc(p)}</p>`).join("")}
-      <a class="prose__link" href="${esc(c.url)}" target="_blank" rel="noopener nofollow">${esc(c.name)}’s own site →</a>
+      <a class="article__link" href="${esc(c.url)}" target="_blank" rel="noopener nofollow">${esc(c.name)}’s own site →</a>
     </section>`;
 
   $("#faq-h").textContent = `Atlas vs. ${c.name}: frequently asked questions`;
@@ -2490,6 +2490,7 @@ function renderSources() {
 function renderTitle() {
   const c = primary();
   document.title = `Atlas vs. ${c.name}: which should you use?`;
+  $("#updated").textContent = `Updated ${CHECKED_ON}`;
   const d = document.querySelector('meta[name="description"]');
   if (d) d.setAttribute("content",
     `A side-by-side look at Atlas and ${c.name} — calendars, capture, school, notes, platforms and price — with an at-a-glance table and an FAQ. Updated ${CHECKED_ON}.`);
