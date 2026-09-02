@@ -76,7 +76,15 @@ Legend: **Expect** = what correct looks like. **Bug if** = what to write down.
 - [ ] Week rail: overdue pinned at the top; due-tonight pills sit at the bottom of the day column
   and same-time dues merge into one pill. **Bug if:** pills float mid-column or overlap.
 
-## G. Calendar — Jonah's repeating events (Mac)
+## G. Calendar (Mac)
+
+- [ ] **Month view with many Canvas assignments** (user report ssarkar, 0.11.0: right-side list
+  of Canvas assignments, then the whole window froze, had to quit). Click Month on a space with
+  all your classes' Canvas tasks. Scroll, click a day, open a task, switch back to Week.
+  **Expect:** responsive throughout. **Bug if:** any beachball or a non-scrolling right list.
+  This must be clean before 0.12.0 ships, because that user gets the update automatically.
+
+Jonah's repeating events:
 
 - [ ] New event → **Repeat** picker (daily/weekly/… until date).
 - [ ] Create "yoga every Tue until Dec 12"; every Tuesday shows a block with a series badge.
