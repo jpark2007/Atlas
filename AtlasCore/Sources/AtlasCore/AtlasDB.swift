@@ -631,6 +631,12 @@ public struct EventRow: Codable {
     /// takes precedence over `canvasUid`/`googleEventId`. Optional for the same
     /// migration-window reason; null falls back to the legacy `canvasUid` rule.
     public var feedType: String?
+    /// Repeating-series id (migration 0046) — shared by every materialized instance,
+    /// null for a one-off. Round-tripped in BOTH directions (unlike the feed columns):
+    /// a client edit to one session must never orphan it from its series.
+    public var seriesId: UUID?
+    /// The series' RRULE fragment (migration 0046), duplicated onto each instance.
+    public var recurrenceRule: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
@@ -652,6 +658,8 @@ public struct EventRow: Codable {
         case googleConnectionId = "google_connection_id"
         case feedId    = "feed_id"
         case feedType  = "feed_type"
+        case seriesId  = "series_id"
+        case recurrenceRule = "recurrence_rule"
     }
 
     public init(domain e: CalendarEvent) {
@@ -676,6 +684,8 @@ public struct EventRow: Codable {
         // Feed columns are decode-only (feed events are read-only, never upserted back).
         self.feedId = nil
         self.feedType = nil
+        self.seriesId = e.seriesID
+        self.recurrenceRule = e.recurrenceRule
     }
 
     /// - Parameter feedNames: `calendar_feeds.id → display_name`, used to label a generic
@@ -728,6 +738,8 @@ public struct EventRow: Codable {
         event.spaceID = spaceId
         event.canvasCourse = canvasCourse
         event.googleConnectionId = googleConnectionId
+        event.seriesID = seriesId
+        event.recurrenceRule = recurrenceRule
         return event
     }
 }
@@ -1336,26 +1348,49 @@ public final class AtlasDB {
 
     /// GET `<restBase>/<table>?select=*&order=<column>` and decode the JSON array.
     /// Pass `order` to ensure stable, deterministic row ordering across launches.
+    /// Rows fetched per request by `getAll`. PostgREST clamps every response to the
+    /// server's `db-max-rows` (1000 on Supabase) whether or not a range was asked for, so
+    /// an unpaged `select=*` silently returns the first 1000 rows and no error — the
+    /// client just stops seeing data it owns. A page size at the cap keeps the common
+    /// case at exactly one request.
+    private static let pageSize = 1000
+
     private func getAll<T: Decodable>(_ table: String, order: String? = nil) async throws -> [T] {
         let sess = try await requireSession()
-        var comps = URLComponents(
-            url: SupabaseConfig.restBase.appendingPathComponent(table),
-            resolvingAgainstBaseURL: false)!
-        var queryItems = [URLQueryItem(name: "select", value: "*")]
-        if let order = order {
-            queryItems.append(URLQueryItem(name: "order", value: order))
+        // Offset paging is only correct over a TOTAL ordering: two rows sharing a
+        // timestamp could otherwise swap between pages and be returned twice or not at
+        // all. `id` breaks every tie.
+        let ordering = order.map { "\($0),id" } ?? "id"
+
+        var all: [T] = []
+        var offset = 0
+        while true {
+            var comps = URLComponents(
+                url: SupabaseConfig.restBase.appendingPathComponent(table),
+                resolvingAgainstBaseURL: false)!
+            comps.queryItems = [
+                URLQueryItem(name: "select", value: "*"),
+                URLQueryItem(name: "order", value: ordering),
+                URLQueryItem(name: "limit", value: String(Self.pageSize)),
+                URLQueryItem(name: "offset", value: String(offset)),
+            ]
+
+            var req = URLRequest(url: comps.url!)
+            req.httpMethod = "GET"
+            req.setValue(SupabaseConfig.anonKey,               forHTTPHeaderField: "apikey")
+            req.setValue("application/json",                   forHTTPHeaderField: "Accept")
+            req.setValue("Bearer \(sess.accessToken)",         forHTTPHeaderField: "Authorization")
+
+            let (data, response) = try await URLSession.shared.data(for: req)
+            try validate(response: response, data: data)
+            let page: [T] = try isoDecoder.decode([T].self, from: data)
+            all.append(contentsOf: page)
+            // A short page is the last one. An exactly-full page may or may not be — ask
+            // again; the follow-up comes back empty and ends the loop.
+            if page.count < Self.pageSize { break }
+            offset += page.count
         }
-        comps.queryItems = queryItems
-
-        var req = URLRequest(url: comps.url!)
-        req.httpMethod = "GET"
-        req.setValue(SupabaseConfig.anonKey,               forHTTPHeaderField: "apikey")
-        req.setValue("application/json",                   forHTTPHeaderField: "Accept")
-        req.setValue("Bearer \(sess.accessToken)",         forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await URLSession.shared.data(for: req)
-        try validate(response: response, data: data)
-        return try isoDecoder.decode([T].self, from: data)
+        return all
     }
 
     /// GET `<restBase>/<table>?select=<columns>` and decode the JSON array. Used
@@ -2016,6 +2051,59 @@ public final class AtlasDB {
         let body = try isoEncoder.encode(row)
         try await send(method: "POST", table: "events",
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
+    }
+
+    /// Upserts many events in ONE request. Expanding a repeating series produces dozens
+    /// of rows at once; sending them singly would be N round-trips and N chances for a
+    /// partial write. No-op on empty.
+    ///
+    /// Swift omits nil optionals entirely, so rows differing in WHICH optionals are set
+    /// encode to different key sets — and PostgREST rejects a bulk body whose objects
+    /// don't all match ("All object keys must match"), failing the whole batch. That is
+    /// reachable in normal use: a series where only some sessions have been mirrored to
+    /// Google carries `google_event_id` on those rows alone. So group by key set and send
+    /// one homogeneous request per group; the ordinary case is a single group.
+    public func upsertEvents(_ events: [CalendarEvent]) async throws {
+        guard !events.isEmpty else { return }
+        let sess = try await requireSession()
+        guard let userId = UUID(uuidString: sess.user.id) else {
+            throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
+        }
+        let rows = events.map { e -> EventRow in
+            var row = EventRow(domain: e)
+            row.userId = userId
+            return row
+        }
+        for group in Dictionary(grouping: rows, by: Self.encodedKeys).values {
+            let body = try isoEncoder.encode(group)
+            try await send(method: "POST", table: "events",
+                           query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
+        }
+    }
+
+    /// The JSON keys a row actually encodes to, joined — the grouping key that keeps a
+    /// bulk upsert body homogeneous. Falls back to a constant on an encoding failure so a
+    /// hiccup degrades to one batch rather than dropping rows.
+    private static func encodedKeys(_ row: EventRow) -> String {
+        guard let data = try? JSONEncoder().encode(row),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return "*"
+        }
+        return object.keys.sorted().joined(separator: ",")
+    }
+
+    /// Deletes every event in a repeating series, optionally only those starting at or
+    /// after `from` ("this and following"). One scoped DELETE rather than N — RLS already
+    /// confines it to the caller's rows.
+    public func deleteEventSeries(seriesID: UUID, from: Date? = nil) async throws {
+        let sess = try await requireSession()
+        var query = [URLQueryItem(name: "series_id", value: "eq.\(seriesID.uuidString)")]
+        if let from {
+            query.append(URLQueryItem(name: "start_at",
+                                      value: "gte.\(Self.isoFormatter.string(from: from))"))
+        }
+        try await send(method: "DELETE", table: "events", query: query,
+                       extraHeaders: ["Prefer": "return=minimal"], sess: sess)
     }
 
     public func deleteEvent(id: UUID) async throws {

@@ -40,6 +40,19 @@ final class MobileStore: ObservableObject {
     /// True while a `refresh()` is in flight so overlapping foreground/pull triggers coalesce.
     private var isRefreshing = false
 
+    /// Set when a `refresh()` was turned away (or its result discarded) because a write
+    /// was in flight. Drained by `persist` when the last mutation settles — without it a
+    /// foreground refresh that collided with a tap was dropped for the whole session, and
+    /// the phone kept showing pre-background data with no spinner and no error.
+    private var refreshDeferred = false
+
+    /// Consecutive failed `refresh()` attempts, to bound the auto-retry so a long offline
+    /// stretch doesn't spin. Reset on any successful load.
+    private var refreshFailures = 0
+
+    /// Foreground poll, mirroring the Mac's 5-minute `startBackgroundRefreshTimer`.
+    private var pollTask: Task<Void, Never>?
+
     private let sessionStore = SessionStore()
     private let auth = SupabaseAuth()
 
@@ -212,25 +225,47 @@ final class MobileStore: ObservableObject {
     /// result instead of clobbering the local write (`mutationsInFlight` re-checked
     /// after every `loadAll()`). On a 401, try one token refresh + retry; else sign out.
     func refresh() async {
-        guard session != nil, mutationsInFlight == 0, !isRefreshing else { return }
+        guard session != nil, !isRefreshing else { return }
+        // A write is mid-flight — don't clobber it, but remember to come back.
+        guard mutationsInFlight == 0 else { refreshDeferred = true; return }
         isRefreshing = true
         loading = true
         defer { isRefreshing = false; loading = false }
         do {
             let loaded = recolored(try await db.loadAll())
-            if mutationsInFlight == 0 { snapshot = loaded }
+            if mutationsInFlight == 0 {
+                snapshot = loaded
+                refreshFailures = 0
+            } else {
+                refreshDeferred = true   // a write started mid-load; re-pull once it lands
+            }
         } catch AtlasDBError.requestFailed(401, _), AtlasDBError.notAuthenticated {
             if let fresh = await sessionStore.forceRefresh() {
                 session = fresh
-                if let reloaded = try? await db.loadAll(), mutationsInFlight == 0 {
-                    snapshot = recolored(reloaded)
+                if let reloaded = try? await db.loadAll() {
+                    if mutationsInFlight == 0 {
+                        snapshot = recolored(reloaded)
+                        refreshFailures = 0
+                    } else {
+                        refreshDeferred = true
+                    }
                 }
             } else {
                 signOut()
                 authNotice = "Your session expired — please sign in again."
             }
         } catch {
-            // Keep the existing snapshot; a later refresh retries.
+            // Keep the existing snapshot, but RETRY: nothing else re-pulls until the user
+            // pulls down or re-foregrounds, so one flaky load would otherwise leave the
+            // phone quietly stale — looking fully loaded — for the rest of the session.
+            refreshFailures += 1
+            if refreshFailures <= 3 {
+                let delay = UInt64(refreshFailures) * 5_000_000_000   // 5s, 10s, 15s
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: delay)
+                    await self?.refresh()
+                }
+            }
         }
         // Refresh the connect-source onboarding tip's gate (best-effort, fire-and-forget).
         Task { await refreshConnectionTipState() }
@@ -337,6 +372,17 @@ final class MobileStore: ObservableObject {
                       rollback: { self.snapshot.events.removeAll { $0.id == e.id } })
     }
 
+    /// Appends many events at once — the expansion of one repeating series. One batched
+    /// upsert instead of N, and one rollback that removes them all, so a failed write
+    /// can't leave half a series on the calendar.
+    func addEvents(_ events: [CalendarEvent]) async {
+        guard !events.isEmpty else { return }
+        let ids = Set(events.map(\.id))
+        snapshot.events.append(contentsOf: events)
+        await persist({ try await self.db.upsertEvents(events) },
+                      rollback: { self.snapshot.events.removeAll { ids.contains($0.id) } })
+    }
+
     func updateEvent(_ e: CalendarEvent) async {
         let prior = snapshot.events.first { $0.id == e.id }
         if let i = snapshot.events.firstIndex(where: { $0.id == e.id }) {
@@ -386,7 +432,16 @@ final class MobileStore: ObservableObject {
     /// publish a calm `lastError`. Counted in `mutationsInFlight` so `refresh()` waits.
     private func persist(_ op: @escaping () async throws -> Void, rollback: () -> Void) async {
         mutationsInFlight += 1
-        defer { mutationsInFlight -= 1 }
+        defer {
+            mutationsInFlight -= 1
+            // Last write settled and a refresh was turned away while it ran — run it now,
+            // or the incoming changes it would have brought stay invisible until the next
+            // foreground transition.
+            if mutationsInFlight == 0 && refreshDeferred {
+                refreshDeferred = false
+                Task { [weak self] in await self?.refresh() }
+            }
+        }
         do {
             try await op()
         } catch AtlasDBError.requestFailed(401, _), AtlasDBError.notAuthenticated {
@@ -400,6 +455,31 @@ final class MobileStore: ObservableObject {
             rollback()
             lastError = "Couldn’t save that change — we’ll try again later."
         }
+    }
+
+    // MARK: - Foreground polling
+
+    /// Re-pull every 5 minutes while the app is foregrounded, mirroring the Mac's
+    /// `startBackgroundRefreshTimer`. Without this iOS only ever refreshed on a scene
+    /// transition or a pull-to-refresh, so a phone left open on the Schedule tab never
+    /// saw anything written elsewhere — a Mac edit, a teammate's change, or what the
+    /// server's Google (5 min) and feed (15 min) crons wrote.
+    func startForegroundPolling() {
+        pollTask?.cancel()
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 300_000_000_000)
+                guard !Task.isCancelled else { return }
+                await self?.refresh()
+            }
+        }
+    }
+
+    /// Stops the poll when the app leaves the foreground; `scenePhase == .active` already
+    /// triggers its own refresh on the way back in.
+    func stopForegroundPolling() {
+        pollTask?.cancel()
+        pollTask = nil
     }
 
     // MARK: - AI context

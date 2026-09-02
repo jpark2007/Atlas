@@ -610,13 +610,40 @@ struct CaptureView: View {
                     end = rawStart.addingTimeInterval(TimeInterval((draft.durationMin ?? 60) * 60))
                 }
             }
-            let event = CalendarEvent(
+            var event = CalendarEvent(
                 title: draft.title, subtitle: "", start: start, end: end,
                 color: color, spaceName: spaceName, notes: draft.notes,
                 isAllDay: draft.isAllDay,
                 projectID: store.projectID(spaceName: spaceName, projectName: draft.projectName ?? ""),
                 source: .atlas)
-            Task { await store.addEvent(event) }
+            // `space_id` is the authoritative column — the Mac resolves the space (and
+            // its Google account) from it, so writing only the name leaves the two
+            // disagreeing and the event filed under the wrong space server-side.
+            event.spaceID = space?.id
+
+            // Repeating ("gym every Tuesday") -> one real event per session, sharing a
+            // series id. Mirrors the Mac's `AppState.applySeries` so the same sentence
+            // produces the same rows on either device.
+            if let rule = draft.recurrence,
+               case let starts = rule.occurrences(startingAt: start),
+               starts.count > 1 {
+                let seriesID = UUID()
+                let rruleText = rule.rruleText
+                let duration = end.timeIntervalSince(start)
+                let instances = starts.map { occurrence -> CalendarEvent in
+                    var instance = event
+                    instance.id = UUID()
+                    instance.start = occurrence
+                    instance.end = occurrence.addingTimeInterval(duration)
+                    instance.seriesID = seriesID
+                    instance.recurrenceRule = rruleText
+                    return instance
+                }
+                event = instances[0]   // the chip stands for the first session
+                Task { await store.addEvents(instances) }
+            } else {
+                Task { await store.addEvent(event) }
+            }
             donateCapture()
             return CommittedItem(id: event.id, kind: .event, title: event.title,
                                  spaceName: spaceName, projectName: draft.projectName ?? "",

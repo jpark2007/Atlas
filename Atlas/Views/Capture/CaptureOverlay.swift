@@ -445,7 +445,7 @@ struct CaptureCommandBar: View {
                 }
                 // Commit immediately (Phase 4 §3): no review screen, no countdown.
                 let applied = results.map { state.applyCapture($0) }
-                state.recordCapture(rawText: rawText, items: applied.map(\.item))
+                state.recordCapture(rawText: rawText, items: applied.flatMap(\.items))
                 showCommitted(applied, results: results, rawText: rawText)
                 if response.truncated {
                     // Server capped the paste at 50 — the items were still added.
@@ -490,7 +490,7 @@ struct CaptureCommandBar: View {
                     deadlines: AtlasAI.deadlineContext(from: state.tasks),
                     recent: AtlasAI.recentContext(state.captureHistory.map(\.snippet)))
                 let applied = response.results.map { state.applyCapture($0) }
-                state.recordCapture(rawText: item.text, items: applied.map(\.item))
+                state.recordCapture(rawText: item.text, items: applied.flatMap(\.items))
             } catch {
                 pending.enqueue(item.text)
                 break

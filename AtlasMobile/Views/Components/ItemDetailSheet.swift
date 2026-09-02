@@ -518,6 +518,10 @@ struct ItemDetailSheet: View {
             if let space = selectedSpace {
                 updated.spaceName = space.name
                 updated.spaceColor = space.color
+                // `space_id` is authoritative — the Mac resolves the space (and its
+                // Google account) from it, so writing only the name leaves the two
+                // disagreeing and the item filed under the OLD space server-side.
+                updated.spaceID = space.id
             }
             updated.projectName = projectName.trimmingCharacters(in: .whitespacesAndNewlines)
             updated.projectID = store.projectID(spaceName: updated.spaceName,
@@ -543,6 +547,7 @@ struct ItemDetailSheet: View {
             if let space = selectedSpace {
                 updated.spaceName = space.name
                 updated.color = space.color
+                updated.spaceID = space.id   // authoritative; see the task branch above
             }
             updated.notes = notes.isEmpty ? nil : notes
             if e.isAllDay {

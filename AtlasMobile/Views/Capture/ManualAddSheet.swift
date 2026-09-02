@@ -353,10 +353,11 @@ struct ManualAddSheet: View {
                 end = EventDuration.end(start: start, minutes: durationMin,
                                         endDay: endDay, calendar: cal)
             }
-            let event = CalendarEvent(
+            var event = CalendarEvent(
                 title: clean, subtitle: "", start: start, end: end,
                 color: space.color, spaceName: space.name,
                 isAllDay: isAllDay, source: .atlas)
+            event.spaceID = space.id   // authoritative column; the name alone isn't enough
             Task { await store.addEvent(event) }
             dismiss()
             return
@@ -372,7 +373,7 @@ struct ManualAddSheet: View {
                 scheduledAt = cal.date(bySettingHour: c.hour ?? 9, minute: c.minute ?? 0, second: 0, of: day)
             }
         }
-        let task = TaskItem(
+        var task = TaskItem(
             title: clean,
             dueLabel: TaskItem.dueLabel(for: due),
             scheduledAt: scheduledAt,
@@ -383,6 +384,7 @@ struct ManualAddSheet: View {
                                        projectName: tag.trimmingCharacters(in: .whitespacesAndNewlines)),
             projectName: tag.trimmingCharacters(in: .whitespacesAndNewlines)
         )
+        task.spaceID = space.id   // authoritative column; the name alone isn't enough
         Task { await store.addTask(task) }
         dismiss()
     }

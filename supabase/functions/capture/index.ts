@@ -262,9 +262,16 @@ Each element of "items" matches this schema:
   "durationMin"?: number,     // duration in minutes (events, default 60 if not specified)
   "isAllDay"?: boolean,       // true for an event on a date with NO stated clock time (all-day)
   "notes"?: string,           // extra detail / body text (notes, or longer event notes)
-  "confidence"?: number       // 0–1: how sure you are of kind + routing + date for THIS item.
+  "confidence"?: number,      // 0–1: how sure you are of kind + routing + date for THIS item.
                               // Be honest — a low number marks the item for a quick fix
                               // instead of silently getting it wrong. Omit if fully sure.
+  "recurrence"?: {            // ONLY for a REPEATING event — see the recurrence rules below
+    "freq": "daily" | "weekly" | "monthly",
+    "interval"?: number,      // repeat every N periods; omit for 1. "every other week" → 2
+    "byDay"?: string[],       // weekly only: ["MO","WE","FR"] — SU MO TU WE TH FR SA
+    "untilISO"?: string,      // the series' LAST DAY as a plain LOCAL date "YYYY-MM-DD" (inclusive)
+    "count"?: number          // alternative bound: total number of occurrences
+  }
 }
 
 Routing:
@@ -305,9 +312,37 @@ Rules:
   durationMin govern. NEVER invent an end time.
 - An event on a DATE with NO stated clock time ("game on Saturday", "trip July 5") is
   all-day: set "isAllDay": true and put that LOCAL day's midnight in startISO.
+- REPEATING EVENTS — a recurring commitment (a standing meeting, a weekly practice, a
+  shift) is ONE item carrying "recurrence". NEVER enumerate the individual sessions
+  yourself: "yoga every Tuesday 6pm until Dec 12" is a SINGLE item with
+  recurrence {freq:"weekly", byDay:["TU"], untilISO:"2026-12-12"}, not 15 items.
+  Emitting one item per session for a stated pattern is always wrong.
+  - "startISO"/"endISO" describe the FIRST session's clock times (and, for a range like
+    "Sept 2 to Dec 12", startISO is on/just after the range's opening date). Set the end
+    time exactly as stated: "10-10:50am" → endISO at 10:50 AM. The recurrence repeats
+    those same clock times; do NOT restate them in the recurrence object.
+  - "untilISO" is a PLAIN LOCAL CALENDAR DATE, "YYYY-MM-DD" — never a UTC instant and
+    never a time. It is the series' last day, INCLUSIVE. "to Dec 12" / "until Dec 12" /
+    "through Dec 12" / "ends Dec 12" all → untilISO "<year>-12-12".
+  - Day abbreviations, all valid: M, T, W, Th, F, MWF, TTh, TR, MW, MoWeFr, "Mondays and
+    Wednesdays", "Tue/Thu". Map T alone → TU, and R or Th → TH.
+    "weekdays" / "every weekday" → byDay ["MO","TU","WE","TH","FR"].
+  - Cadence words: "every week"/"weekly" → interval 1; "every other week"/"biweekly"/
+    "every 2 weeks" → interval 2; "every day"/"daily" → freq "daily"; "monthly"/"every
+    month" → freq "monthly"; "3x a week on Mon Wed Fri" → weekly with those byDay.
+  - Bounds: "for 10 weeks" / "10 sessions" → count 10. A repeat stated with NO end at all
+    ("every Monday", "weekly standup") still gets recurrence — just omit untilISO and
+    count, and the app applies its own horizon. NEVER invent an end date.
+  - TITLES STAY CLEAN here too: strip the repeat words. "yoga every Tuesday 6pm until
+    Dec 12" → title "Yoga".
+  - A REPEATING TASK ("water the plants every Tuesday") is still kind "task"; recurrence
+    is only ever set on an "event".
 - A pasted SCHEDULE listing several dated sessions (a season, syllabus, itinerary, class
   list) becomes ONE event per listed session — each with its own date/time. Only make items
   for sessions that carry an actual date; never invent dates or times for unlisted ones.
+  This is the OPPOSITE case from a repeating event: use it only when the input actually
+  LISTS the dates (irregular, explicitly written out). When the input states a PATTERN,
+  use "recurrence" instead.
 - Whenever a capture would produce many items, emit at most 50; if there are more, keep the
   50 EARLIEST (earliest date/time first).
 - TITLES ARE CLEAN. The title must NOT contain the date/time words you parsed into

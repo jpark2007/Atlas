@@ -31,11 +31,110 @@ final class AppStateCaptureTests: XCTestCase {
                         dueISO: String? = nil,
                         startISO: String? = nil,
                         durationMin: Int? = nil,
-                        notes: String? = nil) -> CaptureResult {
+                        notes: String? = nil,
+                        endISO: String? = nil,
+                        recurrence: CaptureRecurrence? = nil) -> CaptureResult {
         CaptureResult(kind: kind, title: title, spaceName: space,
                       projectName: nil, dueISO: dueISO, startISO: startISO,
-                      endISO: nil, durationMin: durationMin, isAllDay: nil,
-                      notes: notes)
+                      endISO: endISO, durationMin: durationMin, isAllDay: nil,
+                      notes: notes, recurrence: recurrence)
+    }
+
+    // MARK: - Repeating events
+
+    /// One capture line becomes a real session per occurrence, all in one series.
+    func testApplyCaptureRepeatingEventExpandsIntoASeries() throws {
+        let state = AppState()
+        let before = state.events.count
+        let applied = state.applyCapture(
+            result(kind: "event", title: "Yoga", space: "Health",
+                   startISO: "2026-09-02T17:00:00Z",
+                   endISO: "2026-09-02T17:50:00Z",
+                   recurrence: CaptureRecurrence(freq: "weekly",
+                                                 byDay: ["MO", "WE", "FR"],
+                                                 untilISO: "2026-12-12")))
+
+        let added = state.events.count - before
+        XCTAssertGreaterThan(added, 30, "a full run of MWF sessions")
+        XCTAssertEqual(applied.outcome, .eventSeries(count: added))
+        // Undo has to be able to take back every session, not just the first.
+        XCTAssertEqual(applied.items.count, added)
+        XCTAssertEqual(applied.item.id, applied.items[0].id, "the chip points at the first")
+
+        let sessions = state.events.suffix(added)
+        XCTAssertEqual(Set(sessions.compactMap(\.seriesID)).count, 1, "one shared series id")
+        XCTAssertEqual(Set(sessions.map(\.id)).count, added, "each session its own id")
+        for session in sessions {
+            XCTAssertEqual(session.title, "Yoga")
+            XCTAssertEqual(session.recurrenceRule, "FREQ=WEEKLY;BYDAY=MO,WE,FR;UNTIL=20261212")
+            XCTAssertEqual(session.end.timeIntervalSince(session.start), 50 * 60, accuracy: 0.5)
+        }
+    }
+
+    /// A recurrence the model garbled must not corrupt the capture — it degrades to the
+    /// plain one-off event it would have been without the pattern.
+    func testUnusableRecurrenceStillCreatesASingleEvent() {
+        let state = AppState()
+        let before = state.events.count
+        let applied = state.applyCapture(
+            result(kind: "event", title: "Gym", space: "Health",
+                   startISO: "2026-06-28T15:00:00Z", durationMin: 45,
+                   recurrence: CaptureRecurrence(freq: "fortnightly")))
+        XCTAssertEqual(applied.outcome, .event)
+        XCTAssertEqual(state.events.count, before + 1)
+        XCTAssertNil(state.events.last?.seriesID)
+    }
+
+    // MARK: - Series scope
+
+    func testDeleteSeriesScopes() throws {
+        let state = AppState()
+        state.applyCapture(
+            result(kind: "event", title: "Standup", space: "Work",
+                   startISO: "2026-09-07T17:00:00Z", durationMin: 60,
+                   recurrence: CaptureRecurrence(freq: "weekly", byDay: ["MO"], count: 5)))
+        let sessions = state.events.filter { $0.title == "Standup" }.sorted { $0.start < $1.start }
+        XCTAssertEqual(sessions.count, 5)
+
+        // "This event" cancels one occurrence only.
+        state.deleteSeries(sessions[0], scope: .thisEvent)
+        XCTAssertEqual(state.events.filter { $0.title == "Standup" }.count, 4)
+
+        // "This and following" ends the series from that date on.
+        state.deleteSeries(sessions[3], scope: .thisAndFollowing)
+        let left = state.events.filter { $0.title == "Standup" }
+        XCTAssertEqual(left.count, 2)
+        XCTAssertTrue(left.allSatisfy { $0.start < sessions[3].start })
+
+        // "All events" removes what remains.
+        state.deleteSeries(left[0], scope: .allEvents)
+        XCTAssertTrue(state.events.filter { $0.title == "Standup" }.isEmpty)
+    }
+
+    /// Moving a whole series to a new time shifts every session on ITS OWN day — it never
+    /// collapses them onto the edited session's date.
+    func testUpdateSeriesAllEventsMovesTheTimeNotTheDates() throws {
+        let state = AppState()
+        state.applyCapture(
+            result(kind: "event", title: "Practice", space: "Personal",
+                   startISO: "2026-09-07T17:00:00Z", durationMin: 60,
+                   recurrence: CaptureRecurrence(freq: "weekly", byDay: ["MO"], count: 4)))
+        let sessions = state.events.filter { $0.title == "Practice" }.sorted { $0.start < $1.start }
+        let originalDays = sessions.map { Calendar.current.startOfDay(for: $0.start) }
+
+        var edited = sessions[1]
+        edited.title = "Practice (moved)"
+        edited.start = Calendar.current.date(bySettingHour: 14, minute: 0, second: 0, of: edited.start)!
+        edited.end = edited.start.addingTimeInterval(90 * 60)
+        state.updateSeries(edited, scope: .allEvents)
+
+        let after = state.events.filter { $0.title == "Practice (moved)" }.sorted { $0.start < $1.start }
+        XCTAssertEqual(after.count, 4)
+        XCTAssertEqual(after.map { Calendar.current.startOfDay(for: $0.start) }, originalDays)
+        for session in after {
+            XCTAssertEqual(Calendar.current.component(.hour, from: session.start), 14)
+            XCTAssertEqual(session.end.timeIntervalSince(session.start), 90 * 60, accuracy: 0.5)
+        }
     }
 
     func testApplyCaptureTaskWithDate() {

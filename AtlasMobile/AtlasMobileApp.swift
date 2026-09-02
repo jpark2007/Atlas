@@ -37,6 +37,11 @@ struct AtlasMobileApp: App {
                                 Task { await store.refresh() }
                                 // Re-pull cross-device preferences on foreground (server wins).
                                 Task { await store.pullSyncedSettings() }
+                                // Keep pulling while the user STAYS in the app — a scene
+                                // transition is otherwise the only thing that re-reads.
+                                store.startForegroundPolling()
+                            } else {
+                                store.stopForegroundPolling()
                             }
                             if phase == .active || phase == .background { reschedule() }
                         }
