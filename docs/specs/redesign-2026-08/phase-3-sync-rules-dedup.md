@@ -1,6 +1,6 @@
 # Phase 3 — Sync Rules, Cross-Calendar Dedup, Apple-from-iPhone (agreed 2026-08-24)
 
-Part of the 2026-08 redesign. Status: **rules agreed; dedup design proposed (Drew ok'd direction); not yet implemented.**
+Part of the 2026-08 redesign. Status: **rules agreed; display-time event dedup implemented (`collapsingDuplicates` — `AtlasCore/.../CalendarSync.swift:113`); task-level and syllabus-accept dedupe still open.**
 
 ## Sync direction rules (refined)
 

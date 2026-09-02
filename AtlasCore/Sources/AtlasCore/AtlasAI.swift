@@ -336,7 +336,7 @@ public final class AtlasAI {
         return tasks
             .filter { !$0.done }
             .compactMap { task -> (Date, CaptureContextDeadline)? in
-                guard let due = task.dueDate, due >= from, due <= to else { return nil }
+                guard let due = task.effectiveDueDate(), due >= from, due <= to else { return nil }
                 let project = task.projectName.trimmingCharacters(in: .whitespacesAndNewlines)
                 return (due, CaptureContextDeadline(
                     id: task.id.uuidString,

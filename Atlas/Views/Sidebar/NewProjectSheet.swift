@@ -113,7 +113,9 @@ struct NewProjectSheet: View {
                 fieldGroup(label: "OVERVIEW (OPTIONAL)") {
                     ZStack(alignment: .topLeading) {
                         if overview.isEmpty {
-                            Text("What is this project about?")
+                            Text(isClass
+                                 ? "Anything you want to keep in mind for this class."
+                                 : "What is this project about?")
                                 .atlasFont(size: 14, weight: .medium, design: .rounded)
                                 .foregroundStyle(AtlasTheme.Colors.textMuted)
                                 .padding(.horizontal, 14)

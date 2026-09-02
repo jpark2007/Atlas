@@ -120,6 +120,45 @@ public struct Term: Identifiable, Equatable {
     }
 }
 
+/// One COMMIT of the syllabus-scan sheet — the receipt an imported task or event
+/// points back at (migration 0046 `syllabus_scans`). It answers "where did this
+/// come from?" with the document the user actually handed Atlas, and is what a
+/// later "remove what this scan added" will delete against.
+///
+/// Written at commit time only. Nothing ever infers one: an item with no
+/// `scanID` (and no `canvasUID`) is hand-made and shows no source at all.
+public struct ScanRecord: Identifiable, Equatable {
+    public var id = UUID()
+    /// The class this scan was committed against; nil if that class is later deleted.
+    public var projectID: UUID?
+    /// The picked file's name ("BIO 101 syllabus.pdf"), or "Pasted text" when the
+    /// user pasted instead of uploading. This is the string the source chip shows.
+    public var fileName: String
+    /// How the text got in — "syllabus" | "schedule" | "paste". Open text, so a
+    /// kind a newer client writes never fails an older client's decode.
+    public var kind: String
+    public var createdAt: Date
+
+    public init(id: UUID = UUID(), projectID: UUID? = nil, fileName: String,
+                kind: String = ScanRecord.Kind.syllabus, createdAt: Date = Date()) {
+        self.id = id
+        self.projectID = projectID
+        self.fileName = fileName
+        self.kind = kind
+        self.createdAt = createdAt
+    }
+
+    public enum Kind {
+        public static let syllabus = "syllabus"
+        public static let schedule = "schedule"
+        public static let paste    = "paste"
+    }
+
+    /// What a pasted scan stores as its "file" — there is no document, and saying so
+    /// plainly beats inventing a filename the user never saw.
+    public static let pastedFileName = "Pasted text"
+}
+
 /// Picking the term the app should be showing. Pure, so it's testable without a DB.
 public enum TermSelection {
     /// The term to treat as active: the one containing `date`, else the most recent
@@ -164,6 +203,13 @@ public struct MeetingBlock: Codable, Equatable {
     public var start: String
     public var end: String
     public var location: String?
+    /// The section this row was printed under ("Section 38"), when the document named one.
+    /// A syllabus that lists several sections of the same course returns one block per row,
+    /// each carrying its own label, so the review sheet can ask which one the student is in.
+    public var sectionLabel: String?
+    /// "lecture" | "recitation" | "lab" | "other" — the words the scan uses. Free-form on
+    /// purpose: a block whose kind the model couldn't tell leaves it `nil`.
+    public var kind: String?
     /// The first day this block actually meets, when the schedule said so — an `.ics`
     /// import carries the earliest DTSTART among the occurrences it folded. `nil` for a
     /// pattern with no start of its own (typed by hand, or scanned from a syllabus):
@@ -174,16 +220,21 @@ public struct MeetingBlock: Codable, Equatable {
     public var lastDate: Date?
 
     public init(weekdays: [Int], start: String, end: String, location: String? = nil,
+                sectionLabel: String? = nil, kind: String? = nil,
                 firstDate: Date? = nil, lastDate: Date? = nil) {
         self.weekdays = weekdays
         self.start = start
         self.end = end
         self.location = location
+        self.sectionLabel = sectionLabel
+        self.kind = kind
         self.firstDate = firstDate
         self.lastDate = lastDate
     }
 
-    enum CodingKeys: String, CodingKey { case weekdays, start, end, location, firstDate, lastDate }
+    enum CodingKeys: String, CodingKey {
+        case weekdays, start, end, location, sectionLabel, kind, firstDate, lastDate
+    }
 
     /// Both dates decode `IfPresent`, so a class created before this shape existed reads
     /// back with no dates and stays term-bounded — no migration, nothing to backfill.
@@ -193,6 +244,8 @@ public struct MeetingBlock: Codable, Equatable {
         start     = try c.decode(String.self, forKey: .start)
         end       = try c.decode(String.self, forKey: .end)
         location  = try c.decodeIfPresent(String.self, forKey: .location)
+        sectionLabel = try c.decodeIfPresent(String.self, forKey: .sectionLabel)
+        kind         = try c.decodeIfPresent(String.self, forKey: .kind)
         firstDate = try c.decodeIfPresent(Date.self, forKey: .firstDate)
         lastDate  = try c.decodeIfPresent(Date.self, forKey: .lastDate)
     }
@@ -452,6 +505,11 @@ public struct CalendarEvent: Identifiable {
     /// note. Each entry is the loser's own ingest-stamped source, never a guessed label.
     public var duplicateSources: [EventSource] = []
 
+    /// The syllabus scan that created this event (migration 0046 `events.scan_id`),
+    /// or nil for every hand-made and synced event. Stamped once at commit and
+    /// round-tripped through `EventRow` so an edit never nulls the origin.
+    public var scanID: UUID? = nil
+
     public init(id: UUID = UUID(), title: String, subtitle: String, start: Date, end: Date, color: Color, spaceName: String, notes: String? = nil, isAllDay: Bool = false, projectID: UUID? = nil, noteID: UUID? = nil, isReadOnly: Bool = false, source: EventSource = .atlas, googleEventId: String? = nil, appleEventId: String? = nil, isRecurring: Bool = false, isWorkBlock: Bool = false, isDeadline: Bool = false, deadlineTaskID: UUID? = nil, isHistory: Bool = false, spaceID: UUID? = nil, googleConnectionId: UUID? = nil) {
         self.id = id
         self.title = title
@@ -491,6 +549,12 @@ public struct TaskItem: Identifiable {
     public var completedAt: Date? = nil
     public var scheduledAt: Date? = nil
     public var dueDate: Date? = nil
+    /// True when `dueDate` names a calendar DATE rather than an instant (migration 0045
+    /// `tasks.all_day`). Canvas's ICS feed exports assignment dues date-only, so they are
+    /// stored in the canonical all-day encoding — UTC midnight of the intended date (see
+    /// `AllDayDate`). Read `effectiveDueDate` rather than `dueDate` for anything that
+    /// compares against now, and render such a task date-only ("Due Sep 9").
+    public var allDay: Bool = false
     public var durationMin: Int? = nil
     /// Optional user estimate of how much TOTAL time this task needs, in minutes (migration
     /// 0041 `tasks.estimate_min`). Distinct from `durationMin`, which is the length of the
@@ -502,6 +566,12 @@ public struct TaskItem: Identifiable {
     /// overwritten — the original date keeps a faded marker in the past so nothing about
     /// the miss silently vanishes. `nil` for tasks that were never rescheduled while late.
     public var originalDueDate: Date? = nil
+    /// The due date this task carried before a Canvas re-sync moved it (migration 0047
+    /// `tasks.due_moved_from`), set server-side only when the incoming due date actually
+    /// differs from the stored one on a non-done task. Drives the "Due date moved from
+    /// <date>" chip; the user dismisses it by clearing the field client-side — the server
+    /// never clears it on its own.
+    public var dueMovedFrom: Date? = nil
     /// Optional link to a Note, set from the detail view's "tag to a note".
     public var noteID: UUID? = nil
     /// Google event id backing this task's scheduled work-block, set after it mirrors to
@@ -548,6 +618,10 @@ public struct TaskItem: Identifiable {
     /// Canvas (it now doubles as the generic ICS UID), so an "ics" task must NOT read as
     /// "Canvas" (rule 5). Round-trips through `TaskRow`.
     public var feedType: String? = nil
+    /// The syllabus scan that created this task (migration 0046 `tasks.scan_id`), or
+    /// nil for every hand-made and Canvas task. Stamped once at commit and
+    /// round-tripped through `TaskRow` so an edit never nulls the origin.
+    public var scanID: UUID? = nil
 
     public init(id: UUID = UUID(), title: String, dueLabel: String, status: TaskStatus = .open, done: Bool = false, completedAt: Date? = nil, scheduledAt: Date? = nil, dueDate: Date? = nil, durationMin: Int? = nil, noteID: UUID? = nil, workBlockGoogleEventId: String? = nil, appleEventId: String? = nil, spaceColor: Color = AtlasTheme.Colors.accent, spaceName: String = "", projectID: UUID? = nil, projectName: String = "", notes: String = "", spaceID: UUID? = nil, assigneeID: UUID? = nil, createdByID: UUID? = nil, canvasUID: String? = nil) {
         self.id = id
@@ -592,9 +666,9 @@ extension TaskItem {
     /// "" for nil; "Today"/"Tomorrow"; weekday ("Thu") within a week; else "MMM d".
     /// A non-midnight time is appended ("Today 5:30 PM") — local midnight means
     /// the deadline is date-only, so no time is shown.
-    public static func dueLabel(for date: Date?, now: Date = Date()) -> String {
+    public static func dueLabel(for date: Date?, now: Date = Date(),
+                                calendar cal: Calendar = .current) -> String {
         guard let date else { return "" }
-        let cal = Calendar.current
         let day: String
         if cal.isDate(date, inSameDayAs: now) { day = "Today" }
         else if let tomorrow = cal.date(byAdding: .day, value: 1, to: now),
@@ -604,14 +678,26 @@ extension TaskItem {
                                           from: cal.startOfDay(for: now),
                                           to: cal.startOfDay(for: date)).day ?? 0
             let f = DateFormatter()
+            f.timeZone = cal.timeZone
             f.dateFormat = (days > 1 && days < 7) ? "EEE" : "MMM d"
             day = f.string(from: date)
         }
         let c = cal.dateComponents([.hour, .minute], from: date)
         guard c.hour != 0 || c.minute != 0 else { return day }
         let t = DateFormatter()
+        t.timeZone = cal.timeZone
         t.dateFormat = c.minute == 0 ? "h a" : "h:mm a"
         return "\(day) \(t.string(from: date))"
+    }
+
+    /// The label an all-day-aware due date reads as. An all-day due names a calendar DATE
+    /// stored at UTC midnight, so it is labelled from that date re-anchored to the local
+    /// day — which lands it on the right day AND, being local midnight, drops the clock
+    /// time the raw instant would otherwise print ("Due Sep 9", never "Due Sep 8 8 PM").
+    public static func dueLabel(for date: Date?, allDay: Bool, now: Date = Date(),
+                                calendar cal: Calendar = .current) -> String {
+        guard allDay, let date else { return dueLabel(for: date, now: now, calendar: cal) }
+        return dueLabel(for: AllDayDate.localDay(of: date, calendar: cal), now: now, calendar: cal)
     }
 
     /// True only when the task has never been given a calendar slot. Once scheduled it
@@ -621,10 +707,30 @@ extension TaskItem {
         scheduledAt == nil
     }
 
+    /// The instant this task is actually due — the ONE reading every comparison against
+    /// `now` uses, and the only place the all-day encoding is unpacked.
+    ///
+    /// A timed due is its own instant. An all-day due is a calendar DATE stored as UTC
+    /// midnight (see `AllDayDate`), and "due Sep 9" means due by the END of Sep 9 where
+    /// the student is — so it resolves to 11:59:59 PM local on the UTC calendar day
+    /// `dueDate` names. Reading the raw instant instead is what made a Canvas assignment
+    /// go late at 8 PM the evening before.
+    public func effectiveDueDate(calendar: Calendar = .current) -> Date? {
+        guard let dueDate else { return nil }
+        guard allDay else { return dueDate }
+        let day = AllDayDate.localDay(of: dueDate, calendar: calendar)
+        return calendar.date(bySettingHour: 23, minute: 59, second: 59, of: day) ?? dueDate
+    }
+
+    /// `effectiveDueDate` in the current calendar — the property form for call sites that
+    /// have no calendar to inject.
+    public var effectiveDue: Date? { effectiveDueDate() }
+
     /// True when this task has a due date that has already passed and it isn't done — the
     /// "overdue" signal that turns its deadline pill (and tray chip) red.
-    public func isOverdue(now: Date) -> Bool {
-        dueDate != nil && dueDate! < now && !done
+    public func isOverdue(now: Date, calendar: Calendar = .current) -> Bool {
+        guard let due = effectiveDueDate(calendar: calendar) else { return false }
+        return due < now && !done
     }
 
     /// True when an overdue task's scheduled slot has ALSO elapsed — meaning the planned

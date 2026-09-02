@@ -290,6 +290,9 @@ struct EventEditorSheet: View {
             isRecurring: seed.isRecurring
         )
         event.spaceID = state.spaceID(named: finalSpaceName)
+        // Provenance is stamped once, at creation: carry the scan receipt through an
+        // edit so a retitled imported exam still says which syllabus it came from.
+        event.scanID = seed.scanID
 
         if isEditingExisting {
             state.updateEvent(event)

@@ -1,10 +1,17 @@
 import SwiftUI
 import AtlasCore
 
-/// The single tap-to-edit sheet for a task or an event. Atlas-native items (any
-/// task, or an `.atlas` event) are editable; external events (`.google`/`.apple`)
-/// render read-only with their true source label. Editorial field style — a caps
-/// label over a control, hairline below — mirrors `ManualAddSheet`.
+/// The single tap-to-open sheet for a task or an event.
+///
+/// It OPENS as a compact, read-only card (variant 6C of
+/// `docs/specs/redesign-2026-08/ui-density-syllabus-ideas.html`): title + class chip,
+/// a two-column facts row, a notes snippet and the linked note — everything above the
+/// fold, no scrolling. **Edit** swaps in the full editable form (unchanged); **Done**
+/// dismisses. Items that can't be edited (Apple/Canvas events) show no Edit button and
+/// keep their true source label — attribution is never guessed (CLAUDE.md rule 5).
+///
+/// Editorial field style in the edit form — a caps label over a control, hairline
+/// below — mirrors `ManualAddSheet`.
 struct ItemDetailSheet: View {
 
     /// What this sheet is showing. Identifiable so it drives `.sheet(item:)`.
@@ -44,6 +51,11 @@ struct ItemDetailSheet: View {
     @State private var durationMin: Int
 
     @State private var showDeleteConfirm = false
+
+    /// False = the compact 6C read card the sheet opens as; true = the full edit form.
+    @State private var isEditing = false
+    /// The read card is a half-sheet; editing grows it so a form isn't a clipped slab.
+    @State private var detent: PresentationDetent = .medium
 
     /// Includes the event's own length even when it's off the ladder, so a synced
     /// 3h event stays selectable instead of being truncated by the first tap.
@@ -95,24 +107,16 @@ struct ItemDetailSheet: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(isTask ? "Task" : "Event")
-                    .edScreenTitle()
-                    .padding(.bottom, 24)
-
-                if isEditable {
-                    editableFields
-                } else if let e = readOnlyEvent {
-                    readOnlyFields(e)
-                }
-
-                footer
+        Group {
+            if isEditing {
+                editScroll
+            } else {
+                readCard
             }
-            .padding(.horizontal, 28)
-            .padding(.top, 28)
         }
         .background(MobileTheme.bg.ignoresSafeArea())
+        .presentationDetents([.medium, .large], selection: $detent)
+        .presentationDragIndicator(.visible)
         .onChange(of: startDay) { oldStart, newStart in
             // Moving an event carries its span along, and the end can never precede the start.
             let cal = Calendar.current
@@ -121,14 +125,368 @@ struct ItemDetailSheet: View {
             if days != 0 { endDay = cal.date(byAdding: .day, value: days, to: endDay) ?? endDay }
             if endDay < cal.startOfDay(for: newStart) { endDay = newStart }
         }
-        .presentationDetents([.medium, .large])
         .confirmationDialog("Delete this \(isTask ? "task" : "event")?",
                             isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { performDelete() }
         }
     }
 
+    // MARK: - Read card (variant 6C — no scroll)
+
+    private var readCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            readHeader
+
+            if let moved = dueMovedFrom {
+                dueMovedChip(from: moved)
+                    .padding(.top, 10)
+            }
+
+            if let note = sourceNote {
+                Text(note)
+                    .edCapsLabel()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 12)
+            }
+
+            readRule
+            factsRow
+
+            if !displayNotes.isEmpty {
+                readRule
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Notes").edCapsLabel()
+                    Text(displayNotes)
+                        .font(.system(size: 14, weight: .regular, design: .rounded))
+                        .foregroundStyle(MobileTheme.muted)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if let note = linkedNote {
+                linkedNoteRow(note).padding(.top, 16)
+            }
+
+            Spacer(minLength: 20)
+            readCTA
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 22)
+        .padding(.bottom, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Colour dot · title · class-or-space chip with its source · a NOW pill when live.
+    private var readHeader: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Circle()
+                .fill(accentDotColor)
+                .frame(width: 9, height: 9)
+                .padding(.top, 8)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(displayTitle)
+                    .font(.system(size: 19, weight: .bold, design: .rounded))
+                    .tracking(-0.38)        // −0.02em × 19
+                    .foregroundStyle(MobileTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 7) {
+                    if !contextLabel.isEmpty {
+                        HStack(spacing: 5) {
+                            Circle().fill(accentDotColor).frame(width: 6, height: 6)
+                            Text(contextLabel)
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundStyle(MobileTheme.ink)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: MobileTheme.radiusChip, style: .continuous)
+                                .fill(accentDotColor.opacity(0.14))
+                        )
+                    }
+                    if let origin = originLabel {
+                        Text(origin)
+                            .font(.system(size: 12, weight: .regular, design: .rounded))
+                            .foregroundStyle(MobileTheme.faint)
+                    }
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            if isNow {
+                Text("Now")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .tracking(0.4)
+                    .textCase(.uppercase)
+                    .foregroundStyle(MobileTheme.accentText)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: MobileTheme.radiusChip, style: .continuous)
+                            .fill(MobileTheme.accent.opacity(0.16))
+                    )
+                    .padding(.top, 2)
+            }
+        }
+    }
+
+    /// The two-column facts row. Column two is the item's length (an event) or the day it
+    /// was planned for (a task) — a "Where" needs an event location field, which Atlas
+    /// doesn't store yet; labelling anything else "Where" would be a lie.
+    private var factsRow: some View {
+        HStack(alignment: .top, spacing: 16) {
+            factColumn(primaryFactLabel, primaryFact)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let (label, value) = secondaryFact {
+                factColumn(label, value).frame(width: 96, alignment: .leading)
+            }
+        }
+    }
+
+    private func factColumn(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label).edCapsLabel()
+            Text(value)
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundStyle(MobileTheme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func linkedNoteRow(_ note: Note) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(MobileTheme.muted)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(note.title.isEmpty ? "Untitled note" : note.title)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MobileTheme.ink)
+                    .lineLimit(1)
+                Text("Linked note")
+                    .font(.system(size: 11.5, weight: .regular, design: .rounded))
+                    .foregroundStyle(MobileTheme.faint)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: MobileTheme.radiusChip, style: .continuous)
+                .fill(MobileTheme.ink.opacity(0.04))
+        )
+    }
+
+    private var readCTA: some View {
+        HStack(spacing: 12) {
+            if isEditable {
+                Button {
+                    detent = .large
+                    isEditing = true
+                } label: {
+                    Text("Edit")
+                        .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(MobileTheme.ink)
+                        .frame(maxWidth: .infinity)
+                        .edOutlineControl()
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button { dismiss() } label: {
+                Text("Done")
+                    .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(isEditable ? MobileTheme.muted : MobileTheme.ink)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var readRule: some View {
+        Rectangle()
+            .fill(MobileTheme.hairline)
+            .frame(height: 1)
+            .padding(.vertical, 14)
+    }
+
+    // MARK: - Read-card values
+
+    private var displayTitle: String {
+        switch detail {
+        case .task(let t):  return t.title
+        case .event(let e): return e.title
+        }
+    }
+
+    /// The due date this task carried before a Canvas re-sync moved it (migration 0047),
+    /// nil for everything else — the chip is task-only.
+    private var dueMovedFrom: Date? {
+        guard case .task(let t) = detail else { return nil }
+        return t.dueMovedFrom
+    }
+
+    /// "Due date moved from <date>" — Canvas re-synced this assignment to a new due date;
+    /// the user's own scheduled work block was left untouched, so this is the only signal
+    /// the plan may no longer match the deadline. Dismissible; clears and persists
+    /// immediately, independent of the edit form's Save.
+    private func dueMovedChip(from moved: Date) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 11, weight: .semibold))
+            Text("Due date moved from \(moved.formatted(.dateTime.month(.abbreviated).day()))")
+                .font(.system(size: 12.5, weight: .medium, design: .rounded))
+            Button {
+                guard case .task(var t) = detail else { return }
+                t.dueMovedFrom = nil
+                Task { await store.updateTask(t) }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .buttonStyle(.plain)
+        }
+        .foregroundStyle(MobileTheme.warning)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: MobileTheme.radiusChip, style: .continuous)
+                .fill(MobileTheme.warning.opacity(0.14))
+        )
+    }
+
+    private var displayNotes: String {
+        switch detail {
+        case .task(let t):  return t.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .event(let e): return (e.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    /// The class (project) when there is one, else the space — the chip's text.
+    private var contextLabel: String {
+        switch detail {
+        case .task(let t):  return t.projectName.isEmpty ? t.spaceName : t.projectName
+        case .event(let e):
+            if let id = e.projectID,
+               let p = store.snapshot.projects.first(where: { $0.id == id }) { return p.name }
+            return e.spaceName
+        }
+    }
+
+    private var accentDotColor: Color {
+        switch detail {
+        case .task(let t):  return t.spaceColor
+        case .event(let e): return e.color
+        }
+    }
+
+    /// "from Canvas" / "from Google Calendar" / "from BIO 101 syllabus.pdf" — never for
+    /// an Atlas-native item, and always the source the item actually carries (rule 5).
+    /// A syllabus scan names the document it read; that beats a synced-feed label only
+    /// because nothing carries both.
+    private var originLabel: String? {
+        if let scan = store.scan(scanID) { return "from \(scan.fileName)" }
+        switch detail {
+        case .task(let t):  return t.canvasUID != nil ? "from Canvas" : nil
+        case .event(let e): return e.source == .atlas ? nil : "from \(e.source.displayName)"
+        }
+    }
+
+    /// The scan receipt this item points at, if any.
+    private var scanID: UUID? {
+        switch detail {
+        case .task(let t):  return t.scanID
+        case .event(let e): return e.scanID
+        }
+    }
+
+    /// The locked-source caps line, same copy the edit form and the Mac use.
+    private var sourceNote: String? {
+        if isCanvasTask || readOnlyEvent?.source == .canvas {
+            return "From Canvas — synced automatically. Schedule it; title and dates update from your feed."
+        }
+        if let e = readOnlyEvent { return "From \(e.source.displayName) — shown, not editable" }
+        return nil
+    }
+
+    private var primaryFactLabel: String { isTask ? "Due" : "When" }
+
+    private var primaryFact: String {
+        switch detail {
+        case .task:         return dueDisplay
+        case .event(let e): return whenText(e)
+        }
+    }
+
+    /// Column two: an event's length, or the day a task is planned to be worked.
+    private var secondaryFact: (String, String)? {
+        switch detail {
+        case .task(let t):
+            guard let at = t.scheduledAt else { return nil }
+            let f = DateFormatter(); f.dateFormat = "EEE · h:mm a"
+            return ("Planned", f.string(from: at))
+        case .event(let e):
+            return ("Length", e.isAllDay ? "All-day" : e.durationLabel)
+        }
+    }
+
+    /// An event happening right now — the NOW pill.
+    private var isNow: Bool {
+        guard case .event(let e) = detail, !e.isAllDay else { return false }
+        let now = Date()
+        return e.start <= now && now < e.end
+    }
+
+    private var linkedNote: Note? {
+        let id: UUID?
+        switch detail {
+        case .task(let t):  id = t.noteID
+        case .event(let e): id = e.noteID
+        }
+        guard let id else { return nil }
+        return store.snapshot.notes.first { $0.id == id }
+    }
+
+    /// "Tue, Sep 1 · 2:00–3:20 PM"; an all-day event names its day (or its span).
+    private func whenText(_ e: CalendarEvent) -> String {
+        let cal = Calendar.current
+        let day = DateFormatter(); day.dateFormat = "EEE, MMM d"
+        if e.isAllDay {
+            let bucket = e.bucketDate(in: cal)
+            // Stored end is EXCLUSIVE — the last day covered is the day before it.
+            let last = AllDayDate.localDay(of: AllDayDate.utc.date(byAdding: .day, value: -1, to: e.end) ?? e.end,
+                                           calendar: cal)
+            if cal.isDate(bucket, inSameDayAs: last) { return "\(day.string(from: bucket)) · All-day" }
+            return "\(day.string(from: bucket)) – \(day.string(from: last))"
+        }
+        let clock = DateFormatter(); clock.dateFormat = "h:mm a"
+        let span = "\(clock.string(from: e.start))–\(clock.string(from: e.end))"
+        if cal.isDate(e.start, inSameDayAs: e.end) { return "\(day.string(from: e.start)) · \(span)" }
+        return "\(day.string(from: e.start)) \(clock.string(from: e.start)) – \(day.string(from: e.end)) \(clock.string(from: e.end))"
+    }
+
     // MARK: - Editable
+
+    private var editScroll: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(isTask ? "Task" : "Event")
+                    .edScreenTitle()
+                    .padding(.bottom, 24)
+
+                editableFields
+                footer
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 28)
+        }
+    }
+
 
     @ViewBuilder
     private var editableFields: some View {
@@ -154,7 +512,7 @@ struct ItemDetailSheet: View {
         if isTask {
             field("Project") { projectPicker }
             if isCanvasTask {
-                labeledRow("Due date", canvasDueDisplay)
+                labeledRow("Due date", dueDisplay)
             } else {
                 dueSection
             }
@@ -346,29 +704,6 @@ struct ItemDetailSheet: View {
             .frame(height: 100)
     }
 
-    // MARK: - Read-only (external events)
-
-    @ViewBuilder
-    private func readOnlyFields(_ e: CalendarEvent) -> some View {
-        if e.source == .canvas {
-            // Canvas events are fully read-only (like Apple). Verbatim Mac copy.
-            Text("From Canvas — synced automatically. Schedule it; title and dates update from your feed.")
-                .edCapsLabel()
-                .padding(.bottom, 8)
-        } else {
-            Text("From \(e.source.displayName) — shown, not editable")
-                .edCapsLabel()
-                .padding(.bottom, 8)
-        }
-        labeledRow("Title", e.title)
-        labeledRow("Space", e.spaceName)
-        labeledRow("When", e.isAllDay ? "All-day" : startText(e.start))
-        labeledRow("Duration", e.durationLabel)
-        if let n = e.notes, !n.isEmpty {
-            labeledRow("Notes", n)
-        }
-    }
-
     private func labeledRow(_ label: String, _ value: String) -> some View {
         field(label) {
             Text(value)
@@ -382,16 +717,14 @@ struct ItemDetailSheet: View {
 
     private var footer: some View {
         VStack(spacing: 16) {
-            if isEditable {
-                Button(action: save) {
-                    Text("Save")
-                        .font(.system(size: 15.5, weight: .semibold, design: .rounded))
-                        .foregroundStyle(MobileTheme.ink)
-                        .frame(maxWidth: .infinity)
-                        .edOutlineControl()
-                }
-                .buttonStyle(.plain)
+            Button(action: save) {
+                Text("Save")
+                    .font(.system(size: 15.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MobileTheme.ink)
+                    .frame(maxWidth: .infinity)
+                    .edOutlineControl()
             }
+            .buttonStyle(.plain)
 
             if canDelete {
                 Button { showDeleteConfirm = true } label: {
@@ -403,7 +736,12 @@ struct ItemDetailSheet: View {
                 .buttonStyle(.plain)
             }
 
-            Button { dismiss() } label: {
+            // Backs out of the form to the read card the sheet opened as — the sheet
+            // itself is dismissed with Done there.
+            Button {
+                detent = .medium
+                isEditing = false
+            } label: {
                 Text("Cancel")
                     .edCapsLabel()
                     .frame(maxWidth: .infinity)
@@ -447,10 +785,14 @@ struct ItemDetailSheet: View {
         return false
     }
 
-    /// Locked-due text for a Canvas task — date label plus clock time when the due
-    /// carries one (mirrors Mac `TaskDetailView.dueChipLabel`).
-    private var canvasDueDisplay: String {
+    /// Due text for a task — date label plus clock time when the due carries one
+    /// (mirrors Mac `TaskDetailView.dueChipLabel`). Also the locked value a Canvas
+    /// task shows in the edit form.
+    private var dueDisplay: String {
         guard case .task(let t) = detail, let due = t.dueDate else { return "No due date" }
+        // An all-day Canvas due names a DATE — the compact label already reads it off the
+        // right day; printing its raw UTC-midnight clock would say the wrong evening.
+        guard !t.allDay else { return t.dueLabel }
         let cal = Calendar.current
         let h = cal.component(.hour, from: due), m = cal.component(.minute, from: due)
         guard h != 0 || m != 0 else { return t.dueLabel }
@@ -500,11 +842,6 @@ struct ItemDetailSheet: View {
         projectName.isEmpty || spaceProjects.contains {
             $0.name.caseInsensitiveCompare(projectName) == .orderedSame
         }
-    }
-
-    private func startText(_ date: Date) -> String {
-        let f = DateFormatter(); f.dateFormat = "EEE, MMM d · h:mm a"
-        return f.string(from: date)
     }
 
     // MARK: - Commit

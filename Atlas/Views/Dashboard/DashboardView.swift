@@ -265,8 +265,8 @@ struct DashboardView: View {
 
     private var dueTodayTasks: [TaskItem] {
         state.tasks
-            .filter { state.isVisiblyPending($0) && ($0.dueDate.map { calendar.isDate($0, inSameDayAs: state.now) } ?? false) }
-            .sorted { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }
+            .filter { state.isVisiblyPending($0) && ($0.effectiveDueDate(calendar: calendar).map { calendar.isDate($0, inSameDayAs: state.now) } ?? false) }
+            .sorted { ($0.effectiveDueDate(calendar: calendar) ?? .distantFuture) < ($1.effectiveDueDate(calendar: calendar) ?? .distantFuture) }
     }
 
     private func dueRow(_ task: TaskItem) -> some View {
@@ -293,6 +293,13 @@ struct DashboardView: View {
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
                         .lineLimit(1)
                     Spacer(minLength: 8)
+                    // Same chip as Today's Focus — the dot says whose colour, the chip
+                    // says whose name (class first, space only as the fallback).
+                    if let className = state.taskClassChipText(for: task) {
+                        atlasTag(text: className, color: state.taskAccentColor(for: task))
+                    } else if !task.spaceName.isEmpty {
+                        atlasTag(text: task.spaceName, color: task.spaceColor)
+                    }
                     Text(TimeModel.plannedLabel(estimateMin: task.estimateMin, sessionMinutes: sessions))
                         .atlasMono(size: 11, weight: .medium)
                         .foregroundStyle(unplanned ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textSecondary)

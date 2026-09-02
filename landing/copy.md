@@ -1,137 +1,152 @@
 # Atlas — Landing Page Copy
 
-Voice: plain, confident, warm. Reads like a magazine intro, not an ad.
-Everything below describes what the app does *today*. Nothing here promises a
-feature that isn't built. Prelaunch beta, two students, Mac + iPhone + iPad.
+Voice: plain, second person, concrete. Every headline names an outcome. No
+section body runs past three lines at 1280. The page describes what the app
+does today — nothing here promises a feature that isn't built.
+
+Rules the page holds to: one accent (clay), one type pair (Fraunces + Nunito),
+one CTA verb ("Download"), and the word "free" exactly once. Never call the
+apps unfinished or pre-release — they are shipped.
+
+---
+
+## Nav
+
+Features · Why we built it · Download
 
 ---
 
 ## Hero
 
-**Line (primary):**
-Your life doesn't fit in six apps. It fits here.
+**Kicker:** FOR MAC, IPHONE & IPAD
 
-**Subline:**
-Atlas is a native Mac, iPhone, and iPad app that gathers Apple Calendar, Google
-Calendar, and Canvas into one timeline — then turns a plain-English brain-dump
-into tasks and events, filed where they belong. Built by two students. In beta
-now.
+**Headline:**
+Your life doesn't fit in six apps. *It fits here.*
 
-**Alternate hero lines** (if the primary reads too blunt in layout):
-- One calendar for your whole life. Actually one.
-- Everything you have to do, on a calendar that's finally yours.
+**Subhead:**
+Atlas is a student planner. Your classes, deadlines, and calendars all live on
+one timeline, on every device you own.
+
+**CTAs:** Download for Mac · Apple's "Download on the App Store" badge
+**Hint under them:** Free · macOS 14 or later
+
+**Image:** the Mac dashboard, with the iPhone today view lapping its lower-right
+corner.
 
 ---
 
-## Feature moments
+## Feature sections
 
-### 1 — Unified calendar
+Each is one screenshot, one outcome headline, and at most three lines.
+
+### 1 — One timeline
 
 **Kicker:** ONE TIMELINE
+**Headline:** Every calendar you already use, in one week.
 
-Apple, Google, and Canvas each hold a piece of your week. Atlas keeps all of it
-in a single native calendar — your classes, your meetings, the dentist, the
-thing due Thursday — with Google changes flowing both ways, so an edit here is
-an edit everywhere. You pick which calendar is your main one. Drag a task onto
-an open hour and it's on the schedule.
+Apple Calendar, Google, and Canvas each hold part of your week. Atlas shows all
+of them together, and Google edits sync both ways.
 
-### 2 — Capture
+**Image:** Settings › Calendars, listing Apple, two Google accounts, Canvas,
+and Atlas as sources.
 
-**Kicker:** SAY IT MESSY
+### 2 — Plan the day
 
-You don't think in tidy rows, so don't type in them. Dump it the way it actually
-comes out — "essay due Thursday, gym three times this week, call mom Sunday" — by
-typing or just talking. Atlas reads it, splits it into tasks and events, and
-files each one into the right part of your life. You see everything it made and
-confirm before a single item lands. Nothing gets lost between your head and your
-calendar.
+**Kicker:** PLAN THE DAY
+**Headline:** Drag a task onto your day and it's scheduled.
 
-### 3 — Spaces and projects
+Anything without a time waits in the Unscheduled tray. Drop one on an open hour
+and Atlas books the work session for you.
 
-**Kicker:** SCHOOL STAYS SCHOOL
+**Image:** the day view beside the Unscheduled tray.
 
-Your life isn't one long list. Atlas keeps it in Spaces — School, Personal,
-whatever else you run — with Projects inside them. In School, your Canvas classes
-show up as their own projects, assignments and due dates already in place. One
-app, but the parts of your life don't bleed into each other unless you want them
-to.
+### 3 — Class hub
 
-### 4 — The phone & tablet companion
+**Kicker:** CLASS HUB
+**Headline:** Scan a syllabus, get the whole class.
 
-**Kicker:** THE MOBILE FRONT DOOR
+Atlas reads meeting times, grading weights, and course policies off the PDF,
+then files every Canvas assignment underneath them.
 
-The Mac app is where you plan. The iPhone and iPad are for the moment a thought
-lands while you're in line for coffee: open it, dump the thought, glance at
-what's next, check something off. It's deliberately small — capture and glance,
-nothing to get lost in. Whatever you add on iPhone or iPad is waiting for you
-on the Mac.
+**Image:** a class page built from a scanned syllabus.
+
+### 4 — Mac and iPhone
+
+**Kicker:** MAC AND IPHONE
+**Headline:** Catch it on your phone. Plan it on your Mac.
+
+Type or say the thought while you walk to class. Atlas sorts it into tasks and
+events, and it's waiting when you sit down.
+
+**Image:** three iPhone screens in a row — capture sorted, today, tasks by class.
+
+---
+
+## Menu bar (the page's one ink block)
+
+**Kicker:** MENU BAR
+**Headline:** Your day, one click from anywhere.
+
+The month and today's list sit behind the menu-bar icon, with Quick Capture
+right there. The app stays closed.
+
+**Image:** the menu-bar popover, cropped to itself.
 
 ---
 
 ## Why we built it
 
-We're Andrew and Jonah — two students who got tired of running our lives across a
-calendar, a to-do app, Canvas, and a pile of notes that never talked to each
-other. Atlas is the thing we wanted and couldn't find: one place that holds all
-of it and does the filing for us. We build it for ourselves first, which is the
-whole point — we feel it the second it gets annoying, and we fix it. It's early
-and it's honest work. We'd rather show you the real thing than a promise.
+**Kicker:** WHY WE BUILT IT
+**Signature:** Andrew Khalil & Jonah Park
+**Byline:** Two students, one app
+
+**Pull line:** We wanted *one place that holds all of it* and does the filing.
+
+Our own week was spread across a calendar, a to-do app, Canvas, and a pile of
+notes that never talked to each other. We use Atlas every day and fix whatever
+gets in the way that week.
 
 ---
 
-## Waitlist CTA
+## Download
 
-**Section heading:** Be an early one.
+**Kicker:** GET ATLAS
 
-**Supporting line:** We're letting people in a few at a time. Leave your email and
-we'll send the invite when it's your turn.
+**Heading:** Atlas is out on Mac, iPhone, and iPad.
 
-**Microcopy:**
-- Button (default): Join the waitlist
-- Button (sending): Adding you…
-- Input placeholder: you@email.com
-- Reassurance under form: No spam. One email, when it's ready.
-- Success: You're on the list. We'll be in touch when it's your turn.
-- Error (general): That didn't go through. Give it another try?
-- Error (invalid email): Hmm, that doesn't look like an email. Mind checking it?
+**Supporting line:** No invite, no waiting. Download the Mac app, or get it on
+the App Store for iPhone and iPad, and start today.
 
----
+**Buttons:**
+- Mac: Download for Mac → `/downloads/Atlas.dmg` (Sparkle handles updates after)
+- iPhone & iPad: Apple's badge →
+  https://apps.apple.com/us/app/atlas-student-planner/id6786719011
 
-## Teaser download buttons (disabled — "coming soon")
+**Beside them:** the App Store QR, captioned "Scan to get it on iPhone or iPad".
+Desktop only — a phone just taps the badge.
 
-Both buttons are visibly present but inactive before launch.
-
-- Mac button label: Download for Mac
-  - Sub-label / badge: Coming soon
-- iPhone button label: Get it on iPhone & iPad
-  - Sub-label / badge: Coming soon
-
-**Optional caption under the pair:** In private beta with our first testers.
-Waitlist first, apps next.
+**Note under the pair:** Requires macOS 14 or later.
 
 ---
 
 ## Footer
 
-- Atlas — a life manager for Mac, iPhone, and iPad.
+- Atlas — a life manager for Mac, iPhone, and iPad. Built in the open.
 - Made by Andrew Khalil and Jonah Park.
 - drewkhalil@gmail.com
-- Privacy · Terms   (relative links: /privacy, /terms)
-- In beta. Built in the open.
+- Support · Privacy · Terms · Compare · Owners
 - © 2026 Atlas
 
 ---
 
-## Notes for whoever builds the page
+## Notes for whoever edits the page
 
-- All links relative (e.g. `/privacy`), no absolute domains — hosted later on a
-  free subdomain.
-- Both download buttons ship disabled with the "Coming soon" badge; they are
-  teasers, not links.
-- The waitlist form POSTs JSON `{ email }` to a Supabase edge function. Put the
-  URL in one obvious const at the top of the page JS: `WAITLIST_ENDPOINT`.
-  Handle success and error with the microcopy above; never leave the button in a
-  stuck "Adding you…" state on failure.
-- Do not add features to the copy that aren't in this doc. Social/sharing, email
-  capture, Google Drive, focus timer, and auto-scheduling suggestions are on the
-  roadmap, not in the app yet — keep them off the page.
+- Links are root-absolute (`/#features`, `/privacy.html`) so the same nav and
+  footer markup works on every page in the site.
+- Both download buttons are live links: the Mac DMG and the App Store listing.
+- No email form on the home page. The support page keeps its own.
+- Don't add features that aren't shipped. Social/sharing, Google Drive, the
+  focus timer, and auto-scheduling suggestions are roadmap, not product.
+- Copy tics to keep out: triplet lists, negation-then-reveal sentences, em-dash
+  cadence, the same idea said twice in two paragraphs, and any word that frames
+  the apps as unfinished or pre-release.

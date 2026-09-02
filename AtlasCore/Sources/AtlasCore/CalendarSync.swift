@@ -153,7 +153,7 @@ public enum CalendarSync {
     /// Never collapse two events whose titles only *look* alike: equality after
     /// normalization, or one title extending the other once both are long enough to be
     /// distinctive.
-    private static func titlesMatch(_ a: String, _ b: String) -> Bool {
+    static func titlesMatch(_ a: String, _ b: String) -> Bool {
         guard !a.isEmpty, !b.isEmpty else { return false }
         if a == b { return true }
         let (shorter, longer) = a.count <= b.count ? (a, b) : (b, a)

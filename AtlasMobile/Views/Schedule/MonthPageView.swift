@@ -153,7 +153,7 @@ struct MonthPageView: View {
             if let at = t.scheduledAt, cal.isDate(at, inSameDayAs: pickedDay) {
                 items.append(DayItem(id: t.id, sortMinute: minutesOf(at),
                                      time: timeLabel(at), title: t.title, color: t.spaceColor))
-            } else if let due = t.dueDate, cal.isDate(due, inSameDayAs: pickedDay) {
+            } else if let due = t.effectiveDueDate(calendar: cal), cal.isDate(due, inSameDayAs: pickedDay) {
                 let timed = hasClockTime(due)
                 items.append(DayItem(id: t.id, sortMinute: timed ? minutesOf(due) : 2000,
                                      time: timed ? timeLabel(due) : "Due",
@@ -275,7 +275,7 @@ struct MonthPageView: View {
         }
         for t in store.snapshot.tasks where !t.done && inFilter(t.spaceName) {
             if let at = t.scheduledAt, cal.isDate(at, inSameDayAs: day) { add(t.spaceName, t.spaceColor) }
-            else if let due = t.dueDate, cal.isDate(due, inSameDayAs: day) { add(t.spaceName, t.spaceColor) }
+            else if let due = t.effectiveDueDate(calendar: cal), cal.isDate(due, inSameDayAs: day) { add(t.spaceName, t.spaceColor) }
         }
         return colors
     }

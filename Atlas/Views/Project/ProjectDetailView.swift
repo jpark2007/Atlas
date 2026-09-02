@@ -71,21 +71,29 @@ struct ProjectDetailView: View {
             .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
     }
 
-    /// All events tagged to this project, in time order.
+    /// All events tagged to this project, in time order. Sorted by `bucketDate` so an
+    /// all-day exam sits on its own day rather than at the UTC anchor's local hour.
     private var allEvents: [CalendarEvent] {
-        state.events
+        let cal = Calendar.current
+        return state.events
             .filter { $0.spaceName == project.spaceName && ($0.projectID == project.id || $0.subtitle == project.name) }
-            .sorted { $0.start < $1.start }
+            .sorted { $0.bucketDate(in: cal) < $1.bucketDate(in: cal) }
     }
 
-    /// Upcoming (or still in progress) events — the default list.
+    /// Upcoming (or still in progress) events — the default list. An all-day event has no
+    /// end instant to compare against, so it stays live for the whole of its own day.
     private var liveEvents: [CalendarEvent] {
-        allEvents.filter { $0.end >= state.now }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: state.now)
+        return allEvents.filter { $0.isAllDay ? $0.bucketDate(in: cal) >= today : $0.end >= state.now }
     }
 
     /// Elapsed events behind the "N PAST" reveal, most recent first.
     private var pastEvents: [CalendarEvent] {
-        allEvents.filter { $0.end < state.now }.sorted { $0.start > $1.start }
+        let live = Set(liveEvents.map(\.id))
+        let cal = Calendar.current
+        return allEvents.filter { !live.contains($0.id) }
+            .sorted { $0.bucketDate(in: cal) > $1.bucketDate(in: cal) }
     }
 
     private var isEmptyProject: Bool {
@@ -105,8 +113,8 @@ struct ProjectDetailView: View {
                         ClassHubSection(project: project)
                     }
                     overview
-                    if !liveTasks.isEmpty || !completedTasks.isEmpty { liveTasksSection }
-                    if !liveEvents.isEmpty || !pastEvents.isEmpty    { liveEventsSection }
+                    if !liveTasks.isEmpty || !completedTasks.isEmpty
+                        || !liveEvents.isEmpty || !pastEvents.isEmpty { liveTasksSection }
                     if state.isShared(project) { teamSection }
                     if isEmptyProject { starterTemplate }
                     notesSection
@@ -497,7 +505,9 @@ struct ProjectDetailView: View {
             .projectSectionHeader()
 
             if starterTasks.isEmpty {
-                Text("Cleared. Add an overview above to describe this project.")
+                Text(project.isClass
+                     ? "Cleared. Use the overview above for anything you want to remember about this class."
+                     : "Cleared. Add an overview above to describe this project.")
                     .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
             } else {
@@ -689,6 +699,14 @@ struct ProjectDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 sectionLabel("OVERVIEW")
+                // On a class the user already knows what the class is — this field
+                // is their own scratch notes, not a description. Say so, without
+                // colliding with the NOTES (documents) section below.
+                if project.isClass {
+                    Text("your own notes on this class")
+                        .atlasFont(size: 11, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
                 Spacer()
                 if !isEditingOverview {
                     Button {
@@ -700,7 +718,7 @@ struct ProjectDetailView: View {
                             .foregroundStyle(AtlasTheme.Colors.textMuted)
                     }
                     .buttonStyle(.plain)
-                    .help("Edit overview")
+                    .help(project.isClass ? "Edit your notes" : "Edit overview")
                 }
             }
             .projectSectionHeader()
@@ -717,7 +735,7 @@ struct ProjectDetailView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "plus")
                             .atlasFont(size: 12)
-                        Text("Add an overview…")
+                        Text(project.isClass ? "Add a note…" : "Add an overview…")
                             .atlasFont(size: 14, design: .rounded)
                     }
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
@@ -736,7 +754,9 @@ struct ProjectDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             ZStack(alignment: .topLeading) {
                 if draftOverview.isEmpty {
-                    Text("What is this project about?")
+                    Text(project.isClass
+                         ? "Anything you want to keep in mind for this class — reminders, professor quirks, what to study."
+                         : "What is this project about?")
                         .atlasFont(size: 14, weight: .medium, design: .rounded)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                         .padding(.leading, 5).padding(.top, 1)
@@ -778,20 +798,34 @@ struct ProjectDetailView: View {
     private var liveTasksSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                sectionLabel("TASKS")
-                if !liveTasks.isEmpty {   // "TASKS 0" over a completed-only reveal reads as a bug
-                    Text("\(liveTasks.count)")
+                sectionLabel(liveEvents.isEmpty && pastEvents.isEmpty ? "TASKS" : "TASKS & EVENTS")
+                // "TASKS 0" over a completed-only reveal reads as a bug
+                if liveTasks.count + liveEvents.count > 0 {
+                    Text("\(liveTasks.count + liveEvents.count)")
                         .atlasMono(size: 10, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
                 }
                 Spacer()
             }
             .projectSectionHeader()
-            VStack(spacing: 0) {
-                ForEach(Array(liveTasks.enumerated()), id: \.element.id) { i, task in
-                    liveTaskRow(task)
-                    if i < liveTasks.count - 1 {
-                        Divider().overlay(AtlasTheme.Colors.hairline)
+            // Variant 2C: the near work in due buckets, the rest of the term in collapsed
+            // months. A course is 49 tasks long — nothing past this week opens by default.
+            // Events ride the same folds: "this week" means everything this week.
+            TermTaskList(tasks: liveTasks, events: liveEvents, now: state.now) { task in
+                liveTaskRow(task)
+            } eventRow: { event in
+                LifecycleEventRow(event: event)
+            }
+            if !pastEvents.isEmpty {
+                RevealRow(count: pastEvents.count, noun: "PAST EVENTS", isOpen: $showPast)
+                if showPast {
+                    VStack(spacing: 0) {
+                        ForEach(Array(pastEvents.enumerated()), id: \.element.id) { i, event in
+                            LifecycleEventRow(event: event, dimmed: true)
+                            if i < pastEvents.count - 1 {
+                                Divider().overlay(AtlasTheme.Colors.hairline)
+                            }
+                        }
                     }
                 }
             }
@@ -843,44 +877,6 @@ struct ProjectDetailView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    // MARK: - Live events
-
-    private var liveEventsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                sectionLabel("EVENTS")
-                if !liveEvents.isEmpty {
-                    Text("\(liveEvents.count)")
-                        .atlasMono(size: 10, weight: .medium)
-                        .foregroundStyle(AtlasTheme.Colors.textMuted)
-                }
-                Spacer()
-            }
-            .projectSectionHeader()
-            VStack(spacing: 0) {
-                ForEach(Array(liveEvents.enumerated()), id: \.element.id) { i, event in
-                    LifecycleEventRow(event: event)
-                    if i < liveEvents.count - 1 {
-                        Divider().overlay(AtlasTheme.Colors.hairline)
-                    }
-                }
-            }
-            if !pastEvents.isEmpty {
-                RevealRow(count: pastEvents.count, noun: "PAST", isOpen: $showPast)
-                if showPast {
-                    VStack(spacing: 0) {
-                        ForEach(Array(pastEvents.enumerated()), id: \.element.id) { i, event in
-                            LifecycleEventRow(event: event, dimmed: true)
-                            if i < pastEvents.count - 1 {
-                                Divider().overlay(AtlasTheme.Colors.hairline)
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     // MARK: - Team (collab phase 3 — availability)

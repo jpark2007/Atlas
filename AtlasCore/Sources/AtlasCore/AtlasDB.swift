@@ -99,8 +99,12 @@ public struct AtlasSnapshot {
     /// School terms (0042). Defaulted so existing callers are unchanged; best-effort
     /// in `loadAll()` so a DB without the migration simply has none.
     public var terms: [Term]
+    /// Syllabus-scan receipts (0046) — what a task's/event's `scanID` resolves to for
+    /// the "From <file>" source line. Defaulted + best-effort in `loadAll()`, so a DB
+    /// without the migration simply has none and items show no source.
+    public var scans: [ScanRecord]
 
-    public init(spaces: [Space], projects: [Project], tasks: [TaskItem], events: [CalendarEvent], notes: [Note], goals: [Goal], references: [Reference] = [], referenceAttachments: [ReferenceAttachment] = [], terms: [Term] = []) {
+    public init(spaces: [Space], projects: [Project], tasks: [TaskItem], events: [CalendarEvent], notes: [Note], goals: [Goal], references: [Reference] = [], referenceAttachments: [ReferenceAttachment] = [], terms: [Term] = [], scans: [ScanRecord] = []) {
         self.spaces = spaces
         self.projects = projects
         self.tasks = tasks
@@ -110,6 +114,7 @@ public struct AtlasSnapshot {
         self.references = references
         self.referenceAttachments = referenceAttachments
         self.terms = terms
+        self.scans = scans
     }
 }
 
@@ -440,6 +445,46 @@ public struct TermRow: Codable {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ScanRow — one syllabus-scan commit (0046). `created_at` is server-defaulted, so
+// it is decode-only: the client never sends it and never overwrites the receipt's
+// own timestamp.
+// ─────────────────────────────────────────────────────────────────────────────
+
+public struct ScanRow: Codable {
+    public var id: UUID
+    public var userId: UUID?
+    public var projectId: UUID?
+    public var fileName: String
+    public var kind: String
+    public var createdAt: Date?
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case id
+        case userId    = "user_id"
+        case projectId = "project_id"
+        case fileName  = "file_name"
+        case kind
+        case createdAt = "created_at"
+    }
+
+    public init(domain s: ScanRecord) {
+        self.id        = s.id
+        self.projectId = s.projectID
+        self.fileName  = s.fileName
+        self.kind      = s.kind
+        self.createdAt = nil
+    }
+
+    public func toDomain() -> ScanRecord {
+        ScanRecord(id: id,
+                   projectID: projectId,
+                   fileName: fileName,
+                   kind: kind,
+                   createdAt: createdAt ?? Date())
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TaskRow
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -450,6 +495,10 @@ public struct TaskRow: Codable {
     public var spaceName: String
     public var title: String
     public var dueDate: Date?
+    /// True when `dueDate` names a calendar DATE, not an instant (migration 0045). Optional
+    /// so decoding survives rows written before the migration; round-tripped so a client
+    /// edit of a Canvas task never drops the flag (which would resurrect the day-off bug).
+    public var allDay: Bool?
     public var status: String        // persisted as text — see encode/decode helpers below
     public var done: Bool
     public var completedAt: Date?
@@ -464,6 +513,9 @@ public struct TaskRow: Codable {
     /// The due date this task carried before a late-reschedule (migration 0041). Set once
     /// and round-tripped, so the original miss keeps its faded marker in the past.
     public var originalDueDate: Date?
+    /// The due date this task carried before a Canvas re-sync moved it (migration 0047).
+    /// Server-written only; round-tripped so a client edit never nulls a pending chip.
+    public var dueMovedFrom: Date?
     public var workBlockGoogleEventId: String?
     /// Apple Calendar mirror id for this task's work-block (migration 0026). Round-tripped
     /// so a client edit never nulls the linkage. Best-effort — Mac is the only EventKit device.
@@ -484,6 +536,10 @@ public struct TaskRow: Codable {
     /// The feed's type — "canvas" or "ics". Optional (migration window). Round-tripped so
     /// a client edit never nulls it; decode drives the domain's source label.
     public var feedType: String?
+    /// The syllabus scan that created this task (migration 0046). Optional so decoding
+    /// survives rows/DBs that predate it; round-tripped so a client edit never nulls
+    /// the origin column.
+    public var scanId: UUID?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
@@ -492,6 +548,7 @@ public struct TaskRow: Codable {
         case spaceName   = "space_name"
         case title
         case dueDate     = "due_date"
+        case allDay      = "all_day"
         case status
         case done
         case completedAt = "completed_at"
@@ -501,6 +558,7 @@ public struct TaskRow: Codable {
         case durationMin = "duration_min"
         case estimateMin = "estimate_min"
         case originalDueDate = "original_due_date"
+        case dueMovedFrom = "due_moved_from"
         case workBlockGoogleEventId = "work_block_google_event_id"
         case appleEventId = "apple_event_id"
         case spaceId     = "space_id"
@@ -510,6 +568,7 @@ public struct TaskRow: Codable {
         case canvasCourse = "canvas_course"
         case feedId      = "feed_id"
         case feedType    = "feed_type"
+        case scanId      = "scan_id"
     }
 
     public init(domain t: TaskItem) {
@@ -518,6 +577,7 @@ public struct TaskRow: Codable {
         self.spaceName   = t.spaceName
         self.title       = t.title
         self.dueDate     = t.dueDate
+        self.allDay      = t.allDay
         self.status      = TaskRow.encode(status: t.status)
         self.done        = t.done
         self.completedAt = t.completedAt
@@ -527,6 +587,7 @@ public struct TaskRow: Codable {
         self.durationMin = t.durationMin
         self.estimateMin = t.estimateMin
         self.originalDueDate = t.originalDueDate
+        self.dueMovedFrom = t.dueMovedFrom
         self.workBlockGoogleEventId = t.workBlockGoogleEventId
         self.appleEventId = t.appleEventId
         self.spaceId     = t.spaceID
@@ -536,12 +597,13 @@ public struct TaskRow: Codable {
         self.canvasCourse = t.canvasCourse
         self.feedId      = t.feedID
         self.feedType    = t.feedType
+        self.scanId      = t.scanID
     }
 
     public func toDomain() -> TaskItem {
         var task = TaskItem(id: id,
                  title: title,
-                 dueLabel: TaskItem.dueLabel(for: dueDate),
+                 dueLabel: TaskItem.dueLabel(for: dueDate, allDay: allDay ?? false),
                  status: TaskRow.decode(status: status),
                  done: done,
                  completedAt: completedAt,
@@ -553,8 +615,10 @@ public struct TaskRow: Codable {
                  appleEventId: appleEventId,
                  spaceName: spaceName,
                  notes: notes ?? "")
+        task.allDay = allDay ?? false
         task.estimateMin = estimateMin
         task.originalDueDate = originalDueDate
+        task.dueMovedFrom = dueMovedFrom
         task.projectID = projectId
         task.spaceID = spaceId
         task.assigneeID = assigneeId
@@ -563,6 +627,7 @@ public struct TaskRow: Codable {
         task.canvasCourse = canvasCourse
         task.feedID = feedId
         task.feedType = feedType
+        task.scanID = scanId
         return task
     }
 
@@ -631,6 +696,11 @@ public struct EventRow: Codable {
     /// takes precedence over `canvasUid`/`googleEventId`. Optional for the same
     /// migration-window reason; null falls back to the legacy `canvasUid` rule.
     public var feedType: String?
+    /// The syllabus scan that created this event (migration 0046). Unlike the feed
+    /// columns this DOES round-trip from the domain: a scanned event is Atlas-native
+    /// and the client upserts it, so dropping the id here would erase its origin on
+    /// the first edit.
+    public var scanId: UUID?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
@@ -652,6 +722,7 @@ public struct EventRow: Codable {
         case googleConnectionId = "google_connection_id"
         case feedId    = "feed_id"
         case feedType  = "feed_type"
+        case scanId    = "scan_id"
     }
 
     public init(domain e: CalendarEvent) {
@@ -676,6 +747,7 @@ public struct EventRow: Codable {
         // Feed columns are decode-only (feed events are read-only, never upserted back).
         self.feedId = nil
         self.feedType = nil
+        self.scanId = e.scanID
     }
 
     /// - Parameter feedNames: `calendar_feeds.id → display_name`, used to label a generic
@@ -728,6 +800,7 @@ public struct EventRow: Codable {
         event.spaceID = spaceId
         event.canvasCourse = canvasCourse
         event.googleConnectionId = googleConnectionId
+        event.scanID = scanId
         return event
     }
 }
@@ -1448,6 +1521,11 @@ public final class AtlasDB {
         // School simply has no terms rather than the whole load failing.
         let termRows: [Term] = (try? await listTerms()) ?? []
 
+        // Syllabus-scan receipts (0046) — same best-effort posture: without the
+        // migration this 404s and items simply show no source line, which is the
+        // correct fallback (never label a source the data can't prove).
+        let scanRows: [ScanRecord] = (try? await listScans()) ?? []
+
         // Feed names label generic-ICS events (`.icsFeed(name:)`). Best-effort: if the
         // multi-ICS-feeds migration isn't deployed yet, `calendar_feeds` 404s — degrade to
         // an empty map (unresolved ICS events fall back to "Calendar") rather than failing
@@ -1466,7 +1544,8 @@ public final class AtlasDB {
             goals:    gr.map { $0.toDomain() },
             references:           refRows.map    { $0.toDomain() },
             referenceAttachments: attachRows.map { $0.toDomain() },
-            terms:                termRows
+            terms:                termRows,
+            scans:                scanRows
         )
     }
 
@@ -1923,6 +2002,28 @@ public final class AtlasDB {
                        query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
                        extraHeaders: ["Prefer": "return=minimal"],
                        sess: sess)
+    }
+
+    // MARK: Syllabus scans (provenance, 0046)
+
+    /// Every scan receipt the signed-in user owns, newest first (RLS scopes the read).
+    public func listScans() async throws -> [ScanRecord] {
+        let rows: [ScanRow] = try await getAll("syllabus_scans", order: "created_at.desc")
+        return rows.map { $0.toDomain() }
+    }
+
+    /// Records one commit of the scan sheet. Written BEFORE the items it stamps, so a
+    /// task never points at a receipt that doesn't exist.
+    public func insertScan(_ s: ScanRecord) async throws {
+        let sess = try await requireSession()
+        guard let userId = UUID(uuidString: sess.user.id) else {
+            throw AtlasDBError.requestFailed(0, "Malformed user UUID: \(sess.user.id)")
+        }
+        var row = ScanRow(domain: s)
+        row.userId = userId
+        let body = try isoEncoder.encode(row)
+        try await send(method: "POST", table: "syllabus_scans",
+                       query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
     }
 
     // MARK: Tasks

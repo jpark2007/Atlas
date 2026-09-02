@@ -84,6 +84,20 @@ final class SyllabusScanTests: XCTestCase {
         }
     }
 
+    /// The page cap is a contract with the server (`MAX_IMAGES` in `syllabus-scan`) — a
+    /// change here that doesn't ship there turns into a 413 after the upload.
+    func testPageCapIsTwentyAndAFullScanFitsTheByteBudget() throws {
+        XCTAssertEqual(SyllabusScan.maxImages, 20)
+
+        // A PDF page rasterized the way the sheets do it — 1400px long edge, JPEG q0.8 —
+        // lands around 600 KB for a dense page. Twenty of those must still validate.
+        let page = SyllabusScanImage(bytes: Data(repeating: 0x03, count: 600_000),
+                                     mediaType: "image/jpeg")
+        let full = Array(repeating: page, count: SyllabusScan.maxImages)
+        XCTAssertLessThanOrEqual(SyllabusScan.totalBytes(full), SyllabusScan.maxTotalBytes)
+        XCTAssertNoThrow(try SyllabusScan.validate(full))
+    }
+
     // MARK: - Response decoding
 
     func testDecodesAFullClass() throws {
@@ -140,6 +154,60 @@ final class SyllabusScanTests: XCTestCase {
         XCTAssertEqual(try SyllabusScan.decode(from: Data("{}".utf8)).classes, [])
         XCTAssertFalse(try SyllabusScan.decode(from: Data(#"{"classes":[]}"#.utf8)).truncated)
         XCTAssertTrue(try SyllabusScan.decode(from: Data(#"{"classes":[],"truncated":true}"#.utf8)).truncated)
+    }
+
+    /// The additive fields the rewritten server sends: per-block section/kind and the
+    /// top-level warning list. An older server sends none of them and still decodes.
+    func testDecodesSectionLabelKindAndWarnings() throws {
+        let payload = """
+        {"classes":[{
+          "code":"MATH 135",
+          "meetingPattern":[
+            {"weekdays":[2,4],"start":"14:00","end":"15:20","location":"PH-115",
+             "sectionLabel":"Sec. 37–39","kind":"lecture"},
+            {"weekdays":[3],"start":"15:50","end":"17:10","location":"SEC-217",
+             "sectionLabel":"Section 38","kind":"recitation"}
+          ],
+          "items":[]
+        }],
+        "warnings":["Dropped a meeting block for MATH 135: weekday [0] is outside 1…7."]}
+        """
+        let result = try SyllabusScan.decode(from: Data(payload.utf8))
+        let blocks = try XCTUnwrap(result.classes.first?.meetingPattern)
+        XCTAssertEqual(blocks[0].kind, "lecture")
+        XCTAssertEqual(blocks[1].sectionLabel, "Section 38")
+        XCTAssertEqual(blocks[1].kind, "recitation")
+        XCTAssertEqual(result.warnings.count, 1)
+
+        // No `warnings` key at all — an older function — is simply no warnings.
+        XCTAssertEqual(try SyllabusScan.decode(from: Data(#"{"classes":[]}"#.utf8)).warnings, [])
+    }
+
+    // MARK: - Pasted text lane
+
+    func testTextRequestBodyOmitsImages() throws {
+        let body = try SyllabusScan.requestBody(text: "Meetings: MW 2:00–3:20 PH-115",
+                                                termStart: "2026-08-24",
+                                                termEnd: nil,
+                                                timezone: "America/New_York")
+        let obj = try json(body)
+        XCTAssertNil(obj["images"])
+        XCTAssertEqual(obj["text"] as? String, "Meetings: MW 2:00–3:20 PH-115")
+        XCTAssertEqual(obj["termStart"] as? String, "2026-08-24")
+        XCTAssertNil(obj["termEnd"])
+    }
+
+    func testTextValidationTrimsAndBoundsThePaste() throws {
+        let good = String(repeating: "a", count: SyllabusScan.minTextCharacters)
+        XCTAssertEqual(try SyllabusScan.validate(text: "  \(good)\n"), good)
+
+        XCTAssertThrowsError(try SyllabusScan.validate(text: "syllabus")) { error in
+            XCTAssertEqual(error as? AtlasAIError, .noImages)
+        }
+        let huge = String(repeating: "a", count: SyllabusScan.maxTextCharacters + 1)
+        XCTAssertThrowsError(try SyllabusScan.validate(text: huge)) { error in
+            XCTAssertEqual(error as? AtlasAIError, .tooLong)
+        }
     }
 
     func testDecodeThrowsOnGarbage() {

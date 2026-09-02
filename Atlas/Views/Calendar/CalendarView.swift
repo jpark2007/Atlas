@@ -70,8 +70,13 @@ struct CalendarView: View {
 
                 Group {
                     if unscheduledCollapsed {
+                        // The badge counts what the OPEN rail would show by default —
+                        // overdue plus this week — not an all-time total that a November
+                        // assignment inflates.
                         UnscheduledRail(
-                            count: state.unscheduledTasks.filter { !hiddenSpaces.contains($0.spaceName) }.count,
+                            count: UnscheduledTray.inWeekCount(
+                                tasks: state.unscheduledTasks.filter { !hiddenSpaces.contains($0.spaceName) },
+                                now: state.now),
                             onExpand: { toggleUnscheduledTray() }
                         )
                     } else {
@@ -79,7 +84,6 @@ struct CalendarView: View {
                             tasks: state.unscheduledTasks,
                             now: state.now,
                             hiddenSpaces: hiddenSpaces,
-                            spaceOrder: state.spaces.map(\.name),
                             onSchedule: { taskID, hour in
                                 schedule(taskID: taskID, on: selectedDate, hour: Double(hour))
                             },

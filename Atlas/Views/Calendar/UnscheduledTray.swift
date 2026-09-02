@@ -22,8 +22,6 @@ struct UnscheduledTray: View {
     var now: Date = Date()
     /// Spaces hidden via the calendar's category chips — narrows the tray to match the grid.
     var hiddenSpaces: Set<String> = []
-    /// Sidebar space order — used to sort collapsible sections.
-    var spaceOrder: [String] = []
     /// Fallback scheduler — schedules the task to the given hour.
     let onSchedule: (UUID, Int) -> Void
     /// Manual due-date editor — nil clears the due date.
@@ -41,8 +39,15 @@ struct UnscheduledTray: View {
 
     /// Which chip's due-date popover is open.
     @State private var editingTaskID: UUID?
-    /// Which space sections are expanded (all open by default).
-    @State private var expandedSpaces: Set<String> = []
+    /// How far past this week the rail is showing. The rail opens on the current week
+    /// every time — a November assignment is not this Wednesday's problem — and the
+    /// footer widens the window in place.
+    @State private var window: Window = .thisWeek
+
+    enum Window: Int, Comparable {
+        case thisWeek, nextWeek, all
+        static func < (a: Window, b: Window) -> Bool { a.rawValue < b.rawValue }
+    }
     /// The one chip expanded in place (click to open, click again to fold). At most one
     /// at a time — clicking another row moves the expansion rather than stacking cards.
     @State private var expandedTaskID: UUID?
@@ -55,8 +60,21 @@ struct UnscheduledTray: View {
         tasks.filter { !hiddenSpaces.contains($0.spaceName) }
     }
 
-    private var groups: [(spaceName: String, tasks: [TaskItem])] {
-        TaskGrouping.bySpace(tasks: displayedTasks, spaceOrder: spaceOrder)
+    /// The week horizon this rail is scoped to. Overdue work is its own bucket, pinned
+    /// above the week window and never windowed away.
+    private var horizons: [TaskGrouping.WeekHorizon: [TaskItem]] {
+        TaskGrouping.byWeekHorizon(tasks: displayedTasks, now: now)
+    }
+
+    private func tasks(_ horizon: TaskGrouping.WeekHorizon) -> [TaskItem] {
+        horizons[horizon] ?? []
+    }
+
+    /// Overdue + this week: what the rail shows by default, and what the collapsed rail's
+    /// badge counts.
+    static func inWeekCount(tasks: [TaskItem], now: Date) -> Int {
+        let horizons = TaskGrouping.byWeekHorizon(tasks: tasks, now: now)
+        return (horizons[.overdue]?.count ?? 0) + (horizons[.thisWeek]?.count ?? 0)
     }
 
     var body: some View {
@@ -66,12 +84,22 @@ struct UnscheduledTray: View {
                     Image(systemName: "tray.full")
                         .atlasFont(size: 13, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                    // The title never wraps — at the panel's narrow width it used to
+                    // break mid-word ("Unschedule / d"). It holds one line; the summary
+                    // beside it is what gives way (truncates) when the width is tight.
                     Text("Unscheduled")
                         .atlasFont(size: 15, weight: .semibold)
                         .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    Text("\(displayedTasks.count)")
+                        .lineLimit(1)
+                        .fixedSize()
+                    Text(window == .thisWeek
+                         ? "\(tasks(.overdue).count + tasks(.thisWeek).count) this week"
+                         : "\(displayedTasks.count)")
                         .atlasMono(size: 11, weight: .medium)
                         .foregroundStyle(AtlasTheme.Colors.textMuted)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .layoutPriority(-1)
                     Spacer(minLength: 0)
                     // Collapse into the rail. chevron.right points toward the right
                     // edge the panel folds into (the rail's chevron.left brings it back).
@@ -98,102 +126,170 @@ struct UnscheduledTray: View {
                             .foregroundStyle(AtlasTheme.Colors.textSecondary)
                     }
                     .padding(.vertical, 8)
+                    Spacer(minLength: 0)
                 } else {
-                    VStack(spacing: 10) {
-                        ForEach(Array(groups.enumerated()), id: \.element.spaceName) { index, group in
-                            spaceSection(group)
-                            if index < groups.count - 1 {
-                                Divider().overlay(AtlasTheme.Colors.border)
+                    // Anything past the panel's height used to be silently clipped —
+                    // the rail is a list, so it scrolls. The chips' drag-to-schedule is a
+                    // custom global-coordinate DragGesture (see `taskChip`), deliberately
+                    // left untouched: on macOS a ScrollView pans by wheel/trackpad, not by
+                    // a pointer drag, so the two don't compete for the same input.
+                    ScrollView(.vertical) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            // Overdue is PINNED above the week window — it can't be
+                            // scrolled past on the way to Wednesday, and no footer control
+                            // ever hides it.
+                            if !tasks(.overdue).isEmpty {
+                                TaskGroupHeader(title: "Overdue", count: tasks(.overdue).count, late: true)
+                                rows(tasks(.overdue))
                             }
+
+                            TaskGroupHeader(title: "This week · \(weekRangeLabel(offset: 0))",
+                                            count: tasks(.thisWeek).count)
+                            if tasks(.thisWeek).isEmpty {
+                                emptyLine("Nothing unscheduled this week")
+                            } else {
+                                rows(tasks(.thisWeek))
+                            }
+
+                            if window >= .nextWeek, !tasks(.nextWeek).isEmpty {
+                                TaskGroupHeader(title: "Next week · \(weekRangeLabel(offset: 1))",
+                                                count: tasks(.nextWeek).count)
+                                rows(tasks(.nextWeek))
+                            }
+                            if window == .all {
+                                if !tasks(.later).isEmpty {
+                                    TaskGroupHeader(title: "Later", count: tasks(.later).count)
+                                    rows(tasks(.later))
+                                }
+                                if !tasks(.noDate).isEmpty {
+                                    TaskGroupHeader(title: "No date", count: tasks(.noDate).count)
+                                    rows(tasks(.noDate))
+                                }
+                            }
+
+                            footer
                         }
+                        .padding(.bottom, 4)
                     }
+                    .frame(maxHeight: .infinity)
                 }
-                Spacer(minLength: 0)
             }
         }
-        .onAppear { expandedSpaces = Set(groups.map(\.spaceName)) }
     }
 
-    // MARK: Space section
+    // MARK: Groups
 
-    private func spaceSection(_ group: (spaceName: String, tasks: [TaskItem])) -> some View {
-        let isExpanded = Binding(
-            get: { expandedSpaces.contains(group.spaceName) },
-            set: { if $0 { expandedSpaces.insert(group.spaceName) }
-                  else   { expandedSpaces.remove(group.spaceName) } }
-        )
-        return DisclosureGroup(isExpanded: isExpanded) {
-            VStack(spacing: 8) {
-                ForEach(group.tasks) { task in taskChip(task) }
+    private func rows(_ items: [TaskItem]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { i, task in
+                taskChip(task)
+                if i < items.count - 1 {
+                    Divider().overlay(AtlasTheme.Colors.hairline)
+                }
             }
-            .padding(.top, 6)
-        } label: {
-            spaceLabel(group.spaceName, count: group.tasks.count)
         }
     }
 
-    private func spaceLabel(_ name: String, count: Int) -> some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(spaceColor(for: name))
-                .frame(width: 7, height: 7)
-            Text(name.uppercased())
-                .atlasMono(size: 11, weight: .semibold)
-                .tracking(1.1)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-            Text("\(count)")
-                .atlasMono(size: 10, weight: .medium)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
-            Spacer()
+    private func emptyLine(_ text: String) -> some View {
+        Text(text)
+            .atlasFont(size: 12, weight: .medium, design: .rounded)
+            .foregroundStyle(AtlasTheme.Colors.textMuted)
+            .padding(.vertical, 9)
+    }
+
+    /// "Show next week (6)" → "See all 41 tasks" → "Show this week only", in that order.
+    @ViewBuilder
+    private var footer: some View {
+        let hidden = displayedTasks.count - shownCount
+        HStack(spacing: 8) {
+            if window == .thisWeek, !tasks(.nextWeek).isEmpty {
+                ShowMoreButton(title: "Show next week (\(tasks(.nextWeek).count))") {
+                    withAnimation(AtlasTheme.taskCrossOut) { window = .nextWeek }
+                }
+            }
+            if window != .all, hidden > 0 {
+                ShowMoreButton(title: "See all \(displayedTasks.count) tasks") {
+                    withAnimation(AtlasTheme.taskCrossOut) { window = .all }
+                }
+            }
+            if window != .thisWeek {
+                ShowMoreButton(title: "Show this week only") {
+                    withAnimation(AtlasTheme.taskCrossOut) { window = .thisWeek }
+                }
+            }
+        }
+        .padding(.top, 14)
+    }
+
+    /// How many rows the current window is rendering.
+    private var shownCount: Int {
+        switch window {
+        case .thisWeek: return tasks(.overdue).count + tasks(.thisWeek).count
+        case .nextWeek: return tasks(.overdue).count + tasks(.thisWeek).count + tasks(.nextWeek).count
+        case .all:      return displayedTasks.count
         }
     }
 
-    private func spaceColor(for name: String) -> Color {
-        // Match the chip's own spaceColor when available, fallback to accent.
-        tasks.first { $0.spaceName == name }?.spaceColor ?? AtlasTheme.Colors.accent
+    /// "Aug 31 – Sep 6" — the window a group header names.
+    private func weekRangeLabel(offset: Int) -> String {
+        let cal = Calendar.current
+        let week = TimeModel.weekInterval(offset: offset, from: now, calendar: cal)
+        let last = week.end.addingTimeInterval(-1)
+        let end = cal.isDate(week.start, equalTo: last, toGranularity: .month)
+            ? CalendarFormat.dayNumber.string(from: last)
+            : CalendarFormat.monoMonthDay.string(from: last)
+        return "\(CalendarFormat.monoMonthDay.string(from: week.start)) – \(end)"
     }
 
     private func taskChip(_ task: TaskItem) -> some View {
-        // Overdue tasks that returned to the tray to be re-planned read bright red — the
-        // same danger color the overdue deadline pill uses (don't invent a new red).
-        let overdue = task.isOverdue(now: now)
+        let horizon = TaskGrouping.horizon(for: task, now: now)
+        // Overdue in the rail is AMBER, matching the Late bar and the 1A mockup's overdue
+        // group. Red stays reserved for "due today with nothing planned".
+        let overdue = horizon == .overdue
         // WHOSE work this is: the class's own color when the task's project set one, else
         // the space color, else the neutral accent. Resolved by AppState so the rail and
         // the day grid can never disagree (see `taskAccentColor` / `gridColored`).
         let accent = state.taskAccentColor(for: task)
-        let ink = overdue ? AtlasTheme.Colors.danger : accent
+        let ink = overdue ? AtlasTheme.Colors.late : accent
         let expanded = expandedTaskID == task.id
         let completing = completingTaskID == task.id
-        return HStack(alignment: .top, spacing: 9) {
+        return HStack(alignment: .top, spacing: 8) {
             // Check it off — completes the task; it then drops out of the tray.
             Button { completeTask(task) } label: {
                 Image(systemName: completing ? "checkmark.square.fill" : "square")
-                    .atlasFont(size: 17, weight: .medium)
+                    .atlasFont(size: 15, weight: .medium)
                     .foregroundStyle(completing ? ink : AtlasTheme.Colors.textMuted)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Mark done")
-            RoundedRectangle(cornerRadius: 2)
+            // The class dot — the row's whole color signal, per the mockup.
+            Circle()
                 .fill(ink)
-                .frame(width: 3)
-                .frame(minHeight: 28)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(task.title)
-                    .atlasFont(size: 14, weight: .semibold, design: .rounded)
-                    .foregroundStyle(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textPrimary)
+                .frame(width: 7, height: 7)
+                .padding(.top, 6)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(task.title)
+                        .atlasFont(size: 13.5, weight: .semibold, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .lineLimit(expanded ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: expanded)
+                        .multilineTextAlignment(.leading)
+                    // Canvas moved the due date since this was scheduled (migration 0047) —
+                    // the work block was left untouched, so this marker is the only signal
+                    // the plan may no longer match the deadline.
+                    if task.dueMovedFrom != nil {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .atlasFont(size: 10, weight: .semibold)
+                            .foregroundStyle(AtlasTheme.Colors.warning)
+                            .help("Due date moved")
+                    }
+                }
+                Text(metaLine(task, horizon: horizon, expanded: expanded))
+                    .atlasFont(size: 11.5, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .lineLimit(expanded ? nil : 1)
-                    .fixedSize(horizontal: false, vertical: expanded)
-                    .multilineTextAlignment(.leading)
-                if expanded, let className = state.project(for: task)?.name {
-                    Text(className)
-                        .atlasMono(size: 10, weight: .semibold)
-                        .tracking(0.8)
-                        .foregroundStyle(ink)
-                }
-                if !task.dueLabel.isEmpty {
-                    atlasTag(text: "Due \(expanded ? fullDueLabel(task) : task.dueLabel)", color: ink)
-                }
                 if expanded {
                     Button { onOpenTask(task.id) } label: {
                         HStack(spacing: 4) {
@@ -208,27 +304,33 @@ struct UnscheduledTray: View {
                     .help("Open this task in Atlas")
                 }
             }
-            Spacer(minLength: 0)
-            Image(systemName: "line.3.horizontal")
-                .atlasFont(size: 11, weight: .medium)
-                .foregroundStyle(AtlasTheme.Colors.textMuted)
+            Spacer(minLength: 6)
+            Text(trailingLabel(task, horizon: horizon))
+                .atlasMono(size: 11.5, weight: .semibold)
+                .foregroundStyle(overdue ? AtlasTheme.Colors.late : AtlasTheme.Colors.textMuted)
+                .fixedSize()
+                .padding(.top, 1)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.leading, overdue ? 11 : 0)
+        .padding(.vertical, 9)
+        // The overdue rail: a 2pt amber edge down the row, per the 1A mockup.
+        .overlay(alignment: .leading) {
+            if overdue {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(AtlasTheme.Colors.late)
+                    .frame(width: 2)
+                    .padding(.vertical, 4)
+            }
+        }
         // The compact done animation: the box inks in, the row softens and slides toward
         // the rail's edge on its way out — distinct from the main window's strikethrough,
         // which has room for a drawn line the chip does not. Reduce motion keeps the fade
         // and drops the travel.
         .opacity(completing ? 0.2 : 1)
         .offset(x: completing && !reduceMotion ? 16 : 0)
-        // A grabbable chip: transparent on the cream bg, a hairline outline for the
-        // drag affordance (overdue keeps the danger tint + red outline).
-        .background(overdue ? AtlasTheme.wash(AtlasTheme.Colors.danger) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous)
-                .strokeBorder(overdue ? AtlasTheme.Colors.danger : AtlasTheme.Colors.border, lineWidth: 1)
-        )
+        // Hairline-separated rows on flat paper — no outlined chip, no fill. The rows are
+        // a LIST (that is the density fix); the drag affordance lives in the hint line
+        // above the list and in the pointer cursor.
         .contentShape(Rectangle())
         // A stationary click EXPANDS the chip in place (full title, class, due date, Open).
         // It never opens a sheet or a popover — the card grows where it already sits.
@@ -297,10 +399,46 @@ struct UnscheduledTray: View {
         }
     }
 
+    /// "Calc I · Wed Sep 2" — whose work this is, and when it's due. Overdue rows name the
+    /// day they were due ("· due Aug 28") rather than a weekday that has already gone by.
+    private func metaLine(_ task: TaskItem, horizon: TaskGrouping.WeekHorizon, expanded: Bool) -> String {
+        let owner = state.project(for: task)?.name ?? task.spaceName
+        guard let due = task.effectiveDueDate() else { return owner }
+        if expanded { return owner.isEmpty ? fullDueLabel(task) : "\(owner) · \(fullDueLabel(task))" }
+        let when = horizon == .overdue
+            ? "due \(CalendarFormat.monoMonthDay.string(from: due))"
+            : CalendarFormat.monoDay.string(from: due)
+        return owner.isEmpty ? when : "\(owner) · \(when)"
+    }
+
+    /// The right-hand marker: "4d late" in amber for overdue, the weekday for this week's
+    /// work, a date for anything further out.
+    private func trailingLabel(_ task: TaskItem, horizon: TaskGrouping.WeekHorizon) -> String {
+        guard let due = task.effectiveDueDate() else { return "" }
+        switch horizon {
+        case .overdue:
+            let cal = Calendar.current
+            let days = cal.dateComponents([.day],
+                                          from: cal.startOfDay(for: task.originalDueDate ?? due),
+                                          to: cal.startOfDay(for: now)).day ?? 0
+            return "\(max(1, days))d late"
+        case .thisWeek:
+            return CalendarFormat.weekdayShort.string(from: due)
+        case .nextWeek, .later:
+            return CalendarFormat.monoMonthDay.string(from: due)
+        case .noDate:
+            return ""
+        }
+    }
+
     /// The expanded card's fuller due line — "MON AUG 24 · 5 PM", falling back to the
-    /// compact label when the task carries no concrete date.
+    /// compact label when the task carries no concrete date. An all-day due names a day,
+    /// so it drops the clock half and reads from its local day anchor.
     private func fullDueLabel(_ task: TaskItem) -> String {
         guard let due = task.dueDate else { return task.dueLabel }
+        guard !task.allDay else {
+            return CalendarFormat.monoDay.string(from: AllDayDate.localDay(of: due, calendar: .current))
+        }
         return "\(CalendarFormat.monoDay.string(from: due)) · \(CalendarFormat.hour.string(from: due))"
     }
 

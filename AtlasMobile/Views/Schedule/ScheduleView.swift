@@ -399,8 +399,10 @@ struct ScheduleView: View {
     private func needsTime(on day: Date) -> [TaskItem] {
         filteredTasks
             .filter { task in
-                guard let due = task.dueDate, task.scheduledAt == nil, !task.done,
+                guard let due = task.effectiveDueDate(calendar: cal), task.scheduledAt == nil, !task.done,
                       cal.isDate(due, inSameDayAs: day) else { return false }
+                // All-day dues state no hour by definition; timed ones qualify at midnight.
+                if task.allDay { return true }
                 let c = cal.dateComponents([.hour, .minute], from: due)
                 return (c.hour ?? 0) == 0 && (c.minute ?? 0) == 0
             }
@@ -422,7 +424,7 @@ struct ScheduleView: View {
         let tasks = filteredTasks.filter { task in
             guard !task.done else { return false }
             if let at = task.scheduledAt { return cal.isDate(at, inSameDayAs: selectedDay) }
-            if let due = task.dueDate { return cal.isDate(due, inSameDayAs: selectedDay) }
+            if let due = task.effectiveDueDate(calendar: cal) { return cal.isDate(due, inSameDayAs: selectedDay) }
             return false
         }.count
 

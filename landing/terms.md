@@ -6,11 +6,11 @@ Atlas is built by Andrew Khalil and Jonah Park. Contact: **drewkhalil@gmail.com*
 
 ## What Atlas is
 
-Atlas is a native Mac, iPhone, and iPad life manager — a unified calendar, spaces and projects, task capture with AI, and notes. It's in **prelaunch beta**: not everything works yet, and things will change. By joining the waitlist or using a beta build, you agree to these terms.
+Atlas is a native Mac, iPhone, and iPad life manager — a unified calendar, spaces and projects, task capture with AI, and notes. It's **free**, and it's still changing. By joining the waitlist or downloading Atlas, you agree to these terms.
 
-## Beta software, provided as-is
+## Provided as-is
 
-Atlas is early beta. It may have bugs, go down, or lose or mis-sync data, and it may change without notice. We provide it **"as is," without warranties of any kind**. Don't rely on Atlas as your only copy of anything important — keep your source calendars (Google, Apple, Canvas) as the record of truth.
+Atlas is young software. It may have bugs, go down, or lose or mis-sync data, and it may change without notice. We provide it **"as is," without warranties of any kind**. Don't rely on Atlas as your only copy of anything important — keep your source calendars (Google, Apple, Canvas) as the record of truth.
 
 ## Your account and responsibilities
 
@@ -28,7 +28,7 @@ Atlas connects to services we don't control — Google Calendar, Canvas, Apple C
 
 ## Availability, changes, and price
 
-This is a free prelaunch beta. We may add, change, or remove features, pause the service, or reset beta data as we build. We plan to offer paid features later; if pricing arrives, we'll make it clear before you could ever be charged. The beta does not charge you.
+Atlas is free. We may add, change, or remove features, or pause the service, as we build. We plan to offer paid features later; if pricing arrives, we'll make it clear before you could ever be charged. Atlas does not charge you today.
 
 ## Ending use
 
@@ -36,7 +36,7 @@ You can stop using Atlas at any time and ask us to delete your data (**drewkhali
 
 ## Liability
 
-To the fullest extent the law allows, Andrew Khalil and Jonah Park are not liable for indirect, incidental, or consequential damages, or for lost or mis-synced data, arising from your use of this beta. Atlas is offered without charge and without warranty.
+To the fullest extent the law allows, Andrew Khalil and Jonah Park are not liable for indirect, incidental, or consequential damages, or for lost or mis-synced data, arising from your use of Atlas. Atlas is offered without charge and without warranty.
 
 ## Changes to these terms
 

@@ -316,7 +316,9 @@ struct DayGridView: View {
 
     private var deadlines: [Deadline] {
         tasks.compactMap { t in
-            guard !t.done, t.scheduledAt == nil, let due = t.dueDate,
+            // An all-day due states no hour — it belongs in the day's undated group, and
+            // its raw UTC-midnight instant would otherwise fake a clock time on the wrong day.
+            guard !t.done, t.scheduledAt == nil, !t.allDay, let due = t.dueDate,
                   cal.isDate(due, inSameDayAs: day), hasClockTime(due) else { return nil }
             return Deadline(task: t, minute: clampMin(minutesFromStart(due)))
         }
@@ -642,7 +644,7 @@ private struct DeadlineStackSheet: View {
                                     .lineLimit(2)
                                     .multilineTextAlignment(.leading)
                                 Spacer(minLength: 8)
-                                if let due = task.dueDate {
+                                if let due = task.dueDate, !task.allDay {
                                     Text(Self.timeFormat.string(from: due))
                                         .font(.system(size: 10.5, weight: .bold, design: .rounded))
                                         .foregroundStyle(AtlasTheme.Colors.danger)

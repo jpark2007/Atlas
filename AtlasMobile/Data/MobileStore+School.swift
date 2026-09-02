@@ -74,6 +74,30 @@ extension MobileStore {
         }
     }
 
+    // MARK: - Scan provenance (0046)
+
+    /// Records one commit of the syllabus-scan sheet and returns the receipt, so the
+    /// caller can stamp `scanID` on everything that commit creates. Local first (the
+    /// source line reads without a reload). The DB insert is AWAITED — `tasks.scan_id`/
+    /// `events.scan_id` are FK-constrained to this row (0046), so the caller must let
+    /// this finish before writing anything that points at `scan.id`, or the item write
+    /// can reach Supabase first and fail its FK check (23503), silently swallowed by
+    /// `try?` and lost on the next reload. Mirrors `AppState.recordScan`.
+    @discardableResult
+    func recordScan(fileName: String, kind: String, projectID: UUID?) async -> ScanRecord {
+        let scan = ScanRecord(projectID: projectID, fileName: fileName, kind: kind)
+        snapshot.scans.insert(scan, at: 0)
+        try? await self.db.insertScan(scan)
+        return scan
+    }
+
+    /// The scan receipt an imported item points at, or nil when it has none (hand-made)
+    /// or the receipt hasn't loaded. Never guesses a source (CLAUDE.md rule 5).
+    func scan(_ id: UUID?) -> ScanRecord? {
+        guard let id else { return nil }
+        return snapshot.scans.first { $0.id == id }
+    }
+
     // MARK: - Classes
 
     /// The space classes are created in: an existing "School" space, else the first one.

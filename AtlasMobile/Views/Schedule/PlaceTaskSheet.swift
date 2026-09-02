@@ -113,7 +113,7 @@ struct PlaceTaskSheet: View {
                 .foregroundStyle(MobileTheme.ink)
             Spacer()
             // Recompute so a clock-timed deadline always shows its time (e.g. "Fri 5 PM").
-            let label = TaskItem.dueLabel(for: task.dueDate)
+            let label = TaskItem.dueLabel(for: task.dueDate, allDay: task.allDay)
             if !label.isEmpty {
                 Text(label).edCapsLabel().textCase(nil).fixedSize()
             }

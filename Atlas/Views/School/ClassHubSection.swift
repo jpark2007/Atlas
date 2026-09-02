@@ -17,6 +17,13 @@ struct ClassHubSection: View {
     @State private var presentSyllabusFile = false
     @State private var editingInstructor = false
     @State private var draftInstructor = ""
+    @State private var showAllWeights = false
+    @State private var infoWidth: CGFloat = 0
+
+    /// Below this the two info cards stop fitting beside each other and stack.
+    private static let sideBySideWidth: CGFloat = 460
+    private static let weightPreview = 4
+    private static let policyPreview = 3
 
     private var term: Term? {
         project.termID.flatMap { id in state.terms.first { $0.id == id } }
@@ -147,10 +154,11 @@ struct ClassHubSection: View {
     /// Static syllabus facts, in the syllabus's own words. Explicitly NOT grade tracking:
     /// nothing here is computed, and Atlas never asks what you scored.
     private func classInfoCard(_ info: ClassInfoCard) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 Text("CLASS INFO").atlasCapsLabel()
                 Spacer()
+                rescanButton
                 syllabusFileButton
                 Button { openClassInfo(editing: true) } label: {
                     Text("Edit")
@@ -159,26 +167,181 @@ struct ClassHubSection: View {
                 }
                 .buttonStyle(.plain)
             }
-            // The card summarises; the full wording of a policy is what you're held to,
-            // so the whole block opens the detail rather than only an ellipsis would.
-            Button { openClassInfo(editing: false) } label: {
-                VStack(alignment: .leading, spacing: 8) {
+
+            // Grading and policies are two different questions, so they get two cards
+            // rather than one grey block. Side by side when there's room; a narrow
+            // window stacks them.
+            if infoWidth > 0 && infoWidth < ClassHubSection.sideBySideWidth {
+                VStack(alignment: .leading, spacing: 14) {
+                    if !info.gradeWeights.isEmpty { gradingColumn(info.gradeWeights) }
+                    if !info.policies.isEmpty { policiesColumn(info.policies) }
+                }
+            } else {
+                HStack(alignment: .top, spacing: 14) {
                     if !info.gradeWeights.isEmpty {
-                        infoGroup("How it's graded", info.gradeWeights)
+                        gradingColumn(info.gradeWeights).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if !info.policies.isEmpty {
-                        infoGroup("Policies", info.policies)
-                    }
-                    if let hours = info.officeHours, !hours.isEmpty {
-                        infoGroup("Office hours", [hours])
+                        policiesColumn(info.policies).frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .help("Open the full class info")
+
+            if let hours = info.officeHours, !hours.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("OFFICE HOURS").atlasCapsLabel()
+                    Text(hours)
+                        .atlasFont(size: 13, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 2)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: ClassInfoWidthKey.self, value: proxy.size.width)
+            }
+        )
+        .onPreferenceChange(ClassInfoWidthKey.self) { infoWidth = $0 }
+    }
+
+    /// Weight bullets as their own card: label left, percent right, so the shape of the
+    /// grade reads down the column.
+    private func gradingColumn(_ allWeights: [String]) -> some View {
+        // The syllabus's own "Total: 100%" line is not a weight — the header computes
+        // the total, so showing it again both misleads and double-counts.
+        let weights = ClassInfoFormat.weightRows(allWeights)
+        let visible = showAllWeights ? weights : Array(weights.prefix(ClassHubSection.weightPreview))
+        return VStack(alignment: .leading, spacing: 0) {
+            infoColumnHeader("Grading", trailing: ClassInfoFormat.weightTotal(weights))
+            VStack(spacing: 6) {
+                ForEach(visible, id: \.self) { line in
+                    let parts = ClassInfoFormat.weight(line)
+                    HStack(spacing: 8) {
+                        Text(parts.label)
+                            .atlasFont(size: 12, weight: .semibold, design: .rounded)
+                            .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 6)
+                        if let percent = parts.percent {
+                            Text(percent)
+                                .atlasFont(size: 13, weight: .bold, design: .rounded)
+                                .monospacedDigit()
+                                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        }
+                    }
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous)
+                            .stroke(AtlasTheme.Colors.border, lineWidth: AtlasTheme.hairlineWidth)
+                    )
+                }
+            }
+            .padding(.top, 10)
+
+            if weights.count > ClassHubSection.weightPreview {
+                quietButton(showAllWeights ? "Show fewer" : "All \(weights.count)") {
+                    showAllWeights.toggle()
+                }
+            }
+        }
+    }
+
+    /// The first few policies, one line each. The wording you're actually held to is the
+    /// full wording, and that lives in the detail sheet — hence "Read all".
+    private func policiesColumn(_ policies: [String]) -> some View {
+        let visible = Array(policies.prefix(ClassHubSection.policyPreview))
+        return VStack(alignment: .leading, spacing: 0) {
+            infoColumnHeader("Policies", trailing: "\(policies.count)")
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(visible.enumerated()), id: \.offset) { index, line in
+                    let parts = ClassInfoFormat.policy(line)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        if let title = parts.title {
+                            Text(title)
+                                .atlasFont(size: 13, weight: .bold, design: .rounded)
+                                .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                                .lineLimit(1)
+                                .layoutPriority(1)
+                        }
+                        // One line here; the sheet behind "Read all" carries the wording.
+                        Text(parts.body)
+                            .atlasFont(size: 13, design: .rounded)
+                            .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8)
+
+                    if index < visible.count - 1 {
+                        Rectangle()
+                            .fill(AtlasTheme.Colors.hairline)
+                            .frame(height: AtlasTheme.hairlineWidth)
+                    }
+                }
+            }
+            .padding(.top, 2)
+
+            quietButton(policies.count > visible.count ? "Read all \(policies.count)" : "Read all") {
+                openClassInfo(editing: false)
+            }
+        }
+    }
+
+    private func infoColumnHeader(_ title: String, trailing: String?) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text(title)
+                    .atlasFont(size: 13, weight: .semibold, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                Spacer(minLength: 6)
+                if let trailing {
+                    Text(trailing)
+                        .atlasFont(size: 11.5, weight: .semibold, design: .rounded)
+                        .monospacedDigit()
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
+            }
+            .padding(.bottom, 8)
+            Rectangle()
+                .fill(AtlasTheme.Colors.textPrimary)
+                .frame(height: AtlasTheme.rule)
+        }
+    }
+
+    private func quietButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .atlasFont(size: 11.5, weight: .semibold, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                .padding(.vertical, 5)
+                .padding(.horizontal, 10)
+                .overlay(
+                    Capsule().stroke(AtlasTheme.Colors.borderStrong, lineWidth: AtlasTheme.hairlineWidth)
+                )
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 12)
+    }
+
+    /// A class with a card could never be scanned again — the only door was the empty
+    /// state. Second scans are ordinary (a revised syllabus, a schedule handed out later),
+    /// and the review sheet now asks before it replaces anything.
+    private var rescanButton: some View {
+        Button { presentSyllabusScan = true } label: {
+            Text("Scan a syllabus or schedule")
+                .atlasFont(size: 12, weight: .medium, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+        }
+        .buttonStyle(.plain)
+        .help("Read another syllabus or schedule into this class — you choose what it replaces")
     }
 
     /// Only offered once a scan has actually stored a document — a dead button on every
@@ -193,26 +356,6 @@ struct ClassHubSection: View {
             }
             .buttonStyle(.plain)
             .help("Open the file this class's scan was read from")
-        }
-    }
-
-    private func infoGroup(_ title: String, _ lines: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title)
-                .atlasFont(size: 12, weight: .semibold, design: .rounded)
-                .foregroundStyle(AtlasTheme.Colors.textPrimary)
-            ForEach(lines, id: \.self) { line in
-                HStack(alignment: .top, spacing: 6) {
-                    Text("·").atlasFont(size: 13)
-                    // Two lines on the card; the detail shows the policy in full.
-                    Text(line)
-                        .atlasFont(size: 13, design: .rounded)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .foregroundStyle(AtlasTheme.Colors.textSecondary)
-            }
         }
     }
 
@@ -248,3 +391,12 @@ struct ClassHubSection: View {
 
 // `MeetingPatternFormat` moved to AtlasCore so the Mac class page and the iOS class hub
 // describe a pattern identically (and the weekday mapping is tested once).
+
+private struct ClassInfoWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+// `ClassInfoFormat` moved to AtlasCore so the Mac class page and the iOS class hub
+// parse grade weights identically (a "200% total" bug came from them drifting apart).
+

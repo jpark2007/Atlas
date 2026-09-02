@@ -52,7 +52,7 @@ enum WidgetSnapshotWriter {
         }
 
         let needTime = snapshot.tasks.filter { task in
-            guard let due = task.dueDate, task.scheduledAt == nil, !task.done else { return false }
+            guard let due = task.effectiveDueDate(calendar: cal), task.scheduledAt == nil, !task.done else { return false }
             return cal.isDate(due, inSameDayAs: day)
         }.count
 
@@ -180,7 +180,7 @@ enum WidgetSnapshotWriter {
             guard let day = cal.date(byAdding: .day, value: offset, to: monday) else { return nil }
             let meets = term.map { SchoolCalendar.meetings(on: day, classes: classes, term: $0) } ?? []
             let due = tasks.filter { task in
-                guard let dueDate = task.dueDate, !task.done else { return false }
+                guard let dueDate = task.effectiveDueDate(calendar: cal), !task.done else { return false }
                 return cal.isDate(dueDate, inSameDayAs: day)
             }.count
             return SharedSnapshot.WeekDay(
@@ -208,8 +208,8 @@ enum WidgetSnapshotWriter {
                 SharedSnapshot.ClassWork(
                     classId: task.projectID!.uuidString,
                     title: task.title,
-                    dueLabel: TaskItem.dueLabel(for: task.dueDate, now: now),
-                    dueEpoch: task.dueDate?.timeIntervalSince1970 ?? 0)
+                    dueLabel: TaskItem.dueLabel(for: task.dueDate, allDay: task.allDay, now: now),
+                    dueEpoch: task.effectiveDue?.timeIntervalSince1970 ?? 0)
             }
     }
 

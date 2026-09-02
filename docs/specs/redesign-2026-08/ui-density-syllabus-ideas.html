@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atlas — Density &amp; Syllabus UI Variants</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════
+   Atlas — UI variants for the 2026-09-01 density / syllabus handoff.
+   Self-contained: no fonts, scripts or images loaded from anywhere.
+
+   Two type worlds on purpose:
+     • THE BOARD (page chrome) — dark warm slate, serif display. This is the
+       spec document, not the product.
+     • THE SPECIMENS (every mockup) — Atlas's real tokens, verbatim from
+       AtlasCore/Sources/AtlasCore/Theme.swift: flat cream paper #f2efe6,
+       ink #211d17, clay #d97757 for live/brand graphics only, 1px ink-12%
+       hairlines, no card fills. If a mockup looks like the app, that's why.
+
+   Data is Drew's real account: 4 classes, real Canvas assignment titles,
+   the real Math 135 syllabus scan (49 tasks, ~20 duplicate pairs).
+   ═══════════════════════════════════════════════════════════════════════ */
+:root{
+  /* app tokens (specimens) */
+  --paper:#f2efe6; --ink:#211d17; --ink2:#565145; --ink3:#7d7669;
+  --hair:rgba(33,29,23,.12); --hair-strong:rgba(33,29,23,.28);
+  --clay:#d97757; --clay-text:#b04f2f; --late:#c2710b; --danger:#ff5c5c;
+  --calc:#5b9bd5; --write:#5fb98e; --chem:#b48ad9; --psych:#e0952f;
+  /* board (page chrome) */
+  --board:#1e1b16; --board-2:#26221c; --board-3:#302b23;
+  --board-ink:#efe8da; --board-mute:#a9a091; --board-faint:#756d60;
+  --board-hair:rgba(239,232,218,.14);
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+  --round:ui-rounded,"SF Pro Rounded",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:104px}
+body{background:var(--board);color:var(--board-ink);font-family:var(--round);
+     -webkit-font-smoothing:antialiased;line-height:1.5}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+
+.wrap{max-width:1220px;margin:0 auto;padding:0 28px}
+
+/* ── masthead ─────────────────────────────────────────────────────── */
+.mast{padding:64px 0 40px;border-bottom:1px solid var(--board-hair)}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+         color:var(--board-faint)}
+.mast h1{font-family:var(--serif);font-size:clamp(38px,5.4vw,66px);font-weight:400;line-height:1.02;
+         letter-spacing:-.02em;margin:14px 0 0}
+.mast h1 em{font-style:italic;color:var(--clay)}
+.mast .lede{max-width:660px;margin-top:20px;font-size:16px;color:var(--board-mute)}
+.mast .lede b{color:var(--board-ink);font-weight:600}
+.mast .meta{margin-top:26px;display:flex;flex-wrap:wrap;gap:8px}
+.mast .meta span{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--board-mute);
+      border:1px solid var(--board-hair);border-radius:999px;padding:6px 12px}
+
+/* the one non-negotiable, given weight */
+.decree{margin:34px 0 0;border-left:2px solid var(--clay);padding:4px 0 4px 22px}
+.decree .k{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--clay)}
+.decree p{font-family:var(--serif);font-size:21px;line-height:1.4;margin-top:8px;max-width:640px}
+
+/* ── sticky rail: contents + live picks ───────────────────────────── */
+.rail{position:sticky;top:0;z-index:40;background:rgba(30,27,22,.94);
+      backdrop-filter:blur(14px);border-bottom:1px solid var(--board-hair)}
+.rail .inner{max-width:1220px;margin:0 auto;padding:0 28px;display:flex;align-items:center;
+      gap:18px;min-height:56px;flex-wrap:wrap}
+.toc{display:flex;gap:2px;flex-wrap:wrap;flex:1}
+.toc a{font-size:12.5px;color:var(--board-mute);text-decoration:none;padding:7px 10px;border-radius:8px;
+       display:flex;align-items:center;gap:7px}
+.toc a:hover,.toc a:focus-visible{color:var(--board-ink);background:var(--board-3);outline:none}
+.toc a b{font-family:var(--mono);font-size:10.5px;color:var(--board-faint);font-weight:400}
+.tally{display:flex;align-items:center;gap:10px}
+.tally .txt{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;color:var(--board-mute)}
+.tally .txt s{color:var(--clay);text-decoration:none}
+.tally button{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+      color:var(--board-ink);background:none;border:1px solid var(--board-hair);border-radius:8px;
+      padding:6px 11px;cursor:pointer}
+.tally button:hover{border-color:var(--clay);color:var(--clay)}
+
+/* ── section ──────────────────────────────────────────────────────── */
+section{padding:66px 0 8px;border-bottom:1px solid var(--board-hair)}
+.sec-head{display:grid;grid-template-columns:64px 1fr;gap:0 4px;max-width:1000px}
+.sec-num{font-family:var(--serif);font-size:44px;line-height:.9;color:var(--board-faint)}
+.sec-head h2{font-family:var(--serif);font-size:32px;font-weight:400;letter-spacing:-.015em;line-height:1.15}
+.sec-head .where{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--board-faint);margin-top:9px}
+.sec-head .problem{margin-top:14px;font-size:15px;color:var(--board-mute);max-width:720px}
+.sec-head .problem b{color:var(--board-ink);font-weight:600}
+
+.variants{display:grid;gap:26px;margin-top:34px;
+          grid-template-columns:repeat(auto-fit,minmax(330px,1fr));align-items:start}
+.variants.wide{grid-template-columns:repeat(auto-fit,minmax(430px,560px));justify-content:start}
+.variants.sheet{grid-template-columns:minmax(0,1fr);max-width:840px}
+.v{background:var(--board-2);border:1px solid var(--board-hair);border-radius:14px;padding:18px 18px 20px}
+.v-head{display:flex;align-items:baseline;gap:10px}
+.v-head .tag{font-family:var(--mono);font-size:12px;letter-spacing:.08em;color:var(--clay)}
+.v-head h3{font-size:15.5px;font-weight:600;letter-spacing:-.01em;flex:1}
+.pick{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+      color:var(--board-faint);background:none;border:1px solid var(--board-hair);border-radius:7px;
+      padding:5px 9px;cursor:pointer;white-space:nowrap}
+.pick:hover{color:var(--board-ink);border-color:var(--board-faint)}
+.pick[aria-pressed="true"]{color:var(--board);background:var(--clay);border-color:var(--clay);font-weight:700}
+.v .trade{font-size:13px;color:var(--board-mute);margin-top:9px;min-height:38px}
+.v .trade b{color:#e6c9a8;font-weight:600}
+.stage{margin-top:16px;background:var(--paper);border-radius:12px;padding:16px;
+       color:var(--ink);font-family:var(--round);overflow:hidden}
+.stage.pad0{padding:0}
+.stage.dim{display:flex;justify-content:center;background:none;padding:0}
+
+/* ═══ SPECIMEN PRIMITIVES — Atlas app tokens ═══════════════════════ */
+.caps{font-family:var(--round);font-size:10px;font-weight:700;letter-spacing:.1em;
+      text-transform:uppercase;color:var(--ink3)}
+.hr{height:1px;background:var(--hair);margin:12px 0}
+.hd{display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:1.5px solid var(--ink)}
+.hd .ttl{font-size:15px;font-weight:700;letter-spacing:-.01em;color:var(--ink)}
+.hd .n{margin-left:auto;font-size:11.5px;font-weight:700;color:var(--ink3);font-variant-numeric:tabular-nums}
+
+.grp{display:flex;align-items:center;gap:8px;margin:16px 0 4px}
+.grp .g{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)}
+.grp .c{font-size:10px;font-weight:700;color:var(--ink3);font-variant-numeric:tabular-nums}
+.grp .ln{flex:1;height:1px;background:var(--hair)}
+.grp.late .g,.grp.late .c{color:var(--late)}
+
+.tr{display:flex;align-items:flex-start;gap:9px;padding:9px 0;border-bottom:1px solid var(--hair)}
+.tr:last-child{border-bottom:0}
+.tr .dot{width:7px;height:7px;border-radius:50%;margin-top:6px;flex:0 0 7px}
+.tr .body{flex:1;min-width:0}
+.tr .t1{font-size:13.5px;font-weight:600;color:var(--ink);letter-spacing:-.005em}
+.tr .t2{font-size:11.5px;color:var(--ink3);margin-top:2px}
+.tr .r{font-size:11.5px;font-weight:700;color:var(--ink3);font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:1px}
+.tr .r.od{color:var(--late)}
+.tr.od{position:relative;padding-left:11px}
+.tr.od::before{content:"";position:absolute;left:0;top:9px;bottom:9px;width:2px;border-radius:2px;background:var(--late)}
+.dot.calc{background:var(--calc)}.dot.write{background:var(--write)}
+.dot.chem{background:var(--chem)}.dot.psych{background:var(--psych)}
+
+.cb{width:14px;height:14px;border-radius:4px;border:1.5px solid var(--hair-strong);flex:0 0 14px;margin-top:3px}
+.cb.on{background:var(--ink);border-color:var(--ink);position:relative}
+.cb.on::after{content:"";position:absolute;left:3.6px;top:1.2px;width:4px;height:8px;
+      border:solid var(--paper);border-width:0 1.6px 1.6px 0;transform:rotate(42deg)}
+
+.foot-ctl{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.btn{font-size:11.5px;font-weight:700;color:var(--ink);border:1.5px solid var(--ink);
+     border-radius:14px;padding:7px 13px;background:none;letter-spacing:-.005em}
+.btn.q{border-color:var(--hair-strong);color:var(--ink2);font-weight:600}
+.btn.f{background:var(--ink);color:var(--paper)}
+.link{font-size:11.5px;font-weight:700;color:var(--clay-text)}
+
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;
+      border-radius:10px;padding:4px 9px;border:1px solid var(--hair-strong);color:var(--ink2)}
+.chip .k{font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--ink3)}
+.chip.class{border:0;padding:4px 9px 4px 7px}
+.chip.class .d{width:7px;height:7px;border-radius:50%}
+.chip.late{border-color:rgba(194,113,11,.5);color:var(--late);background:rgba(194,113,11,.1)}
+.chip.dup{border-color:rgba(90,130,190,.55);color:#3f6ea8;background:rgba(91,155,213,.13)}
+.chip.sus{border-color:rgba(194,113,11,.55);color:var(--late);background:rgba(194,113,11,.12)}
+.chip.now{border-color:rgba(217,119,87,.5);color:var(--clay-text);background:rgba(217,119,87,.12)}
+.chip.day{border-color:var(--hair-strong);color:var(--ink);font-variant-numeric:tabular-nums}
+
+.seg{display:inline-flex;border:1.5px solid var(--hair-strong);border-radius:12px;overflow:hidden}
+.seg span{font-size:11.5px;font-weight:700;color:var(--ink2);padding:6px 11px;border-right:1px solid var(--hair)}
+.seg span:last-child{border-right:0}
+.seg span.on{background:var(--ink);color:var(--paper)}
+
+/* syllabus sheet */
+.sheet{padding:18px 18px 20px}
+.sheet .stitle{font-size:20px;font-weight:700;letter-spacing:-.02em}
+.sheet .ssub{font-size:12.5px;color:var(--ink3);margin-top:3px}
+.card{border:1px solid var(--hair);border-radius:12px;padding:14px;margin-top:14px}
+.card > .ch{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.card > .ch .t{font-size:14px;font-weight:700;letter-spacing:-.01em}
+.card > .ch .n{margin-left:auto;font-size:11px;font-weight:700;color:var(--ink3)}
+.mrow{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--hair);flex-wrap:wrap}
+.mrow:last-child{border-bottom:0}
+.fld{font-size:12.5px;font-weight:600;color:var(--ink);border:1.5px solid var(--hair-strong);
+     border-radius:9px;padding:5px 9px;background:rgba(255,255,255,.4)}
+.fld.w{min-width:96px}
+.days{display:flex;gap:3px}
+.days b{font-size:10.5px;font-weight:700;width:20px;height:20px;border-radius:6px;display:grid;
+        place-items:center;color:var(--ink3);border:1px solid var(--hair)}
+.days b.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.ask{background:rgba(217,119,87,.09);border:1px solid rgba(217,119,87,.35);border-radius:10px;
+     padding:11px 12px;margin-top:10px}
+.ask .q{font-size:13px;font-weight:700;color:var(--ink)}
+.ask .opts{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap}
+.opt{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--ink2);
+     border:1.5px solid var(--hair-strong);border-radius:10px;padding:6px 10px}
+.opt .rd{width:12px;height:12px;border-radius:50%;border:1.5px solid var(--hair-strong)}
+.opt.on{border-color:var(--ink);color:var(--ink)}
+.opt.on .rd{border:3.5px solid var(--ink)}
+.irow{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--hair)}
+.irow:last-child{border-bottom:0}
+.irow .it{font-size:14.5px;font-weight:600;color:var(--ink);letter-spacing:-.01em}
+.irow .im{font-size:12px;color:var(--ink3);margin-top:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.irow.off .it{color:var(--ink3)}
+.kind{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+      color:var(--ink3);border:1px solid var(--hair);border-radius:5px;padding:2px 5px}
+
+/* weights */
+.wchips{display:flex;flex-wrap:wrap;gap:7px}
+.wchip{border:1px solid var(--hair-strong);border-radius:10px;padding:6px 10px;display:flex;
+       align-items:baseline;gap:7px}
+.wchip .l{font-size:12px;font-weight:600;color:var(--ink2)}
+.wchip .p{font-size:13px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums}
+.wbar{display:flex;height:12px;border-radius:6px;overflow:hidden;border:1px solid var(--hair)}
+.wbar i{display:block}
+.wleg{display:flex;flex-wrap:wrap;gap:10px;margin-top:9px}
+.wleg span{font-size:11.5px;color:var(--ink2);display:flex;align-items:center;gap:6px}
+.wleg i{width:9px;height:9px;border-radius:3px}
+.pol{font-size:13px;color:var(--ink2);padding:8px 0;border-bottom:1px solid var(--hair);
+     display:flex;gap:9px}
+.pol:last-of-type{border-bottom:0}
+.pol .b{color:var(--ink3);font-size:11px;margin-top:2px;font-family:var(--mono)}
+.clamp{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+
+/* phone */
+.phone{width:302px;border-radius:40px;padding:9px;background:linear-gradient(160deg,#3a352c,#211d17);
+       box-shadow:0 26px 50px -24px rgba(0,0,0,.8)}
+.pscreen{background:var(--paper);border-radius:32px;overflow:hidden;height:600px;display:flex;
+         flex-direction:column;position:relative}
+.pbar{display:flex;justify-content:space-between;padding:12px 20px 0;font-size:12.5px;font-weight:700;color:var(--ink)}
+.psheet{position:relative;z-index:2;margin-top:auto;background:var(--paper);
+        border-top:1.5px solid var(--hair-strong);border-radius:22px 22px 0 0;padding:12px 18px 20px;
+        box-shadow:0 -18px 26px -18px rgba(33,29,23,.35)}
+.grab{width:34px;height:4px;border-radius:2px;background:var(--hair-strong);margin:0 auto 12px}
+.pbg{position:absolute;inset:0;padding:44px 16px 0;opacity:.32;pointer-events:none}
+.dfield{padding:9px 0;border-bottom:1px solid var(--hair)}
+.dfield:last-of-type{border-bottom:0}
+.dfield .dv{font-size:15px;font-weight:600;color:var(--ink);margin-top:3px;letter-spacing:-.01em}
+.dfield .dv.n{font-weight:500;color:var(--ink2);font-size:14px}
+.prow{display:flex;gap:12px;margin-top:2px}
+.pcta{display:flex;gap:9px;margin-top:16px}
+.pcta .b{flex:1;text-align:center;font-size:14.5px;font-weight:700;padding:11px 0;border-radius:14px;
+         border:1.5px solid var(--ink);color:var(--ink)}
+.pcta .b.q{border-color:var(--hair-strong);color:var(--ink2);flex:0 0 96px}
+.note-row{display:flex;align-items:center;gap:9px;border:1px solid var(--hair);border-radius:10px;
+          padding:9px 10px;margin-top:10px}
+.note-row .ic{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--hair-strong)}
+.note-row .nt{font-size:12.5px;font-weight:600;color:var(--ink)}
+.note-row .ns{font-size:11px;color:var(--ink3)}
+
+/* before/after */
+.ba{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ba .b1{border:1px dashed rgba(255,92,92,.5);border-radius:10px;padding:11px;background:rgba(255,92,92,.06)}
+.ba .b2{border:1px solid var(--hair);border-radius:10px;padding:11px}
+.ba .lab{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+         color:var(--ink3);margin-bottom:8px}
+.ba .b1 .lab{color:#a03d3d}
+.surf{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+      color:var(--ink3);margin:14px 0 7px}
+.surf:first-child{margin-top:0}
+
+.foot{padding:56px 0 90px;color:var(--board-mute);font-size:14px;max-width:640px}
+.foot b{color:var(--board-ink)}
+@media (max-width:640px){
+  .sec-head{grid-template-columns:1fr}.sec-num{font-size:30px}
+  .ba{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="mast">
+    <div class="eyebrow">Atlas · handoff 2026-09-01 · variants for review</div>
+    <h1>Less on screen,<br>and nothing <em>twice</em>.</h1>
+    <p class="lede">Every mockup below is drawn in Atlas's real tokens with your real data — the four
+      Fall 2026 classes and the Math 135 scan that turned 22 tasks into 49. Sections 1–2 are about
+      <b>how much a list is allowed to show</b>. Sections 3–4 are about <b>the syllabus review sheet and the
+      class-info dump</b>. Section 5 fixes an all-day due date that currently renders a day early.
+      Section 6 is the mobile item sheet you asked for. Pick one variant per section.</p>
+    <div class="meta">
+      <span>4 classes · 49 tasks on Calc I</span>
+      <span>~20 duplicate pairs in prod</span>
+      <span>review sheet is 560×560 at 12pt</span>
+      <span>tokens: Theme.swift</span>
+    </div>
+    <div class="decree">
+      <div class="k">Non-negotiable</div>
+      <p>Accepting a scan must never duplicate an existing Canvas task or event. The duplicate state
+        gets a <em>visible</em> design — a badge and an unchecked box — never a silent filter.</p>
+    </div>
+  </header>
+</div>
+
+<nav class="rail">
+  <div class="inner">
+    <div class="toc">
+      <a href="#s1"><b>1</b> Calendar rail</a>
+      <a href="#s2"><b>2</b> Class task list</a>
+      <a href="#s3"><b>3</b> Review sheet</a>
+      <a href="#s4"><b>4</b> Class info</a>
+      <a href="#s5"><b>5</b> All-day due</a>
+      <a href="#s6"><b>6</b> Mobile detail</a>
+      <a href="#s7"><b>7</b> Syllabus intake</a>
+    </div>
+    <div class="tally">
+      <span class="txt" id="tally">no picks yet</span>
+      <button type="button" id="copy">Copy picks</button>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
+
+<!-- ══════════════ 1 ══════════════ -->
+<section id="s1">
+  <div class="sec-head">
+    <div class="sec-num">1</div>
+    <div>
+      <h2>Week-scoped calendar task rail</h2>
+      <div class="where">Mac · UnscheduledTray.swift:14 · AppState.unscheduledTasks — no date window, no ScrollView</div>
+      <p class="problem">The rail renders <b>every undone unscheduled task forever</b>, so a November
+        assignment competes with Wednesday's. Nothing scrolls, so the overflow is simply clipped. All three
+        variants default to the current week (Aug 31 – Sep 6) and put the rest behind a footer. What differs is
+        <b>where overdue work sits</b>.</p>
+    </div>
+  </div>
+
+  <div class="variants" id="v1"></div>
+</section>
+
+<!-- ══════════════ 2 ══════════════ -->
+<section id="s2">
+  <div class="sec-head">
+    <div class="sec-num">2</div>
+    <div>
+      <h2>Class-page task list</h2>
+      <div class="where">Mac · ProjectDetailView.swift:791 — one flat ForEach, no grouping, no limit</div>
+      <p class="problem">Calc I shows 49 tasks in one unbroken column. A course isn't a week, though — it's a
+        term — so the open question is whether this surface borrows the rail's <b>week window</b> or gets
+        <b>due buckets</b> (Overdue / This week / Later). Same "show more" affordance either way.</p>
+    </div>
+  </div>
+  <div class="variants wide" id="v2"></div>
+</section>
+
+<!-- ══════════════ 3 ══════════════ -->
+<section id="s3">
+  <div class="sec-head">
+    <div class="sec-num">3</div>
+    <div>
+      <h2>Syllabus review sheet</h2>
+      <div class="where">Mac · SyllabusScanSheet.swift:50 (560×560) · :200 groupSection · :482 commit()</div>
+      <p class="problem">Today: 43 items at 12pt in a fixed small box, meeting rows that are
+        <b>read-only</b> so a wrong block can't be fixed before commit, and <b>no dedupe at any layer</b> — which
+        is how Calc I got its ~20 near-duplicate pairs. Every variant below is bigger type, grouped work items,
+        <b>editable meetings with a section picker</b>, a suspicious badge for server-flagged rows, and a
+        duplicate badge that defaults the syllabus copy to unchecked.</p>
+    </div>
+  </div>
+  <div class="variants sheet" id="v3"></div>
+</section>
+
+<!-- ══════════════ 4 ══════════════ -->
+<section id="s4">
+  <div class="sec-head">
+    <div class="sec-num">4</div>
+    <div>
+      <h2>Class-info card</h2>
+      <div class="where">Mac · ClassHubSection.swift:149 classInfoCard → infoGroup :198</div>
+      <p class="problem">Six grade weights and up to twelve policy lines all render at 13pt in one grey block.
+        The full wording already lives one tap away in <b>ClassInfoSheet</b>, so the card only owes you the shape
+        of the grade and the first few policies. Purely presentational — no model, no migration.</p>
+    </div>
+  </div>
+  <div class="variants wide" id="v4"></div>
+</section>
+
+<!-- ══════════════ 5 ══════════════ -->
+<section id="s5">
+  <div class="sec-head">
+    <div class="sec-num">5</div>
+    <div>
+      <h2>All-day due-date chip</h2>
+      <div class="where">Canvas date-only dues stored as UTC midnight — renders a day early</div>
+      <p class="problem">"161 Course and Grading Policies Checklist" is due <b>Sep 9</b>. Canvas sends a
+        date with no time; we store UTC midnight and render <b>"Due Sep 8, 8 PM"</b> — wrong day, invented hour.
+        Once the storage is fixed, a date-only due needs a reading with <b>no clock time at all</b>, consistent
+        across the three surfaces it appears on.</p>
+    </div>
+  </div>
+  <div class="variants wide" id="v5"></div>
+</section>
+
+<!-- ══════════════ 6 ══════════════ -->
+<section id="s6">
+  <div class="sec-head">
+    <div class="sec-num">6</div>
+    <div>
+      <h2>Mobile &amp; iPad item detail</h2>
+      <div class="where">iOS · ItemDetailSheet.swift:363 read-only · :148 editable — one sheet doing both jobs</div>
+      <p class="problem">Your ask: tapping a calendar item “should just show you all the information you need
+        to see in a way that's concise and clean — you don't even have to scroll — and if you want to edit it
+        there should be an edit button that opens the full edit view.” Today the sheet opens straight into
+        form fields. All three are <b>read-only, no scroll</b>, with Edit as the way into the existing editor.
+        iPad presents the identical sheet in a centered form sheet.</p>
+    </div>
+  </div>
+  <div class="variants" id="v6"></div>
+</section>
+
+<!-- ══════════════ 7 ══════════════ -->
+<section id="s7">
+  <div class="sec-head">
+    <div class="sec-num">7</div>
+    <div>
+      <h2>Syllabus intake</h2>
+      <div class="where">Optional — many syllabi are Canvas pages, not downloadable PDFs</div>
+      <p class="problem">The scan only accepts a PDF today. General Psychology's syllabus is an inline Canvas
+        page with nothing to download, so it can't be scanned at all. Both variants add a paste path to the
+        same scan.</p>
+    </div>
+  </div>
+  <div class="variants wide" id="v7"></div>
+</section>
+
+<p class="foot">Pick one per section — the tally at the top of the page builds a line like
+  <b>1A · 2C · 3B …</b> that you can copy straight back into the chat. Anything unpicked, I'll ask about
+  before building. <b>Nothing here touches Swift or server code</b>; this file is the whole deliverable.</p>
+</div>
+
+<script>
+/* ── tiny helpers so the specimens stay declarative ─────────────── */
+const row=(cls,title,meta,right,rcls="")=>`<div class="tr ${rcls}"><span class="dot ${cls}"></span>
+  <div class="body"><div class="t1">${title}</div><div class="t2">${meta}</div></div>
+  ${right?`<span class="r ${rcls==="od"?"od":""}">${right}</span>`:""}</div>`;
+const grp=(g,c,late)=>`<div class="grp ${late?"late":""}"><span class="g">${g}</span>
+  <span class="ln"></span><span class="c">${c}</span></div>`;
+
+/* ═══ SECTION 1 — calendar rail ═══════════════════════════════════ */
+const railHead=(n)=>`<div class="hd"><span class="ttl">Unscheduled</span><span class="n">${n}</span></div>`;
+const weekRows=`
+  ${row("calc","Lecture 4 The Chain Rule","Calc I · Wed Sep 2","Wed")}
+  ${row("write","Rhetorical Analysis Draft","College Writing · Wed Sep 2","Wed")}
+  ${row("chem","Lab 2 Report — Density","General Chemistry · Thu Sep 3","Thu")}
+  ${row("calc","Quiz 3 — Limits","Calc I · Fri Sep 4","Fri")}
+  ${row("psych","Chapter 3 Reading Quiz","General Psychology · Fri Sep 4","Fri")}`;
+const odRows=`
+  ${row("calc","Lecture 0 Prerequisites","Calc I · due Aug 28","4d late","od")}
+  ${row("write","Syllabus Quiz","College Writing · due Aug 27","5d late","od")}`;
+
+const V1=[
+["1A","Week window, overdue pinned above it",
+ "Overdue is always visible, above the week — it can never be scrolled past or hidden. <b>Costs vertical space every day you're behind.</b>",
+ `<div style="max-width:300px;margin:0 auto">${railHead("9 this week")}
+   ${grp("Overdue","2",1)}${odRows}
+   ${grp("This week · Aug 31 – Sep 6","5")}${weekRows}
+   <div class="foot-ctl"><button class="btn q">Show next week (6)</button>
+     <button class="btn q">See all 41</button></div></div>`],
+["1B","Strict week, overdue behind a Late bar",
+ "One amber bar collapses arrears into a single row, so the week stays the whole rail. <b>An ignored bar is an ignored assignment.</b>",
+ `<div style="max-width:300px;margin:0 auto">${railHead("5 this week")}
+   <div class="tr od" style="border-bottom:1px solid var(--hair)">
+     <div class="body"><div class="t1" style="color:var(--late)">2 overdue</div>
+     <div class="t2">Oldest: Lecture 0 Prerequisites · 4d</div></div>
+     <span class="r od">Review</span></div>
+   ${grp("This week · Aug 31 – Sep 6","5")}${weekRows}
+   <div class="foot-ctl"><button class="btn q">Show next week (6)</button>
+     <button class="btn q">See all 41</button></div></div>`],
+["1C","Rolling 7 days, grouped by day",
+ "Day headers instead of one week block — reads like an agenda and never resets to an empty rail on a Friday. <b>More headers, fewer tasks per screen.</b>",
+ `<div style="max-width:300px;margin:0 auto">${railHead("Next 7 days")}
+   ${grp("Overdue","2",1)}${odRows}
+   ${grp("Today · Tue Sep 1","0")}
+   <div class="tr"><div class="body"><div class="t2">Nothing unscheduled today</div></div></div>
+   ${grp("Wed Sep 2","2")}
+   ${row("calc","Lecture 4 The Chain Rule","Calc I","2:00p")}
+   ${row("write","Rhetorical Analysis Draft","College Writing","11:59p")}
+   ${grp("Thu Sep 3","1")}
+   ${row("chem","Lab 2 Report — Density","General Chemistry","11:59p")}
+   <div class="foot-ctl"><button class="btn q">Show next 7 days</button>
+     <button class="btn q">See all 41</button></div></div>`]];
+
+/* ═══ SECTION 2 — class task list ════════════════════════════════ */
+const V2=[
+["2A","Due buckets — Overdue / This week / Later",
+ "Matches the bucket logic already shipping on iOS (TaskGrouping.byDueBucket). Later stays collapsed to 3. <b>A term-long course spends most of its life in one bucket called “Later”.</b>",
+ `<div class="hd"><span class="ttl">Calc I Life&amp;Soc Sci</span><span class="n">49 tasks · 6 done</span></div>
+  ${grp("Overdue","2",1)}
+  ${row("calc","Lecture 0 Prerequisites","due Aug 28","4d late","od")}
+  ${row("calc","161 Course and Grading Policies Checklist","due Aug 29","3d late","od")}
+  ${grp("This week","4")}
+  ${row("calc","Lecture 4 The Chain Rule","Wed Sep 2","Wed")}
+  ${row("calc","Quiz 3 — Limits","Fri Sep 4","Fri")}
+  ${row("calc","Lecture 6 Continuity","Fri Sep 4","Fri")}
+  ${row("calc","Writing Wrapper 1","Sun Sep 6","Sun")}
+  ${grp("Later","37")}
+  ${row("calc","Lecture 13 Related Rates","Sep 21","Sep 21")}
+  ${row("calc","Midterm 1","Oct 6","Oct 6")}
+  ${row("calc","Synthesis 1","Dec 2","Dec 2")}
+  <div class="foot-ctl"><button class="btn q">Show 34 more</button>
+    <span class="btn q" style="border:0;padding-left:0">6 done · hidden</span></div>`],
+["2B","Week window, same control as the rail",
+ "One mental model across the app: the class page is the rail, wider. Segmented control jumps the window. <b>Hides the term shape — you can't see Midterm 1 coming.</b>",
+ `<div class="hd"><span class="ttl">Calc I Life&amp;Soc Sci</span><span class="n">49 tasks</span></div>
+  <div style="margin:12px 0 4px"><span class="seg"><span class="on">This week</span><span>Next week</span><span>All 49</span></span></div>
+  ${grp("Overdue","2",1)}
+  ${row("calc","Lecture 0 Prerequisites","due Aug 28","4d late","od")}
+  ${row("calc","161 Course and Grading Policies Checklist","due Aug 29","3d late","od")}
+  ${grp("Aug 31 – Sep 6","4")}
+  ${row("calc","Lecture 4 The Chain Rule","Wed Sep 2","Wed")}
+  ${row("calc","Quiz 3 — Limits","Fri Sep 4","Fri")}
+  ${row("calc","Lecture 6 Continuity","Fri Sep 4","Fri")}
+  ${row("calc","Writing Wrapper 1","Sun Sep 6","Sun")}
+  <div class="foot-ctl"><button class="btn q">Show next week (6)</button>
+    <button class="btn q">See all 41 open</button></div>`],
+["2C","Buckets, then the term by month",
+ "Near work in buckets; everything past this week folds into collapsed months, so the whole semester is one glance away. <b>Two grouping systems in one list.</b>",
+ `<div class="hd"><span class="ttl">Calc I Life&amp;Soc Sci</span><span class="n">49 tasks</span></div>
+  ${grp("Overdue","2",1)}
+  ${row("calc","Lecture 0 Prerequisites","due Aug 28","4d late","od")}
+  ${row("calc","161 Course and Grading Policies Checklist","due Aug 29","3d late","od")}
+  ${grp("This week","4")}
+  ${row("calc","Lecture 4 The Chain Rule","Wed Sep 2","Wed")}
+  ${row("calc","Quiz 3 — Limits","Fri Sep 4","Fri")}
+  ${row("calc","Lecture 6 Continuity","Fri Sep 4","Fri")}
+  ${row("calc","Writing Wrapper 1","Sun Sep 6","Sun")}
+  <div class="hr"></div>
+  <div class="tr"><div class="body"><div class="t1">Rest of September</div>
+    <div class="t2">Lectures 7–14 · Quizzes 4–6 · 12 items</div></div><span class="r">Show</span></div>
+  <div class="tr"><div class="body"><div class="t1">October</div>
+    <div class="t2">Midterm 1 · Lectures 15–22 · 14 items</div></div><span class="r">Show</span></div>
+  <div class="tr"><div class="body"><div class="t1">November</div>
+    <div class="t2">Midterm 2 · Lectures 23–30 · 11 items</div></div><span class="r">Show</span></div>
+  <div class="tr"><div class="body"><div class="t1">December</div>
+    <div class="t2">Synthesis 1–3 · Final Exam · 4 items</div></div><span class="r">Show</span></div>`]];
+
+/* ═══ SECTION 3 — syllabus review sheet ══════════════════════════ */
+const meetingsCard=`
+<div class="card">
+  <div class="ch"><span class="t">Meetings found</span><span class="n">4 rows · editable</span></div>
+  <div class="mrow">
+    <span class="fld">Lecture ▾</span>
+    <span class="days"><b class="on">M</b><b>T</b><b class="on">W</b><b>T</b><b>F</b></span>
+    <span class="fld w">2:00–3:20 pm</span><span class="fld">PH-115</span>
+  </div>
+  <div class="mrow">
+    <span class="fld">Recitation ▾</span>
+    <span class="days"><b class="on">M</b><b>T</b><b class="on">W</b><b>T</b><b>F</b></span>
+    <span class="fld w">3:50–5:10 pm</span><span class="fld">SEC-217</span>
+    <span class="chip sus">Check — recitations meet once a week</span>
+  </div>
+  <div class="mrow">
+    <span class="fld">Recitation ▾</span>
+    <span class="days"><b class="on">M</b><b>T</b><b class="on">W</b><b>T</b><b>F</b></span>
+    <span class="fld w">5:30–7:00 pm</span><span class="fld">SEC-217</span>
+    <span class="chip sus">Check — weekday and start time differ from the PDF</span>
+  </div>
+  <div class="mrow" style="opacity:.55">
+    <span class="cb"></span><span class="fld">Lecture ▾</span>
+    <span class="days"><b class="on">M</b><b>T</b><b class="on">W</b><b>T</b><b>F</b></span>
+    <span class="fld w">10:00–10:55 am</span><span class="fld">Hill Center 434</span>
+    <span class="chip sus">Looks like an office, not a meeting — off by default</span>
+  </div>
+  <div class="ask">
+    <div class="q">This syllabus lists three recitations. Which one are you in?</div>
+    <div class="opts">
+      <span class="opt on"><span class="rd"></span>Section 37 · Tu 2:00–3:20</span>
+      <span class="opt"><span class="rd"></span>Section 38 · Tu 3:50–5:10</span>
+      <span class="opt"><span class="rd"></span>Section 39 · Tu 5:40–7:00</span>
+      <span class="opt"><span class="rd"></span>Import all three</span>
+    </div>
+  </div>
+</div>`;
+
+const infoCardMini=`
+<div class="card">
+  <div class="ch"><span class="t">Grading &amp; policies</span><span class="n">6 weights · 6 policies</span></div>
+  <div class="wchips">
+    <span class="wchip"><span class="l">Midterms</span><span class="p">36%</span></span>
+    <span class="wchip"><span class="l">Final</span><span class="p">36%</span></span>
+    <span class="wchip"><span class="l">Quizzes</span><span class="p">20%</span></span>
+    <span class="wchip"><span class="l">Homework</span><span class="p">4%</span></span>
+    <span class="wchip"><span class="l">Wrappers</span><span class="p">4%</span></span>
+  </div>
+  <div style="margin-top:12px">
+    <div class="pol"><span class="b">01</span><span class="clamp">Absences: no makeup quizzes; the lowest two quiz scores are dropped.</span></div>
+    <div class="pol"><span class="b">02</span><span class="clamp">ODS accommodations must be filed through the Rutgers ODS portal.</span></div>
+    <div class="foot-ctl"><button class="btn q">Show 4 more policies</button></div>
+  </div>
+  <div class="mrow" style="margin-top:6px;border-top:1px solid var(--hair);padding-top:10px">
+    <span class="caps">Office hours</span>
+    <span class="fld" style="flex:1">See Canvas for the most up-to-date office hours</span>
+  </div>
+</div>`;
+
+const dupItem=(t,meta)=>`<div class="irow off"><span class="cb"></span><div style="flex:1">
+  <div class="it">${t}</div><div class="im"><span class="kind">Task</span>${meta}
+  <span class="chip dup">Already in Canvas</span></div></div></div>`;
+const okItem=(t,meta,kind="Task")=>`<div class="irow"><span class="cb on"></span><div style="flex:1">
+  <div class="it">${t}</div><div class="im"><span class="kind">${kind}</span>${meta}</div></div></div>`;
+
+const V3=[
+["3A","Cards, work items by month",
+ "One card per concern, work grouped the way a semester is lived. Duplicates sit in place, unchecked. <b>Long months still make a long scroll.</b>",
+ `<div class="sheet">
+   <div class="stitle">Review scan — Calc I Life&amp;Soc Sci</div>
+   <div class="ssub">43 items found · 22 already in Canvas and unchecked · 3 meeting rows need a look</div>
+   ${meetingsCard}
+   ${infoCardMini}
+   <div class="card">
+     <div class="ch"><span class="t">Work · September</span><span class="n">4 of 12 selected</span></div>
+     ${dupItem("Rates of change, definition of the derivative","Sep 3")}
+     ${dupItem("The chain rule","Sep 10 · matches “Lecture 4 The Chain Rule”")}
+     ${okItem("Quiz 3 — Limits","Sep 4","Event")}
+     ${okItem("Writing Wrapper 1","Sep 6")}
+     <div class="foot-ctl"><button class="btn q">Show 8 more in September</button></div>
+   </div>
+   <div class="card">
+     <div class="ch"><span class="t">Work · October</span><span class="n">2 of 14 selected</span></div>
+     ${okItem("Midterm 1","Oct 6 · 2:00 pm · PH-115","Event")}
+     ${dupItem("Continuity","Oct 1 · matches “Lecture 6 Continuity”")}
+     <div class="foot-ctl"><button class="btn q">Show 12 more in October</button></div>
+   </div>
+   <div class="foot-ctl" style="margin-top:18px">
+     <button class="btn f">Add 21 items</button>
+     <button class="btn q">Skip 22 duplicates</button>
+   </div>
+ </div>`],
+["3B","Triage first, then work by kind",
+ "Opens on everything that needs a decision — duplicates and suspicious rows — then the clean items grouped by kind, collapsed. <b>Two passes before you can hit Add.</b>",
+ `<div class="sheet">
+   <div class="stitle">Review scan — Calc I Life&amp;Soc Sci</div>
+   <div class="ssub">43 items · 21 new, ready to add</div>
+   <div class="card" style="border-color:rgba(217,119,87,.4);background:rgba(217,119,87,.05)">
+     <div class="ch"><span class="t">Needs you</span><span class="n">3 meetings · 22 duplicates</span></div>
+     <div class="irow"><div style="flex:1">
+       <div class="it">Three recitations found — which section are you in?</div>
+       <div class="im">Sections 37, 38, 39 · only one becomes a class meeting</div></div>
+       <span class="chip sus">Pick one</span></div>
+     <div class="irow"><div style="flex:1">
+       <div class="it">“Hill Center 434, 10:00–10:55” looks like an office, not a meeting</div>
+       <div class="im">Off by default · turn on to keep it</div></div>
+       <span class="chip sus">Suspicious</span></div>
+     <div class="irow"><div style="flex:1">
+       <div class="it">22 items already exist as Canvas assignments</div>
+       <div class="im">Unchecked · same class, same or next day</div></div>
+       <span class="chip dup">Review list</span></div>
+   </div>
+   ${meetingsCard}
+   <div class="card">
+     <div class="ch"><span class="t">Lectures</span><span class="n">0 of 20 · all in Canvas</span></div>
+     ${dupItem("The chain rule","matches “Lecture 4 The Chain Rule”")}
+     ${dupItem("Continuity","matches “Lecture 6 Continuity”")}
+     <div class="foot-ctl"><button class="btn q">Show 18 more</button></div>
+   </div>
+   <div class="card">
+     <div class="ch"><span class="t">Quizzes &amp; exams</span><span class="n">15 of 16 selected</span></div>
+     ${okItem("Quiz 3 — Limits","Sep 4","Event")}
+     ${okItem("Midterm 1","Oct 6 · PH-115","Event")}
+     ${dupItem("Final Exam","Dec 15 · a term-calendar final already exists")}
+     <div class="foot-ctl"><button class="btn q">Show 13 more</button></div>
+   </div>
+   <div class="foot-ctl" style="margin-top:18px">
+     <button class="btn f">Add 21 items</button><button class="btn q">Cancel</button>
+   </div>
+ </div>`],
+["3C","Three steps — Meetings, Info, Work",
+ "One decision at a time in a full-height sheet; Add is only reachable from step 3. <b>Slower, and you can't see the whole scan at once.</b>",
+ `<div class="sheet">
+   <div class="stitle">Review scan — Calc I Life&amp;Soc Sci</div>
+   <div class="ssub">Step 1 of 3 · nothing is added until the last step</div>
+   <div style="margin:14px 0 2px"><span class="seg">
+     <span class="on">1 · Meetings</span><span>2 · Grading</span><span>3 · Work (43)</span></span></div>
+   ${meetingsCard}
+   <div class="card" style="opacity:.45">
+     <div class="ch"><span class="t">Next: grading &amp; policies</span><span class="n">6 + 6</span></div>
+     <div class="im" style="font-size:12.5px;color:var(--ink3)">Midterms 36% · Final 36% · Quizzes 20% · HW 4% · Wrappers 4%</div>
+   </div>
+   <div class="card" style="opacity:.45">
+     <div class="ch"><span class="t">Then: 43 work items</span><span class="n">22 already in Canvas</span></div>
+     <div class="im" style="font-size:12.5px;color:var(--ink3)">Duplicates arrive unchecked, grouped by month</div>
+   </div>
+   <div class="foot-ctl" style="margin-top:18px">
+     <button class="btn f">Meetings look right — next</button><button class="btn q">Cancel</button>
+   </div>
+ </div>`]];
+
+/* ═══ SECTION 4 — class info ═════════════════════════════════════ */
+const policies=[
+ ["Absences","No makeup quizzes; the two lowest quiz scores are dropped at the end of the term."],
+ ["ODS","Accommodation letters must be filed through the Rutgers ODS portal before the first midterm."],
+ ["Integrity","Work submitted must be your own; collaboration is allowed on homework, never on quizzes."],
+ ["Late work","Homework closes at 11:59 pm on the due date and is not reopened."],
+ ["Regrades","Regrade requests within one week of the score being posted."],
+ ["Devices","No phones or calculators during quizzes or exams."]];
+const V4=[
+["4A","Weight chips, first two policies",
+ "Grade shape reads in one line of chips; policies show two lines with an expand. <b>Weights lose their relative size — 4% and 36% are the same chip.</b>",
+ `<div class="hd"><span class="ttl">Class info</span><span class="n">Calc I Life&amp;Soc Sci</span></div>
+  <div style="margin-top:14px" class="caps">Grade weights</div>
+  <div class="wchips" style="margin-top:8px">
+    <span class="wchip"><span class="l">Midterms</span><span class="p">36%</span></span>
+    <span class="wchip"><span class="l">Final</span><span class="p">36%</span></span>
+    <span class="wchip"><span class="l">Quizzes</span><span class="p">20%</span></span>
+    <span class="wchip"><span class="l">Homework</span><span class="p">4%</span></span>
+    <span class="wchip"><span class="l">Wrappers</span><span class="p">4%</span></span>
+  </div>
+  <div class="hr"></div>
+  <div class="caps">Policies</div>
+  <div style="margin-top:6px">
+    <div class="pol"><span class="b">01</span><span class="clamp">${policies[0][1]}</span></div>
+    <div class="pol"><span class="b">02</span><span class="clamp">${policies[1][1]}</span></div>
+  </div>
+  <div class="foot-ctl"><button class="btn q">All 6 policies</button>
+    <button class="btn q">Office hours</button></div>`],
+["4B","Weight bar, policies as a titled accordion",
+ "One stacked bar shows what the grade actually is; policies collapse to their own titles. <b>The bar needs a legend, so it costs a second row.</b>",
+ `<div class="hd"><span class="ttl">Class info</span><span class="n">Calc I Life&amp;Soc Sci</span></div>
+  <div style="margin-top:14px" class="caps">Grade weights · 100%</div>
+  <div class="wbar" style="margin-top:9px">
+    <i style="width:36%;background:#5b9bd5"></i><i style="width:36%;background:#8a94d6"></i>
+    <i style="width:20%;background:#5fb98e"></i><i style="width:4%;background:#e0952f"></i>
+    <i style="width:4%;background:#d9736b"></i></div>
+  <div class="wleg">
+    <span><i style="background:#5b9bd5"></i>Midterms 36%</span>
+    <span><i style="background:#8a94d6"></i>Final 36%</span>
+    <span><i style="background:#5fb98e"></i>Quizzes 20%</span>
+    <span><i style="background:#e0952f"></i>HW 4%</span>
+    <span><i style="background:#d9736b"></i>Wrappers 4%</span></div>
+  <div class="hr"></div>
+  <div class="caps">Policies</div>
+  <div style="margin-top:6px">
+    ${policies.slice(0,4).map(([t,b],i)=>`<div class="pol"><span class="b">${i===0?"–":"+"}</span>
+      <span><b style="color:var(--ink);font-weight:700">${t}</b>${i===0?" — "+b:""}</span></div>`).join("")}
+  </div>
+  <div class="foot-ctl"><button class="btn q">Show 2 more</button></div>`],
+["4C","Two cards side by side",
+ "Grading and policies stop competing for one column; each keeps its own “see all”. <b>Needs the width — it stacks on a narrow window.</b>",
+ `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+   <div>
+     <div class="hd"><span class="ttl">Grading</span><span class="n">100%</span></div>
+     <div class="wchips" style="margin-top:12px;flex-direction:column;align-items:stretch">
+       <span class="wchip" style="justify-content:space-between"><span class="l">Midterms</span><span class="p">36%</span></span>
+       <span class="wchip" style="justify-content:space-between"><span class="l">Final</span><span class="p">36%</span></span>
+       <span class="wchip" style="justify-content:space-between"><span class="l">Quizzes</span><span class="p">20%</span></span>
+       <span class="wchip" style="justify-content:space-between"><span class="l">Homework</span><span class="p">4%</span></span>
+     </div>
+     <div class="foot-ctl"><button class="btn q">All 6</button></div>
+   </div>
+   <div>
+     <div class="hd"><span class="ttl">Policies</span><span class="n">6</span></div>
+     <div style="margin-top:6px">
+       ${policies.slice(0,3).map(([t,b])=>`<div class="pol"><span style="flex:1">
+         <b style="color:var(--ink);font-weight:700">${t}</b>
+         <span class="clamp" style="color:var(--ink2)">${b}</span></span></div>`).join("")}
+     </div>
+     <div class="foot-ctl"><button class="btn q">Read all</button></div>
+   </div>
+ </div>`]];
+
+/* ═══ SECTION 5 — all-day due chip ═══════════════════════════════ */
+const bug=`<div class="b1"><div class="lab">Today — wrong day, invented hour</div>
+  <span class="chip" style="border-color:rgba(255,92,92,.5);color:#a03d3d">Due Sep 8, 8:00 PM</span>
+  <div style="font-size:11.5px;color:#a03d3d;margin-top:8px">Canvas said “Sep 9”, no time.</div></div>`;
+const V5=[
+["5A","Bare date — “Due Sep 9”",
+ "Nothing is shown that Canvas didn't send. Reads identically on all three surfaces. <b>No cue that this is a full day rather than a missing time.</b>",
+ `<div class="ba">${bug}<div class="b2"><div class="lab">5A</div>
+   <span class="chip day">Due Sep 9</span>
+   <div style="font-size:11.5px;color:var(--ink3);margin-top:8px">No clock, ever.</div></div></div>
+  <div class="surf">Task detail</div>
+  <div class="tr"><div class="body"><div class="t1">161 Course and Grading Policies Checklist</div>
+    <div class="t2"><span class="chip class"><span class="d" style="background:var(--calc)"></span>Calc I</span></div></div>
+    <span class="chip day">Due Sep 9</span></div>
+  <div class="surf">Task list row</div>
+  ${row("calc","161 Course and Grading Policies Checklist","Calc I · Canvas","Sep 9")}
+  <div class="surf">Agenda row</div>
+  <div class="tr"><span class="r" style="width:52px">All day</span><span class="dot calc" style="margin-left:4px"></span>
+   <div class="body"><div class="t1">161 Course and Grading Policies Checklist</div>
+   <div class="t2">Due Sep 9 · Calc I</div></div></div>`],
+["5B","Weekday-forward — “Due Wed, Sep 9”",
+ "The weekday is what you actually plan around, and it makes an all-day due unmistakable. <b>Longest of the three; wraps in a narrow rail.</b>",
+ `<div class="ba">${bug}<div class="b2"><div class="lab">5B</div>
+   <span class="chip day">Due Wed, Sep 9</span>
+   <div style="font-size:11.5px;color:var(--ink3);margin-top:8px">Weekday, no clock.</div></div></div>
+  <div class="surf">Task detail</div>
+  <div class="tr"><div class="body"><div class="t1">161 Course and Grading Policies Checklist</div>
+    <div class="t2"><span class="chip class"><span class="d" style="background:var(--calc)"></span>Calc I</span></div></div>
+    <span class="chip day">Due Wed, Sep 9</span></div>
+  <div class="surf">Task list row</div>
+  ${row("calc","161 Course and Grading Policies Checklist","Calc I · Canvas","Wed Sep 9")}
+  <div class="surf">Agenda row</div>
+  <div class="tr"><span class="r" style="width:52px">All day</span><span class="dot calc" style="margin-left:4px"></span>
+   <div class="body"><div class="t1">161 Course and Grading Policies Checklist</div>
+   <div class="t2">Due Wed, Sep 9 · Calc I</div></div></div>`],
+["5C","Countdown first — “Due in 8 days”",
+ "Urgency leads, the exact date follows. Rolls into “Due today” and “3 days late”. <b>Two things to read, and it changes every night.</b>",
+ `<div class="ba">${bug}<div class="b2"><div class="lab">5C</div>
+   <span class="chip day">Due in 8 days · Sep 9</span>
+   <div style="font-size:11.5px;color:var(--ink3);margin-top:8px">Becomes “Due today · Sep 9”.</div></div></div>
+  <div class="surf">Task detail</div>
+  <div class="tr"><div class="body"><div class="t1">161 Course and Grading Policies Checklist</div>
+    <div class="t2"><span class="chip class"><span class="d" style="background:var(--calc)"></span>Calc I</span></div></div>
+    <span class="chip day">In 8 days · Sep 9</span></div>
+  <div class="surf">Task list row</div>
+  ${row("calc","161 Course and Grading Policies Checklist","Calc I · due Sep 9","in 8d")}
+  <div class="surf">Agenda row</div>
+  <div class="tr"><span class="r" style="width:52px">All day</span><span class="dot calc" style="margin-left:4px"></span>
+   <div class="body"><div class="t1">161 Course and Grading Policies Checklist</div>
+   <div class="t2">Due today · Sep 9 · Calc I</div></div></div>`]];
+
+/* ═══ SECTION 6 — mobile item detail ═════════════════════════════ */
+const bgAgenda=`<div class="pbg">
+  ${row("calc","Calc I Lecture","2:00–3:20p · PH-115","2:00p")}
+  ${row("chem","General Chemistry Lab","3:50–5:10p","3:50p")}
+  ${row("write","College Writing","5:40–7:00p","5:40p")}</div>`;
+const phone=(inner)=>`<div class="phone"><div class="pscreen">
+  <div class="pbar"><span>9:41</span><span>▮▮▮</span></div>${bgAgenda}${inner}</div></div>`;
+
+const V6=[
+["6A","Summary card — title, then facts",
+ "Title leads at 20pt, everything else is a quiet stack of rows. Closest to the sheet you have. <b>Facts all carry the same weight, so time doesn't jump out.</b>",
+ phone(`<div class="psheet"><div class="grab"></div>
+   <div style="font-size:20px;font-weight:700;letter-spacing:-.02em">Calc I Lecture</div>
+   <div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap">
+     <span class="chip class" style="background:rgba(91,155,213,.14)"><span class="d" style="background:var(--calc)"></span>Calc I Life&amp;Soc Sci</span>
+     <span class="chip now">Now</span></div>
+   <div style="margin-top:12px">
+     <div class="dfield"><div class="caps">When</div><div class="dv">Tue Sep 1 · 2:00–3:20 pm</div></div>
+     <div class="dfield"><div class="caps">Where</div><div class="dv">PH-115</div></div>
+     <div class="dfield"><div class="caps">Notes</div><div class="dv n">Chain rule — bring the Lecture 4 worksheet, quiz Friday.</div></div>
+   </div>
+   <div class="note-row"><span class="ic"></span><div><div class="nt">Calc I — Lecture 4 notes</div>
+     <div class="ns">Linked note · edited yesterday</div></div></div>
+   <div class="pcta"><span class="b">Edit</span><span class="b q">Done</span></div>
+ </div>`)],
+["6B","Time leads, title second",
+ "The hour is the biggest thing on the sheet — you tapped a calendar item, so when it happens answers first. <b>Long titles get less room.</b>",
+ phone(`<div class="psheet"><div class="grab"></div>
+   <div style="display:flex;align-items:baseline;gap:9px">
+     <div style="font-size:23px;font-weight:800;letter-spacing:-.03em;white-space:nowrap;font-variant-numeric:tabular-nums">2:00–3:20</div>
+     <div style="font-size:12px;font-weight:700;color:var(--ink3);white-space:nowrap">TUE SEP 1</div>
+     <span class="chip now" style="margin-left:auto">Now</span></div>
+   <div style="font-size:17px;font-weight:700;margin-top:8px;letter-spacing:-.01em">Calc I Lecture</div>
+   <div style="display:flex;gap:7px;margin-top:9px;flex-wrap:wrap">
+     <span class="chip class" style="background:rgba(91,155,213,.14)"><span class="d" style="background:var(--calc)"></span>Calc I Life&amp;Soc Sci</span>
+     <span class="chip">PH-115</span></div>
+   <div class="dfield" style="margin-top:10px"><div class="caps">Notes</div>
+     <div class="dv n">Chain rule — bring the Lecture 4 worksheet, quiz Friday.</div></div>
+   <div class="note-row"><span class="ic"></span><div><div class="nt">Calc I — Lecture 4 notes</div>
+     <div class="ns">Linked note</div></div></div>
+   <div class="pcta"><span class="b">Edit</span><span class="b q">Done</span></div>
+ </div>`)],
+["6C","Two-column facts, one line each",
+ "When/Where/Class pair off in a grid so the whole item fits above the fold even with a long note. <b>Densest of the three; least room per value.</b>",
+ phone(`<div class="psheet"><div class="grab"></div>
+   <div style="display:flex;align-items:flex-start;gap:10px">
+     <span class="dot calc" style="width:9px;height:9px;border-radius:50%;background:var(--calc);margin-top:8px"></span>
+     <div style="flex:1"><div style="font-size:19px;font-weight:700;letter-spacing:-.02em">Calc I Lecture</div>
+       <div style="font-size:12.5px;color:var(--ink3);margin-top:2px">Calc I Life&amp;Soc Sci · from Canvas</div></div>
+     <span class="chip now">Now</span></div>
+   <div class="hr"></div>
+   <div class="prow">
+     <div style="flex:1"><div class="caps">When</div><div class="dv" style="font-size:14px;font-weight:600;margin-top:3px;white-space:nowrap">Tue · 2:00–3:20p</div></div>
+     <div style="flex:0 0 84px"><div class="caps">Where</div><div class="dv" style="font-size:14px;font-weight:600;margin-top:3px">PH-115</div></div>
+   </div>
+   <div class="hr"></div>
+   <div><div class="caps">Notes</div>
+     <div style="font-size:14px;color:var(--ink2);margin-top:4px">Chain rule — bring the Lecture 4 worksheet, quiz Friday.</div></div>
+   <div class="note-row"><span class="ic"></span><div><div class="nt">Calc I — Lecture 4 notes</div>
+     <div class="ns">Linked note</div></div></div>
+   <div class="pcta"><span class="b">Edit</span><span class="b q">Done</span></div>
+ </div>`)]];
+
+/* ═══ SECTION 7 — intake ═════════════════════════════════════════ */
+const V7=[
+["7A","Two tabs — Upload a PDF · Paste the text",
+ "The paste path is as prominent as the upload, so a Canvas-page syllabus is obviously supported. <b>A tab bar for two options.</b>",
+ `<div class="hd"><span class="ttl">Scan a syllabus</span><span class="n">General Psychology</span></div>
+  <div style="margin:14px 0 12px"><span class="seg"><span class="on">Upload a PDF</span><span>Paste the text</span></span></div>
+  <div style="border:1.5px dashed var(--hair-strong);border-radius:14px;padding:26px;text-align:center">
+    <div style="font-size:14px;font-weight:700">Drop the syllabus PDF here</div>
+    <div style="font-size:12px;color:var(--ink3);margin-top:5px">or choose a file · up to 10 MB</div></div>
+  <div style="font-size:12px;color:var(--ink3);margin-top:12px">No PDF? Some syllabi live as a Canvas
+    page — switch to <b style="color:var(--ink)">Paste the text</b> and paste the whole page.</div>`],
+["7B","One drop zone, paste revealed underneath",
+ "Keeps the PDF path as the default and folds paste into the same panel. <b>Paste is a second-class citizen — easy to miss.</b>",
+ `<div class="hd"><span class="ttl">Scan a syllabus</span><span class="n">General Psychology</span></div>
+  <div style="border:1.5px dashed var(--hair-strong);border-radius:14px;padding:22px;text-align:center;margin-top:14px">
+    <div style="font-size:14px;font-weight:700">Drop the syllabus PDF here</div>
+    <div style="font-size:12px;color:var(--ink3);margin-top:5px">or choose a file</div></div>
+  <div class="hr"></div>
+  <div class="caps">Or paste the text</div>
+  <div style="border:1.5px solid var(--hair-strong);border-radius:12px;padding:11px;margin-top:8px;
+       min-height:88px;font-size:12.5px;color:var(--ink3);background:rgba(255,255,255,.4)">
+    Paste the Canvas syllabus page here — meetings, grading, policies and dates.</div>
+  <div class="foot-ctl"><button class="btn f">Scan</button></div>`]];
+
+/* ── render ──────────────────────────────────────────────────────── */
+const render=(id,arr,stageCls="")=>{
+  document.getElementById(id).innerHTML=arr.map(([tag,name,trade,mock])=>`
+    <article class="v">
+      <div class="v-head"><span class="tag">${tag}</span><h3>${name}</h3>
+        <button class="pick" type="button" aria-pressed="false" data-pick="${tag}">Pick</button></div>
+      <p class="trade">${trade}</p>
+      <div class="stage ${stageCls}">${mock}</div>
+    </article>`).join("");
+};
+render("v1",V1); render("v2",V2); render("v3",V3);
+render("v4",V4); render("v5",V5); render("v6",V6,"dim"); render("v7",V7);
+
+/* picks — one per section, tallied in the sticky rail */
+const picks={};
+document.querySelectorAll(".pick").forEach(b=>{
+  b.addEventListener("click",()=>{
+    const tag=b.dataset.pick, sec=tag[0], on=b.getAttribute("aria-pressed")==="true";
+    document.querySelectorAll(`.pick[data-pick^="${sec}"]`).forEach(o=>{
+      o.setAttribute("aria-pressed","false"); o.textContent="Pick";});
+    if(on){delete picks[sec];}
+    else{picks[sec]=tag; b.setAttribute("aria-pressed","true"); b.textContent="Picked";}
+    const list=Object.keys(picks).sort().map(k=>picks[k]);
+    document.getElementById("tally").innerHTML=list.length
+      ? list.map(t=>`<s>${t}</s>`).join(" · ") : "no picks yet";
+  });
+});
+document.getElementById("copy").addEventListener("click",async e=>{
+  const list=Object.keys(picks).sort().map(k=>picks[k]).join(" · ");
+  const txt=list||"no picks yet";
+  try{await navigator.clipboard.writeText(txt); e.target.textContent="Copied";
+      setTimeout(()=>e.target.textContent="Copy picks",1400);}
+  catch{e.target.textContent=txt;}
+});
+</script>
+</body>
+</html>

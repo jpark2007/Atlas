@@ -174,6 +174,24 @@ Root cause: no sectioning, no size contrast, no per-group collapse, and no notio
 
 ---
 
+## D. Canvas all-day due dates stored as UTC midnight (found 2026-09-01)
+
+Canvas's ICS feed exports assignment due dates **date-only** (`VALUE=DATE`); the parser correctly returns UTC midnight + `allDay: true` (`supabase/functions/_shared/ics.ts:256`), but `canvas-sync/index.ts` captures the flag into `TaskPayload` (`:191`, `:205`) and then **drops it** — the task insert (`:247-256`) and update (`:241`) write only `due_date`, and `tasks` has no `all_day` column at all. (The events path DOES persist `is_all_day`; this is task-specific.) Confirmed in prod: all 22 Canvas tasks in Calc I sit at `T00:00:00+00:00`, so a "due Sep 9, 11:59 PM" assignment renders "Due Sep 8 8 PM" in EDT.
+
+Blast radius: every `dueDate`-vs-now comparison — `isLate` (`Models.swift:627`), `TaskGrouping.bucket`, AgendaBuilder's Late row, `NotificationPlanner` — fires ~28h early; day bucketing is off by one (can cross week boundaries, poisoning A's week scoping); and C4's "same due day" dedupe matching would systematically miss until this is fixed (Canvas day is shifted, syllabus tasks store correct local end-of-day).
+
+Fix sketch: `tasks.all_day boolean` migration + `AtlasDB` codec touchpoints; persist the flag in canvas-sync insert AND update branches; an all-day-aware "effective deadline" computed property on `AtlasTask` (local 11:59 PM of the UTC calendar date) used by all comparison/render sites; render all-day dues date-only ("Due Sep 9"); backfill `all_day = true` where `canvas_uid is not null and due_date` ends `00:00:00Z`. Check the semester-wizard client ICS import for the same flag drop.
+
+## E. Non-PDF syllabus intake
+
+At least one of Drew's classes has no downloadable syllabus PDF — the syllabus is an inline Canvas page. The scan sheet must accept more than a PDF: minimum viable is a "paste syllabus text" input feeding the same scan pipeline; a richer option is fetching the Canvas syllabus page HTML. Also: Canvas coverage varies wildly per class (Calc pushed ~22 assignments; Chem pushed almost none), so the syllabus path must remain first-class even for classes where Canvas is sparse — dedupe (C4) handles the overlap, unmatched syllabus items still import.
+
+## F. Mobile/iPad calendar item detail — concise read view + explicit Edit
+
+Drew's requirement (2026-09-01): tapping a calendar item on iOS/iPad should show everything important **without scrolling** — concise and clean — with an **Edit button** that opens the full edit view. Today `AtlasMobile/Views/Components/ItemDetailSheet.swift` mixes read and edit into one long sheet. Variants belong on the UI ideas page (section 6); implementation follows Drew's pick.
+
+---
+
 ## TODO — UI ideas page (not yet built)
 
 An interactive variants page was scoped for this batch but **was not built**. It remains a follow-up task:
@@ -190,11 +208,13 @@ Drew picks variants on that page before any implementation starts.
 
 ---
 
-## Suggested implementation order
+## Suggested implementation order (rev. 2026-09-01 — Drew wants it all in one phase)
 
-1. **C4 dedupe** — the only item actively corrupting real data every time he scans. Blocks nothing else.
-2. **C1/C2 prompt + `_shared/syllabus_scan.ts` weekday guard** — cheap, server-only, no client release; stops wrong meeting times and the fake office hours at the source. Also correct the stale status line in `phase-3-sync-rules-dedup.md:3`.
-3. **Build the UI ideas page**, get Drew's variant picks.
-4. **A** — week scoping (shared AtlasCore logic first, then both surfaces; the tray `ScrollView` needs a visual pass).
-5. **C5/C6** — review sheet and class-info card, per the chosen variants.
-6. **B** — event location, the widest change and the least urgent; do it as one column + one field + a sweep, not piecemeal per source.
+1. **D all-day due-date fix** — corrupting the display of every Canvas task today, and C4's day-matching depends on it.
+2. **C4 dedupe** (accept-time matcher, both platforms, matches default to unchecked with a visible badge).
+3. **C1/C2 prompt + `_shared/syllabus_scan.ts` weekday guard** — cheap, server-only, no client release; stops wrong meeting times and the fake office hours at the source. Also correct the stale status line in `phase-3-sync-rules-dedup.md:3`.
+4. **Build the UI ideas page** (now includes sections for D's due chip, E's intake, F's detail sheet), get Drew's variant picks.
+5. **A** — week scoping (shared AtlasCore logic first, then both surfaces; the tray `ScrollView` needs a visual pass).
+6. **C5/C6 + F** — review sheet, class-info card, and the mobile detail sheet, per the chosen variants.
+7. **E** — paste-text syllabus intake.
+8. **B** — event location, the widest change and the least urgent; do it as one column + one field + a sweep, not piecemeal per source.

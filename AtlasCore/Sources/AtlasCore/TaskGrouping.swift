@@ -42,6 +42,67 @@ public enum TaskGrouping {
         return .later
     }
 
+    // MARK: - Week horizon
+
+    public typealias WeekHorizon = TimeModel.WeekHorizon
+
+    /// Where one task sits relative to the current week. Reads `effectiveDueDate`, so a
+    /// Canvas date-only due buckets on ITS OWN day rather than the evening before.
+    public static func horizon(
+        for task: TaskItem,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> WeekHorizon {
+        TimeModel.horizon(of: task.effectiveDueDate(calendar: calendar), now: now, calendar: calendar)
+    }
+
+    /// Partition OPEN tasks into the week horizon — the data behind the week-scoped
+    /// calendar rail and the class page's near-term buckets. Empty horizons are absent;
+    /// each list is sorted by effective due date ascending (nil last), then title.
+    public static func byWeekHorizon(
+        tasks: [TaskItem],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [WeekHorizon: [TaskItem]] {
+        var grouped: [WeekHorizon: [TaskItem]] = [:]
+        for task in tasks where !task.done {
+            grouped[horizon(for: task, now: now, calendar: calendar), default: []].append(task)
+        }
+        return grouped.mapValues { sortedByDue($0, calendar: calendar) }
+    }
+
+    /// Group dated tasks by the MONTH they're due in, ascending — the "rest of the term"
+    /// sections on a class page. `month` is the first instant of that month, for titling.
+    /// Undated tasks are omitted (they have no place on a term timeline).
+    public static func byMonth(
+        tasks: [TaskItem],
+        calendar: Calendar = .current
+    ) -> [(month: Date, tasks: [TaskItem])] {
+        var grouped: [Date: [TaskItem]] = [:]
+        for task in tasks {
+            guard let due = task.effectiveDueDate(calendar: calendar),
+                  let month = calendar.dateInterval(of: .month, for: due)?.start else { continue }
+            grouped[month, default: []].append(task)
+        }
+        return grouped.keys.sorted().map { (month: $0, tasks: sortedByDue(grouped[$0] ?? [], calendar: calendar)) }
+    }
+
+    /// Effective due ascending (nil last), then title — the one deterministic order every
+    /// horizon/month list is rendered in.
+    private static func sortedByDue(_ tasks: [TaskItem], calendar: Calendar) -> [TaskItem] {
+        tasks.sorted { a, b in
+            switch (a.effectiveDueDate(calendar: calendar), b.effectiveDueDate(calendar: calendar)) {
+            case let (ad?, bd?):
+                if ad != bd { return ad < bd }
+                return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+            case (nil, _?): return false
+            case (_?, nil): return true
+            case (nil, nil):
+                return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+            }
+        }
+    }
+
     /// Group `tasks` by space name, ordered by `spaceOrder` (sidebar order).
     /// Within each group tasks are sorted by due date ascending (nil last), then title.
     /// Tasks with no space land in a trailing "No Space" bucket.
@@ -99,7 +160,7 @@ public enum TaskGrouping {
 
         var grouped: [Bucket: [TaskItem]] = [:]
         for task in tasks {
-            grouped[bucket(for: task.dueDate, now: now, calendar: calendar), default: []].append(task)
+            grouped[bucket(for: task.effectiveDueDate(calendar: calendar), now: now, calendar: calendar), default: []].append(task)
         }
 
         return Bucket.allCases.compactMap { bucket in

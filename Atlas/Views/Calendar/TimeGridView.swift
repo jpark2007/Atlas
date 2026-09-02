@@ -133,6 +133,8 @@ struct DayColumnView: View {
                     if group.y >= 0, group.y <= CalendarLayout.totalHeight {
                         DueMarkerRow(
                             group: group,
+                            now: now,
+                            columnWidth: geo.size.width,
                             linkedTaskID: linkedTaskID,
                             plannedLabel: plannedLabel,
                             onLinkTask: onLinkTask
@@ -419,23 +421,66 @@ struct EventTile: View {
 
 // MARK: - Due marker (rule — a deadline is a boundary, never an occupancy)
 
-/// A due-date marker on the grid: a 1.5 pt class-colored RULE drawn all the way across the
-/// day column at the due time, carrying a paper-backed mono "DUE <title>" chip with the
-/// planned-time readout.
+/// A due-date marker on the grid: a class-colored RULE drawn all the way across the day
+/// column at the due time, carrying the label that says what is due.
 ///
-/// It is deliberately not a block: a deadline occupies no time, it ends time. Untimed dues
-/// park at the end of the day behind a "no time" glyph rather than pretending to be due at
-/// 12 AM. Deadlines close enough for their chips to overprint arrive here as one group —
-/// every one still gets its OWN rule, and the chips simply step up a row. Nothing ever
-/// collapses into a "+N more". Hovering (or clicking to pin) a chip lights up that task's
-/// work sessions and dims everything else — the deadline↔work link.
+/// It is deliberately not a block: a deadline occupies no time, it ends time.
+///
+/// **Two shapes.** A TIMED due keeps its own hairline plus a small paper-backed mono chip at
+/// its exact time; near-simultaneous ones arrive as one group and their chips step up a row
+/// so they stack instead of overprinting.
+///
+/// The END-OF-DAY row is different, and is where the old form fell apart: untimed dues (and
+/// anything clamped to 11:59 PM) all park on the same y, so the day ended in a stack of
+/// grid-wide "DUE <long title> No time planned" mono lines — the loudest thing on a calendar
+/// whose actual content is quieter. That row now renders as ONE width-capped card anchored to
+/// the right edge above a single hairline: a mono count header, then one compact
+/// dot · title · time line per due, truncated to the card, collapsing past three with a
+/// "+N more" toggle. Red is spent only on something genuinely past its deadline; everything
+/// else wears ink. History markers ("was due", after a late reschedule) sit quietly at the
+/// bottom of the list, muted and faded — never a grid-wide strikethrough.
+///
+/// Hovering (or clicking to pin) a title lights up that task's work sessions and dims
+/// everything else — the deadline↔work link, unchanged in both shapes.
 struct DueMarkerRow: View {
     let group: DueMarkerGroup
+    /// Shared 60-sec clock — the only thing that can earn red here (past its deadline, still open).
+    let now: Date
+    /// The day column's width, so the end-of-day card caps itself instead of letting a long
+    /// title run the whole grid.
+    let columnWidth: CGFloat
     let linkedTaskID: UUID?
     var plannedLabel: ((UUID) -> String)? = nil
     var onLinkTask: ((UUID?) -> Void)? = nil
 
+    /// End-of-day list expanded past the collapsed cap.
+    @State private var expanded = false
+
+    /// How many dues the card lists before it collapses the rest behind "+N more".
+    static let collapsedLimit = 3
+
+    /// Roughly how far the end-of-day card rises above its rule — header + up to
+    /// `collapsedLimit` lines + chrome. The sticky "due later tonight" pill subtracts this so
+    /// it stops claiming a marker is below the fold once its card is on screen.
+    static func endOfDayCardHeight(_ group: DueMarkerGroup) -> CGFloat {
+        let rows = min(group.count, collapsedLimit) + (group.count > collapsedLimit ? 1 : 0)
+        return 12 + CGFloat(rows) * 16 + 13
+    }
+
+    /// The parked 11:59 PM row — the one that gets the card treatment.
+    private var isEndOfDay: Bool { group.y == CalendarLayout.endOfDayY }
+
     var body: some View {
+        if isEndOfDay {
+            endOfDayCluster
+        } else {
+            timedMarkers
+        }
+    }
+
+    // MARK: Timed dues — unchanged hairline + chip
+
+    private var timedMarkers: some View {
         ZStack(alignment: .topTrailing) {
             ForEach(Array(group.deadlines.enumerated()), id: \.element.id) { index, dl in
                 marker(for: dl, index: index)
@@ -444,13 +489,12 @@ struct DueMarkerRow: View {
         .frame(height: CalendarLayout.deadlineLabelHeight)
     }
 
-    /// Row-local Y of one deadline's rule. Untimed dues all share the parked end-of-day row;
-    /// timed ones sit at their own exact time, which is why a cluster keeps separate rules.
+    /// Row-local Y of one deadline's rule. Untimed (and end-of-day) dues share the parked
+    /// row; timed ones sit at their own exact time, which is why a cluster keeps separate
+    /// rules. Uses the clamped `deadlineMarkerY` so no rule draws past the grid's bottom.
     private func ruleY(for dl: CalendarEvent) -> CGFloat {
         let half = CalendarLayout.deadlineLabelHeight / 2
-        guard !group.untimed else { return half }
-        let y = CalendarLayout.offsetHours(for: dl.start) * CalendarLayout.hourHeight
-        return y - group.y + half
+        return deadlineMarkerY(dl) - group.y + half
     }
 
     private func marker(for dl: CalendarEvent, index: Int) -> some View {
@@ -474,7 +518,7 @@ struct DueMarkerRow: View {
 
     private func chip(for dl: CalendarEvent, taskID: UUID?) -> some View {
         HStack(spacing: 4) {
-            if group.untimed {
+            if !dl.hasSpecificTime {
                 // "No time" glyph — this is due today, but no clock time was ever given.
                 Image(systemName: "clock.badge.questionmark").atlasFont(size: 8, weight: .bold)
             }
@@ -504,7 +548,166 @@ struct DueMarkerRow: View {
             guard let taskID else { return }
             onLinkTask?(linkedTaskID == taskID ? nil : taskID)
         }
-        .help(group.untimed ? "Due today — no time given" : "Due")
+        .help(dl.hasSpecificTime ? "Due" : "Due today — no time given")
+    }
+
+    // MARK: End-of-day cluster — one card, not a stack of grid-wide lines
+
+    /// Live (still-open) dues first, oldest first; history sinks to the bottom.
+    private var ordered: [CalendarEvent] {
+        group.deadlines.sorted { a, b in
+            if a.isHistory != b.isHistory { return !a.isHistory }
+            return a.start < b.start
+        }
+    }
+
+    private var live: [CalendarEvent] { group.deadlines.filter { !$0.isHistory } }
+
+    private var visible: [CalendarEvent] {
+        expanded ? ordered : Array(ordered.prefix(Self.collapsedLimit))
+    }
+
+    private var hiddenCount: Int { max(0, ordered.count - Self.collapsedLimit) }
+
+    private func isOverdue(_ dl: CalendarEvent) -> Bool { !dl.isHistory && dl.end < now }
+
+    /// Red is earned only by something actually past its deadline and still open; otherwise
+    /// the card's chrome is ink, not a state color.
+    private var chromeColor: Color {
+        group.deadlines.contains(where: isOverdue) ? AtlasTheme.Colors.danger
+                                                   : AtlasTheme.Colors.textSecondary
+    }
+
+    /// Times are listed only when the row actually mixes clock times in — otherwise the
+    /// header already said everything a per-row "no time" could.
+    private var showsTimes: Bool { live.contains(where: \.hasSpecificTime) }
+
+    private var headerText: String {
+        let n = live.count
+        guard n > 0 else { return "WAS DUE TODAY" }
+        return showsTimes ? "\(n) DUE BY 11:59 PM" : "\(n) DUE TODAY"
+    }
+
+    private var cardWidth: CGFloat { min(230, max(110, columnWidth - 12)) }
+
+    /// A fixed-height spacer carrying the hairline at the row's center (= `group.y`); the card
+    /// is an overlay so it can grow UPWARD off the parked bottom row without moving the rule.
+    private var endOfDayCluster: some View {
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: CalendarLayout.deadlineLabelHeight)
+            .overlay(alignment: .center) {
+                Rectangle()
+                    .fill(chromeColor.opacity(0.3))
+                    .frame(height: AtlasTheme.hairlineWidth)
+                    .allowsHitTesting(false)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                card.offset(x: -6, y: -CalendarLayout.deadlineLabelHeight / 2 - 3)
+            }
+    }
+
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
+                Image(systemName: "flag.fill").atlasFont(size: 8, weight: .bold)
+                Text(headerText).atlasMono(size: 9, weight: .bold)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(chromeColor)
+            ForEach(visible) { dl in
+                dueLine(for: dl)
+            }
+            if hiddenCount > 0 {
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { expanded.toggle() }
+                } label: {
+                    Text(expanded ? "Show less" : "+\(hiddenCount) more")
+                        .atlasMono(size: 9, weight: .bold)
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        .frame(width: cardWidth, alignment: .leading)
+        .background(AtlasTheme.Colors.bgBase,
+                    in: RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous)
+            .strokeBorder(chromeColor.opacity(0.45), lineWidth: AtlasTheme.hairlineWidth))
+        .shadow(color: .black.opacity(0.10), radius: 5, y: 2)
+    }
+
+    private func dueLine(for dl: CalendarEvent) -> some View {
+        let taskID = dl.deadlineTaskID
+        let linked = taskID != nil && taskID == linkedTaskID
+        return HStack(spacing: 5) {
+            Group {
+                if dl.isHistory {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .atlasFont(size: 8, weight: .bold)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                } else {
+                    Circle().fill(dl.color).frame(width: 5, height: 5)
+                }
+            }
+            .frame(width: 9)
+            Text(dl.title)
+                .atlasFont(size: 11, weight: linked ? .bold : .medium, design: .rounded)
+                .foregroundStyle(lineColor(dl))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 4)
+            if let trailing = trailingLabel(dl) {
+                Text(trailing)
+                    .atlasMono(size: 9, weight: .medium)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .fixedSize()
+            }
+        }
+        .opacity(dl.isHistory ? 0.6 : 1)
+        .padding(.horizontal, 2)
+        .padding(.vertical, 1)
+        .background(linked ? AtlasTheme.wash(dl.color) : .clear,
+                    in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .contentShape(Rectangle())
+        .onHover { inside in
+            guard let taskID else { return }
+            onLinkTask?(inside ? taskID : nil)
+        }
+        .onTapGesture {
+            guard let taskID else { return }
+            onLinkTask?(linkedTaskID == taskID ? nil : taskID)
+        }
+        .help(helpText(dl))
+    }
+
+    private func lineColor(_ dl: CalendarEvent) -> Color {
+        if dl.isHistory { return AtlasTheme.Colors.textMuted }
+        return isOverdue(dl) ? AtlasTheme.Colors.danger : AtlasTheme.Colors.textPrimary
+    }
+
+    private func trailingLabel(_ dl: CalendarEvent) -> String? {
+        if dl.isHistory { return "was due" }
+        guard showsTimes else { return nil }
+        return dl.hasSpecificTime ? dl.timeLabel : "no time"
+    }
+
+    /// The full title and the planned-time readout live here, so the card itself stays a
+    /// scannable list instead of a wall of mono text.
+    private func helpText(_ dl: CalendarEvent) -> String {
+        var parts = [dl.title]
+        if dl.isHistory {
+            parts.append("Was due here — rescheduled")
+        } else {
+            parts.append(dl.hasSpecificTime ? "Due \(dl.timeLabel)" : "Due today — no time given")
+        }
+        if let taskID = dl.deadlineTaskID, let plannedLabel {
+            let planned = plannedLabel(taskID)
+            if !planned.isEmpty { parts.append(planned) }
+        }
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -578,7 +781,16 @@ struct DayCalendarView: View {
     private var belowViewport: [DueMarkerGroup] {
         guard viewportHeight > 0 else { return [] }
         let bottom = scrollOffset + viewportHeight
-        return markers.filter { $0.y + Self.contentTopInset > bottom }
+        // Measure the row's TOP edge, not its rule: the label draws ABOVE the rule, so a
+        // marker whose label is fully on screen must not still claim to be below the fold
+        // (which left the pill lying at the bottom of the day, with nothing to scroll to).
+        // The end-of-day row's label is a card, which rises further than a chip does.
+        return markers.filter { group in
+            let label = group.y == CalendarLayout.endOfDayY
+                ? DueMarkerRow.endOfDayCardHeight(group)
+                : CalendarLayout.deadlineLabelHeight / 2
+            return group.y - label + Self.contentTopInset >= bottom
+        }
     }
 
     /// All-day items ride the strip above the grid, never the column — an all-day event is a
@@ -634,7 +846,9 @@ struct DayCalendarView: View {
                             nowSentinel
                             // Anchor at the first below-the-fold due marker — the edge-chip's
                             // jump target.
-                            if let first = belowViewport.first { dueSentinel(at: first.y) }
+                            if let first = belowViewport.first {
+                                dueSentinel(at: first.y - CalendarLayout.deadlineLabelHeight / 2)
+                            }
                         }
                         .background(
                             GeometryReader { g in

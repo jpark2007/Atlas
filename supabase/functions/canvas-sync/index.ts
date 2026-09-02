@@ -179,11 +179,18 @@ async function syncUser(admin: SupabaseClient, conn: Connection, dryRun: boolean
     vevents = vevents.slice(0, MAX_ICS_EVENTS);
   }
 
-  // 3. Load the user's projects once for course routing.
+  // 3. Load the user's projects once for course routing. Archived/dropped classes
+  //    are excluded so a feed item that matches ONLY an archived project is routed
+  //    as if nothing matched (the space_name floor below) instead of resurrecting
+  //    new rows under a class the user put away. This only affects NEW items —
+  //    existing rows (matched by canvas_uid) keep updating via the USER-DATA-SAFE
+  //    path below regardless of the project's archive state; only their title/
+  //    due_date/etc are feed-owned, project_id is never touched.
   const { data: projRows, error: projErr } = await admin
     .from("projects")
     .select("id, space_name, name, code, canvas_course")
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .is("archived_at", null);
   if (projErr) throw new Error(`projects select failed: ${projErr.message}`);
   const projects = (projRows ?? []) as Project[];
 
@@ -217,28 +224,41 @@ async function syncUser(admin: SupabaseClient, conn: Connection, dryRun: boolean
 
   // 5a. TASKS — split new UIDs (full insert) vs existing (feed-owned fields only).
   const taskUids = [...taskByUid.keys()];
-  const existingTaskUids = new Set<string>();
+  const existingTasks = new Map<string, { due_date: string | null; done: boolean }>();
   if (taskUids.length > 0) {
     const { data: rows, error } = await admin
       .from("tasks")
-      .select("id, canvas_uid")
+      .select("id, canvas_uid, due_date, done")
       .eq("user_id", userId)
       .in("canvas_uid", taskUids);
     if (error) throw new Error(`tasks select failed: ${error.message}`);
-    for (const r of (rows ?? []) as { id: string; canvas_uid: string }[]) existingTaskUids.add(r.canvas_uid);
+    for (const r of (rows ?? []) as { id: string; canvas_uid: string; due_date: string | null; done: boolean }[]) {
+      existingTasks.set(r.canvas_uid, { due_date: r.due_date, done: r.done });
+    }
 
     const taskInserts: Record<string, unknown>[] = [];
     for (const [uid, t] of taskByUid) {
-      if (existingTaskUids.has(uid)) {
-        // USER-DATA-SAFE: update ONLY feed-owned fields — title, due_date, and
+      const existing = existingTasks.get(uid);
+      if (existing) {
+        // USER-DATA-SAFE: update ONLY feed-owned fields — title, due_date, all_day
+        // (whether the feed stated a DATE rather than an instant — the pair is
+        // meaningless apart, so it travels with due_date), and
         // canvas_course (the course label; deterministic from the feed, backfills
         // pre-0032 rows so the picker/remap can see them). space_name/project_id/
         // done/status/notes/scheduled_at are user territory and are never touched.
         result.tasksUpdated++;
         if (!dryRun) {
+          const patch: Record<string, unknown> = { title: t.title, due_date: t.due_date, all_day: t.allDay, canvas_course: t.canvas_course };
+          // Canvas moved the deadline out from under a possibly-scheduled work block —
+          // stamp the previous due_date so the client can show "Due date moved" (never
+          // cleared server-side; a done task's due date moving is not worth flagging).
+          if (!existing.done && existing.due_date &&
+              new Date(existing.due_date).getTime() !== new Date(t.due_date).getTime()) {
+            patch.due_moved_from = existing.due_date;
+          }
           const { error: uErr } = await admin
             .from("tasks")
-            .update({ title: t.title, due_date: t.due_date, canvas_course: t.canvas_course })
+            .update(patch)
             .eq("user_id", userId)
             .eq("canvas_uid", uid);
           if (uErr) itemErrors.push(`task ${uid}: ${uErr.message}`.slice(0, 160));
@@ -251,6 +271,7 @@ async function syncUser(admin: SupabaseClient, conn: Connection, dryRun: boolean
           project_id: t.project_id,
           title: t.title,
           due_date: t.due_date,
+          all_day: t.allDay,
           canvas_uid: uid,
           canvas_course: t.canvas_course,
         });

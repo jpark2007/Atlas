@@ -134,7 +134,7 @@ extension AppState {
         var markers: [CalendarEvent] = []
         for task in tasks {
             guard !task.done else { continue }
-            if let due = task.dueDate, cal.isDate(due, inSameDayAs: day) {
+            if let due = task.effectiveDueDate(calendar: cal), cal.isDate(due, inSameDayAs: day) {
                 let red = TimeModel.isDueTodayUnplanned(task, now: now)
                 markers.append(CalendarEvent(
                     id: GoogleCalendarMapper.stableUUID(from: "deadline-" + task.id.uuidString),

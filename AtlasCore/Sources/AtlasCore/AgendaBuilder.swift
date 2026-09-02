@@ -64,7 +64,7 @@ public enum AgendaBuilder {
         }
 
         for task in tasks where !task.done {
-            guard let date = task.scheduledAt ?? task.dueDate, date >= dayStart else { continue }
+            guard let date = task.scheduledAt ?? task.effectiveDueDate(calendar: calendar), date >= dayStart else { continue }
             let timed = task.scheduledAt != nil
             let end = timed
                 ? date.addingTimeInterval(TimeInterval((task.durationMin ?? 60) * 60))
@@ -144,7 +144,7 @@ extension AgendaBuilder {
         let lateItems: [AgendaItem] = tasks
             .filter { !$0.done }
             .compactMap { task in
-                guard let due = task.dueDate, calendar.startOfDay(for: due) < today else { return nil }
+                guard let due = task.effectiveDueDate(calendar: calendar), calendar.startOfDay(for: due) < today else { return nil }
                 return AgendaItem(
                     id: task.id,
                     kind: .task,

@@ -22,6 +22,8 @@
   --sans: "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   --wrap: 1180px;
+  /* how far a feature screenshot runs past the text column, out to the page edge */
+  --bleed: calc(var(--gutter) + max(0px, (100vw - var(--wrap)) / 2));
   --gutter: clamp(1.25rem, 5vw, 4rem);
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
@@ -196,17 +198,6 @@ h1, h2, .display {
 .site-foot__brand .brand__suffix { display: block; margin: -0.3rem 0 0.5rem; }
 @media (max-width: 520px) { .brand__suffix { font-size: 0.62rem; letter-spacing: 0.05em; margin-left: 0.3rem; } }
 
-.brand__beta {
-  font-size: 9.5px;
-  font-weight: 800;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--clay-text);
-  border: 1px solid var(--clay-wash-strong);
-  border-radius: 999px;
-  padding: 0.18em 0.55em;
-  align-self: center;
-}
 .site-nav {
   display: flex;
   align-items: center;
@@ -227,16 +218,11 @@ h1, h2, .display {
 /* =====================================================================
    Hero
    ===================================================================== */
-.hero { padding-top: clamp(3.5rem, 9vw, 7rem); padding-bottom: clamp(3rem, 7vw, 5.5rem); }
-.hero__inner {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-  align-items: center;
-  gap: clamp(2rem, 5vw, 4.5rem);
-}
+.hero { padding-top: clamp(3rem, 7vw, 5.5rem); padding-bottom: clamp(2.5rem, 6vw, 4.5rem); }
+.hero__lede { max-width: calc(var(--wrap)); }
 .hero__title {
-  font-size: clamp(2.6rem, 6.4vw, 5.1rem);
-  margin: 0.2em 0 0.55em;
+  font-size: clamp(2.6rem, 6.2vw, 4.7rem);
+  margin: 0.2em 0 0.5em;
   max-width: 15ch;
 }
 .hero__title em {
@@ -245,7 +231,7 @@ h1, h2, .display {
   font-variation-settings: "SOFT" 40;
 }
 .hero__sub {
-  max-width: 46ch;
+  max-width: 44ch;
   color: var(--muted);
   font-size: clamp(1.02rem, 1.4vw, 1.18rem);
   line-height: 1.6;
@@ -254,48 +240,58 @@ h1, h2, .display {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 1rem 1.4rem;
-  margin-top: 2rem;
+  gap: 0.85rem;
+  margin-top: 1.9rem;
 }
 .hero__hint {
+  margin-top: 0.9rem;
   font-size: 0.9rem;
   color: var(--muted);
 }
 
-/* grid-breaking celestial sphere */
-.hero__figure {
+/* The dashboard sits full-bleed-ish under the lede; the iPhone shot laps its
+   lower-right corner as a flat card — no device chrome, no perspective. */
+.hero__stage { margin-top: clamp(2.5rem, 5vw, 3.6rem); }
+.shot--hero {
   position: relative;
-  justify-self: end;
-  width: 100%;
-  max-width: 460px;
-  aspect-ratio: 1;
+  max-width: 1000px;
+  margin-inline: auto;
+  padding-bottom: 2.5%;
 }
-.sphere {
-  width: 118%;
-  height: 118%;
+.shot--hero .shot__phone {
   position: absolute;
-  right: -12%;
-  top: -6%;
-  overflow: visible;
+  right: 2%;
+  bottom: 0;
+  width: 15%;
+  min-width: 96px;
+  border-radius: 12px;
 }
-.s-line {
-  fill: none;
-  stroke: rgba(26, 25, 29, 0.26);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
+@media (max-width: 720px) {
+  .shot--hero { padding-bottom: 0; }
+  .shot--hero .shot__phone { display: none; }
 }
-.s-axis { stroke: rgba(26, 25, 29, 0.16); stroke-dasharray: 2 5; }
-.s-ecliptic {
-  fill: none;
-  stroke: var(--clay);
-  stroke-width: 1.5;
-  opacity: 0.72;
-  vector-effect: non-scaling-stroke;
+
+/* =====================================================================
+   Screenshots
+   Every product image gets the same skin: hairline, small radius, one soft
+   shadow. Aspect ratios come from the files\' own width/height attributes.
+   ===================================================================== */
+.shot { margin: 0; }
+.shot img {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  box-shadow: 0 16px 34px -22px rgba(26, 25, 29, 0.4);
+  background: var(--paper);
 }
-.s-star { fill: var(--clay); }
-.sphere__spin { transform-origin: 150px 150px; animation: spin 150s linear infinite; }
-.sphere__ecliptic { transform-origin: 150px 150px; animation: spin 240s linear infinite reverse; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.phones {
+  display: flex;
+  gap: clamp(0.5rem, 1.4vw, 0.9rem);
+  align-items: flex-start;
+}
+.phones .shot { flex: 1 1 0; min-width: 0; }
+.phones .shot img { border-radius: 12px; }
 
 /* =====================================================================
    Section rules
@@ -315,232 +311,78 @@ h1, h2, .display {
 /* =====================================================================
    Feature moments
    ===================================================================== */
-.feature { padding: clamp(3.2rem, 7vw, 6rem) 0; }
+.feature { padding: clamp(2.4rem, 3.8vw, 3.6rem) 0; }
 .feature__inner {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 0.55fr) minmax(0, 1fr);
   align-items: center;
-  gap: clamp(2rem, 5vw, 5rem);
+  gap: clamp(2rem, 4vw, 3.4rem);
 }
+.feature__inner--figleft { grid-template-columns: minmax(0, 1fr) minmax(0, 0.55fr); }
 .feature__inner--figleft .feature__text { order: 2; }
 .feature__inner--figleft .feature__figure { order: 1; }
 .feature__title {
-  font-size: clamp(1.85rem, 3.4vw, 2.9rem);
-  max-width: 16ch;
+  font-size: clamp(1.7rem, 2.8vw, 2.4rem);
+  max-width: 18ch;
   margin-bottom: 0.85rem;
 }
 .feature__body {
   color: var(--muted);
-  max-width: 48ch;
+  max-width: 42ch;
   font-size: 1.04rem;
 }
-.feature__figure { display: flex; justify-content: center; }
-.figure-scroll { width: 100%; overflow-x: auto; }
+.feature__figure { min-width: 0; }
 
-/* =====================================================================
-   Product visual — calendar-day fragment
-   ===================================================================== */
-.cal {
-  width: 100%;
-  min-width: 300px;
-  max-width: 420px;
-  background: var(--paper);
-  border: 1px solid var(--hairline-strong);
-  border-radius: 16px;
-  padding: 1.1rem 1.2rem 1rem;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
-}
-.cal__head {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  padding-bottom: 0.85rem;
-  border-bottom: 1px solid var(--hairline);
-  margin-bottom: 0.75rem;
-}
-.cal__day { font-family: var(--serif); font-weight: 540; font-size: 1.25rem; }
-.cal__date {
-  font-size: 11px; font-weight: 800; letter-spacing: 0.07em;
-  text-transform: uppercase; color: var(--muted);
-}
-.cal__body { display: grid; grid-template-columns: 26px 1fr; gap: 0.6rem; }
-.cal__gutter {
-  display: flex; flex-direction: column; justify-content: space-between;
-  font-size: 10px; font-weight: 700; color: var(--muted); text-align: right;
-  padding-top: 2px;
-}
-.cal__track { position: relative; height: 288px; }
-.cal__lines { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: space-between; }
-.cal__lines span { height: 1px; background: var(--hairline); }
-.evt {
-  position: absolute;
-  left: 0; right: 4px;
-  border-radius: 7px;
-  padding: 0.34rem 0.5rem;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  border-left: 2.5px solid var(--muted);
-  background: var(--ink-wash);
-}
-.evt__label { font-weight: 700; font-size: 0.82rem; line-height: 1.15; }
-.evt__meta { font-size: 9.5px; font-weight: 600; color: var(--muted); letter-spacing: 0.01em; }
-.evt--google { background: var(--clay-wash); border-left-color: var(--clay); }
-.evt--google .evt__meta { color: var(--clay-text); }
-.evt--apple { background: var(--ink-wash-2); border-left-color: var(--muted); }
-.evt--canvas {
-  background: var(--clay-wash);
-  border-left: 2.5px dashed var(--clay);
-}
-.evt--canvas .evt__meta { color: var(--clay-text); }
-.evt--atlas { background: transparent; border: 1px dashed var(--hairline-strong); border-left: 2.5px solid var(--ink); }
-.cal__now { position: absolute; left: -4px; right: 0; height: 1.5px; background: var(--clay); }
-.cal__now-dot {
-  position: absolute; left: 0; top: 50%;
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--clay); transform: translate(-50%, -50%);
-}
-.cal__legend {
-  display: flex; flex-wrap: wrap; gap: 0.75rem 1rem;
-  margin-top: 0.85rem; padding-top: 0.75rem;
-  border-top: 1px solid var(--hairline);
-  font-size: 10.5px; font-weight: 700; color: var(--muted);
-}
-.cal__legend span { display: inline-flex; align-items: center; gap: 0.4em; }
-.dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
-.dot--google { background: var(--clay); }
-.dot--apple { background: var(--muted); }
-.dot--canvas { background: var(--clay); opacity: 0.5; }
-.dot--atlas { background: transparent; border: 1.5px solid var(--ink); }
-
-/* =====================================================================
-   Product visual — capture
-   ===================================================================== */
-.capture { width: 100%; max-width: 400px; }
-.capture__box {
-  position: relative;
-  border: 1px solid var(--hairline-strong);
-  border-radius: 14px;
-  background: var(--paper);
-  padding: 1rem 1.1rem;
-  font-size: 1.02rem;
-  line-height: 1.5;
-  color: var(--ink);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
-}
-.capture__caret {
-  display: inline-block;
-  width: 2px; height: 1.1em;
-  background: var(--clay);
-  vertical-align: -0.18em;
-  margin-right: 3px;
-  animation: blink 1.1s step-end infinite;
-}
-@keyframes blink { 50% { opacity: 0; } }
-.capture__arrow { display: flex; justify-content: center; padding: 0.65rem 0; }
-.capture__arrow svg { width: 22px; height: 22px; fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.capture__out { display: flex; flex-direction: column; gap: 0.55rem; }
-.chip {
-  display: flex; align-items: center; gap: 0.65rem;
-  border: 1px solid var(--hairline);
-  border-radius: 11px;
-  padding: 0.6rem 0.8rem;
-  background: var(--paper);
-}
-.chip i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-.chip span { font-weight: 700; }
-.chip em { margin-left: auto; font-style: normal; font-size: 0.82rem; font-weight: 600; color: var(--muted); }
-.chip--event i { background: var(--clay); }
-.chip--task i { background: transparent; border: 1.5px solid var(--ink); }
-.capture__confirm {
-  margin-top: 0.85rem;
-  font-size: 0.86rem;
-  font-weight: 700;
-  color: var(--clay-text);
-  text-align: right;
+/* A screenshot boxed beside a paragraph reads like a screenshot. Each one runs
+   off the page edge instead, squared where it leaves — deliberate framing, and
+   the extra width is what makes the app's own type legible. */
+@media (min-width: 861px) {
+  .feature__inner--figright .feature__figure { margin-right: calc(-1 * var(--bleed)); }
+  .feature__inner--figleft .feature__figure { margin-left: calc(-1 * var(--bleed)); }
+  .feature__inner--figright .feature__figure img {
+    border-right: 0;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .feature__inner--figleft .feature__figure img {
+    border-left: 0;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+  /* the phone row keeps its card edges — it is three objects, not one plane */
+  .feature__inner .phones img { border: 1px solid var(--hairline-strong); border-radius: 12px; }
 }
 
 /* =====================================================================
-   Product visual — spaces & projects
+   Menu-bar band — the page's one ink block, for rhythm
    ===================================================================== */
-.spaces { width: 100%; max-width: 380px; }
-.space { display: flex; gap: 0.4rem; margin-bottom: 1rem; }
-.space__tab {
-  font-size: 0.9rem; font-weight: 700; color: var(--muted);
-  padding: 0.4em 0.9em; border-radius: 999px;
-  border: 1px solid var(--hairline);
+.band {
+  background: var(--ink);
+  color: var(--paper);
+  padding: clamp(3rem, 6vw, 4.5rem) 0;
+  margin-top: clamp(3.2rem, 7vw, 6rem);
 }
-.space__tab--active { color: var(--paper); background: var(--ink); border-color: var(--ink); }
-.space__list { display: flex; flex-direction: column; }
-.space__list li {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 1rem;
-  padding: 0.85rem 0.2rem;
-  border-bottom: 1px solid var(--hairline);
+.band__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 230px) minmax(0, 1fr);
+  gap: clamp(2rem, 6vw, 5rem);
+  align-items: center;
 }
-.proj { display: inline-flex; align-items: center; gap: 0.7rem; font-weight: 700; }
-.proj__mark {
-  width: 16px; height: 16px; border-radius: 5px;
-  background: var(--clay-wash); border: 1px solid var(--clay);
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 800; color: var(--clay-text);
+.band__figure img {
+  border-color: rgba(251, 250, 247, 0.16);
+  box-shadow: 0 20px 44px -24px rgba(0, 0, 0, 0.7);
 }
-.proj__mark--plus { background: transparent; border: 1px dashed var(--hairline-strong); color: var(--muted); }
-.space__list li em { font-style: normal; font-size: 0.82rem; font-weight: 700; color: var(--muted); }
-.space__add { color: var(--muted); }
-.space__add .proj { color: var(--muted); font-weight: 600; }
-
-/* =====================================================================
-   Product visual — phone glance
-   ===================================================================== */
-.phone {
-  width: 100%; max-width: 250px;
-  border: 1px solid var(--hairline-strong);
-  border-radius: 30px;
-  padding: 0.55rem;
-  background: var(--paper);
-  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.02);
-}
-.phone__screen {
-  border: 1px solid var(--hairline);
-  border-radius: 24px;
-  padding: 1.3rem 1.1rem 1.1rem;
-  background: color-mix(in srgb, var(--paper) 60%, #fff);
-}
-.phone__kicker { margin-bottom: 0.9rem; }
-.phone__list { display: flex; flex-direction: column; }
-.phone__item {
-  display: flex; align-items: center; gap: 0.7rem;
-  padding: 0.7rem 0;
-  border-bottom: 1px solid var(--hairline);
-  font-weight: 700; font-size: 0.94rem;
-}
-.phone__time {
-  font-size: 10px; font-weight: 800; letter-spacing: 0.04em;
-  color: var(--clay-text); flex: none; width: 34px;
-}
-.phone__check {
-  width: 18px; height: 18px; border-radius: 50%;
-  background: var(--clay); color: var(--paper);
-  font-size: 11px; font-weight: 800;
-  display: inline-flex; align-items: center; justify-content: center; flex: none;
-}
-.phone__item--done { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--hairline-strong); }
-.phone__capture {
-  margin-top: 1.1rem;
-  border: 1px dashed var(--hairline-strong);
-  border-radius: 12px;
-  padding: 0.7rem;
-  text-align: center;
-  font-weight: 700; font-size: 0.9rem;
-  color: var(--muted);
+.band .kicker { color: rgba(251, 250, 247, 0.6); }
+.band__title { font-size: clamp(1.7rem, 3vw, 2.5rem); max-width: 16ch; margin-bottom: 0.8rem; }
+.band__body { color: rgba(251, 250, 247, 0.66); max-width: 44ch; font-size: 1.04rem; }
+@media (max-width: 700px) {
+  .band__inner { grid-template-columns: minmax(0, 150px) minmax(0, 1fr); gap: 1.5rem; }
 }
 
 /* =====================================================================
    Why we built it
    ===================================================================== */
-.why { padding: clamp(3.5rem, 8vw, 6.5rem) 0; }
+.why { padding: clamp(3rem, 6vw, 5rem) 0; }
 .why__inner {
   display: grid;
   grid-template-columns: minmax(0, 0.42fr) minmax(0, 0.58fr);
@@ -568,7 +410,7 @@ h1, h2, .display {
 /* =====================================================================
    Waitlist
    ===================================================================== */
-.waitlist { padding: clamp(3.5rem, 8vw, 6.5rem) 0; }
+.waitlist { padding: clamp(3.2rem, 7vw, 5.5rem) 0; }
 .waitlist__inner { max-width: 640px; }
 .waitlist__title {
   font-size: clamp(2rem, 4vw, 3.1rem);
@@ -646,6 +488,19 @@ h1, h2, .display {
 .app-btn--primary .app-btn__label { color: var(--paper); opacity: 1; }
 .app-btn--primary:hover { transform: translateY(-1px); background: #000; }
 .app-btn--primary:active { transform: translateY(0); }
+/* Apple's "Download on the App Store" badge — the artwork is the button, so it
+   carries no frame of its own; its height matches the Mac button beside it. */
+.app-btn--store { padding: 0; border: 0; background: none; border-radius: 0; transition: transform 0.15s ease; }
+.app-btn--store img { height: 48px; width: auto; display: block; }
+.app-btn--store:hover { transform: translateY(-1px); }
+
+/* Buttons and the scan-me QR, side by side on desktop; a phone just taps. */
+.download-row { display: flex; align-items: center; gap: 1.8rem; flex-wrap: wrap; margin-top: 1.8rem; }
+.store-qr { text-align: center; }
+.store-qr img { width: 104px; height: 104px; display: block; }
+.store-qr__caption { margin-top: 0.5rem; max-width: 13ch; font-size: 0.82rem; line-height: 1.3; color: var(--muted); }
+@media (max-width: 768px) { .store-qr { display: none; } }
+
 .teasers__note { margin-top: 0.85rem; font-size: 0.82rem; color: var(--muted); }
 .teasers__caption { margin-top: 0.6rem; font-size: 0.9rem; color: var(--muted); }
 
@@ -827,89 +682,6 @@ h1, h2, .display {
 .anim .hero [data-reveal] { transition: none; }
 .anim .hero .kicker::before { transform: scaleX(1); }
 
-/* --- calendar: events cascade, then the clay NOW line draws --------- */
-.anim [data-anim="cal"] .evt {
-  opacity: 0;
-  transform: translateY(14px);
-  transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
-  transition-delay: calc(var(--i) * 0.09s);
-}
-.anim [data-anim="cal"].is-visible .evt { opacity: 1; transform: none; }
-.anim [data-anim="cal"] .cal__now {
-  clip-path: inset(0 100% 0 0);
-  transition: clip-path 0.6s var(--ease);
-}
-.anim [data-anim="cal"].is-visible .cal__now {
-  clip-path: inset(0 0 0 0);
-  transition-delay: 0.55s;
-}
-
-/* --- capture: type, then arrow, then chips cascade, then confirm ---- */
-.anim [data-anim="capture"] .capture__arrow {
-  opacity: 0;
-  transform: translateY(-6px) scale(0.92);
-  transition: opacity 0.4s var(--ease), transform 0.4s var(--ease);
-}
-.anim [data-anim="capture"].show-arrow .capture__arrow { opacity: 1; transform: none; }
-.anim [data-anim="capture"] .chip {
-  opacity: 0;
-  transform: translateY(12px);
-  transition: opacity 0.45s var(--ease), transform 0.45s var(--ease);
-}
-.anim [data-anim="capture"] .chip.is-in { opacity: 1; transform: none; }
-.anim [data-anim="capture"] .capture__confirm {
-  opacity: 0;
-  transition: opacity 0.45s var(--ease);
-}
-.anim [data-anim="capture"].is-done .capture__confirm { opacity: 1; }
-
-/* --- spaces: rows cascade, then School/Personal auto-flip ----------- */
-.anim [data-anim="spaces"] .space__lists { position: relative; }
-.anim [data-anim="spaces"] .space__list[data-list="school"],
-.anim [data-anim="spaces"] .space__list[data-list="personal"] {
-  transition: opacity 0.4s var(--ease);
-}
-.anim [data-anim="spaces"] .space__list[data-list="personal"] {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-.anim [data-anim="spaces"].show-personal .space__list[data-list="personal"] { opacity: 1; }
-.anim [data-anim="spaces"].show-personal .space__list[data-list="school"] { opacity: 0; }
-.anim [data-anim="spaces"] .space__tab {
-  transition: background 0.35s var(--ease), color 0.35s var(--ease),
-    border-color 0.35s var(--ease);
-}
-.anim [data-anim="spaces"] .space__list[data-list="school"] li {
-  opacity: 0;
-  transform: translateY(10px);
-  transition: opacity 0.45s var(--ease), transform 0.45s var(--ease);
-  transition-delay: calc(var(--i) * 0.08s);
-}
-.anim [data-anim="spaces"].is-visible .space__list[data-list="school"] li {
-  opacity: 1;
-  transform: none;
-}
-
-/* --- phone: rows cascade (card parallax handled in JS) -------------- */
-.anim [data-anim="phone"] .phone__item,
-.anim [data-anim="phone"] .phone__capture {
-  opacity: 0;
-  transform: translateY(12px);
-  transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
-}
-.anim [data-anim="phone"].is-visible .phone__item {
-  opacity: 1;
-  transform: none;
-  transition-delay: calc(var(--i) * 0.1s);
-}
-.anim [data-anim="phone"].is-visible .phone__capture {
-  opacity: 1;
-  transform: none;
-  transition-delay: 0.34s;
-}
-
 /* --- pull-quote: clay phrase gains a highlight sweep ---------------- */
 .anim .why__lead em {
   background-image: linear-gradient(var(--clay-wash-strong), var(--clay-wash-strong));
@@ -926,13 +698,11 @@ h1, h2, .display {
    ===================================================================== */
 @media (max-width: 860px) {
   body { font-size: 16px; }
-  .hero__inner { grid-template-columns: 1fr; gap: 2.5rem; }
-  .hero__figure { order: -1; justify-self: center; max-width: 320px; margin-inline: auto; }
-  .sphere { position: static; width: 100%; height: 100%; }
-  .feature__inner { grid-template-columns: 1fr; gap: 2.25rem; }
+  .feature__inner { grid-template-columns: 1fr; gap: 2rem; }
+  .band__inner { grid-template-columns: 1fr; }
+  .band__figure { max-width: 200px; }
   .feature__inner--figleft .feature__text,
   .feature__inner--figleft .feature__figure { order: 0; }
-  .feature__figure { justify-content: flex-start; }
   .why__inner { grid-template-columns: 1fr; gap: 1.5rem; }
   .site-foot__inner { flex-direction: column; }
   .site-foot__meta { text-align: left; }
@@ -955,15 +725,6 @@ h1, h2, .display {
   .split .w-in { transform: none !important; }
   .kicker::before { transform: scaleX(1) !important; }
   .kicker__label { opacity: 1 !important; transform: none !important; }
-  [data-anim] .evt,
-  [data-anim] .chip,
-  [data-anim] .phone__item,
-  [data-anim] .phone__capture,
-  [data-anim] .space__list li,
-  [data-anim] .capture__arrow { opacity: 1 !important; transform: none !important; }
-  [data-anim] .capture__confirm { opacity: 1 !important; }
-  [data-anim="cal"] .cal__now { clip-path: none !important; }
-  [data-anim="spaces"] .space__list[data-list="personal"] { display: none !important; }
   .why__lead em { background-size: 0 0 !important; }
 }
 

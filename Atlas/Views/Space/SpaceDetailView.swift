@@ -175,13 +175,10 @@ struct SpaceDetailView: View {
     private var tasksSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionLabel("TASKS")
-            VStack(spacing: 0) {
-                ForEach(Array(spaceTasks.enumerated()), id: \.element.id) { i, task in
-                    taskRow(task)
-                    if i < spaceTasks.count - 1 {
-                        Divider().overlay(AtlasTheme.Colors.hairline)
-                    }
-                }
+            // Variant 2C, same as the class page: due buckets for the near work, the rest
+            // of the term folded into collapsed months.
+            TermTaskList(tasks: spaceTasks, now: state.now) { task in
+                taskRow(task)
             }
             if !completedTasks.isEmpty {
                 RevealRow(count: completedTasks.count, noun: "COMPLETED", isOpen: $showCompleted)

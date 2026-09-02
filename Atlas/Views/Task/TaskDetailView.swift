@@ -138,8 +138,10 @@ struct TaskDetailView: View {
     // MARK: Meta
 
     /// "Today" / "Today · 5:00 PM" — appends the due time when the due date carries one.
+    /// An all-day due (a Canvas date-only assignment) names a DAY, not an instant: it is
+    /// always date-only, and its raw UTC-midnight instant would print the wrong evening.
     private var dueChipLabel: String {
-        guard let due = live.dueDate else { return live.dueLabel }
+        guard let due = live.dueDate, !live.allDay else { return live.dueLabel }
         let cal = Calendar.current
         let h = cal.component(.hour, from: due), m = cal.component(.minute, from: due)
         guard h != 0 || m != 0 else { return live.dueLabel }
@@ -178,15 +180,38 @@ struct TaskDetailView: View {
             .buttonStyle(.plain)
             .onHover { dueHover = $0 }
             .disabled(isCanvasTask)
+            if let moved = live.dueMovedFrom {
+                dueMovedChip(from: moved)
+            }
             if let at = live.scheduledAt {
                 metaChip(icon: "clock", label: "Scheduled \(shortDate(at))")
             }
             estimateChip
+            sourceChip
             if live.done {
                 atlasTag(text: "Completed", color: AtlasTheme.Colors.accent)
             }
             assigneeChip
             Spacer()
+        }
+    }
+
+    /// Where this task came from, when the data proves it: the syllabus a scan read it
+    /// out of. Nothing at all for a hand-typed task — an absent source is the truth, not
+    /// a gap to fill (CLAUDE.md rule 5). A Canvas assignment already says so in the
+    /// banner above, so it isn't repeated here.
+    @ViewBuilder
+    private var sourceChip: some View {
+        if let scan = state.scan(live.scanID) {
+            HStack(spacing: 5) {
+                Image(systemName: "doc.text").atlasFont(size: 12)
+                Text("From \(scan.fileName)")
+                    .atlasMono(size: 12, weight: .medium)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .foregroundStyle(AtlasTheme.Colors.textMuted)
+            .help("Imported by a syllabus scan of \(scan.fileName)")
         }
     }
 
@@ -309,6 +334,30 @@ struct TaskDetailView: View {
         .padding(20)
         .frame(width: 360)
         .background(AtlasTheme.Colors.bgBase)
+    }
+
+    /// "Due date moved from <date>" — Canvas re-synced this assignment to a new due date
+    /// (migration 0047); the user's own scheduled work block was left untouched, so this
+    /// chip is the only signal the plan may no longer match the deadline. Dismissible.
+    private func dueMovedChip(from moved: Date) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "arrow.triangle.2.circlepath").atlasFont(size: 11)
+            Text("Due date moved from \(CalendarFormat.monoMonthDay.string(from: moved))")
+                .atlasMono(size: 12, weight: .medium)
+            Button {
+                state.dismissDueMoved(taskId: live.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .atlasFont(size: 9, weight: .bold)
+            }
+            .buttonStyle(.plain)
+        }
+        .foregroundStyle(AtlasTheme.Colors.warning)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(
+            AtlasTheme.wash(AtlasTheme.Colors.warning),
+            in: RoundedRectangle(cornerRadius: AtlasTheme.Radius.chip, style: .continuous)
+        )
     }
 
     private func metaChip(icon: String, label: String) -> some View {

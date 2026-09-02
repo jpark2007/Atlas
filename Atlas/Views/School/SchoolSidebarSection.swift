@@ -26,6 +26,8 @@ struct SchoolSidebarSection: View {
     /// The term the editor sheet is editing — drives the sheet directly, so it can never
     /// present with a stale (or missing) term.
     @State private var editingTerm: Term?
+    /// The class whose color popover is open, anchored on its own row.
+    @State private var recoloringClass: UUID?
 
     private var term: Term? { state.displayedTerm }
 
@@ -53,6 +55,20 @@ struct SchoolSidebarSection: View {
         return term
     }
 
+    /// The Canvas feed's health (revoked/errored, stale, or ok), judged from whichever
+    /// row the client has: `calendar_feeds` (multi-ICS) if deployed, else the older
+    /// `canvas_connections` singleton. Nil when there's no Canvas feed at all — nothing
+    /// to nudge about.
+    private var canvasFeedHealth: CanvasFeedHealth? {
+        if let feed = state.calendarFeeds.first(where: { $0.feedType == "canvas" }) {
+            return CanvasFeedHealth.evaluate(status: feed.status, lastError: feed.lastError,
+                                             lastSyncedAt: feed.lastSyncedDate, now: state.now)
+        }
+        guard let conn = state.canvasConnection else { return nil }
+        return CanvasFeedHealth.evaluate(status: conn.status, lastError: conn.lastError,
+                                         lastSyncedAt: conn.lastSyncedDate, now: state.now)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             header
@@ -64,6 +80,13 @@ struct SchoolSidebarSection: View {
                     promptRow(title: "\(finishedTerm.name) is over",
                               detail: "Put its \(termClasses.count == 1 ? "class" : "\(termClasses.count) classes") away. Nothing is deleted — notes and work stay searchable.") {
                         state.archiveClasses(in: finishedTerm)
+                    }
+                }
+
+                if let health = canvasFeedHealth, health != .ok {
+                    promptRow(title: "Canvas feed stopped syncing", detail: canvasFeedHealthDetail(health)) {
+                        state.settingsSection = .calendars
+                        state.route = .settings
                     }
                 }
 
@@ -195,6 +218,21 @@ struct SchoolSidebarSection: View {
         .padding(.bottom, 6)
     }
 
+    /// The one-line reason under "Canvas feed stopped syncing" — `last_error` when the
+    /// server sent one, else how long it's been since the last successful sync.
+    private func canvasFeedHealthDetail(_ health: CanvasFeedHealth) -> String {
+        switch health {
+        case .ok:
+            return ""
+        case .broken(let reason):
+            return reason ?? "Your Canvas feed link may have expired. Reconnect it in Settings."
+        case .stale(let lastSyncedAt):
+            guard let lastSyncedAt else { return "It hasn't synced yet." }
+            let hours = max(1, Int(state.now.timeIntervalSince(lastSyncedAt) / 3600))
+            return "Last synced \(hours) \(hours == 1 ? "hour" : "hours") ago."
+        }
+    }
+
     // MARK: - Rows
 
     /// A class row. Same geometry as `SidebarView.projectRow` (the class IS a project)
@@ -237,10 +275,48 @@ struct SchoolSidebarSection: View {
             if inside { hovered = route } else if hovered == route { hovered = nil }
         }
         .contextMenu {
+            Button("Change color…") { recoloringClass = klass.id }
             Button("Put this class away") {
                 state.setClassArchived(projectID: klass.id, archived: true)
             }
         }
+        .popover(isPresented: Binding(get: { recoloringClass == klass.id },
+                                      set: { if !$0 { recoloringClass = nil } }),
+                 arrowEdge: .trailing) {
+            colorPopover(klass)
+        }
+    }
+
+    /// CLASS COLOR popover — the same chooser as the project page's dot button, so a
+    /// class recolors identically whether you're in the sidebar or on its page.
+    private func colorPopover(_ klass: Project) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("CLASS COLOR").atlasCapsLabel()
+            Button {
+                state.setProjectColorToken(projectID: klass.id, token: nil)
+            } label: {
+                HStack(spacing: 8) {
+                    Circle()
+                        .strokeBorder(klass.spaceColor, lineWidth: 2)
+                        .frame(width: 22, height: 22)
+                        .overlay(
+                            Circle()
+                                .stroke(AtlasTheme.Colors.textPrimary,
+                                        lineWidth: klass.colorToken == nil ? 2.5 : 0)
+                                .padding(-3)
+                        )
+                    Text("Inherit space color")
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                }
+            }
+            .buttonStyle(.plain)
+            AtlasColorGrid(selected: klass.colorToken.map { ColorToken.color(for: $0) }) { color in
+                state.setProjectColorToken(projectID: klass.id,
+                                           token: ColorToken.token(for: color))
+            }
+        }
+        .padding(16)
     }
 
     private var addFirstClassRow: some View {

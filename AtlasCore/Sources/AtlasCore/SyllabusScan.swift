@@ -34,8 +34,13 @@ public struct SyllabusScanImage: Codable, Equatable {
 /// `YYYY-MM-DD` day strings (a term boundary is a school day, not an instant) and
 /// are omitted when the caller has no term window; the model then only uses dates
 /// the document states outright.
+///
+/// Exactly one input travels: `images` (a PDF rasterized by the client) or `text`
+/// (a syllabus that lives as a Canvas page and has no file to upload). The absent
+/// one is omitted from the JSON entirely.
 public struct SyllabusScanRequest: Codable, Equatable {
-    public let images: [SyllabusScanImage]
+    public let images: [SyllabusScanImage]?
+    public let text: String?
     public let termStart: String?
     public let termEnd: String?
     public let timezone: String?
@@ -52,6 +57,24 @@ public struct SyllabusScanItem: Codable, Equatable {
     public let dueISO: String?
     public let startISO: String?
     public let notes: String?
+    /// The document named a DAY and no clock time. The wire carries instants, so the
+    /// server states this as its own flag; absent on an older server, and then the
+    /// shape of the ISO string is all there is to go on.
+    public let dateOnly: Bool?
+    /// The date was derived from a week or a date RANGE on a schedule document
+    /// ("Sept 28–Oct 2" → the 2nd), not printed on the row. Absent on an older server.
+    public let dateApproximate: Bool?
+
+    public init(kind: String, title: String, dueISO: String? = nil, startISO: String? = nil,
+                notes: String? = nil, dateOnly: Bool? = nil, dateApproximate: Bool? = nil) {
+        self.kind = kind
+        self.title = title
+        self.dueISO = dueISO
+        self.startISO = startISO
+        self.notes = notes
+        self.dateOnly = dateOnly
+        self.dateApproximate = dateApproximate
+    }
 }
 
 /// One class the scan found, with everything it detected about it. Everything is
@@ -81,13 +104,18 @@ public struct SyllabusScanClass: Codable, Equatable {
 public struct SyllabusScanResponse: Codable, Equatable {
     public let classes: [SyllabusScanClass]
     public let truncated: Bool
+    /// Things the server decided the reader should be told rather than left to find in
+    /// their calendar — a meeting block dropped because its weekdays were impossible, a
+    /// cap that actually bit. Absent on an older server; then simply empty.
+    public let warnings: [String]
 
-    enum CodingKeys: String, CodingKey { case classes, truncated }
+    enum CodingKeys: String, CodingKey { case classes, truncated, warnings }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         classes   = try c.decodeIfPresent([SyllabusScanClass].self, forKey: .classes) ?? []
         truncated = try c.decodeIfPresent(Bool.self, forKey: .truncated) ?? false
+        warnings  = try c.decodeIfPresent([String].self, forKey: .warnings) ?? []
     }
 }
 
@@ -103,8 +131,13 @@ public final class SyllabusScan {
 
     /// Page cap and total decoded-size cap, mirroring the server's 413s so an
     /// oversized scan fails locally instead of uploading 40 MB to be rejected.
-    public static let maxImages = 10
+    public static let maxImages = 20
     public static let maxTotalBytes = 15 * 1024 * 1024
+
+    /// A pasted syllabus. The floor stops an accidental two-word paste from spending a
+    /// model call; the ceiling mirrors the server's own cap on the text lane.
+    public static let minTextCharacters = 40
+    public static let maxTextCharacters = 200_000
 
     private let sessionProvider: () -> SupabaseSession?
     private let urlSession: URLSession
@@ -125,23 +158,41 @@ public final class SyllabusScan {
                      termStart: Date? = nil,
                      termEnd: Date? = nil,
                      timeZone: TimeZone = .current) async throws -> SyllabusScanResponse {
+        try SyllabusScan.validate(images)
+        return try await post(SyllabusScan.requestBody(
+            images: images,
+            termStart: termStart.map { SyllabusScan.dayString($0, timeZone: timeZone) },
+            termEnd: termEnd.map { SyllabusScan.dayString($0, timeZone: timeZone) },
+            timezone: timeZone.identifier
+        ))
+    }
+
+    /// The same scan from pasted text — the syllabus that lives as a Canvas page and has
+    /// no file to upload (handoff §E). Same prompt, same normalization, same draft back.
+    public func scan(text: String,
+                     termStart: Date? = nil,
+                     termEnd: Date? = nil,
+                     timeZone: TimeZone = .current) async throws -> SyllabusScanResponse {
+        let trimmed = try SyllabusScan.validate(text: text)
+        return try await post(SyllabusScan.requestBody(
+            text: trimmed,
+            termStart: termStart.map { SyllabusScan.dayString($0, timeZone: timeZone) },
+            termEnd: termEnd.map { SyllabusScan.dayString($0, timeZone: timeZone) },
+            timezone: timeZone.identifier
+        ))
+    }
+
+    private func post(_ body: Data) async throws -> SyllabusScanResponse {
         guard let session = sessionProvider() else {
             throw AtlasAIError.notAuthenticated
         }
-        try SyllabusScan.validate(images)
-
         let url = SupabaseConfig.functionsBase.appendingPathComponent("syllabus-scan")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue(SupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try SyllabusScan.requestBody(
-            images: images,
-            termStart: termStart.map { SyllabusScan.dayString($0, timeZone: timeZone) },
-            termEnd: termEnd.map { SyllabusScan.dayString($0, timeZone: timeZone) },
-            timezone: timeZone.identifier
-        )
+        request.httpBody = body
 
         let (data, response) = try await urlSession.data(for: request)
         guard let http = response as? HTTPURLResponse else {
@@ -167,6 +218,16 @@ public final class SyllabusScan {
         guard totalBytes(images) <= maxTotalBytes else { throw AtlasAIError.imagesTooLarge }
     }
 
+    /// Enforce the pasted-syllabus bounds, returning the trimmed text to send.
+    /// Throws `.noImages` when there's nothing worth scanning and `.tooLong` past the cap.
+    @discardableResult
+    public static func validate(text: String) throws -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= minTextCharacters else { throw AtlasAIError.noImages }
+        guard trimmed.count <= maxTextCharacters else { throw AtlasAIError.tooLong }
+        return trimmed
+    }
+
     /// Decoded byte total across the pages (what the size cap measures).
     public static func totalBytes(_ images: [SyllabusScanImage]) -> Int {
         images.reduce(0) { $0 + $1.byteCount }
@@ -188,6 +249,20 @@ public final class SyllabusScan {
                                    termEnd: String?,
                                    timezone: String?) throws -> Data {
         try JSONEncoder().encode(SyllabusScanRequest(images: images,
+                                                     text: nil,
+                                                     termStart: termStart,
+                                                     termEnd: termEnd,
+                                                     timezone: timezone))
+    }
+
+    /// The pasted-text body. `images` is omitted entirely, which is how the server tells
+    /// the two lanes apart.
+    public static func requestBody(text: String,
+                                   termStart: String?,
+                                   termEnd: String?,
+                                   timezone: String?) throws -> Data {
+        try JSONEncoder().encode(SyllabusScanRequest(images: nil,
+                                                     text: text,
                                                      termStart: termStart,
                                                      termEnd: termEnd,
                                                      timezone: timezone))

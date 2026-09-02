@@ -67,6 +67,7 @@ struct CalendarEventDetailView: View {
             VStack(alignment: .leading, spacing: 22) {
                 header
                 duplicateSourceNote
+                scanSourceNote
                 // A Canvas item whose course has no class yet — never dropped, never
                 // blocking; picking here teaches the mapping for good.
                 if let course = item.canvasCourse, item.projectID == nil {
@@ -149,6 +150,22 @@ struct CalendarEventDetailView: View {
                 Image(systemName: "square.on.square").atlasFont(size: 11)
                 Text("Also in \(item.duplicateSources.map(\.displayName).joined(separator: ", "))")
                     .atlasFont(size: 12, weight: .medium, design: .rounded)
+            }
+            .foregroundStyle(AtlasTheme.Colors.textMuted)
+        }
+    }
+
+    /// The syllabus a scan lifted this event out of. Shown only when the event carries a
+    /// scan id that resolves — an Atlas-native event says nothing, because it came from
+    /// nowhere but the user (CLAUDE.md rule 5). Synced sources keep their own badge.
+    @ViewBuilder private var scanSourceNote: some View {
+        if let scan = state.scan(item.scanID) {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.text").atlasFont(size: 11)
+                Text("From \(scan.fileName)")
+                    .atlasFont(size: 12, weight: .medium, design: .rounded)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
             .foregroundStyle(AtlasTheme.Colors.textMuted)
         }

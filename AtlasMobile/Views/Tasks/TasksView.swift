@@ -278,7 +278,7 @@ struct TasksView: View {
 
                 Spacer(minLength: 8)
 
-                let due = TaskItem.dueLabel(for: task.dueDate)
+                let due = TaskItem.dueLabel(for: task.dueDate, allDay: task.allDay)
                 if !due.isEmpty {
                     let overdue = task.isOverdue(now: Date())
                     Text(due)

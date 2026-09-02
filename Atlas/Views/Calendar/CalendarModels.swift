@@ -124,7 +124,7 @@ func clusterTimedDeadlines(_ deadlines: [CalendarEvent], gapPoints: CGFloat) -> 
     var current: [CalendarEvent] = []
     var lastY: CGFloat = 0
     for dl in sorted {
-        let y = CalendarLayout.offsetHours(for: dl.start) * CalendarLayout.hourHeight
+        let y = deadlineMarkerY(dl)
         if current.isEmpty || y - lastY <= gapPoints {
             current.append(dl)
         } else {
@@ -139,15 +139,27 @@ func clusterTimedDeadlines(_ deadlines: [CalendarEvent], gapPoints: CGFloat) -> 
 
 // MARK: - Due markers (hairlines, never blocks)
 
-/// One due-marker row on the grid: the deadlines that share a y position, plus
-/// whether they are UNTIMED (parked at the end of the day behind a "no time" glyph).
+/// One due-marker row on the grid: the deadlines that share a y position. Untimed dues (and
+/// anything clamped to 11:59 PM) share the parked end-of-day row; each chip says for itself
+/// whether it carries a real clock time.
 struct DueMarkerGroup: Identifiable {
     let deadlines: [CalendarEvent]
-    let untimed: Bool
     /// Points from the top of the grid.
     let y: CGFloat
     var id: UUID { deadlines[0].id }
     var count: Int { deadlines.count }
+}
+
+/// Grid Y for one deadline's rule, never below `endOfDayY`.
+///
+/// A date-only due resolves to 11:59:59 PM (`Task.effectiveDueDate`), which lands a pixel off
+/// the bottom of the column: its chip clipped against the grid's edge and collided with the
+/// sticky "due later tonight" pill. Clamping parks those on the same end-of-day row untimed
+/// dues already use, so they cluster (and stack) with each other instead of overprinting.
+func deadlineMarkerY(_ deadline: CalendarEvent) -> CGFloat {
+    guard deadline.hasSpecificTime else { return CalendarLayout.endOfDayY }
+    let y = CalendarLayout.offsetHours(for: deadline.start) * CalendarLayout.hourHeight
+    return min(y, CalendarLayout.endOfDayY)
 }
 
 /// Splits a day's deadlines into marker rows.
@@ -161,14 +173,16 @@ func dueMarkerGroups(_ deadlines: [CalendarEvent]) -> [DueMarkerGroup] {
     let untimed = deadlines.filter { !$0.hasSpecificTime }
     var rows = clusterTimedDeadlines(timed, gapPoints: CalendarLayout.deadlineLabelHeight)
         .map { cluster in
-            DueMarkerGroup(
-                deadlines: cluster.events,
-                untimed: false,
-                y: CalendarLayout.offsetHours(for: cluster.representative.start) * CalendarLayout.hourHeight
-            )
+            DueMarkerGroup(deadlines: cluster.events, y: deadlineMarkerY(cluster.representative))
         }
-    if !untimed.isEmpty {
-        rows.append(DueMarkerGroup(deadlines: untimed, untimed: true, y: CalendarLayout.endOfDayY))
+    guard !untimed.isEmpty else { return rows }
+    // Untimed dues share the parked end-of-day row — and so does anything clamped there
+    // (an 11:59 PM due). Merge instead of stacking a second row on the same y, which
+    // would overprint one set of chips on the other.
+    if let i = rows.firstIndex(where: { $0.y == CalendarLayout.endOfDayY }) {
+        rows[i] = DueMarkerGroup(deadlines: rows[i].deadlines + untimed, y: CalendarLayout.endOfDayY)
+    } else {
+        rows.append(DueMarkerGroup(deadlines: untimed, y: CalendarLayout.endOfDayY))
     }
     return rows
 }

@@ -229,6 +229,18 @@ public enum MeetingPatternFormat {
         return days.isEmpty ? time : "\(days) · \(time)"
     }
 
+    /// The meeting kinds a scan returns, in the order a picker should offer them.
+    public static let kinds = ["lecture", "recitation", "lab", "other"]
+
+    /// "recitation" → "Recitation". A block whose kind the scan couldn't tell is just a
+    /// "Meeting" — never guessed into a lecture.
+    public static func kindLabel(_ kind: String?) -> String {
+        guard let kind = kind?.trimmingCharacters(in: .whitespaces), !kind.isEmpty else {
+            return "Meeting"
+        }
+        return kind.prefix(1).uppercased() + kind.dropFirst().lowercased()
+    }
+
     /// "10:00" → "10 AM", "10:30" → "10:30 AM". Falls back to the stored string when it
     /// isn't parseable, so a malformed block still shows what it actually holds.
     public static func display(_ hhmm: String) -> String {

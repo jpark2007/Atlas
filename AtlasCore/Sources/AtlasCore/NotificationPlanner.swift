@@ -100,7 +100,7 @@ public enum NotificationPlanner {
                     id: "task-\(t.id.uuidString)",
                     fireDate: fire,
                     title: t.title,
-                    body: "Due \(TaskItem.dueLabel(for: t.dueDate, now: now))",
+                    body: "Due \(TaskItem.dueLabel(for: t.dueDate, allDay: t.allDay, now: now, calendar: cal))",
                     deepLink: "atlas://today"))
             }
         }
@@ -116,7 +116,7 @@ public enum NotificationPlanner {
                     allowed($0.spaceName) && cal.isDate($0.start, inSameDayAs: day)
                 }.count
                 let taskCount = snapshot.tasks.filter { t in
-                    guard !t.done, allowed(t.spaceName), let when = t.scheduledAt ?? t.dueDate else { return false }
+                    guard !t.done, allowed(t.spaceName), let when = t.scheduledAt ?? t.effectiveDueDate(calendar: cal) else { return false }
                     return cal.isDate(when, inSameDayAs: day)
                 }.count
                 guard eventCount + taskCount > 0 else { continue }
@@ -133,8 +133,8 @@ public enum NotificationPlanner {
         if prefs.overdue {
             // Oldest miss first — that's the one worth naming.
             let overdue = snapshot.tasks
-                .filter { allowed($0.spaceName) && $0.isOverdue(now: now) }
-                .sorted { ($0.dueDate ?? .distantPast) < ($1.dueDate ?? .distantPast) }
+                .filter { allowed($0.spaceName) && $0.isOverdue(now: now, calendar: cal) }
+                .sorted { ($0.effectiveDueDate(calendar: cal) ?? .distantPast) < ($1.effectiveDueDate(calendar: cal) ?? .distantPast) }
             if let first = overdue.first, let fire = nextDigestTime(prefs: prefs, now: now, cal: cal) {
                 let others = overdue.count - 1
                 let body = others == 0
@@ -159,17 +159,19 @@ public enum NotificationPlanner {
     // MARK: - Helpers
 
     /// When a task's reminder should fire: timed → scheduledAt − lead; a due with a
-    /// specific time → due − lead; a due-only (midnight) task → 9am on its due day.
+    /// specific time → due − lead; a due-only (midnight) task → 9am on its due day. An
+    /// all-day task is due-only by definition — its 11:59:59 PM effective deadline is an
+    /// end-of-day marker, not a stated time, so it takes the 9am path too.
     private static func taskFireDate(_ t: TaskItem, lead: TimeInterval,
                                      cal: Calendar, horizon: Date) -> Date? {
         if let scheduled = t.scheduledAt {
             guard scheduled <= horizon else { return nil }
             return scheduled.addingTimeInterval(-lead)
         }
-        guard let due = t.dueDate, due <= horizon else { return nil }
+        guard let due = t.effectiveDueDate(calendar: cal), due <= horizon else { return nil }
         let hour = cal.component(.hour, from: due)
         let minute = cal.component(.minute, from: due)
-        if hour != 0 || minute != 0 {
+        if !t.allDay, hour != 0 || minute != 0 {
             return due.addingTimeInterval(-lead)
         }
         return cal.date(bySettingHour: dueOnlyReminderHour, minute: 0, second: 0,

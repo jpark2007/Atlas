@@ -12,9 +12,8 @@ public enum ProjectTemplate {
     public static func starter(for project: Project) -> (overview: String, sampleTasks: [String]) {
         if project.isClass {
             return (
-                overview: "What is this class about? Drop in the syllabus, the grading "
-                    + "breakdown, and the key dates (exams, papers, projects) so everything "
-                    + "for this class lives in one place.",
+                overview: "Notes to self for this class — how it's graded, what the "
+                    + "professor is like, what to study, anything you want to remember.",
                 sampleTasks: [
                     "Read the syllabus & note key dates",
                     "Add the next assignment's due date",

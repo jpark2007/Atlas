@@ -2320,6 +2320,13 @@ const MARK = {
 
 let selected = [];
 
+/* Atlas's iPhone and iPad apps are on the App Store — where the Platforms
+   section says so, the claim links there. */
+const APP_STORE_URL = "https://apps.apple.com/us/app/atlas-student-planner/id6786719011";
+function storeLink(html) {
+  return html.replace(/App Store/g, `<a href="${APP_STORE_URL}" target="_blank" rel="noopener">App Store</a>`);
+}
+
 function esc(s) {
   return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
@@ -2425,7 +2432,7 @@ function renderArticle() {
     a.sections.map(s => `<section>
       <h2>${esc(s.title)}</h2>
       <strong class="verdict">${esc(s.verdict)}</strong>
-      ${s.body.map(p => `<p>${esc(p)}</p>`).join("")}
+      ${s.body.map(p => `<p>${s.title === "Platforms" && p.includes("Atlas") ? storeLink(esc(p)) : esc(p)}</p>`).join("")}
     </section>`).join("") +
     `<section class="bottom-line">
       <h2>The bottom line</h2>
@@ -2439,8 +2446,8 @@ function renderArticle() {
     <p class="faq__a">${esc(f.a)}</p>
   </div>`).join("");
 
-  $("#cta-line").textContent =
-    `Atlas is free. The Mac app downloads in a few seconds, the iPhone and iPad apps come with it, and your Apple, Google and Canvas calendars land on one timeline from the first launch.`;
+  $("#cta-line").innerHTML =
+    `Atlas is free. The Mac app downloads in a few seconds, the <a href="${APP_STORE_URL}" target="_blank" rel="noopener">iPhone and iPad apps</a> come with it, and your Apple, Google and Canvas calendars land on one timeline from the first launch.`;
 
   renderFaqSchema(c, a);
 }

@@ -181,10 +181,295 @@ final class SyllabusDraftTests: XCTestCase {
         XCTAssertTrue(group.includedItems.isEmpty)
     }
 
+    // MARK: - Section picking (§C1)
+
+    /// The real Math 135 shape: one lecture everybody attends, three recitations of which
+    /// the student is in exactly one.
+    private func sectionedGroup() -> SyllabusDraftGroup {
+        SyllabusDraftGroup(meetingPattern: [
+            MeetingBlock(weekdays: [2, 4], start: "14:00", end: "15:20", location: "PH-115",
+                         sectionLabel: "Sec. 37–39", kind: "lecture"),
+            MeetingBlock(weekdays: [3], start: "14:00", end: "15:20", location: "SEC-217",
+                         sectionLabel: "Section 37", kind: "recitation"),
+            MeetingBlock(weekdays: [3], start: "15:50", end: "17:10", location: "SEC-217",
+                         sectionLabel: "Section 38", kind: "recitation"),
+            MeetingBlock(weekdays: [3], start: "17:40", end: "19:00", location: "SEC-217",
+                         sectionLabel: "Section 39", kind: "recitation"),
+        ])
+    }
+
+    func testSectionChoicesSkipTheSharedLecture() {
+        XCTAssertEqual(sectionedGroup().sectionChoices,
+                       ["Section 37", "Section 38", "Section 39"])
+    }
+
+    func testChoosingASectionKeepsItAndTheLecture() {
+        var group = sectionedGroup()
+        group.chooseSection("Section 38")
+        XCTAssertEqual(group.meetingIncluded, [true, false, true, false])
+        XCTAssertEqual(group.includedMeetings.map(\.sectionLabel), ["Sec. 37–39", "Section 38"])
+
+        // Backing out keeps everything — nothing is dropped without being asked for.
+        group.chooseSection(nil)
+        XCTAssertEqual(group.includedMeetings.count, 4)
+    }
+
+    func testAnUnpickedMeetingRowDoesNotCount() {
+        var group = sectionedGroup()
+        group.meetingIncluded = [false, false, false, false]
+        XCTAssertTrue(group.includedMeetings.isEmpty)
+        XCTAssertFalse(group.writesAnything)
+    }
+
+    // MARK: - Review shaping
+
+    func testMonthBucketsGroupByMonthAndPutUndatedLast() {
+        func day(_ iso: String) -> Date { SyllabusDraft.date(from: iso, timeZone: ny)! }
+        let items = [
+            SyllabusDraftItem(kind: .task, title: "October one", date: day("2026-10-06")),
+            SyllabusDraftItem(kind: .task, title: "September two", date: day("2026-09-10")),
+            SyllabusDraftItem(kind: .task, title: "Week 3 reading", date: nil),
+            SyllabusDraftItem(kind: .task, title: "September one", date: day("2026-09-03")),
+        ]
+        let buckets = SyllabusReview.monthBuckets(items)
+        XCTAssertEqual(buckets.map(\.title).last, "No date yet")
+        XCTAssertEqual(buckets.count, 3)
+        // Within a month, indices come back in date order, pointing at the original rows.
+        XCTAssertEqual(buckets[0].indices.map { items[$0].title }, ["September one", "September two"])
+        XCTAssertEqual(buckets[1].indices.map { items[$0].title }, ["October one"])
+        XCTAssertEqual(buckets[2].indices.map { items[$0].title }, ["Week 3 reading"])
+    }
+
+    func testWeightChipSplitsThePercentageOffTheLabel() {
+        XCTAssertEqual(SyllabusReview.weightChip("Exams 40%").label, "Exams")
+        XCTAssertEqual(SyllabusReview.weightChip("Exams 40%").percent, "40%")
+        XCTAssertEqual(SyllabusReview.weightChip("Homework — 4 %").percent, "4%")
+        // No percentage stated: the syllabus's own words survive whole.
+        XCTAssertEqual(SyllabusReview.weightChip("Participation counts").label, "Participation counts")
+        XCTAssertNil(SyllabusReview.weightChip("Participation counts").percent)
+    }
+
     // MARK: - Commit shapes
 
     func testAnExtractedEventGetsADefaultHour() {
         let start = Date(timeIntervalSince1970: 1_789_430_400)
         XCTAssertEqual(SyllabusDraft.eventEnd(for: start).timeIntervalSince(start), 3600)
+    }
+
+    // MARK: - Date-only events commit as all-day (Drew 09-01: "12 AM · 1h")
+
+    private var eastern: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "America/New_York")!
+        return c
+    }
+
+    func testABareDaySyllabusRowIsMarkedDateOnly() {
+        XCTAssertTrue(SyllabusDraft.isDateOnly("2026-09-24"))
+        XCTAssertFalse(SyllabusDraft.isDateOnly("2026-09-24T14:00:00Z"))
+        XCTAssertFalse(SyllabusDraft.isDateOnly("2026-09-24T14:00"))
+        XCTAssertFalse(SyllabusDraft.isDateOnly(nil))
+    }
+
+    func testTheServersDateOnlyFlagBeatsTheShapeOfTheISOString() throws {
+        // The wire carries instants, so a date-only exam arrives as a full UTC timestamp;
+        // only the server's own flag still says "the document named a day, not an hour".
+        let scanned = SyllabusScanItem(kind: "event", title: "Midterm 1",
+                                       dueISO: nil, startISO: "2026-10-09T04:00:00.000Z",
+                                       notes: nil, dateOnly: true)
+        let item = try XCTUnwrap(SyllabusDraft.item(from: scanned,
+                                                    timeZone: TimeZone(identifier: "America/New_York")!))
+        XCTAssertTrue(item.isDateOnly)
+        XCTAssertFalse(item.dateApproximate)
+        XCTAssertTrue(try XCTUnwrap(SyllabusDraft.eventInterval(for: item, calendar: eastern)).isAllDay)
+    }
+
+    func testAWeekRangeRowArrivesFlaggedApproximate() throws {
+        // A schedule document's "Sept 28-Oct 2 · DBQ Module 5 due" row: dated on the last
+        // day of the range, and marked so the review list can say the date was inferred.
+        let scanned = SyllabusScanItem(kind: "task", title: "DBQ Module 5",
+                                       dueISO: "2026-10-03T03:59:00.000Z", startISO: nil,
+                                       notes: "Week 5 · Sept 28-Oct 2",
+                                       dateOnly: true, dateApproximate: true)
+        let item = try XCTUnwrap(SyllabusDraft.item(from: scanned,
+                                                    timeZone: TimeZone(identifier: "America/New_York")!))
+        XCTAssertTrue(item.dateApproximate)
+        XCTAssertEqual(item.notes, "Week 5 · Sept 28-Oct 2")
+    }
+
+    func testAnOlderServerWithoutTheFlagsStillReadsTheISOString() throws {
+        let scanned = SyllabusScanItem(kind: "event", title: "Quiz 3",
+                                       dueISO: nil, startISO: "2026-09-24", notes: nil)
+        let item = try XCTUnwrap(SyllabusDraft.item(from: scanned))
+        XCTAssertTrue(item.isDateOnly)
+        XCTAssertFalse(item.dateApproximate)
+    }
+
+    func testAnEventWithNoStatedTimeCommitsAllDayOnItsOwnDay() throws {
+        let scanned = SyllabusScanItem(kind: "event", title: "Quiz 3",
+                                       dueISO: nil, startISO: "2026-09-24", notes: nil)
+        let item = try XCTUnwrap(SyllabusDraft.item(from: scanned,
+                                                    timeZone: TimeZone(identifier: "America/New_York")!))
+        XCTAssertTrue(item.isDateOnly)
+
+        let when = try XCTUnwrap(SyllabusDraft.eventInterval(for: item, calendar: eastern))
+        XCTAssertTrue(when.isAllDay)
+        // Canonical all-day anchor: UTC midnight of Sep 24 — never local midnight, which
+        // would dedupe against nothing and bucket a day early.
+        XCTAssertEqual(when.start, AllDayDate.utc.date(from: DateComponents(year: 2026, month: 9, day: 24)))
+        XCTAssertEqual(when.start, when.end)
+        // And it still reads as Sep 24 in the student's own zone.
+        XCTAssertEqual(eastern.dateComponents([.month, .day],
+                                              from: AllDayDate.localDay(of: when.start, calendar: eastern)),
+                       DateComponents(month: 9, day: 24))
+    }
+
+    func testABareDateTaskCommitsAllDayAndIsDueAtTheEndOfThatDay() throws {
+        let scanned = SyllabusScanItem(kind: "task", title: "Problem Set 4",
+                                       dueISO: "2026-09-24", startISO: nil, notes: nil)
+        let item = try XCTUnwrap(SyllabusDraft.item(from: scanned,
+                                                    timeZone: TimeZone(identifier: "America/New_York")!))
+        XCTAssertTrue(item.isDateOnly)
+
+        let due = SyllabusDraft.taskDue(for: item, calendar: eastern)
+        XCTAssertTrue(due.allDay)
+        // Canonical all-day encoding — UTC midnight of Sep 24, same as Canvas writes.
+        XCTAssertEqual(due.dueDate, AllDayDate.utc.date(from: DateComponents(year: 2026, month: 9, day: 24)))
+
+        // And what the domain unpacks it to: due by the END of Sep 24 locally, so the
+        // task doesn't go late the evening before.
+        var task = TaskItem(title: item.title, dueLabel: "", dueDate: due.dueDate)
+        task.allDay = due.allDay
+        XCTAssertEqual(eastern.dateComponents([.month, .day, .hour],
+                                              from: try XCTUnwrap(task.effectiveDueDate(calendar: eastern))),
+                       DateComponents(month: 9, day: 24, hour: 23))
+    }
+
+    func testATaskThatStatedATimeStaysTimed() throws {
+        let scanned = SyllabusScanItem(kind: "task", title: "Essay 1",
+                                       dueISO: "2026-10-14T19:00:00Z", startISO: nil, notes: nil)
+        let item = try XCTUnwrap(SyllabusDraft.item(from: scanned))
+        XCTAssertFalse(item.isDateOnly)
+
+        let due = SyllabusDraft.taskDue(for: item, calendar: eastern)
+        XCTAssertFalse(due.allDay)
+        XCTAssertEqual(due.dueDate, item.date)
+    }
+
+    func testATaskWithNoDateCommitsUndatedAndTimed() {
+        let item = SyllabusDraftItem(kind: .task, title: "Reading", date: nil, isDateOnly: true)
+        let due = SyllabusDraft.taskDue(for: item, calendar: eastern)
+        XCTAssertNil(due.dueDate)
+        XCTAssertFalse(due.allDay)
+    }
+
+    func testAnEventThatStatedATimeKeepsIt() throws {
+        let scanned = SyllabusScanItem(kind: "event", title: "Midterm",
+                                       dueISO: nil, startISO: "2026-10-14T19:00:00Z", notes: nil)
+        let item = try XCTUnwrap(SyllabusDraft.item(from: scanned))
+        XCTAssertFalse(item.isDateOnly)
+
+        let when = try XCTUnwrap(SyllabusDraft.eventInterval(for: item, calendar: eastern))
+        XCTAssertFalse(when.isAllDay)
+        XCTAssertEqual(when.start, item.date)
+        XCTAssertEqual(when.end.timeIntervalSince(when.start), 3600)
+    }
+
+    /// The review sheet's date picker offers a clock time. Typing one in means the student
+    /// knows when the exam is — the row stops being all-day.
+    func testGivingADateOnlyRowAClockTimeMakesItTimed() throws {
+        var item = SyllabusDraftItem(kind: .event, title: "Quiz 3",
+                                     date: eastern.date(from: DateComponents(year: 2026, month: 9, day: 24)),
+                                     isDateOnly: true)
+        XCTAssertTrue(item.commitsAllDay(calendar: eastern))
+
+        item.date = eastern.date(from: DateComponents(year: 2026, month: 9, day: 24, hour: 14))
+        XCTAssertFalse(item.commitsAllDay(calendar: eastern))
+        let when = try XCTUnwrap(SyllabusDraft.eventInterval(for: item, calendar: eastern))
+        XCTAssertFalse(when.isAllDay)
+    }
+
+    func testARowWithNoDateAtAllPlacesNoEvent() {
+        let item = SyllabusDraftItem(kind: .event, title: "Final exam", date: nil)
+        XCTAssertNil(SyllabusDraft.eventInterval(for: item, calendar: eastern))
+    }
+
+    // MARK: - Re-scanning a class that already has a card or a schedule
+
+    private var savedInfo: ClassInfoCard {
+        ClassInfoCard(gradeWeights: ["Exams 40%", "Homework 30%", "Final 30%"],
+                      policies: ["No late work"],
+                      officeHours: "Tu 2–4")
+    }
+
+    private var savedMeetings: [MeetingBlock] {
+        [MeetingBlock(weekdays: [2, 5], start: "08:30", end: "09:50")]
+    }
+
+    func testSummariesNameWhatWouldBeReplaced() {
+        XCTAssertEqual(SyllabusRescan.classInfoSummary(savedInfo), "3 weights, 1 policy, office hours")
+        XCTAssertEqual(SyllabusRescan.meetingSummary(savedMeetings), "MTh · 8:30 AM–9:50 AM")
+    }
+
+    /// Nothing saved ⇒ nothing to warn about; the sheet keeps its current behavior.
+    func testAnEmptyCardIsNothingToReplace() {
+        XCTAssertNil(SyllabusRescan.classInfoSummary(nil))
+        XCTAssertNil(SyllabusRescan.classInfoSummary(ClassInfoCard()))
+        XCTAssertNil(SyllabusRescan.meetingSummary([]))
+    }
+
+    func testARescanStartsAtKeepExistingForEverySectionTheClassAlreadyHas() {
+        let group = SyllabusDraftGroup(meetingPattern: savedMeetings,
+                                       classInfo: ClassInfoCard(gradeWeights: ["Exams 50%"]))
+        let kept = SyllabusRescan.keepingExisting(group, info: savedInfo, meetings: savedMeetings)
+        XCTAssertFalse(kept.includeClassInfo)
+        XCTAssertFalse(kept.includeMeetingPattern)
+    }
+
+    /// A first scan writes as it always did — the choice only exists where there's a clash.
+    func testAFirstScanStillCommitsBothSections() {
+        let group = SyllabusDraftGroup(meetingPattern: savedMeetings,
+                                       classInfo: ClassInfoCard(gradeWeights: ["Exams 50%"]))
+        let kept = SyllabusRescan.keepingExisting(group, info: nil, meetings: [])
+        XCTAssertTrue(kept.includeClassInfo)
+        XCTAssertTrue(kept.includeMeetingPattern)
+    }
+
+    /// One section clashing must not turn the other one off.
+    func testOnlyTheClashingSectionIsHeldBack() {
+        let group = SyllabusDraftGroup(meetingPattern: savedMeetings,
+                                       classInfo: ClassInfoCard(gradeWeights: ["Exams 50%"]))
+        let kept = SyllabusRescan.keepingExisting(group, info: savedInfo, meetings: [])
+        XCTAssertFalse(kept.includeClassInfo)
+        XCTAssertTrue(kept.includeMeetingPattern)
+    }
+
+    /// Retargeting from a class that already has a pattern (flag held back) onto one with
+    /// nothing saved must re-enable the write — otherwise the pattern the scan found is
+    /// silently dropped on commit, with no control left in the sheet to turn it back on.
+    func testRetargetingFromHasPatternToNoPatternReEnablesTheFlag() {
+        let group = SyllabusDraftGroup(meetingPattern: savedMeetings,
+                                       classInfo: ClassInfoCard(gradeWeights: ["Exams 50%"]))
+        let heldBack = SyllabusRescan.keepingExisting(group, info: savedInfo, meetings: savedMeetings)
+        XCTAssertFalse(heldBack.includeMeetingPattern)
+        XCTAssertFalse(heldBack.includeClassInfo)
+
+        let retargeted = SyllabusRescan.keepingExisting(heldBack, info: nil, meetings: [])
+        XCTAssertTrue(retargeted.includeMeetingPattern)
+        XCTAssertTrue(retargeted.includeClassInfo)
+    }
+
+    /// Retargeting the other way — onto a class that already has its own pattern — must
+    /// hold the flag back even if it started on "commit" for the previous, empty target.
+    func testRetargetingFromNoPatternToHasPatternDisablesTheFlag() {
+        let group = SyllabusDraftGroup(meetingPattern: savedMeetings,
+                                       classInfo: ClassInfoCard(gradeWeights: ["Exams 50%"]))
+        let committing = SyllabusRescan.keepingExisting(group, info: nil, meetings: [])
+        XCTAssertTrue(committing.includeMeetingPattern)
+        XCTAssertTrue(committing.includeClassInfo)
+
+        let retargeted = SyllabusRescan.keepingExisting(committing, info: savedInfo, meetings: savedMeetings)
+        XCTAssertFalse(retargeted.includeMeetingPattern)
+        XCTAssertFalse(retargeted.includeClassInfo)
     }
 }

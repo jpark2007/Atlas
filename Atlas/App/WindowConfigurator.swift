@@ -9,23 +9,18 @@ import AppKit
 /// NavigationSplitView re-adds its toolbar after our first pass, so we re-assert
 /// the configuration a few times to win the race.
 ///
-/// Entering/leaving true macOS fullscreen re-materializes the titlebar region and
-/// lets NavigationSplitView re-attach its toolbar (a white strip across the top,
-/// breaking the edge-to-edge paper look). SwiftUI doesn't drive `updateNSView` on
-/// that AppKit transition, so the Coordinator observes the fullscreen notifications
-/// and re-asserts `configure` across the transition.
+/// It also re-adds it later — after a body re-render, and across entering/leaving
+/// true macOS fullscreen. SwiftUI calls `updateNSView` only once, at launch (this
+/// view stores nothing, so SwiftUI never sees it change), so the Coordinator watches
+/// the window itself — `didUpdate` plus the fullscreen notifications — and strips the
+/// toolbar again whenever AppKit puts one back.
 struct WindowConfigurator: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(configure: configure) }
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         context.coordinator.observe(view)
-        for delay in [0.0, 0.15, 0.4, 1.0] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak view] in
-                guard let window = view?.window else { return }
-                configure(window)
-            }
-        }
+        context.coordinator.reassert(delays: [0.0, 0.15, 0.4, 1.0])
         return view
     }
 
@@ -54,9 +49,12 @@ struct WindowConfigurator: NSViewRepresentable {
         window.standardWindowButton(.zoomButton)?.isHidden = false
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        if let window = nsView.window { configure(window) }
-    }
+    // NOTE: there is deliberately no work here. `WindowConfigurator` stores nothing,
+    // so SwiftUI treats every instance as identical and calls `updateNSView` exactly
+    // once, at launch — never again, not even when AppState mutations re-resolve
+    // RootView's body. Anything hung off this hook can't defend the title bar; the
+    // `didUpdate` observer in the Coordinator does that instead.
+    func updateNSView(_ nsView: NSView, context: Context) {}
 
     /// Re-asserts the window chrome across fullscreen transitions. macOS re-shows the
     /// titlebar and NavigationSplitView re-attaches its toolbar when entering/leaving
@@ -66,7 +64,25 @@ struct WindowConfigurator: NSViewRepresentable {
         private weak var view: NSView?
         private var tokens: [NSObjectProtocol] = []
 
+        private var pending = false
+
         init(configure: @escaping (NSWindow) -> Void) { self.configure = configure }
+
+        /// Re-applies the chrome across the launch-time passes, when SwiftUI is still
+        /// building the split view and re-attaching its toolbar. Coalesced so repeated
+        /// calls can't pile up timers.
+        func reassert(delays: [TimeInterval]) {
+            guard !pending else { return }
+            pending = true
+            for delay in delays {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let self else { return }
+                    if delay == delays.last { self.pending = false }
+                    guard let window = self.view?.window else { return }
+                    self.configure(window)
+                }
+            }
+        }
 
         func observe(_ view: NSView) {
             self.view = view
@@ -85,6 +101,23 @@ struct WindowConfigurator: NSViewRepresentable {
                 }
                 tokens.append(token)
             }
+
+            // The one hook that actually catches the toolbar coming back. AppKit sends
+            // every window an `update()` once per event-loop pass, so this fires right
+            // after NavigationSplitView re-installs its NSToolbar. It does that after a
+            // body re-render (observed: a stray sidebar-toggle button appears in the
+            // titlebar and the detail content drops ~20pt). SwiftUI does NOT call
+            // `updateNSView` for those re-renders — WindowConfigurator stores nothing, so
+            // SwiftUI sees an unchanged view and skips it — which is why hanging the
+            // re-assert off `updateNSView` did nothing. The `toolbar != nil` guard keeps
+            // the common case to one pointer compare.
+            let updateToken = center.addObserver(forName: NSWindow.didUpdateNotification,
+                                                 object: nil, queue: .main) { [weak self] note in
+                guard let self, let window = self.view?.window,
+                      note.object as? NSWindow == window, window.toolbar != nil else { return }
+                self.configure(window)
+            }
+            tokens.append(updateToken)
         }
 
         deinit { tokens.forEach(NotificationCenter.default.removeObserver) }

@@ -198,13 +198,20 @@ async function syncFeed(admin: SupabaseClient, feed: Feed, dryRun: boolean): Pro
   }
 
   // 3. Canvas feeds route to projects via the SUMMARY "[COURSE]"; generic ICS feeds
-  //    never route (project_id null), so their projects load is skipped.
+  //    never route (project_id null), so their projects load is skipped. Archived/
+  //    dropped classes are excluded so a feed item that matches ONLY an archived
+  //    project is routed as if nothing matched (the space_name floor below) instead
+  //    of resurrecting new rows under a class the user put away. This only affects
+  //    NEW items — existing rows (matched by canvas_uid) keep updating via the
+  //    USER-DATA-SAFE path below regardless of the project's archive state; only
+  //    their title/due_date/etc are feed-owned, project_id is never touched.
   let projects: Project[] = [];
   if (isCanvas) {
     const { data: projRows, error: projErr } = await admin
       .from("projects")
       .select("id, space_name, name, code, canvas_course")
-      .eq("user_id", userId);
+      .eq("user_id", userId)
+      .is("archived_at", null);
     if (projErr) throw new Error(`projects select failed: ${projErr.message}`);
     projects = (projRows ?? []) as Project[];
   }
@@ -249,23 +256,34 @@ async function syncFeed(admin: SupabaseClient, feed: Feed, dryRun: boolean): Pro
   if (taskUids.length > 0) {
     const { data: rows, error } = await admin
       .from("tasks")
-      .select("id, canvas_uid")
+      .select("id, canvas_uid, due_date, done")
       .eq("user_id", userId)
       .eq("feed_id", feedId)
       .in("canvas_uid", taskUids);
     if (error) throw new Error(`tasks select failed: ${error.message}`);
-    const existingTaskUids = new Set<string>();
-    for (const r of (rows ?? []) as { id: string; canvas_uid: string }[]) existingTaskUids.add(r.canvas_uid);
+    const existingTasks = new Map<string, { due_date: string | null; done: boolean }>();
+    for (const r of (rows ?? []) as { id: string; canvas_uid: string; due_date: string | null; done: boolean }[]) {
+      existingTasks.set(r.canvas_uid, { due_date: r.due_date, done: r.done });
+    }
 
     const taskInserts: Record<string, unknown>[] = [];
     for (const [uid, t] of taskByUid) {
-      if (existingTaskUids.has(uid)) {
+      const existing = existingTasks.get(uid);
+      if (existing) {
         // USER-DATA-SAFE: update ONLY feed-owned fields — title, due_date, canvas_course.
         result.tasksUpdated++;
         if (!dryRun) {
+          const patch: Record<string, unknown> = { title: t.title, due_date: t.due_date, canvas_course: t.canvas_course };
+          // Canvas moved the deadline out from under a possibly-scheduled work block —
+          // stamp the previous due_date so the client can show "Due date moved" (never
+          // cleared server-side; a done task's due date moving is not worth flagging).
+          if (!existing.done && existing.due_date &&
+              new Date(existing.due_date).getTime() !== new Date(t.due_date).getTime()) {
+            patch.due_moved_from = existing.due_date;
+          }
           const { error: uErr } = await admin
             .from("tasks")
-            .update({ title: t.title, due_date: t.due_date, canvas_course: t.canvas_course })
+            .update(patch)
             .eq("user_id", userId)
             .eq("feed_id", feedId)
             .eq("canvas_uid", uid);

@@ -94,7 +94,13 @@ struct RootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(AtlasTheme.Colors.bgBase)
+            // The sidebar column runs full-height under the transparent titlebar (AppKit
+            // sidebars do that natively); the detail column does NOT — its SwiftUI content
+            // is inset by the titlebar safe area, so a plain `.background` stopped short of
+            // the top and left the split view's own white pane showing as a title-bar-high
+            // white band above the paper. Painting the paper through the top safe area
+            // covers it. Content keeps its inset, so nothing slides under the traffic lights.
+            .background(AtlasTheme.Colors.bgBase.ignoresSafeArea(edges: .top))
         }
         .navigationSplitViewStyle(.balanced)
         .onAppear {

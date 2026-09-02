@@ -1,5 +1,11 @@
 import SwiftUI
 
+extension DateInterval {
+    /// `start ..< end`. `DateInterval.contains` includes the END instant, which would put
+    /// the first tick of next week in BOTH weeks — never what a window wants.
+    func containsHalfOpen(_ date: Date) -> Bool { date >= start && date < end }
+}
+
 /// Pure time-model logic for the Phase-2 calendar language: late detection, the
 /// "due today with nothing planned" red state, and the deadline↔work-session
 /// planned-time math. Kept free of `AppState` and SwiftUI layout so every rule
@@ -40,7 +46,7 @@ public enum TimeModel {
     ) -> [LateItem] {
         let today = calendar.startOfDay(for: now)
         return tasks.compactMap { task -> LateItem? in
-            guard !task.done, let due = task.dueDate else { return nil }
+            guard !task.done, let due = task.effectiveDueDate(calendar: calendar) else { return nil }
             let original = task.originalDueDate ?? due
             let dueDay = calendar.startOfDay(for: due)
             guard dueDay < today else { return nil }
@@ -92,9 +98,66 @@ public enum TimeModel {
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> Bool {
-        guard !task.done, let due = task.dueDate else { return false }
+        guard !task.done, let due = task.effectiveDueDate(calendar: calendar) else { return false }
         guard calendar.isDate(due, inSameDayAs: now) else { return false }
         return task.scheduledAt == nil
+    }
+
+    // MARK: - Week horizon
+
+    /// Where a date sits relative to the week `now` is in — the shared window the calendar
+    /// rail and the class page are both scoped to, so "this week" can only ever mean one
+    /// thing. Deliberately day-granular at the front edge: something due at 5 PM today is
+    /// still this week's work, never `.overdue`.
+    public enum WeekHorizon: Int, CaseIterable, Sendable {
+        case overdue, thisWeek, nextWeek, later, noDate
+
+        public var title: String {
+            switch self {
+            case .overdue:  return "Overdue"
+            case .thisWeek: return "This week"
+            case .nextWeek: return "Next week"
+            case .later:    return "Later"
+            case .noDate:   return "No date"
+            }
+        }
+    }
+
+    /// The calendar week containing `date`. The ONE definition of a week in Atlas —
+    /// `dateInterval(of: .weekOfYear,…)` should not be called anywhere else.
+    public static func weekInterval(containing date: Date, calendar: Calendar = .current) -> DateInterval {
+        calendar.dateInterval(of: .weekOfYear, for: date)
+            ?? DateInterval(start: calendar.startOfDay(for: date), duration: 7 * 24 * 60 * 60)
+    }
+
+    /// The week `offset` weeks from the one containing `date` (0 = this week, 1 = next).
+    public static func weekInterval(offset: Int, from date: Date, calendar: Calendar = .current) -> DateInterval {
+        let base = weekStart(for: date, calendar: calendar)
+        let shifted = calendar.date(byAdding: .weekOfYear, value: offset, to: base) ?? base
+        return weekInterval(containing: shifted, calendar: calendar)
+    }
+
+    /// First instant of the week containing `date`.
+    public static func weekStart(for date: Date, calendar: Calendar = .current) -> Date {
+        weekInterval(containing: date, calendar: calendar).start
+    }
+
+    public static func isInCurrentWeek(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        weekInterval(containing: now, calendar: calendar).containsHalfOpen(date)
+    }
+
+    public static func isInFollowingWeek(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        weekInterval(offset: 1, from: now, calendar: calendar).containsHalfOpen(date)
+    }
+
+    /// Classify one already-resolved due instant. Callers holding a `TaskItem` should go
+    /// through `TaskGrouping.horizon(for:)`, which unpacks the all-day encoding first.
+    public static func horizon(of due: Date?, now: Date = Date(), calendar: Calendar = .current) -> WeekHorizon {
+        guard let due else { return .noDate }
+        if calendar.startOfDay(for: due) < calendar.startOfDay(for: now) { return .overdue }
+        if isInCurrentWeek(due, now: now, calendar: calendar) { return .thisWeek }
+        if isInFollowingWeek(due, now: now, calendar: calendar) { return .nextWeek }
+        return .later
     }
 
     // MARK: - Planned time (deadline ↔ work session link)

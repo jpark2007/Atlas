@@ -41,6 +41,10 @@ final class AppState: ObservableObject {
     /// Classes hang off these — see `activeTerm` / `classes(in:)`.
     @Published var terms: [Term] = []
 
+    /// Syllabus-scan receipts (0046) — what a task's/event's `scanID` resolves to for
+    /// the "From <file>" source line. Empty until the user commits a scan.
+    @Published var scans: [ScanRecord] = []
+
     /// A `.ics` file opened from Finder ("Open with Atlas") or dropped on the app icon.
     /// The sidebar watches this and opens the class importer on it. Cleared when the
     /// importer closes — it is a one-time hand-off, not stored state.
@@ -551,6 +555,7 @@ final class AppState: ObservableObject {
     private func clearUserData() {
         spaces = []
         terms = []
+        scans = []
         schoolTermOverride = nil
         tasks = []
         events = []
@@ -607,6 +612,7 @@ final class AppState: ObservableObject {
         // Assign to @Published properties (already on @MainActor).
         self.spaces = nestedSpaces
         self.terms  = snapshot.terms
+        self.scans  = snapshot.scans
         self.tasks  = snapshot.tasks
         self.events = snapshot.events
         self.notes  = snapshot.notes
@@ -1146,6 +1152,15 @@ final class AppState: ObservableObject {
         Task { try? await self.db?.upsertTask(updated) }
     }
 
+    /// Dismiss the "Due date moved" chip (migration 0047) — a client-only clear, since
+    /// the server only ever sets `dueMovedFrom`, never resets it.
+    func dismissDueMoved(taskId: UUID) {
+        guard let i = tasks.firstIndex(where: { $0.id == taskId }) else { return }
+        tasks[i].dueMovedFrom = nil
+        let updated = tasks[i]
+        Task { try? await self.db?.upsertTask(updated) }
+    }
+
     /// A past session's "+ more time": plan the next session at the SAME clock time
     /// tomorrow. Deliberately predictable — Atlas never auto-picks a "free gap" (auto-slot
     /// scheduling is cut), and the new session drags like any other block.
@@ -1211,16 +1226,26 @@ final class AppState: ObservableObject {
     /// Every task ends up in a real space (guess → default), so `spaceName` here is
     /// a HINT — the resolver matches it (or the title) against existing spaces.
     @discardableResult
+    /// - Parameter scanID: the syllabus-scan receipt this task was imported by, or nil
+    ///   (the default) for every hand-made task — provenance is stamped at creation,
+    ///   never inferred afterwards.
+    /// - Parameter allDay: true when `dueDate` names a calendar DATE rather than an
+    ///   instant — it must then be the canonical UTC-midnight anchor (`AllDayDate`),
+    ///   which is what `effectiveDueDate` unpacks.
     func addTask(title: String,
                  dueDate: Date? = nil,
+                 allDay: Bool = false,
                  durationMin: Int? = nil,
                  spaceName: String = "",
-                 projectName: String = "") -> TaskItem {
+                 projectName: String = "",
+                 scanID: UUID? = nil) -> TaskItem {
         let resolvedSpace = resolvedTaskSpaceName(hint: spaceName, text: title)
         var task = TaskItem(title: title,
-                            dueLabel: TaskItem.dueLabel(for: dueDate),
+                            dueLabel: TaskItem.dueLabel(for: dueDate, allDay: allDay),
                             dueDate: dueDate,
                             durationMin: durationMin)
+        task.allDay = allDay
+        task.scanID = scanID
         task.spaceName = resolvedSpace
         task.spaceID = spaceID(named: resolvedSpace)
         task.spaceColor = calendarSpaceColor(named: resolvedSpace)

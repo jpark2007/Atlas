@@ -15,9 +15,8 @@
       Newest release first; older items may stay so users on very old builds
       still find a path forward.
 
-      The 0.10.1 item below is a PLACEHOLDER — length 0 and an unreal signature,
-      so no client will install it. The first run of the release script replaces
-      it with the genuine values.
+      Both items below are genuine releases written by that script: 0.11.0 is
+      current, and 0.10.1 is kept so users on older builds still have a path.
     -->
     <item>
       <title>0.11.0</title>

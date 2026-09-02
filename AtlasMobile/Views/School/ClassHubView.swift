@@ -20,6 +20,12 @@ struct ClassHubView: View {
     @State private var editingNote: Note?
     @State private var detail: ItemDetailSheet.Detail?
     @State private var showArchiveConfirm = false
+    @State private var showAllWeights = false
+
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private static let weightPreview = 4
+    private static let policyPreview = 3
 
     /// Read live from the snapshot so an edit made in a sheet is reflected on return.
     private var project: Project? {
@@ -52,7 +58,7 @@ struct ClassHubView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("Scan a syllabus") { presentSyllabusScan = true }
+                    Button("Scan a syllabus or schedule") { presentSyllabusScan = true }
                     if project?.syllabusPath != nil {
                         Button("View syllabus") { presentSyllabusFile = true }
                     }
@@ -201,23 +207,35 @@ struct ClassHubView: View {
     private func classInfoBlock(_ project: Project) -> some View {
         if let info = project.classInfo, !SyllabusDraft.isEmpty(info) {
             section("Class info", action: ("Edit", { openClassInfo(editing: true) })) {
-                // The card summarises; the full wording of a policy is what you're held
-                // to, so the whole block opens the detail.
-                VStack(alignment: .leading, spacing: 0) {
-                    if !info.gradeWeights.isEmpty { infoGroup("How it's graded", info.gradeWeights) }
-                    if !info.policies.isEmpty { infoGroup("Policies", info.policies) }
-                    if let hours = info.officeHours, !hours.isEmpty { infoGroup("Office hours", [hours]) }
-                    HStack(spacing: 6) {
-                        Text("Read it all")
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                // Grading and policies are two different questions, so they get two
+                // cards rather than one block. The phone stacks them; an iPad in a
+                // regular width sets them side by side, as the Mac does.
+                VStack(alignment: .leading, spacing: 14) {
+                    if horizontalSizeClass == .regular {
+                        HStack(alignment: .top, spacing: 16) {
+                            if !info.gradeWeights.isEmpty {
+                                gradingColumn(info.gradeWeights).frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            if !info.policies.isEmpty {
+                                policiesColumn(info.policies).frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    } else {
+                        if !info.gradeWeights.isEmpty { gradingColumn(info.gradeWeights) }
+                        if !info.policies.isEmpty { policiesColumn(info.policies) }
                     }
-                    .foregroundStyle(MobileTheme.accentText)
-                    .padding(.top, 12)
+                    if let hours = info.officeHours, !hours.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Office hours").edCapsLabel()
+                            Text(hours)
+                                .font(.system(size: 14, weight: .regular, design: .rounded))
+                                .foregroundStyle(MobileTheme.muted)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture { openClassInfo(editing: false) }
             }
         } else {
             section("Class info", action: nil) {
@@ -258,25 +276,116 @@ struct ClassHubView: View {
 
     /// Static syllabus facts, in the syllabus's own words. Explicitly NOT grade tracking:
     /// nothing here is computed, and Atlas never asks what you scored.
-    private func infoGroup(_ title: String, _ lines: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(MobileTheme.ink)
-            ForEach(lines, id: \.self) { line in
-                HStack(alignment: .top, spacing: 7) {
-                    Text("·").font(.system(size: 14))
-                    // Two lines on the card; the detail shows the policy in full.
-                    Text(line)
-                        .font(.system(size: 14, weight: .regular, design: .rounded))
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
+    private func gradingColumn(_ allWeights: [String]) -> some View {
+        // The syllabus's own "Total: 100%" line is not a weight — the header computes
+        // the total, so showing it again both misleads and double-counts.
+        let weights = ClassInfoFormat.weightRows(allWeights)
+        let visible = showAllWeights ? weights : Array(weights.prefix(ClassHubView.weightPreview))
+        return VStack(alignment: .leading, spacing: 0) {
+            infoColumnHeader("Grading", trailing: ClassInfoFormat.weightTotal(weights))
+            VStack(spacing: 7) {
+                ForEach(visible, id: \.self) { line in
+                    let parts = ClassInfoFormat.weight(line)
+                    HStack(spacing: 8) {
+                        Text(parts.label)
+                            .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                            .foregroundStyle(MobileTheme.muted)
+                            .lineLimit(1)
+                        Spacer(minLength: 6)
+                        if let percent = parts.percent {
+                            Text(percent)
+                                .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundStyle(MobileTheme.ink)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 12)
+                    .overlay(RoundedRectangle(cornerRadius: MobileTheme.radiusChip, style: .continuous)
+                        .strokeBorder(MobileTheme.hairline, lineWidth: 1))
                 }
-                .foregroundStyle(MobileTheme.muted)
+            }
+            .padding(.top, 10)
+
+            if weights.count > ClassHubView.weightPreview {
+                quietButton(showAllWeights ? "Show fewer" : "All \(weights.count)") {
+                    MobileTheme.Haptic.tap()
+                    showAllWeights.toggle()
+                }
             }
         }
-        .padding(.top, 4)
+    }
+
+    private func policiesColumn(_ policies: [String]) -> some View {
+        let visible = Array(policies.prefix(ClassHubView.policyPreview))
+        return VStack(alignment: .leading, spacing: 0) {
+            infoColumnHeader("Policies", trailing: "\(policies.count)")
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(visible.enumerated()), id: \.offset) { index, line in
+                    let parts = ClassInfoFormat.policy(line)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        if let title = parts.title {
+                            Text(title)
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .foregroundStyle(MobileTheme.ink)
+                                .lineLimit(1)
+                                .layoutPriority(1)
+                        }
+                        // One line here; the sheet behind "Read all" carries the wording.
+                        Text(parts.body)
+                            .font(.system(size: 14, weight: .regular, design: .rounded))
+                            .foregroundStyle(MobileTheme.muted)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 9)
+
+                    if index < visible.count - 1 {
+                        Rectangle().fill(MobileTheme.hairline).frame(height: 1)
+                    }
+                }
+            }
+            .padding(.top, 2)
+
+            quietButton(policies.count > visible.count ? "Read all \(policies.count)" : "Read all") {
+                openClassInfo(editing: false)
+            }
+        }
+    }
+
+    private func infoColumnHeader(_ title: String, trailing: String?) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MobileTheme.ink)
+                Spacer(minLength: 6)
+                if let trailing {
+                    Text(trailing)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(MobileTheme.faint)
+                }
+            }
+            .padding(.bottom, 8)
+            Rectangle().fill(MobileTheme.ink).frame(height: MobileTheme.rule)
+        }
+    }
+
+    private func quietButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(MobileTheme.muted)
+                .padding(.vertical, 7)
+                .padding(.horizontal, 14)
+                .overlay(Capsule().strokeBorder(MobileTheme.hairline, lineWidth: 1.5))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 12)
     }
 
     // MARK: - Work
@@ -296,7 +405,7 @@ struct ClassHubView: View {
                             .font(.system(size: 15, weight: .medium, design: .rounded))
                             .foregroundStyle(MobileTheme.ink)
                         Spacer(minLength: 8)
-                        let due = TaskItem.dueLabel(for: task.dueDate)
+                        let due = TaskItem.dueLabel(for: task.dueDate, allDay: task.allDay)
                         if !due.isEmpty {
                             Text(due)
                                 .font(.system(size: 13, weight: .medium, design: .rounded))
@@ -378,3 +487,7 @@ struct ClassHubView: View {
         .padding(.bottom, 30)
     }
 }
+
+// `ClassInfoFormat` moved to AtlasCore so the Mac class page and the iOS class hub
+// parse grade weights identically (a "200% total" bug came from them drifting apart).
+

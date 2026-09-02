@@ -4,7 +4,7 @@
 
 Atlas is built by Andrew Khalil and Jonah Park. The best way to reach us is **Report a Bug** inside Atlas, where signed-in users can send questions or issues straight to us. If you can't get into the app, email **drewkhalil@gmail.com**.
 
-Atlas is a native Mac, iPhone, and iPad life manager, currently in **prelaunch beta**. This policy explains what we collect, why, and who touches it. We've kept it specific to what Atlas actually does — no filler about cookies or trackers we don't use.
+Atlas is a native Mac, iPhone, and iPad life manager, free on every platform it runs on. This policy explains what we collect, why, and who touches it. We've kept it specific to what Atlas actually does — no filler about cookies or trackers we don't use.
 
 ## The short version
 
@@ -91,7 +91,7 @@ We don't sell your data or use it for advertising. We rely on a few service prov
 - Per-account row-level security so accounts can't read each other's data.
 - Connection secrets (your Google refresh token, your Canvas feed URL) are kept in encrypted Vault storage, reachable only by our server and never returned to a client.
 
-No system is perfectly secure, and this is beta software — see the caveat below.
+No system is perfectly secure, and Atlas is still changing — see the caveat below.
 
 ## Deleting your data
 
@@ -101,9 +101,9 @@ You can delete your account and everything in it from **Settings** inside Atlas,
 
 Atlas isn't directed at children under 13, and we don't knowingly collect their data.
 
-## Beta caveat
+## Things change
 
-Atlas is prelaunch beta software built by two students. Features, data flows, and this policy will change as we build. When we make a meaningful change, we'll update the effective date and, where we can, notify waitlisted or registered users. Continuing to use Atlas after a change means you accept the updated policy.
+Atlas is built by two students. Features, data flows, and this policy will change as we build. When we make a meaningful change, we'll update the effective date and, where we can, notify waitlisted or registered users. Continuing to use Atlas after a change means you accept the updated policy.
 
 ## Contact
 
