@@ -15,9 +15,21 @@
       Newest release first; older items may stay so users on very old builds
       still find a path forward.
 
-      Both items below are genuine releases written by that script: 0.11.0 is
-      current, and 0.10.1 is kept so users on older builds still have a path.
+      All items below are genuine releases written by that script: 0.12.0 is
+      current, and 0.11.0 / 0.10.1 are kept so users on older builds still have
+      a path. 0.12.0 carries a sparkle:criticalUpdate element — it fixes a
+      month-view freeze, so users must not be able to skip it.
     -->
+    <item>
+      <title>0.12.0</title>
+      <pubDate>Wed, 02 Sep 2026 23:32:39 +0000</pubDate>
+      <description>Month view no longer freezes with many Canvas assignments. Syllabus scan rewrite, class page redesign, repeating events.</description>
+      <sparkle:version>0.12.0</sparkle:version>
+      <sparkle:shortVersionString>0.12.0</sparkle:shortVersionString>
+      <sparkle:criticalUpdate />
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://www.atlaslm.net/downloads/Atlas-0.12.0.dmg" length="9974612" type="application/x-apple-diskimage" sparkle:edSignature="Kk0DdiNxM207HuZE7gHZd5eFa6ePr57ZKGvG9DGxi7FEHO7ZX1FKGXBkiyAd7doeDokUrJphjbIlG90ON9oKCg==" />
+    </item>
     <item>
       <title>0.11.0</title>
       <pubDate>Sun, 30 Aug 2026 02:33:55 +0000</pubDate>
