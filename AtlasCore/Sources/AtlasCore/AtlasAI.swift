@@ -5,6 +5,36 @@ import Foundation
 /// Decoded payload from the `capture` Edge Function.
 /// ISO date strings are left as `String` — the call site parses them when
 /// constructing domain objects so we never force a date strategy on this decoder.
+/// The repeat pattern the model extracted from a capture ("gym every Tuesday",
+/// "standup weekdays 9am"). Present ONLY on a repeating event; nil for a one-off,
+/// and nil from any server deploy that predates recurrence — so an old backend keeps
+/// producing single events rather than failing to decode.
+///
+/// Deliberately loose (`freq`/`byDay` are strings): the wire format tolerates whatever
+/// the model emits, and `RecurrenceRule(capture:)` is the single place that validates
+/// it into a real rule, returning nil for anything unusable.
+public struct CaptureRecurrence: Codable, Equatable {
+    /// "daily" | "weekly" | "monthly" (case-insensitive).
+    public let freq: String
+    /// Repeat every N periods; nil/absent ⇒ 1.
+    public let interval: Int?
+    /// RFC 5545 weekday codes — ["MO","WE","FR"]. Weekly rules only.
+    public let byDay: [String]?
+    /// The series' inclusive last day as a plain LOCAL calendar date ("2026-12-12").
+    public let untilISO: String?
+    /// Total occurrences, as an alternative bound to `untilISO`.
+    public let count: Int?
+
+    public init(freq: String, interval: Int? = nil, byDay: [String]? = nil,
+                untilISO: String? = nil, count: Int? = nil) {
+        self.freq = freq
+        self.interval = interval
+        self.byDay = byDay
+        self.untilISO = untilISO
+        self.count = count
+    }
+}
+
 public struct CaptureResult: Codable {
     public let kind: String          // "task" | "event" | "note" | "update"
     public let title: String
@@ -24,13 +54,18 @@ public struct CaptureResult: Codable {
     /// The model's own 0…1 confidence in this item's classification. Drives the
     /// subtle low-confidence marker on the correction chips; never a dialog.
     public let confidence: Double?
+    /// Set when the capture described a REPEATING event — `startISO` is then the first
+    /// session and this says how it repeats. Optional so responses without it (one-off
+    /// events, tasks, notes, older deploys) decode unchanged.
+    public let recurrence: CaptureRecurrence?
 
     public init(kind: String, title: String, spaceName: String,
                 projectName: String? = nil, dueISO: String? = nil,
                 startISO: String? = nil, endISO: String? = nil,
                 durationMin: Int? = nil, isAllDay: Bool? = nil,
                 notes: String? = nil, targetId: String? = nil,
-                confidence: Double? = nil) {
+                confidence: Double? = nil,
+                recurrence: CaptureRecurrence? = nil) {
         self.kind = kind
         self.title = title
         self.spaceName = spaceName
@@ -43,6 +78,7 @@ public struct CaptureResult: Codable {
         self.notes = notes
         self.targetId = targetId
         self.confidence = confidence
+        self.recurrence = recurrence
     }
 
     /// Below this the parse is "unsure" and the chips wear a subtle marker.

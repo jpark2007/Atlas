@@ -18,6 +18,9 @@ struct DraftItem: Identifiable {
     var notes: String?
     var targetId: String?       // "update" only — the existing item this refers to
     var lowConfidence: Bool
+    /// The repeat pattern for a recurring event, nil for a one-off. Committing expands
+    /// it into one real event per session (see `CaptureView.commit`).
+    var recurrence: RecurrenceRule?
 
     init(_ r: CaptureResult) {
         kind = r.kind
@@ -32,6 +35,7 @@ struct DraftItem: Identifiable {
         notes = r.notes
         targetId = r.targetId
         lowConfidence = r.isLowConfidence
+        recurrence = r.recurrence.flatMap(RecurrenceRule.init(capture:))
     }
 }
 

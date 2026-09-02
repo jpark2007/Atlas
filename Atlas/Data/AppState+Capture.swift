@@ -144,8 +144,56 @@ extension AppState {
         // A captured class session/lab keeps its class link, so it wears the
         // project's color in the grid and shows up under that class.
         event.projectID = captureProject(result, in: result.spaceName)?.id
+
+        // Repeating? Expand it into real sessions. A rule the model garbled maps to nil,
+        // and one that yields a single date isn't a series — both fall through to the
+        // ordinary one-off path below rather than failing the capture.
+        if let spec = result.recurrence,
+           let rule = RecurrenceRule(capture: spec) {
+            let starts = rule.occurrences(startingAt: eventStart)
+            if starts.count > 1 {
+                return applySeries(event, rule: rule, starts: starts,
+                                   duration: eventEnd.timeIntervalSince(eventStart))
+            }
+        }
+
         addEvent(event)
         return AppliedCapture(outcome: .event, item: CaptureHistoryItem(event: event))
+    }
+
+    /// Materialize one repeating capture into its sessions.
+    ///
+    /// Every instance is a full copy of `template` on its own date, with its own id and a
+    /// shared `seriesID`; each carries the rule's RRULE text so any single session can
+    /// describe the whole series. `duration` is carried forward rather than re-derived so
+    /// a 50-minute block stays 50 minutes on every date — and because `RecurrenceRule`
+    /// re-applies the wall-clock start per day, a series crossing a DST change keeps its
+    /// stated time. Written through `addEvents`, so the whole run is ONE Supabase upsert.
+    ///
+    /// A capture that lands on a CLASS whose `meetingPattern` already covers the same
+    /// slot produces a session next to `SchoolCalendar`'s derived meeting; the two
+    /// collapse at display time via `CalendarSync.collapsingDuplicates` (same title, same
+    /// instant), so the grid shows one block, not two.
+    private func applySeries(_ template: CalendarEvent,
+                             rule: RecurrenceRule,
+                             starts: [Date],
+                             duration: TimeInterval) -> AppliedCapture {
+        let seriesID = UUID()
+        let rruleText = rule.rruleText
+        let instances = starts.map { start -> CalendarEvent in
+            var instance = template
+            instance.id = UUID()
+            instance.start = start
+            instance.end = start.addingTimeInterval(duration)
+            instance.seriesID = seriesID
+            instance.recurrenceRule = rruleText
+            return instance
+        }
+        addEvents(instances)
+        let snapshots = instances.map(CaptureHistoryItem.init(event:))
+        return AppliedCapture(outcome: .eventSeries(count: instances.count),
+                              item: snapshots[0],
+                              alsoCreated: Array(snapshots.dropFirst()))
     }
 
     /// Create a plain task carrying `notes` — used by the quick-capture

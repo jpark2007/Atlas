@@ -372,6 +372,10 @@ struct ScheduleView: View {
                 isShown: center
             )
         }
+        // The grid had no pull-to-refresh — only the list did — and a long-press to
+        // place a task drops you into grid mode permanently, so a user could end up
+        // with no way to force a re-pull at all.
+        .refreshable { await store.refresh() }
     }
 
     // MARK: - Data (space-filtered)

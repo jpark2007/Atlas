@@ -24,6 +24,10 @@ struct EventEditorSheet: View {
     /// References chosen while composing — attached to the event once it's saved
     /// (the attachment FK needs the `events` row to exist first).
     @State private var referenceSelection: Set<UUID> = []
+    /// The repeat pattern, nil for a one-off. Offered on CREATE only: Atlas materializes
+    /// a series into real rows, so changing the pattern of an existing one means
+    /// rebuilding its instances — delete the series and re-add it instead.
+    @State private var recurrence: RecurrenceRule?
 
     init(seed: CalendarEvent) {
         self.seed = seed
@@ -43,6 +47,7 @@ struct EventEditorSheet: View {
                                                          calendar: .current)
                                    : seed.end)
         _notes             = State(initialValue: seed.notes ?? "")
+        _recurrence        = State(initialValue: seed.recurrenceRule.flatMap(RecurrenceRule.init(rruleText:)))
     }
 
     // MARK: - Body
@@ -173,6 +178,21 @@ struct EventEditorSheet: View {
                 }
 
                 // ── Notes ─────────────────────────────────────────────────
+                // ── Repeats ───────────────────────────────────────────────
+                // Create-only (see `recurrence`). An existing series shows its pattern
+                // read-only so the sheet still says what the event is.
+                if !isEditingExisting {
+                    field("Repeats") {
+                        RecurrencePicker(rule: $recurrence, start: startDate)
+                    }
+                } else if let rule = recurrence {
+                    field("Repeats") {
+                        Text(rule.summary)
+                            .atlasFont(size: 14, weight: .medium, design: .rounded)
+                            .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                    }
+                }
+
                 field("Notes") {
                     ZStack(alignment: .topLeading) {
                         if notes.isEmpty {
@@ -293,9 +313,16 @@ struct EventEditorSheet: View {
         // Provenance is stamped once, at creation: carry the scan receipt through an
         // edit so a retitled imported exam still says which syllabus it came from.
         event.scanID = seed.scanID
+        event.seriesID = seed.seriesID
+        event.recurrenceRule = seed.recurrenceRule
 
         if isEditingExisting {
             state.updateEvent(event)
+        } else if let rule = recurrence,
+                  case let starts = rule.occurrences(startingAt: finalStart),
+                  starts.count > 1 {
+            saveSeries(event, rule: rule, starts: starts,
+                       duration: finalEnd.timeIntervalSince(finalStart))
         } else {
             // Attach chosen references — addEvent sequences the writes so the event
             // row lands before the attachment FKs reference it.
@@ -303,5 +330,33 @@ struct EventEditorSheet: View {
         }
 
         state.presentEventEditor = false
+    }
+
+    /// Expand a repeat pattern into one real event per session, sharing a series id.
+    /// Mirrors the capture path (`AppState.applySeries`) so an event typed into this
+    /// sheet and one spoken into the capture bar produce identical rows.
+    ///
+    /// References attach to the FIRST session only: they describe the thing, not each
+    /// occurrence of it, and fanning one link across dozens of rows would make the
+    /// reference list unreadable.
+    private func saveSeries(_ template: CalendarEvent,
+                            rule: RecurrenceRule,
+                            starts: [Date],
+                            duration: TimeInterval) {
+        let seriesID = UUID()
+        let rruleText = rule.rruleText
+        let instances = starts.map { start -> CalendarEvent in
+            var instance = template
+            instance.id = UUID()
+            instance.start = start
+            instance.end = start.addingTimeInterval(duration)
+            instance.seriesID = seriesID
+            instance.recurrenceRule = rruleText
+            return instance
+        }
+        state.addEvents(instances)
+        if let first = instances.first {
+            for rid in referenceSelection { state.attachReference(rid, toEvent: first.id) }
+        }
     }
 }

@@ -18,6 +18,10 @@ struct CalendarEventDetailView: View {
     @State private var editingNote: Note?
     @State private var showRefPicker = false
     @State private var referenceSelection: Set<UUID> = []
+    /// The edited event, parked while the user picks how far the change reaches.
+    /// Non-nil ⇒ the scope dialog is up; nothing is written until they choose.
+    @State private var pendingSeriesEdit: CalendarEvent?
+    @State private var confirmingSeriesDelete = false
 
     init(item: CalendarEvent) {
         self.item = item
@@ -43,6 +47,15 @@ struct CalendarEventDetailView: View {
 
     private var isWorkBlock: Bool { item.isWorkBlock || state.tasks.contains { $0.id == item.id } }
     private var isReadOnly: Bool { item.isReadOnly }
+    /// The pattern this session belongs to, for the badge and the scope dialogs. Nil for
+    /// a one-off (and for an external `isRecurring` instance, whose series lives in
+    /// Google and stays read-only here).
+    private var seriesRule: RecurrenceRule? {
+        item.recurrenceRule.flatMap(RecurrenceRule.init(rruleText:))
+    }
+    /// True when this is one session of an Atlas-owned repeating series — the only case
+    /// where "this / this and following / all" is a real question.
+    private var isSeriesMember: Bool { !isReadOnly && !isWorkBlock && item.isSeriesMember }
     /// Work-block whose backing task is a Canvas assignment — Canvas owns the title
     /// (re-sync overwrites it), so the title locks while scheduling stays fully editable.
     private var isCanvasBackedBlock: Bool {
@@ -106,6 +119,35 @@ struct CalendarEventDetailView: View {
         .sheet(isPresented: $showRefPicker, onDismiss: syncEventAttachments) {
             AttachReferencePicker(projectID: item.projectID, selection: $referenceSelection)
         }
+        // Scope prompts. Editing or deleting ONE session of a series is ambiguous —
+        // cancelling next Tuesday and cancelling the whole thing look identical until
+        // asked — so nothing is written until the user says how far it reaches.
+        .confirmationDialog("Change repeating event",
+                            isPresented: Binding(get: { pendingSeriesEdit != nil },
+                                                 set: { if !$0 { pendingSeriesEdit = nil } })) {
+            ForEach(SeriesScope.allCases, id: \.self) { scope in
+                Button(scope.label) {
+                    guard let edited = pendingSeriesEdit else { return }
+                    pendingSeriesEdit = nil
+                    state.updateSeries(edited, scope: scope)
+                    close()
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingSeriesEdit = nil }
+        } message: {
+            Text(seriesRule?.summary ?? "This event repeats.")
+        }
+        .confirmationDialog("Delete repeating event", isPresented: $confirmingSeriesDelete) {
+            ForEach(SeriesScope.allCases, id: \.self) { scope in
+                Button(scope.label, role: .destructive) {
+                    state.deleteSeries(item, scope: scope)
+                    close()
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text(seriesRule?.summary ?? "This event repeats.")
+        }
     }
 
     // MARK: - Header
@@ -122,6 +164,9 @@ struct CalendarEventDetailView: View {
                 }
                 .buttonStyle(.plain)
                 Spacer()
+                if isSeriesMember, let rule = seriesRule {
+                    atlasTag(text: rule.summary, color: AtlasTheme.Colors.textMuted)
+                }
                 examBadge
                 sourceBadge
             }
@@ -463,14 +508,25 @@ struct CalendarEventDetailView: View {
             updated.spaceName = selectedSpaceName
             updated.color = state.calendarSpaceColor(named: selectedSpaceName)
             updated.spaceID = state.spaceID(named: selectedSpaceName)
+            if isSeriesMember {
+                // Park it — the dialog's choice calls `updateSeries` and closes.
+                pendingSeriesEdit = updated
+                return
+            }
             state.updateEvent(updated)
         }
         close()
     }
 
     private func deleteOrUnschedule() {
-        if isWorkBlock { state.unscheduleTask(id: item.id) }
-        else { state.deleteEvent(id: item.id) }
+        if isWorkBlock {
+            state.unscheduleTask(id: item.id)
+        } else if isSeriesMember {
+            confirmingSeriesDelete = true   // the dialog's choice deletes and closes
+            return
+        } else {
+            state.deleteEvent(id: item.id)
+        }
         close()
     }
 

@@ -97,10 +97,28 @@ struct CaptureHistoryEntry: Codable, Identifiable, Equatable {
 }
 
 /// Paired result of applying one `CaptureResult`: the user-facing outcome (for the
-/// confirmation copy) plus the history snapshot of the item that was created.
+/// confirmation copy) plus the history snapshots of everything it created.
+///
+/// `items` is a LIST because one captured item is not always one domain object: a
+/// repeating event materializes into a session per occurrence, and undo has to be able
+/// to take all of them back, not just the first.
 struct AppliedCapture {
     let outcome: CaptureOutcome
+    /// The representative created object — what one correction chip points at. For a
+    /// repeating series this is the first session.
     let item: CaptureHistoryItem
+    /// EVERY object created, the representative first. One captured line is not always
+    /// one object: a repeating event materializes a session per occurrence, and undo has
+    /// to take all of them back, not just the first.
+    let items: [CaptureHistoryItem]
+
+    init(outcome: CaptureOutcome,
+         item: CaptureHistoryItem,
+         alsoCreated: [CaptureHistoryItem] = []) {
+        self.outcome = outcome
+        self.item = item
+        self.items = [item] + alsoCreated
+    }
 }
 
 // MARK: - On-disk store (per user, Application Support)
