@@ -34,9 +34,14 @@ public struct SyllabusDraftItem: Identifiable, Equatable {
     public var include: Bool = true
     /// Set by `SyllabusDedupe` when this row already exists on the target class (a Canvas
     /// assignment or an event saying the same thing on the same day). Such a row starts
-    /// UNCHECKED and wears an "Already in Canvas" badge — it is never silently dropped,
-    /// so the student can still accept it if the scan found the better version.
+    /// UNCHECKED and wears an "already in …" badge naming `existingSource` — it is never
+    /// silently dropped, so the student can still accept it if the scan found the better
+    /// version.
     public var alreadyExists: Bool = false
+    /// Where the matched existing item actually came from, set alongside `alreadyExists`
+    /// so the badge names the real avenue instead of always saying "Canvas". `nil` when
+    /// the row is not a duplicate.
+    public var existingSource: SyllabusMatchSource? = nil
     /// True when the syllabus named a DAY and no clock time ("Quiz 3 — Sept 24"). Recorded
     /// at parse, never guessed later: an event committed from such a row is an ALL-DAY
     /// event, because inventing midnight for it is what made a quiz read "12 AM · 1h".
@@ -49,8 +54,8 @@ public struct SyllabusDraftItem: Identifiable, Equatable {
 
     public init(id: UUID = UUID(), kind: SyllabusDraftKind, title: String,
                 date: Date? = nil, notes: String? = nil, include: Bool = true,
-                alreadyExists: Bool = false, isDateOnly: Bool = false,
-                dateApproximate: Bool = false) {
+                alreadyExists: Bool = false, existingSource: SyllabusMatchSource? = nil,
+                isDateOnly: Bool = false, dateApproximate: Bool = false) {
         self.id = id
         self.kind = kind
         self.title = title
@@ -58,6 +63,7 @@ public struct SyllabusDraftItem: Identifiable, Equatable {
         self.notes = notes
         self.include = include
         self.alreadyExists = alreadyExists
+        self.existingSource = existingSource
         self.isDateOnly = isDateOnly
         self.dateApproximate = dateApproximate
     }

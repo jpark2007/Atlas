@@ -10,6 +10,29 @@ import Foundation
 /// never dropped: the student always sees what the scan found and can accept it anyway.
 ///
 /// Pure and shared so Mac and iOS mark identical rows.
+/// Where a duplicate-flagged row's existing twin actually came from. Rule 5: the chip
+/// names the real avenue — a class's items arrive from Canvas, from the semester
+/// wizard's ICS import, from an earlier scan, or by hand, and only the first of those
+/// may say "Canvas".
+public enum SyllabusMatchSource: Equatable {
+    /// A Canvas-fed task or event.
+    case canvas
+    /// Committed by an earlier syllabus scan (`scanID`).
+    case earlierScan
+    /// Anything else already filed under the class — the wizard's ICS import (which
+    /// stamps no provenance) and hand-typed items alike.
+    case existing
+
+    /// The review sheet's duplicate chip, shared by both platforms.
+    public var chipLabel: String {
+        switch self {
+        case .canvas:      return "Already in Canvas"
+        case .earlierScan: return "Already from earlier scan"
+        case .existing:    return "Already in class"
+        }
+    }
+}
+
 public enum SyllabusDedupe {
 
     /// Shortest run of normalized title two rows must share to be considered the same
@@ -41,25 +64,42 @@ public enum SyllabusDedupe {
         groups.map { group in
             guard let target = group.targetClassID else { return group }
             let classTasks  = tasks.filter  { $0.projectID == target }
-                                   .map { ($0.title, $0.effectiveDueDate(calendar: calendar)) }
+                                   .map { ($0.title, $0.effectiveDueDate(calendar: calendar), source(of: $0)) }
             // `bucketDate`, not `start`: a syllabus-committed exam is an all-day event on
             // the canonical UTC anchor, which reads as the previous day west of Greenwich.
             let classEvents = events.filter { $0.projectID == target }
-                                    .map { ($0.title, Optional($0.bucketDate(in: calendar))) }
+                                    .map { ($0.title, Optional($0.bucketDate(in: calendar)), source(of: $0)) }
 
             var marked = group
             marked.items = group.items.map { item in
                 let pool = item.kind == .event ? classEvents : classTasks
-                let hit = pool.contains { matches(draftTitle: item.title, draftDate: item.date,
-                                                  existingTitle: $0.0, existingDate: $0.1,
-                                                  calendar: calendar) }
+                let hit = pool.first { matches(draftTitle: item.title, draftDate: item.date,
+                                               existingTitle: $0.0, existingDate: $0.1,
+                                               calendar: calendar) }
                 var item = item
-                item.alreadyExists = hit
-                item.include = !hit
+                item.alreadyExists = hit != nil
+                item.existingSource = hit?.2
+                item.include = hit == nil
                 return item
             }
             return marked
         }
+    }
+
+    /// Provenance of an existing task, by the rule the task detail views already use:
+    /// `canvasUID` alone no longer means Canvas (it doubles as the generic ICS UID), so an
+    /// "ics" feed's task must never read as "Canvas".
+    static func source(of task: TaskItem) -> SyllabusMatchSource {
+        if task.canvasUID != nil && task.feedType != "ics" { return .canvas }
+        if task.scanID != nil { return .earlierScan }
+        return .existing
+    }
+
+    /// Provenance of an existing event, off the source stamped at ingest — never guessed.
+    static func source(of event: CalendarEvent) -> SyllabusMatchSource {
+        if event.source == .canvas { return .canvas }
+        if event.scanID != nil { return .earlierScan }
+        return .existing
     }
 
     /// Whether a draft row and an existing item are the same piece of work.

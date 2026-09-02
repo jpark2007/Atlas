@@ -727,7 +727,9 @@ struct SyllabusScanSheet: View {
                     .buttonStyle(.plain)
                     // §C4: what the class already has, un-checked and named. Never dropped —
                     // the student sees everything the scan found and can accept it anyway.
-                    if item.wrappedValue.alreadyExists { duplicateChip }
+                    if item.wrappedValue.alreadyExists {
+                        duplicateChip(item.wrappedValue.existingSource ?? .existing)
+                    }
                     // A schedule's week row ("Sept 28–Oct 2") gives a range, not a day: the
                     // date is the end of it, and the student should know before it commits.
                     if item.wrappedValue.dateApproximate { approximateChip }
@@ -751,8 +753,11 @@ struct SyllabusScanSheet: View {
         .opacity(item.wrappedValue.include ? 1 : 0.7)
     }
 
-    private var duplicateChip: some View {
-        Text("Already in Canvas")
+    /// Names the avenue the twin actually came from — Canvas, an earlier scan, or simply
+    /// the class (the semester wizard's ICS import and hand-typed items carry no
+    /// provenance, so they share that last label rather than borrowing Canvas's).
+    private func duplicateChip(_ source: SyllabusMatchSource) -> some View {
+        Text(source.chipLabel)
             .font(.system(size: 12, weight: .bold, design: .rounded))
             .foregroundStyle(scanDupInk)
             .padding(.horizontal, 9).padding(.vertical, 4)

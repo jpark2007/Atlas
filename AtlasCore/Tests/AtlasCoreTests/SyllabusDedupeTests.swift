@@ -172,4 +172,82 @@ final class SyllabusDedupeTests: XCTestCase {
         XCTAssertFalse(marked[0].items[0].alreadyExists)
         XCTAssertTrue(marked[0].items[0].include)
     }
+
+    // MARK: - The chip must name the avenue the twin actually came from (rule 5)
+
+    private func markedSource(tasks: [TaskItem] = [], events: [CalendarEvent] = [],
+                              kind: SyllabusDraftKind = .task, klass: UUID) -> SyllabusMatchSource? {
+        let group = SyllabusDraftGroup(items: [SyllabusDraftItem(kind: kind,
+                                                                 title: "The chain rule",
+                                                                 date: day(9))],
+                                       targetClassID: klass)
+        let marked = SyllabusDedupe.markingExisting([group], tasks: tasks, events: events,
+                                                    calendar: cal)
+        XCTAssertTrue(marked[0].items[0].alreadyExists)
+        return marked[0].items[0].existingSource
+    }
+
+    func test_matchOnCanvasTask_readsAsCanvas() {
+        let klass = UUID()
+        var canvasTask = TaskItem(title: "Lecture 4 The Chain Rule", dueLabel: "", dueDate: day(9))
+        canvasTask.projectID = klass
+        canvasTask.canvasUID = "canvas-4"
+        canvasTask.feedType = "canvas"
+        XCTAssertEqual(markedSource(tasks: [canvasTask], klass: klass), .canvas)
+        XCTAssertEqual(SyllabusMatchSource.canvas.chipLabel, "Already in Canvas")
+    }
+
+    func test_matchOnEarlierScanTask_readsAsEarlierScan() {
+        let klass = UUID()
+        var scanned = TaskItem(title: "Lecture 4 The Chain Rule", dueLabel: "", dueDate: day(9))
+        scanned.projectID = klass
+        scanned.scanID = UUID()
+        XCTAssertEqual(markedSource(tasks: [scanned], klass: klass), .earlierScan)
+        XCTAssertEqual(SyllabusMatchSource.earlierScan.chipLabel, "Already from earlier scan")
+    }
+
+    /// The semester wizard's ICS import and hand-typed items carry no provenance at all —
+    /// they must read as the class's own, never as Canvas.
+    func test_matchOnWizardOrHandMadeItem_readsAsExisting() {
+        let klass = UUID()
+        var handMade = TaskItem(title: "Lecture 4 The Chain Rule", dueLabel: "", dueDate: day(9))
+        handMade.projectID = klass
+        XCTAssertEqual(markedSource(tasks: [handMade], klass: klass), .existing)
+        XCTAssertEqual(SyllabusMatchSource.existing.chipLabel, "Already in class")
+
+        var wizardEvent = CalendarEvent(title: "Lecture 4 The Chain Rule", subtitle: "",
+                                        start: day(9), end: day(9),
+                                        color: .clear, spaceName: "School")
+        wizardEvent.projectID = klass
+        XCTAssertEqual(markedSource(events: [wizardEvent], kind: .event, klass: klass), .existing)
+    }
+
+    /// An "ics" feed's task is NOT Canvas: `canvasUID` doubles as the generic ICS UID.
+    func test_matchOnGenericICSFeedTask_neverReadsAsCanvas() {
+        let klass = UUID()
+        var feedTask = TaskItem(title: "Lecture 4 The Chain Rule", dueLabel: "", dueDate: day(9))
+        feedTask.projectID = klass
+        feedTask.canvasUID = "ics-4"
+        feedTask.feedType = "ics"
+        XCTAssertEqual(markedSource(tasks: [feedTask], klass: klass), .existing)
+    }
+
+    func test_matchOnCanvasEvent_readsAsCanvas() {
+        let klass = UUID()
+        var canvasEvent = CalendarEvent(title: "Lecture 4 The Chain Rule", subtitle: "",
+                                        start: day(9), end: day(9),
+                                        color: .clear, spaceName: "School")
+        canvasEvent.projectID = klass
+        canvasEvent.source = .canvas
+        XCTAssertEqual(markedSource(events: [canvasEvent], kind: .event, klass: klass), .canvas)
+    }
+
+    func test_unmatchedRowCarriesNoSource() {
+        let klass = UUID()
+        let group = SyllabusDraftGroup(items: [SyllabusDraftItem(kind: .task, title: "Read chapter 7",
+                                                                 date: day(11))],
+                                       targetClassID: klass)
+        let marked = SyllabusDedupe.markingExisting([group], tasks: [], events: [], calendar: cal)
+        XCTAssertNil(marked[0].items[0].existingSource)
+    }
 }
