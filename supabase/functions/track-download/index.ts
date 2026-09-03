@@ -1,9 +1,11 @@
 // =====================================================================
 // Atlas track-download — DMG download counter (Supabase Edge Function)
 //
-// POST (no body needed). Bumps site_metrics.dmg_downloads by one. Public and
-// dumb by design: the landing "Download for Mac" button fires a non-blocking
-// beacon here on click. Deploy with `--no-verify-jwt`; CORS pinned to the
+// POST (no body needed). Bumps site_metrics.dmg_downloads by one, at most once
+// per visitor per UTC day: the landing "Download for Mac" button fires a
+// non-blocking beacon here on click, and a click is cheap to repeat. The
+// de-dupe key is sha256(client IP + UTC day), stored in download_hits — the raw
+// IP is never written down. Deploy with `--no-verify-jwt`; CORS pinned to the
 // landing origin; rate-limited per IP so the counter can't be spammed.
 // =====================================================================
 
@@ -11,7 +13,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkRateLimit, clientIp, tooManyRequests } from "../_shared/rate_limit.ts";
 import { corsFor } from "../_shared/cors.ts";
 
-
+/** sha256 → lowercase hex. The de-dupe key is a hash so no visitor IP is stored. */
+async function sha256Hex(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 Deno.serve(async (req: Request) => {
   // Per-request: the allowed origin depends on who is calling (see _shared/cors.ts).
@@ -31,8 +39,24 @@ Deno.serve(async (req: Request) => {
   );
 
   // 30 clicks/hour/IP — generous for a human, a wall for a script.
-  const rl = await checkRateLimit(supabase, clientIp(req), "track-download", 30, 3600);
+  const ip = clientIp(req);
+  const rl = await checkRateLimit(supabase, ip, "track-download", 30, 3600);
   if (!rl.allowed) return tooManyRequests(rl.retryAfter, corsHeaders);
+
+  // One count per visitor per UTC day. The insert IS the check: ignoring
+  // duplicates returns an empty set when this hash was already seen today, so
+  // a repeat click falls straight through to the same ok response.
+  const day = new Date().toISOString().slice(0, 10);
+  const hash = await sha256Hex(ip + "|" + day);
+  const { data: hit, error: hitErr } = await supabase
+    .from("download_hits")
+    .upsert({ hash, day }, { onConflict: "hash", ignoreDuplicates: true })
+    .select("hash");
+  if (hitErr) {
+    console.error("track-download dedupe failed:", hitErr.message);
+    return json({ ok: true }, 200); // never block the download over a counter
+  }
+  if (!hit || hit.length === 0) return json({ ok: true }, 200); // already counted today
 
   // Read-modify-write through the service role. A lost race just undercounts by
   // one, which is fine for a vanity download counter — no RPC/locking needed.

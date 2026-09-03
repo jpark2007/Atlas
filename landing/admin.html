@@ -65,6 +65,28 @@
   }
   .tile__n { font-family: var(--serif); font-size: 2.2rem; font-weight: 500; letter-spacing: -0.02em; }
   .tile__l { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-top: 0.15rem; }
+  /* The sub-line says what the number actually counts — it is the whole point
+     of this pass, so it always occupies a line even when it has nothing to say. */
+  .tile__sub { font-size: 12px; color: var(--muted); margin-top: 0.3rem; min-height: 1.1em; }
+
+  /* ── excluded accounts (collapsed, bottom of the page) ── */
+  .excluded { border: 1px solid var(--hairline); border-radius: 14px; background: #fff; }
+  .excluded > summary {
+    cursor: pointer; user-select: none; padding: 0.9rem 1.2rem;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .excluded__body { padding: 0 1.2rem 1.1rem; }
+  .excluded__note { font-size: 12px; color: var(--muted); margin: 0 0 0.75rem; }
+  .excluded__row {
+    display: flex; align-items: baseline; gap: 0.6rem;
+    padding: 0.5rem 0; border-top: 1px solid var(--hairline); font-size: 0.9rem;
+  }
+  .excluded__email { flex: 1 1 auto; word-break: break-all; }
+  .excluded__seen { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .excluded__row button { padding: 0.25rem 0.6rem; font-size: 0.8rem; }
+  .excluded__add { display: flex; gap: 0.5rem; margin-top: 0.9rem; }
+  .excluded__add input { letter-spacing: normal; }
 
   /* ── charts ── */
   .charts { display: grid; gap: 1rem; margin: 0 0 2.5rem; }
@@ -163,10 +185,26 @@
       <p class="lede">Live figures. Refreshes on load and after each action.</p>
 
       <div class="tiles">
-        <div class="tile"><div class="tile__n" id="tUsers">—</div><div class="tile__l">Total users</div></div>
-        <div class="tile"><div class="tile__n" id="tDownloads">—</div><div class="tile__l">Downloads</div></div>
-        <div class="tile"><div class="tile__n" id="tMac">—</div><div class="tile__l">Mac users</div></div>
-        <div class="tile"><div class="tile__n" id="tMobile">—</div><div class="tile__l">Mobile users</div></div>
+        <div class="tile">
+          <div class="tile__n" id="tAccounts">—</div>
+          <div class="tile__l">Accounts</div>
+          <div class="tile__sub" id="sAccounts"></div>
+        </div>
+        <div class="tile">
+          <div class="tile__n" id="tActive7">—</div>
+          <div class="tile__l">Active · 7 days</div>
+          <div class="tile__sub" id="sActive7"></div>
+        </div>
+        <div class="tile">
+          <div class="tile__n" id="tActive30">—</div>
+          <div class="tile__l">Active · 30 days</div>
+          <div class="tile__sub" id="sActive30"></div>
+        </div>
+        <div class="tile">
+          <div class="tile__n" id="tDownloads">—</div>
+          <div class="tile__l">Download clicks</div>
+          <div class="tile__sub">landing button, 1 per visitor per day</div>
+        </div>
       </div>
 
       <section class="block">
@@ -174,7 +212,7 @@
         <div class="charts">
           <div class="chart">
             <div class="chart__head">
-              <span class="tile__l">Users · cumulative</span>
+              <span class="tile__l">Accounts · cumulative</span>
               <span class="chart__val" id="cUsersVal">—</span>
             </div>
             <div id="cUsers"></div>
@@ -183,7 +221,7 @@
 
           <div class="chart">
             <div class="chart__head">
-              <span class="tile__l">Downloads · per day</span>
+              <span class="tile__l">Download clicks · per day</span>
               <span class="chart__val" id="cDlVal">—</span>
             </div>
             <div id="cDl"></div>
@@ -192,7 +230,7 @@
 
           <div class="chart">
             <div class="chart__head">
-              <span class="tile__l">Active users · 30-day</span>
+              <span class="tile__l">Active · 30 days</span>
               <span class="chart__val" id="cActVal">—</span>
             </div>
             <div id="cAct"></div>
@@ -200,7 +238,7 @@
               <span><i class="swatch"></i>Mac</span>
               <span><i class="swatch swatch--ios"></i>iOS</span>
             </div>
-            <p class="chart__cap" id="cActCap" hidden></p>
+            <p class="chart__cap">Daily snapshot at 00:00 UTC; earlier points were recorded when the dashboard was opened.</p>
           </div>
         </div>
       </section>
@@ -214,8 +252,27 @@
       </section>
 
       <section class="block">
-        <p class="kicker">Bug reports</p>
+        <p class="kicker">Bug reports <span id="openCount"></span></p>
         <div id="reports"></div>
+      </section>
+
+      <section class="block">
+        <details class="excluded">
+          <summary id="exSummary">Excluded accounts</summary>
+          <div class="excluded__body">
+            <p class="excluded__note">
+              Team and test/review accounts. Every count and chart above leaves
+              them out. Anything on <code>@atlas-test.dev</code> is excluded
+              automatically and cannot be removed here.
+            </p>
+            <div id="exList"></div>
+            <form class="excluded__add" id="exForm" autocomplete="off">
+              <input id="exInput" type="text" placeholder="email@example.com"
+                     aria-label="Email to exclude" />
+              <button type="submit" class="ghost">Exclude</button>
+            </form>
+          </div>
+        </details>
       </section>
 
       <p class="status" id="dashStatus" role="status" aria-live="polite"></p>
@@ -396,7 +453,6 @@
     yMaxLabel(svg, max);
     xLabels(svg, pts.map((p) => p.day));
     mount("cAct", svg);
-    caption("cActCap", n <= 2);
   }
 
   function renderCharts(data) {
@@ -406,12 +462,26 @@
     renderActivesChart(c.actives);
   }
 
+  /// "Mac X · iOS Y" — an account on both platforms is one in the headline and
+  /// one in each of these, which is why the two rarely add up to the total.
+  function splitLine(a) {
+    return "Mac " + ((a && a.mac) ?? 0) + " · iOS " + ((a && a.ios) ?? 0);
+  }
+
   function render(data) {
-    $("tUsers").textContent = data.totalUsers ?? 0;
+    $("tAccounts").textContent = data.accounts ?? 0;
+    const ex = data.excludedCount ?? 0;
+    $("sAccounts").textContent = ex ? "+" + ex + " team/test excluded" : "";
+    $("tActive7").textContent = (data.active7 && data.active7.total) ?? 0;
+    $("sActive7").textContent = splitLine(data.active7);
+    $("tActive30").textContent = (data.active30 && data.active30.total) ?? 0;
+    $("sActive30").textContent = splitLine(data.active30);
     $("tDownloads").textContent = data.dmgDownloads ?? 0;
-    $("tMac").textContent = data.mac ?? 0;
-    $("tMobile").textContent = data.mobile ?? 0;
     renderCharts(data);
+    renderExcluded(data.excluded || [], ex);
+
+    const open = data.openReports ?? 0;
+    $("openCount").textContent = "· Open: " + open;
 
     const wrap = $("reports");
     wrap.innerHTML = "";
@@ -506,6 +576,69 @@
     }
   }
 
+  /// The collapsed roster behind the headline numbers: who is excluded, why,
+  /// and when they were last seen. Auto-excluded @atlas-test.dev addresses have
+  /// no Remove button — the rule outranks the list.
+  function renderExcluded(rows, count) {
+    $("exSummary").textContent = "View " + count + " excluded account" + (count === 1 ? "" : "s");
+    const list = $("exList");
+    list.innerHTML = "";
+    if (!rows.length) {
+      const p = document.createElement("p");
+      p.className = "empty";
+      p.textContent = "Nobody is excluded.";
+      list.appendChild(p);
+      return;
+    }
+    for (const r of rows) {
+      const row = document.createElement("div");
+      row.className = "excluded__row";
+
+      const email = document.createElement("span");
+      email.className = "excluded__email";
+      email.textContent = r.email || "(no email)";
+      row.appendChild(email);
+
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = r.reason || "team";
+      row.appendChild(tag);
+
+      const seen = document.createElement("span");
+      seen.className = "excluded__seen";
+      seen.textContent = r.last_seen
+        ? (r.platform || "?") + " · " + String(r.last_seen).slice(0, 10)
+        : "never seen";
+      row.appendChild(seen);
+
+      const auto = /@atlas-test\.dev$/i.test(r.email || "");
+      if (!auto) {
+        const rm = document.createElement("button");
+        rm.className = "ghost";
+        rm.textContent = "Remove";
+        rm.addEventListener("click", () => setExcluded("exclude_remove", r.email, rm));
+        row.appendChild(rm);
+      }
+      list.appendChild(row);
+    }
+  }
+
+  /// Add/remove goes through admin-stats on the same code gate as resolve, then
+  /// reloads so the tiles show the numbers the change actually produced.
+  async function setExcluded(action, email, btn) {
+    if (btn) btn.disabled = true;
+    const { ok, status, body } = await callAdmin({ code: CODE, action, email });
+    if (ok) {
+      await loadStats($("dashStatus"));
+      setStatus($("dashStatus"), "", null);
+    } else {
+      if (btn) btn.disabled = false;
+      setStatus($("dashStatus"),
+        (body && body.error) || (status === 429 ? "Too many requests." : "Couldn't update the list."),
+        "error");
+    }
+  }
+
   /// A pre-written reply: the reporter's own words quoted back, a blank for
   /// the status line, and the sign-off. The quote is capped so the mailto URL
   /// stays inside what mail clients will open.
@@ -585,6 +718,14 @@
   });
 
   $("refreshBtn").addEventListener("click", () => loadStats($("dashStatus")));
+
+  $("exForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email = ($("exInput").value || "").trim();
+    if (!email) return;
+    await setExcluded("exclude_add", email, null);
+    $("exInput").value = "";
+  });
 
   $("changeCodeBtn").addEventListener("click", async () => {
     const next = prompt("New access code (4–8 digits):");
