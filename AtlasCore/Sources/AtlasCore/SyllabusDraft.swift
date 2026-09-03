@@ -266,15 +266,28 @@ public enum SyllabusRescan {
     /// card had suppressed, or the scan silently drops the pattern/info it found.
     public static func keepingExisting(_ group: SyllabusDraftGroup,
                                        info: ClassInfoCard?,
-                                       meetings: [MeetingBlock]) -> SyllabusDraftGroup {
+                                       meetings: [MeetingBlock],
+                                       meetingSource: MeetingPatternSource? = nil) -> SyllabusDraftGroup {
         var out = group
         if group.classInfo != nil {
             out.includeClassInfo = classInfoSummary(info) == nil
         }
         if !group.meetingPattern.isEmpty {
             out.includeMeetingPattern = meetingSummary(meetings) == nil
+                && allowsMeetingReplacement(existingSource: meetingSource, existingMeetings: meetings)
         }
         return out
+    }
+
+    /// Whether a scan is allowed to write its meeting pattern over the one the class
+    /// already has (0050). A pattern the student imported from their school's schedule
+    /// (`ics`) is the authoritative one — a syllabus scan may not replace it, and the
+    /// sheet says so instead of offering the choice. Everything else stays the student's
+    /// call. A class with no saved pattern is never locked, whatever its stale source says.
+    public static func allowsMeetingReplacement(existingSource: MeetingPatternSource?,
+                                                existingMeetings: [MeetingBlock]) -> Bool {
+        guard !existingMeetings.isEmpty else { return true }
+        return existingSource != .ics
     }
 }
 

@@ -738,7 +738,8 @@ struct SemesterWizard: View {
             else { continue }
             classIDs[item.classKey] = created.id
             if !item.meetings.isEmpty {
-                state.setMeetingPattern(projectID: created.id, blocks: item.meetings, meetingInfo: nil)
+                state.setMeetingPattern(projectID: created.id, blocks: item.meetings, meetingInfo: nil,
+                                        source: .ics)
             }
         }
 

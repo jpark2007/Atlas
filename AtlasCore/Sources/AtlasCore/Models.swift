@@ -187,6 +187,19 @@ public enum TermSelection {
     private static func rank(_ t: Term) -> Date { t.endsOn ?? t.startsOn ?? .distantPast }
 }
 
+/// Which door a class's `meeting_pattern` came in through (migration 0050). Set at
+/// write time by whoever wrote the pattern — never guessed after the fact, and never
+/// backfilled for rows written before the column existed (`nil` = unknown).
+///
+/// The one behavior it drives: a pattern from the student's imported school schedule
+/// (`ics`) is authoritative, so a later syllabus scan may not replace it. A hand edit
+/// always wins and re-stamps the source as `manual`.
+public enum MeetingPatternSource: String, Codable, Equatable, CaseIterable {
+    case ics
+    case scan
+    case manual
+}
+
 /// One structured meeting block of a class ("MWF 10:00–10:50, Tech Hall 204").
 /// Stored in `projects.meeting_pattern` jsonb as an array of these. Whatever door
 /// the schedule came through (school ICS, an existing calendar, a screenshot scan,
@@ -317,6 +330,9 @@ public struct Project: Identifiable {
     /// Structured meeting blocks (0042). Empty ⇒ the class has no known schedule yet;
     /// free-text `meetingInfo` survives only as an optional note.
     public var meetingPattern: [MeetingBlock] = []
+    /// Where `meetingPattern` came from (0050). `nil` ⇒ unknown (written before the
+    /// column existed). Only `.ics` locks the pattern against a syllabus scan.
+    public var meetingPatternSource: MeetingPatternSource? = nil
     /// The syllabus-scan "Class info" card (0042); `nil` until a syllabus is scanned.
     public var classInfo: ClassInfoCard? = nil
     /// Where the document this class's scan was read from is kept, in the private

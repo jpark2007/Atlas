@@ -192,7 +192,8 @@ struct MeetingPatternSheet: View {
                                 lastDate: draft.lastDate)
         }
         store.setMeetingPattern(projectID: project.id, blocks: stored,
-                                meetingInfo: meetingNote.trimmingCharacters(in: .whitespaces))
+                                meetingInfo: meetingNote.trimmingCharacters(in: .whitespaces),
+                                source: .manual)
         MobileTheme.Haptic.success()
         dismiss()
     }

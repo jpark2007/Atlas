@@ -205,10 +205,15 @@ extension AppState {
     }
 
     /// Replaces a class's structured meeting blocks (the landing place for every
-    /// schedule-ingestion door).
-    func setMeetingPattern(projectID: UUID, blocks: [MeetingBlock], meetingInfo: String?) {
+    /// schedule-ingestion door). `source` says which door this write came through and is
+    /// stored with the pattern (0050) — never inferred later. An `ics` pattern is the one
+    /// a syllabus scan is not allowed to replace; a manual edit re-stamps it and so
+    /// clears that lock.
+    func setMeetingPattern(projectID: UUID, blocks: [MeetingBlock], meetingInfo: String?,
+                           source: MeetingPatternSource) {
         guard var project = project(projectID) else { return }
         project.meetingPattern = blocks
+        project.meetingPatternSource = source
         project.meetingInfo = (meetingInfo?.isEmpty ?? true) ? nil : meetingInfo
         applyClassEdit(project)
     }

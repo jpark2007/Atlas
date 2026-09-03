@@ -203,7 +203,8 @@ struct QuickAddClassSheet: View {
                                                           start: Self.hhmm(start),
                                                           end: Self.hhmm(end),
                                                           location: where_.isEmpty ? nil : where_)],
-                                    meetingInfo: nil)
+                                    meetingInfo: nil,
+                                    source: .manual)
         }
         state.route = .project(created.id)
         dismiss()

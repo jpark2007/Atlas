@@ -1,0 +1,14 @@
+-- 0050_meeting_pattern_source.sql
+--
+-- Where a class's `meeting_pattern` came from, so the app can stop a syllabus
+-- scan from silently replacing a schedule the student imported from their
+-- school's calendar.
+--
+--   'ics'    — the semester wizard read it from an imported .ics schedule.
+--   'scan'   — a syllabus/schedule scan wrote it.
+--   'manual' — the student typed or edited it by hand.
+--
+-- Nullable, and NOT backfilled: rows written before this migration have no
+-- honest answer, and guessing one would be exactly the mislabeling this column
+-- exists to prevent. A null source is treated as unlocked.
+alter table projects add column if not exists meeting_pattern_source text;

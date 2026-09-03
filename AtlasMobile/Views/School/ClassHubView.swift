@@ -183,6 +183,12 @@ struct ClassHubView: View {
                     }
                     .foregroundStyle(MobileTheme.muted)
                 }
+                // Said only where it changes what a scan may do to this schedule (0050).
+                if project.meetingPatternSource == .ics {
+                    Text("From your imported schedule — locked")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(MobileTheme.faint)
+                }
             }
             if let instructor = project.instructor, !instructor.isEmpty {
                 HStack(spacing: 8) {

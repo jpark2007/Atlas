@@ -341,7 +341,8 @@ struct SyllabusScanSheet: View {
                             [group.wrappedValue], tasks: store.snapshot.tasks,
                             events: store.snapshot.events)[0]
                         group.wrappedValue = SyllabusRescan.keepingExisting(
-                            marked, info: klass.classInfo, meetings: klass.meetingPattern)
+                            marked, info: klass.classInfo, meetings: klass.meetingPattern,
+                            meetingSource: klass.meetingPatternSource)
                     }
                 }
             } label: {
@@ -358,16 +359,22 @@ struct SyllabusScanSheet: View {
     @ViewBuilder
     private func meetingsCard(_ group: Binding<SyllabusDraftGroup>) -> some View {
         let blocks = group.wrappedValue.meetingPattern
+        let locked = meetingsLocked(group.wrappedValue)
         card(title: "Meetings found",
              count: blocks.isEmpty ? "none" : "\(blocks.count) row\(blocks.count == 1 ? "" : "s") · editable",
-             toggle: blocks.isEmpty ? nil : group.includeMeetingPattern) {
+             toggle: (blocks.isEmpty || locked) ? nil : group.includeMeetingPattern) {
             if blocks.isEmpty {
                 Text("The syllabus didn't state a weekly meeting pattern. You can add one on the class page.")
                     .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundStyle(MobileTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                if let saved = SyllabusRescan.meetingSummary(existingMeetings(group.wrappedValue)) {
+                if locked {
+                    Text("From your imported schedule — locked. Edit it on the class page to change it.")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(MobileTheme.faint)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let saved = SyllabusRescan.meetingSummary(existingMeetings(group.wrappedValue)) {
                     replaceChoice("Replaces your current schedule (\(saved))",
                                   replace: group.includeMeetingPattern)
                 }
@@ -790,6 +797,19 @@ struct SyllabusScanSheet: View {
         } ?? []
     }
 
+    private func existingMeetingSource(_ group: SyllabusDraftGroup) -> MeetingPatternSource? {
+        group.targetClassID.flatMap { pid in
+            store.snapshot.projects.first { $0.id == pid }?.meetingPatternSource
+        }
+    }
+
+    /// True when the target class's schedule came from the imported .ics and so may not be
+    /// replaced by this scan (0050). The sheet states it instead of offering the toggle.
+    private func meetingsLocked(_ group: SyllabusDraftGroup) -> Bool {
+        !SyllabusRescan.allowsMeetingReplacement(existingSource: existingMeetingSource(group),
+                                                 existingMeetings: existingMeetings(group))
+    }
+
     /// The keep/replace line — shown only when this class already HAS the section the scan
     /// found. It starts on "Keep existing", so a second scan can never quietly take away a
     /// card the student fixed by hand.
@@ -1132,7 +1152,8 @@ struct SyllabusScanSheet: View {
                     drafted[index] = SyllabusRescan.keepingExisting(
                         drafted[index],
                         info: existingInfo(drafted[index]),
-                        meetings: existingMeetings(drafted[index]))
+                        meetings: existingMeetings(drafted[index]),
+                        meetingSource: existingMeetingSource(drafted[index]))
                 }
                 groups = drafted
                 truncated = response.truncated
@@ -1195,7 +1216,8 @@ struct SyllabusScanSheet: View {
             if group.includeMeetingPattern && !meetings.isEmpty {
                 store.setMeetingPattern(projectID: targetID,
                                         blocks: meetings,
-                                        meetingInfo: klass.meetingInfo)
+                                        meetingInfo: klass.meetingInfo,
+                                        source: .scan)
             }
             if group.includeClassInfo, let info = group.classInfo {
                 store.setClassInfo(projectID: targetID, info: info)
