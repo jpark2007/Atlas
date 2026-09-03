@@ -277,6 +277,7 @@ struct AppGate: View {
 
     @State private var showCaptureKeyPopup = false
     @State private var showNamePrompt = false
+    @State private var showMobileApps = false
 
     var body: some View {
         Group {
@@ -319,14 +320,20 @@ struct AppGate: View {
                 }
                 .onAppear { state.userName = auth.displayName }
                 // Name prompt shows FIRST for new accounts; the capture-key popup
-                // follows once it dismisses, so the two never stack (see .task).
+                // follows once it dismisses, then the iPhone/iPad hand-off closes
+                // setup — one at a time, never stacked (see .task).
                 .sheet(isPresented: $showNamePrompt, onDismiss: {
                     showCaptureKeyPopup = CaptureKeyOnboarding.shouldShow(session: auth.session)
                 }) {
                     NamePromptPopup().environmentObject(state)
                 }
-                .sheet(isPresented: $showCaptureKeyPopup) {
+                .sheet(isPresented: $showCaptureKeyPopup, onDismiss: {
+                    showMobileApps = MobileAppsOnboarding.shouldShow(session: auth.session)
+                }) {
                     CaptureKeyPopup().environmentObject(shortcuts)
+                }
+                .sheet(isPresented: $showMobileApps) {
+                    MobileAppsPopup()
                 }
                 .task {
                     let db = AtlasDB(session: { await auth.validSession() })
@@ -343,8 +350,10 @@ struct AppGate: View {
                     // fall straight through to the capture-key gate.
                     if NamePromptOnboarding.shouldShow(session: auth.session) {
                         showNamePrompt = true
+                    } else if CaptureKeyOnboarding.shouldShow(session: auth.session) {
+                        showCaptureKeyPopup = true
                     } else {
-                        showCaptureKeyPopup = CaptureKeyOnboarding.shouldShow(session: auth.session)
+                        showMobileApps = MobileAppsOnboarding.shouldShow(session: auth.session)
                     }
                 }
             case .offline:

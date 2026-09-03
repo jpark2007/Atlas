@@ -1916,8 +1916,38 @@ struct SettingsView: View {
                     .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.accentText)
             }
+
+            // The same QR + badge the onboarding hand-off shows, kept reachable after
+            // it has been dismissed.
+            settingsRow(icon: "iphone.gen3",
+                        name: "Atlas for iPhone & iPad",
+                        detail: "Scan a code to get the app on your phone or tablet.",
+                        onTap: { showMobileApps = true }) {
+                disclosureChevron(false)
+            }
+        }
+        .sheet(isPresented: $showMobileApps) {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Atlas for iPhone & iPad")
+                    .atlasFont(size: 20, weight: .semibold, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                MobileAppsCard()
+                HStack {
+                    Spacer()
+                    Button("Done") { showMobileApps = false }
+                        .buttonStyle(.plain)
+                        .atlasFont(size: 13, weight: .semibold, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.accentText)
+                }
+            }
+            .padding(28)
+            .frame(width: 420)
+            .background(AtlasTheme.Colors.bgBase)
         }
     }
+
+    /// "Atlas for iPhone & iPad" sheet presentation (App section).
+    @State private var showMobileApps = false
 
     // MARK: – Help & Tips section
 
