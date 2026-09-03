@@ -194,6 +194,18 @@ final class AppState: ObservableObject {
         Task { try? await db.updateDisplayName(trimmed) }
     }
 
+    /// Persists the one-time signup attribution answers (server + local).
+    /// `source` is a `ReferralSource` raw value — "skipped" when the step was
+    /// dismissed. Best-effort, exactly like `saveNickname`: a nil db or a
+    /// pre-0051 database degrades silently rather than blocking first run.
+    func saveSignupAttribution(source: ReferralSource, detail: String?, school: String?) {
+        profile?.referralSource = source.rawValue
+        profile?.referralDetail = detail
+        profile?.school = school
+        guard let db else { return }
+        Task { try? await db.updateSignupAttribution(source: source.rawValue, detail: detail, school: school) }
+    }
+
     /// Invites addressed to me, awaiting accept/decline (collab phase 2).
     @Published var pendingInvites: [InviteRow] = []
     /// Membership rosters for shared projects, keyed by project id.

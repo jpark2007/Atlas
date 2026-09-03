@@ -13,6 +13,9 @@ struct AtlasMobileApp: App {
     /// collapse into a single re-plan + widget write per burst.
     @State private var rescheduleTask: Task<Void, Never>?
 
+    /// One-time "how did you hear about Atlas?" step for brand-new accounts.
+    @State private var showAttribution = false
+
     var body: some Scene {
         WindowGroup {
             Group {
@@ -27,7 +30,9 @@ struct AtlasMobileApp: App {
                             }
                             scheduler.requestAuthorization()
                             reschedule()
+                            showAttribution = AttributionOnboarding.shouldShow(session: store.session)
                         }
+                        .sheet(isPresented: $showAttribution) { AttributionSheet() }
                         .onChange(of: prefs) { _, _ in reschedule() }
                         .onChange(of: store.loading) { _, isLoading in
                             if !isLoading { reschedule() }   // snapshot just refreshed

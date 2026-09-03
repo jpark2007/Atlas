@@ -218,6 +218,16 @@ final class MobileStore: ObservableObject {
         return ["apple_authorization_code": code, "apple_client_id": clientID]
     }
 
+    /// Persists the one-time signup attribution answers (0051). `source` is a
+    /// `ReferralSource` raw value — "skipped" when the step was dismissed.
+    /// Best-effort: a pre-0051 database degrades silently rather than blocking
+    /// first run. Nothing local reads these back, so there is no state to update.
+    func saveSignupAttribution(source: ReferralSource, detail: String?, school: String?) {
+        Task { [db] in
+            try? await db.updateSignupAttribution(source: source.rawValue, detail: detail, school: school)
+        }
+    }
+
     // MARK: - Data
 
     /// Load every table into `snapshot`. Two guarantees: overlapping calls coalesce

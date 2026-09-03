@@ -1,0 +1,4 @@
+us-schools.json is derived from the Hipo "university-domains-list" dataset
+(https://github.com/Hipo/university-domains-list), MIT licensed. Filtered to
+country == "United States", deduplicated by name, trimmed to [name, domain]
+pairs sorted by name. Downloaded 2026-09-03.

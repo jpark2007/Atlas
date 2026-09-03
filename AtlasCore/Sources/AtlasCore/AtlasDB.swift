@@ -1282,12 +1282,21 @@ public struct ProfileRow: Codable {
     public var displayName: String
     public var email: String
     public var avatarColor: String
+    /// Signup attribution (0051). Optional so a client running against a
+    /// pre-0051 database still round-trips the row: the synthesized encoder
+    /// omits nil keys, so an upsert never names a column that isn't there.
+    public var referralSource: String?
+    public var referralDetail: String?
+    public var school: String?
 
     enum CodingKeys: String, CodingKey {
-        case userId      = "user_id"
-        case displayName = "display_name"
+        case userId         = "user_id"
+        case displayName    = "display_name"
         case email
-        case avatarColor = "avatar_color"
+        case avatarColor    = "avatar_color"
+        case referralSource = "referral_source"
+        case referralDetail = "referral_detail"
+        case school
     }
 }
 
@@ -1906,6 +1915,24 @@ public final class AtlasDB {
             throw AtlasDBError.requestFailed(0, "No profile row for signed-in user")
         }
         row.displayName = name
+        let body = try isoEncoder.encode(row)
+        try await send(method: "POST", table: "profiles",
+                       query: [URLQueryItem(name: "on_conflict", value: "user_id")],
+                       extraHeaders: upsertHeaders, body: body, sess: sess)
+    }
+
+    /// Records the one-time signup attribution answers (0051). Same
+    /// fetch-mutate-upsert shape as `updateDisplayName`; `source` is a
+    /// `ReferralSource` raw value ("skipped" when the step was dismissed),
+    /// `detail` the free text behind "Other", `school` the picked name.
+    public func updateSignupAttribution(source: String, detail: String?, school: String?) async throws {
+        let sess = try await requireSession()
+        guard var row = try await loadProfile() else {
+            throw AtlasDBError.requestFailed(0, "No profile row for signed-in user")
+        }
+        row.referralSource = source
+        row.referralDetail = detail
+        row.school = school
         let body = try isoEncoder.encode(row)
         try await send(method: "POST", table: "profiles",
                        query: [URLQueryItem(name: "on_conflict", value: "user_id")],

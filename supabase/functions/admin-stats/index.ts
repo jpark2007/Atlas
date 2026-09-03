@@ -5,7 +5,8 @@
 //   • Gates every call on a 4–8 digit access code whose SHA-256 hash lives in
 //     public.admin_config (constant-time hash compare). Rate-limits code
 //     attempts per IP so the short code can't be brute-forced.
-//   • "stats"           → real accounts, 7/30-day actives, downloads, reports.
+//   • "stats"           → real accounts, 7/30-day actives, downloads, reports,
+//       signup attribution (0051) by source and by school.
 //       Every count comes from an exclusion-aware RPC (0049): the team and the
 //       review/test accounts are never counted as users.
 //   • "resolve"         → marks bug_reports.id resolved.
@@ -208,6 +209,8 @@ Deno.serve(async (req: Request) => {
     signupRes,
     downloadRes,
     snapshotRes,
+    referralRes,
+    schoolRes,
   ] = await Promise.all([
     supabase.rpc("admin_user_count"),
     supabase.rpc("admin_excluded_count"),
@@ -231,6 +234,8 @@ Deno.serve(async (req: Request) => {
       .select("day, mac_active_30d, ios_active_30d")
       .gte("day", windowStart.slice(0, 10))
       .order("day", { ascending: true }),
+    supabase.rpc("admin_referral_counts"),
+    supabase.rpc("admin_school_counts"),
   ]);
 
   const accounts = typeof countRes.data === "number" ? countRes.data : 0;
@@ -287,5 +292,7 @@ Deno.serve(async (req: Request) => {
       downloads: { points: downloads },
       actives: { points: activePoints },
     },
+    referralCounts: referralRes.data ?? [],
+    schoolCounts: schoolRes.data ?? [],
   }, 200);
 });
