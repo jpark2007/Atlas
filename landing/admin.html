@@ -107,6 +107,18 @@
   .swatch { display: inline-block; width: 16px; height: 0; border-top: 2px solid var(--ink); margin-right: 6px; }
   .swatch--ios { border-top-style: dashed; opacity: 0.55; }
 
+  /* ── attribution tables ── */
+  .attribution { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 680px) { .attribution { grid-template-columns: 1fr; } }
+  .attribution table {
+    width: 100%; border-collapse: collapse; font-size: 0.9rem;
+  }
+  .attribution th, .attribution td {
+    text-align: left; padding: 0.4rem 0; border-top: 1px solid var(--hairline);
+  }
+  .attribution th { color: var(--muted); font-weight: 700; }
+  .attribution td:last-child, .attribution th:last-child { text-align: right; }
+
   section.block { margin: 0 0 2.5rem; }
   .revenue {
     border: 1px dashed var(--hairline-strong); border-radius: 14px;
@@ -239,6 +251,24 @@
               <span><i class="swatch swatch--ios"></i>iOS</span>
             </div>
             <p class="chart__cap">Daily snapshot at 00:00 UTC; earlier points were recorded when the dashboard was opened.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <p class="kicker">How they heard about us</p>
+        <div class="attribution">
+          <div class="chart">
+            <table>
+              <thead><tr><th>Source</th><th>30d</th><th>All time</th></tr></thead>
+              <tbody id="referralRows"></tbody>
+            </table>
+          </div>
+          <div class="chart">
+            <table>
+              <thead><tr><th>School</th><th>All time</th></tr></thead>
+              <tbody id="schoolRows"></tbody>
+            </table>
           </div>
         </div>
       </section>
@@ -479,6 +509,7 @@
     $("tDownloads").textContent = data.dmgDownloads ?? 0;
     renderCharts(data);
     renderExcluded(data.excluded || [], ex);
+    renderAttribution(data.referralCounts || [], data.schoolCounts || []);
 
     const open = data.openReports ?? 0;
     $("openCount").textContent = "· Open: " + open;
@@ -573,6 +604,56 @@
       foot.appendChild(actions);
       card.appendChild(foot);
       wrap.appendChild(card);
+    }
+  }
+
+  /// Raw values match AtlasCore's ReferralSource — never rename one without a
+  /// migration.
+  const REFERRAL_LABELS = {
+    friend: "Friend / Classmate",
+    tiktok: "TikTok",
+    instagram: "Instagram",
+    reddit: "Reddit",
+    google_search: "Google search",
+    professor: "Professor / school",
+    other: "Other",
+    skipped: "Skipped",
+  };
+
+  /// Two small tables under the headline stats: where signups say they heard
+  /// about Atlas, and which school they're at. Rows already come sorted
+  /// (highest count first) from the admin_referral_counts/admin_school_counts
+  /// RPCs (0051).
+  function tableRow(cells) {
+    const tr = document.createElement("tr");
+    for (const text of cells) {
+      const td = document.createElement("td");
+      td.textContent = text;
+      tr.appendChild(td);
+    }
+    return tr;
+  }
+
+  function renderAttribution(referral, schools) {
+    const rRows = $("referralRows");
+    rRows.innerHTML = "";
+    if (!referral.length) {
+      rRows.appendChild(tableRow(["No answers yet.", "", ""]));
+    } else {
+      for (const r of referral) {
+        const label = REFERRAL_LABELS[r.source] || r.source;
+        rRows.appendChild(tableRow([label, r.n_30d ?? 0, r.n_all ?? 0]));
+      }
+    }
+
+    const sRows = $("schoolRows");
+    sRows.innerHTML = "";
+    if (!schools.length) {
+      sRows.appendChild(tableRow(["No answers yet.", ""]));
+    } else {
+      for (const s of schools) {
+        sRows.appendChild(tableRow([s.school, s.n ?? 0]));
+      }
     }
   }
 

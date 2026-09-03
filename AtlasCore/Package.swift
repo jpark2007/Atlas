@@ -10,6 +10,8 @@ let package = Package(
     targets: [
         .target(name: "AtlasCore", dependencies: [
             .product(name: "Realtime", package: "supabase-swift")
+        ], resources: [
+            .process("Resources")
         ]),
         .testTarget(name: "AtlasCoreTests", dependencies: ["AtlasCore"]),
     ]
