@@ -200,11 +200,13 @@ struct SettingsView: View {
             voiceSection
             helpSection
             Section {
+                // Straight to the download band on the site, not the homepage — the
+                // Mac app is a direct download.
                 Button {
-                    if let url = URL(string: "https://www.atlaslm.net") { openURL(url) }
+                    if let url = URL(string: "https://www.atlaslm.net/#download") { openURL(url) }
                 } label: {
                     HStack {
-                        Text("Atlas on Mac").rowLabel()
+                        Text("Atlas for Mac").rowLabel()
                         Spacer()
                         Text("atlaslm.net").rowValue()
                     }
