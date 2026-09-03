@@ -426,6 +426,38 @@ final class SyllabusDraftTests: XCTestCase {
         XCTAssertFalse(kept.includeMeetingPattern)
     }
 
+    // MARK: - Imported-schedule lock (0050)
+
+    /// A schedule imported from the school's .ics wins: a rescan may not offer to replace
+    /// it, so the flag is forced off no matter what the scan found.
+    func testAnImportedScheduleLocksTheMeetingPatternAgainstAScan() {
+        XCTAssertFalse(SyllabusRescan.allowsMeetingReplacement(existingSource: .ics,
+                                                              existingMeetings: savedMeetings))
+        let group = SyllabusDraftGroup(meetingPattern: savedMeetings)
+        let kept = SyllabusRescan.keepingExisting(group, info: nil, meetings: savedMeetings,
+                                                  meetingSource: .ics)
+        XCTAssertFalse(kept.includeMeetingPattern)
+    }
+
+    /// A hand edit re-stamps the source as `manual` and so clears the lock — the student's
+    /// own edit is still theirs to replace, and it starts on "keep existing" as before.
+    func testAManualOrScanSourceIsNotLocked() {
+        for source: MeetingPatternSource? in [.manual, .scan, nil] {
+            XCTAssertTrue(SyllabusRescan.allowsMeetingReplacement(existingSource: source,
+                                                                  existingMeetings: savedMeetings))
+        }
+    }
+
+    /// A class with no saved schedule is never locked — a stale source must not block the
+    /// only pattern the class would have.
+    func testAnEmptyScheduleIsNeverLocked() {
+        XCTAssertTrue(SyllabusRescan.allowsMeetingReplacement(existingSource: .ics,
+                                                              existingMeetings: []))
+        let group = SyllabusDraftGroup(meetingPattern: savedMeetings)
+        let kept = SyllabusRescan.keepingExisting(group, info: nil, meetings: [], meetingSource: .ics)
+        XCTAssertTrue(kept.includeMeetingPattern)
+    }
+
     /// A first scan writes as it always did — the choice only exists where there's a clash.
     func testAFirstScanStillCommitsBothSections() {
         let group = SyllabusDraftGroup(meetingPattern: savedMeetings,

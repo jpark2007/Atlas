@@ -135,9 +135,13 @@ extension MobileStore {
     }
 
     /// Replaces a class's structured meeting blocks (where every ingestion door lands).
-    func setMeetingPattern(projectID: UUID, blocks: [MeetingBlock], meetingInfo: String?) {
+    /// `source` records which door (0050): an `ics` pattern is the one a syllabus scan may
+    /// not replace, and a manual edit re-stamps the source and clears that lock.
+    func setMeetingPattern(projectID: UUID, blocks: [MeetingBlock], meetingInfo: String?,
+                           source: MeetingPatternSource) {
         guard var project = snapshot.projects.first(where: { $0.id == projectID }) else { return }
         project.meetingPattern = blocks
+        project.meetingPatternSource = source
         project.meetingInfo = (meetingInfo?.isEmpty ?? true) ? nil : meetingInfo
         applyClassEdit(project)
     }

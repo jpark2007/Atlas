@@ -325,6 +325,10 @@ public struct ProjectRow: Codable {
     public var archivedAt: Date?
     /// Structured meeting blocks (0042) — jsonb array. nil/absent ⇒ no known schedule.
     public var meetingPattern: [MeetingBlock]?
+    /// Which door `meeting_pattern` came in through (0050) — `ics` | `scan` | `manual`.
+    /// Carried as a raw string so a value this build doesn't know can't fail the decode
+    /// of the whole project row. nil/absent ⇒ unknown.
+    public var meetingPatternSource: String?
     /// Syllabus-scan info card (0042) — jsonb object. nil/absent ⇒ never scanned.
     public var classInfo: ClassInfoCard?
     /// Object path of the kept syllabus in the private `syllabi` bucket (0044).
@@ -348,6 +352,7 @@ public struct ProjectRow: Codable {
         case termId         = "term_id"
         case archivedAt     = "archived_at"
         case meetingPattern = "meeting_pattern"
+        case meetingPatternSource = "meeting_pattern_source"
         case classInfo      = "class_info"
         case syllabusPath   = "syllabus_path"
     }
@@ -370,6 +375,7 @@ public struct ProjectRow: Codable {
         // An empty pattern is stored as NULL rather than `[]` — "no schedule known"
         // is one state, not two.
         self.meetingPattern = p.meetingPattern.isEmpty ? nil : p.meetingPattern
+        self.meetingPatternSource = p.meetingPatternSource?.rawValue
         self.classInfo      = p.classInfo
         self.syllabusPath   = p.syllabusPath
     }
@@ -387,6 +393,7 @@ public struct ProjectRow: Codable {
         project.termID         = termId
         project.archivedAt     = archivedAt
         project.meetingPattern = meetingPattern ?? []
+        project.meetingPatternSource = meetingPatternSource.flatMap(MeetingPatternSource.init(rawValue:))
         project.classInfo      = classInfo
         project.syllabusPath   = syllabusPath
         return project

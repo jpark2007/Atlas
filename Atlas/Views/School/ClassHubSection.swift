@@ -109,6 +109,13 @@ struct ClassHubSection: View {
                     }
                     .foregroundStyle(AtlasTheme.Colors.textSecondary)
                 }
+                // Where this schedule came from, said only when it changes what a scan
+                // can do to it (0050): the imported one wins until the student edits it.
+                if project.meetingPatternSource == .ics {
+                    Text("From your imported schedule — locked")
+                        .atlasFont(size: 12, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textMuted)
+                }
             }
 
             instructorRow
