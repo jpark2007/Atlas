@@ -133,9 +133,17 @@ struct TermTaskList<Row: View, EventRow: View>: View {
 
     private func bucket(_ h: TaskGrouping.WeekHorizon) -> [TermTimeline.Entry] { horizons[h] ?? [] }
 
-    /// Everything past this week — next week included — laid out as the rest of the term.
+    /// With nothing due this week, next week gets its own open section instead of hiding
+    /// inside a month fold — only then, so a busy week still reads as one list.
+    private var showsNextWeek: Bool {
+        bucket(.thisWeek).isEmpty && !bucket(.nextWeek).isEmpty
+    }
+
+    /// Everything past this week — next week included, unless it has been pulled out above
+    /// — laid out as the rest of the term.
     private var months: [(month: Date, entries: [TermTimeline.Entry])] {
-        TermTimeline.byMonth(entries: bucket(.nextWeek) + bucket(.later), calendar: .current)
+        TermTimeline.byMonth(entries: (showsNextWeek ? [] : bucket(.nextWeek)) + bucket(.later),
+                             calendar: .current)
     }
 
     private var tasksByID: [UUID: TaskItem] {
@@ -162,6 +170,10 @@ struct TermTaskList<Row: View, EventRow: View>: View {
                     .atlasFont(size: 12, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                     .padding(.vertical, 9)
+            }
+            if showsNextWeek {
+                TaskGroupHeader(title: "Next week", count: bucket(.nextWeek).count)
+                rows(bucket(.nextWeek))
             }
 
             if !months.isEmpty || !bucket(.noDate).isEmpty {

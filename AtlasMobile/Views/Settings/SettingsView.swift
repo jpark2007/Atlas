@@ -215,7 +215,8 @@ struct SettingsView: View {
                 .rowStyle()
                 navRow("Report a bug") { ReportBugPage(db: store.db) }
                     .onboardingTip(bugTip, when: AtlasBuild.isBeta)
-                labeledRow("Version", value: Self.appVersion)
+            } footer: {
+                footer("Currently on \(Self.appVersion)")
             }
         }
         .settingsListChrome()

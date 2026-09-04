@@ -266,7 +266,7 @@ struct TaskDetailView: View {
             if let course = live.canvasCourse { return "From Canvas · \(course)" }
             return "From Canvas"
         }
-        if let scan = state.scan(live.scanID) { return "From syllabus scan · \(scan.fileName)" }
+        if let scan = state.scan(live.scanID) { return "Added from class file · \(scan.fileName)" }
         // A generic ICS feed is not Canvas and not Atlas-native — say what it is.
         if live.feedType == "ics" { return "From an imported calendar" }
         return "Added in Atlas"

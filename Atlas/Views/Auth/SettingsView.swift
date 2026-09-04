@@ -1917,6 +1917,11 @@ struct SettingsView: View {
                     .foregroundStyle(AtlasTheme.Colors.accentText)
             }
 
+            Text("Currently on \(Self.installedVersion)")
+                .atlasFont(size: 11, weight: .medium, design: .rounded)
+                .foregroundStyle(AtlasTheme.Colors.textMuted)
+                .padding(.top, 8)
+
             // The same QR + badge the onboarding hand-off shows, kept reachable after
             // it has been dismissed.
             settingsRow(icon: "iphone.gen3",
@@ -1948,6 +1953,14 @@ struct SettingsView: View {
 
     /// "Atlas for iPhone & iPad" sheet presentation (App section).
     @State private var showMobileApps = false
+
+    /// The running build's marketing version, tagged when it is the Debug "Atlas Dev" app
+    /// so a dev build never reads as the installed release.
+    private static var installedVersion: String {
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        let isDev = Bundle.main.infoDictionary?["CFBundleName"] as? String == "Atlas Dev"
+        return isDev ? "\(short) (Dev)" : short
+    }
 
     // MARK: – Help & Tips section
 
