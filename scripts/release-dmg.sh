@@ -131,6 +131,7 @@ find_sign_update() {
   fi
   for candidate in \
     "$HOME"/Library/Developer/Xcode/DerivedData/Atlas-*/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update \
+    "$HOME"/Library/Developer/Xcode/DerivedData.noindex/*/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update \
     /opt/homebrew/Caskroom/sparkle/*/bin/sign_update \
     /usr/local/Caskroom/sparkle/*/bin/sign_update
   do
