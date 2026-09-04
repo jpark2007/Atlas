@@ -15,7 +15,11 @@ import AppKit
 /// the window itself — `didUpdate` plus the fullscreen notifications — and strips the
 /// toolbar again whenever AppKit puts one back.
 struct WindowConfigurator: NSViewRepresentable {
-    func makeCoordinator() -> Coordinator { Coordinator(configure: configure) }
+    /// bgBase (paper #f2efe6) — the window's background and the color we repaint
+    /// AppKit's own white title-bar backing with.
+    private static let paper = NSColor(srgbRed: 0xf2/255, green: 0xef/255, blue: 0xe6/255, alpha: 1)
+
+    func makeCoordinator() -> Coordinator { Coordinator(configure: configure, hasDrifted: hasDrifted) }
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
@@ -35,7 +39,7 @@ struct WindowConfigurator: NSViewRepresentable {
         // as calendar drag-to-schedule (you'd move the window instead of the event).
         // The transparent title-bar strip at the top still drags the window normally.
         window.isMovableByWindowBackground = false
-        window.backgroundColor = NSColor(srgbRed: 0xf2/255, green: 0xef/255, blue: 0xe6/255, alpha: 1) // bgBase (paper #f2efe6)
+        window.backgroundColor = Self.paper
         // Kill the toolbar NavigationSplitView attaches (the gray bar's source).
         window.toolbar = nil
         // Hide the 1px separator line under the (now transparent) titlebar.
@@ -47,6 +51,51 @@ struct WindowConfigurator: NSViewRepresentable {
         window.standardWindowButton(.closeButton)?.isHidden = false
         window.standardWindowButton(.miniaturizeButton)?.isHidden = false
         window.standardWindowButton(.zoomButton)?.isHidden = false
+
+        paperTitlebarBackings(window)
+    }
+
+    /// Repaints AppKit's own title-bar backing views paper.
+    ///
+    /// `NSSplitView` (what `NavigationSplitView` is built on) parks an
+    /// `NSTitlebarBackgroundView` over the top 32pt of the window — one as a sibling
+    /// drawn ABOVE the detail pane's wrapper, one inside the sidebar's. Both are
+    /// layer-backed with a hard `#ffffff`, normally `isHidden = true`. AppKit un-hides
+    /// them whenever it decides the title bar needs a solid backing (a toolbar cycling
+    /// on and off, a pane re-laying out), and because they are AppKit siblings painted
+    /// over the SwiftUI hosting view, the detail column's
+    /// `bgBase.ignoresSafeArea(edges: .top)` in `RootView` cannot cover them — that
+    /// paint is *underneath*. That is the white band.
+    ///
+    /// Rather than fight the un-hide, we make the view harmless: give it the paper
+    /// color, so if AppKit shows it, it shows paper. No timers, no polling — this runs
+    /// on the same passes as the rest of `configure`.
+    private func paperTitlebarBackings(_ window: NSWindow) {
+        guard let root = window.contentView?.superview else { return }
+        func walk(_ view: NSView) {
+            if view is NSVisualEffectView { return }   // don't repaint materials
+            if String(describing: type(of: view)).hasSuffix("TitlebarBackgroundView") {
+                view.wantsLayer = true
+                view.layer?.backgroundColor = Self.paper.cgColor
+                return
+            }
+            view.subviews.forEach(walk)
+        }
+        walk(root)
+    }
+
+    /// True when any property `configure` asserts has drifted back to an AppKit
+    /// default. Cheap enough to run on every `didUpdate` tick (a handful of compares).
+    ///
+    /// This used to be `window.toolbar != nil` alone, which meant a title bar that
+    /// turned opaque WITHOUT a toolbar being re-attached was never re-asserted —
+    /// exactly the case behind the white band after saving a task description.
+    private func hasDrifted(_ window: NSWindow) -> Bool {
+        window.toolbar != nil
+            || !window.titlebarAppearsTransparent
+            || window.titleVisibility != .hidden
+            || !window.styleMask.contains(.fullSizeContentView)
+            || window.titlebarSeparatorStyle != .none
     }
 
     // NOTE: there is deliberately no work here. `WindowConfigurator` stores nothing,
@@ -61,12 +110,16 @@ struct WindowConfigurator: NSViewRepresentable {
     /// fullscreen; without this the top of the window flashes an opaque white bar.
     final class Coordinator {
         private let configure: (NSWindow) -> Void
+        private let hasDrifted: (NSWindow) -> Bool
         private weak var view: NSView?
         private var tokens: [NSObjectProtocol] = []
 
         private var pending = false
 
-        init(configure: @escaping (NSWindow) -> Void) { self.configure = configure }
+        init(configure: @escaping (NSWindow) -> Void, hasDrifted: @escaping (NSWindow) -> Bool) {
+            self.configure = configure
+            self.hasDrifted = hasDrifted
+        }
 
         /// Re-applies the chrome across the launch-time passes, when SwiftUI is still
         /// building the split view and re-attaching its toolbar. Coalesced so repeated
@@ -109,12 +162,14 @@ struct WindowConfigurator: NSViewRepresentable {
             // titlebar and the detail content drops ~20pt). SwiftUI does NOT call
             // `updateNSView` for those re-renders — WindowConfigurator stores nothing, so
             // SwiftUI sees an unchanged view and skips it — which is why hanging the
-            // re-assert off `updateNSView` did nothing. The `toolbar != nil` guard keeps
-            // the common case to one pointer compare.
+            // re-assert off `updateNSView` did nothing. `hasDrifted` keeps the common
+            // case to a handful of property compares — and, unlike the `toolbar != nil`
+            // test it replaces, it also catches a title bar that goes opaque with no
+            // toolbar involved (the white band after saving a task description).
             let updateToken = center.addObserver(forName: NSWindow.didUpdateNotification,
                                                  object: nil, queue: .main) { [weak self] note in
                 guard let self, let window = self.view?.window,
-                      note.object as? NSWindow == window, window.toolbar != nil else { return }
+                      note.object as? NSWindow == window, self.hasDrifted(window) else { return }
                 self.configure(window)
             }
             tokens.append(updateToken)
