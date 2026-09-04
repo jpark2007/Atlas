@@ -1413,6 +1413,20 @@ final class AppState: ObservableObject {
         Task { try? await self.db?.deleteTask(id: id) }
     }
 
+    /// Rename a task in place. No-op on a blank/unchanged name, an unknown id, or a
+    /// Canvas assignment — Canvas owns those titles and a re-sync would overwrite the
+    /// edit anyway (same guard as `updateScheduledTask`).
+    func renameTask(id: UUID, to newTitle: String) {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let i = tasks.firstIndex(where: { $0.id == id }),
+              tasks[i].canvasUID == nil,
+              !trimmed.isEmpty, trimmed != tasks[i].title else { return }
+        tasks[i].title = trimmed
+        let updated = tasks[i]
+        Task { try? await self.db?.upsertTask(updated) }
+        schedulePublish()
+    }
+
     /// Update a task's notes body.
     func updateTaskNotes(taskId: UUID, notes: String) {
         if let i = tasks.firstIndex(where: { $0.id == taskId }) {

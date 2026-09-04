@@ -18,6 +18,9 @@ struct TaskDetailView: View {
     @State private var showEstimatePicker = false
     @State private var showRefPicker = false
     @State private var referenceSelection: Set<UUID> = []
+    @State private var isEditingTitle = false
+    @State private var titleDraft = ""
+    @FocusState private var titleFieldFocused: Bool
     /// Note currently open in the corner-card editor (nil = closed). Same overlay
     /// host mechanism as `ProjectDetailView` — clicking the linked note opens it here.
     @State private var editingNote: Note?
@@ -72,6 +75,11 @@ struct TaskDetailView: View {
     /// scheduling, done/complete, and space/project fully user-editable.
     private var isCanvasTask: Bool { live.canvasUID != nil && live.feedType != "ics" }
 
+    /// Title lock: ANY feed-ingested task (Canvas or generic ICS) has a title its feed
+    /// re-writes on every sync, so renaming it here would silently be undone. Matches the
+    /// guard in `AppState.renameTask`.
+    private var isTitleFeedOwned: Bool { live.canvasUID != nil }
+
     /// Same lock-banner style as `CalendarEventDetailView`, above the title.
     private var canvasBanner: some View {
         HStack(spacing: 8) {
@@ -101,12 +109,39 @@ struct TaskDetailView: View {
             .padding(.top, 3)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(live.title)
-                    .atlasFont(size: 29, weight: .bold, design: .rounded)
-                    .tracking(-0.4)
-                    .strikethrough(live.done)
-                    .foregroundStyle(live.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
+                // Title — double-click to edit in place; commit on Return or blur,
+                // Escape restores. A Canvas title is server-owned, so it stays read-only.
+                if isEditingTitle {
+                    TextField("Task title", text: $titleDraft)
+                        .textFieldStyle(.plain)
+                        .atlasFont(size: 29, weight: .bold, design: .rounded)
+                        .tracking(-0.4)
+                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                        .focused($titleFieldFocused)
+                        .onSubmit(commitTitle)
+                        .onChange(of: titleFieldFocused) { focused in
+                            if !focused { commitTitle() }
+                        }
+                        .onExitCommand {
+                            titleDraft = live.title   // discarded as unchanged
+                            commitTitle()
+                        }
+                } else {
+                    Text(live.title)
+                        .atlasFont(size: 29, weight: .bold, design: .rounded)
+                        .tracking(-0.4)
+                        .strikethrough(live.done)
+                        .foregroundStyle(live.done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .onTapGesture(count: 2) {
+                            guard !isTitleFeedOwned else { return }
+                            titleDraft = live.title
+                            isEditingTitle = true
+                            titleFieldFocused = true
+                        }
+                        .help(isTitleFeedOwned ? "Its feed owns this title — a re-sync would overwrite an edit"
+                                              : "Double-click to rename")
+                }
 
                 // School is a framework, not a space the student picks — it reads as an
                 // automatic tag here, and the class it belongs to is the one real choice.
@@ -133,6 +168,14 @@ struct TaskDetailView: View {
 
             Spacer()
         }
+    }
+
+    /// Persist the edited title and leave edit mode. A blank or unchanged title is
+    /// discarded by `renameTask`, so Escape (which restores the draft) saves nothing.
+    private func commitTitle() {
+        guard isEditingTitle else { return }
+        isEditingTitle = false
+        state.renameTask(id: live.id, to: titleDraft)
     }
 
     // MARK: Meta
@@ -196,23 +239,37 @@ struct TaskDetailView: View {
         }
     }
 
-    /// Where this task came from, when the data proves it: the syllabus a scan read it
-    /// out of. Nothing at all for a hand-typed task — an absent source is the truth, not
-    /// a gap to fill (CLAUDE.md rule 5). A Canvas assignment already says so in the
-    /// banner above, so it isn't repeated here.
-    @ViewBuilder
+    /// Where this task came from, read only off the fields ingest actually stamped
+    /// (CLAUDE.md rule 5): a Canvas UID, an ICS feed's type, a scan receipt. Nothing
+    /// distinguishes a quick-captured task from a hand-typed one — no column records
+    /// it — so both read "Added in Atlas" rather than a guess.
     private var sourceChip: some View {
-        if let scan = state.scan(live.scanID) {
-            HStack(spacing: 5) {
-                Image(systemName: "doc.text").atlasFont(size: 12)
-                Text("From \(scan.fileName)")
-                    .atlasMono(size: 12, weight: .medium)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .foregroundStyle(AtlasTheme.Colors.textMuted)
-            .help("Imported by a syllabus scan of \(scan.fileName)")
+        HStack(spacing: 5) {
+            Image(systemName: sourceIcon).atlasFont(size: 12)
+            Text(sourceLabel)
+                .atlasMono(size: 12, weight: .medium)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
+        .foregroundStyle(AtlasTheme.Colors.textMuted)
+    }
+
+    private var sourceIcon: String {
+        if isCanvasTask { return "graduationcap" }
+        if state.scan(live.scanID) != nil { return "doc.text" }
+        if live.feedType == "ics" { return "calendar.badge.plus" }
+        return "square.and.pencil"
+    }
+
+    private var sourceLabel: String {
+        if isCanvasTask {
+            if let course = live.canvasCourse { return "From Canvas · \(course)" }
+            return "From Canvas"
+        }
+        if let scan = state.scan(live.scanID) { return "From syllabus scan · \(scan.fileName)" }
+        // A generic ICS feed is not Canvas and not Atlas-native — say what it is.
+        if live.feedType == "ics" { return "From an imported calendar" }
+        return "Added in Atlas"
     }
 
     /// Optional TIME ESTIMATE — how much total time this task needs. Entirely opt-in: with
