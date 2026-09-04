@@ -56,6 +56,11 @@ An event's **source** (Apple / Google / Canvas / Atlas-native) and its **read-on
 - Native `.draggable`/`.dropDestination` forces a green "+" copy badge and is unreliable inside scrolling grids. The calendar drag-to-schedule uses a custom `DragGesture` + coordinate math instead (mirrors the working prototype).
 - Stale `build/` DerivedData can cause phantom entitlement errors — `rm -rf build` if that appears.
 
+## Debug builds are a separate app — keep them out of Spotlight
+- Debug builds are named **"Atlas Dev.app"** with a DEV-ribbon icon (`AppIcon-Dev`, regenerate with `swift scripts/make-dev-icon.swift`). Same bundle id, entitlements and data as Release — only the name and icon differ, so you can always tell which app you're looking at.
+- Always build with `-derivedDataPath "$HOME/Library/Developer/Xcode/DerivedData.noindex/<name>"`. Spotlight skips `.noindex` paths, so build products never pile up in search results.
+- Never copy a Debug build into `/Applications` — that is the installed release's slot.
+
 ## Releasing a Mac update (Sparkle flow)
 Direct-download DMG is the primary channel; updates ship via **Sparkle** — never tell users to redownload manually.
 1. Verify first: full gates green (Mac + iOS builds, AtlasCore `swift test`) AND Drew's visual pass on anything UI. Nothing ships untested.

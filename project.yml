@@ -63,6 +63,13 @@ targets:
         # the plist explicitly below; $(...) values still resolve from Secrets.xcconfig.
         GENERATE_INFOPLIST_FILE: NO
       configs:
+        # A Debug build is a SEPARATE app on disk — "Atlas Dev.app" with a DEV-ribbon
+        # icon — so it is never confused with the installed release in Spotlight or
+        # the Dock. Bundle id, entitlements, app group, URL scheme and keychain are
+        # deliberately UNCHANGED, so the dev build reads the same local data.
+        Debug:
+          PRODUCT_NAME: "Atlas Dev"
+          ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon-Dev
         # Direct-download beta ships a Developer ID signed + notarized build.
         # Debug keeps Automatic signing (and CODE_SIGNING_ALLOWED=NO still works);
         # only Release switches to the manual Developer ID identity.
@@ -163,18 +170,28 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         MARKETING_VERSION: "1.1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # CFBundleDisplayName/CFBundleName below are per-CONFIG, but Info.plist
+        # properties are not — so they interpolate this setting instead.
+        ATLAS_DISPLAY_NAME: Atlas
         # Explicit Info.plist (below) so we can register the atlas:// URL scheme —
         # Xcode's INFOPLIST_KEY_* mechanism can't emit CFBundleURLTypes.
         GENERATE_INFOPLIST_FILE: NO
+      configs:
+        # Same reasoning as the Mac target: Debug installs alongside the App Store
+        # build as "Atlas Dev" with a badged icon. Bundle id / app group unchanged.
+        Debug:
+          PRODUCT_NAME: "Atlas Dev"
+          ATLAS_DISPLAY_NAME: "Atlas Dev"
+          ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon-Dev
     info:
       path: AtlasMobile/Info.plist
       properties:
         ITSAppUsesNonExemptEncryption: false
-        CFBundleDisplayName: Atlas
-        CFBundleName: Atlas
+        CFBundleDisplayName: "$(ATLAS_DISPLAY_NAME)"
+        CFBundleName: "$(ATLAS_DISPLAY_NAME)"
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        CFBundleIconName: AppIcon
+        CFBundleIconName: "$(ASSETCATALOG_COMPILER_APPICON_NAME)"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
