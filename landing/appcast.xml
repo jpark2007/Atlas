@@ -21,6 +21,14 @@
       month-view freeze, so users must not be able to skip it.
     -->
     <item>
+      <title>0.13.0</title>
+      <pubDate>Fri, 04 Sep 2026 17:02:43 +0000</pubDate>
+      <sparkle:version>0.13.0</sparkle:version>
+      <sparkle:shortVersionString>0.13.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://www.atlaslm.net/downloads/Atlas-0.13.0.dmg" length="10134526" type="application/x-apple-diskimage" sparkle:edSignature="s4uUhbScbHBkYvqcc1H4pljjFaEgq08ljFl2fQ5k9sSQrCYDPgmxC2MQyOBlTtqBXMZTZ8CihqJ6er37VNWFAQ==" />
+    </item>
+    <item>
       <title>0.12.0</title>
       <pubDate>Wed, 02 Sep 2026 23:32:39 +0000</pubDate>
       <description>Month view no longer freezes with many Canvas assignments. Syllabus scan rewrite, class page redesign, repeating events.</description>
