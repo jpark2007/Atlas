@@ -58,6 +58,30 @@ public enum TermTimeline {
         return grouped.mapValues(sorted)
     }
 
+    /// What a class row's badge says: how much work is ON you right now — everything
+    /// already late plus everything due this week — and whether any of it is late. One
+    /// number, because a phone glance asks "what's on me now", not "what's late versus
+    /// due Friday"; the class page's folds are where that split gets made.
+    public struct DueNow: Equatable, Sendable {
+        public let count: Int
+        public let hasOverdue: Bool
+
+        public init(count: Int, hasOverdue: Bool) {
+            self.count = count
+            self.hasOverdue = hasOverdue
+        }
+    }
+
+    public static func dueNow(
+        entries: [Entry],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> DueNow {
+        let grouped = byWeekHorizon(entries: entries, now: now, calendar: calendar)
+        let overdue = grouped[.overdue]?.count ?? 0
+        return DueNow(count: overdue + (grouped[.thisWeek]?.count ?? 0), hasOverdue: overdue > 0)
+    }
+
     /// Group dated entries by the MONTH they fall in, ascending — the rest of the term.
     /// Undated entries are omitted (they have no place on a term timeline).
     public static func byMonth(

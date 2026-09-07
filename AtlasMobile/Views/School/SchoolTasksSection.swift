@@ -129,8 +129,8 @@ struct SchoolTasksSection: View {
 
     // MARK: - Rows
 
-    /// A class row: color dot, name, its open-work count, then the course code. The count
-    /// is the one thing a phone glance is actually for — a school task that has a class
+    /// A class row: color dot, name, what's due now, then the course code. The count is
+    /// the one thing a phone glance is actually for — a school task that has a class
     /// lives here and on the class page, never in a generic bucket further down Tasks.
     private func classRow(_ klass: Project) -> some View {
         Button { onOpenClass(klass.id) } label: {
@@ -151,14 +151,16 @@ struct SchoolTasksSection: View {
                     }
                 }
                 Spacer(minLength: 8)
-                let open = store.openWork(forClass: klass).count
-                if open > 0 {
-                    Text("\(open)")
+                let due = dueNow(klass)
+                if due.count > 0 {
+                    Text("\(due.count)")
                         .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(MobileTheme.muted)
+                        .foregroundStyle(due.hasOverdue ? AtlasTheme.Colors.danger : MobileTheme.muted)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(Capsule().fill(MobileTheme.hairline))
+                        .background(Capsule().fill(due.hasOverdue
+                                                   ? AtlasTheme.Colors.danger.opacity(0.16)
+                                                   : MobileTheme.hairline))
                 }
                 if let code = klass.code, !code.isEmpty {
                     Text(code)
@@ -177,10 +179,17 @@ struct SchoolTasksSection: View {
     }
 
     /// "MWF · 10 AM–10:50 AM" when the class has a schedule, else nothing — never a
-    /// placeholder that says the same as silence. The open-work count is its own
-    /// trailing badge, so it shows whether or not the class has meeting times.
+    /// placeholder that says the same as silence. The due count is its own trailing
+    /// badge, so it shows whether or not the class has meeting times.
     private func subtitle(_ klass: Project) -> String? {
         klass.meetingPattern.first.map(MeetingPatternFormat.describe)
+    }
+
+    /// What's actually on you in this class: late work plus this week, red once any of
+    /// it is late. The whole semester's open count (60, all term) said nothing a glance
+    /// could act on; the class page's folds are where the rest of the term lives.
+    private func dueNow(_ klass: Project) -> TermTimeline.DueNow {
+        TermTimeline.dueNow(entries: TermTimeline.entries(tasks: store.openWork(forClass: klass), events: []))
     }
 
     /// The zero state, compact: one row into the wizard. Turning School off in there (or

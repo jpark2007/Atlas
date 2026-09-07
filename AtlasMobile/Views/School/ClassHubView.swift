@@ -21,6 +21,13 @@ struct ClassHubView: View {
     @State private var detail: ItemDetailSheet.Detail?
     @State private var showArchiveConfirm = false
     @State private var showAllWeights = false
+    /// Which month folds of the Work list are open, keyed by the month's first instant,
+    /// plus the undated tail. Both start closed, and both are this screen's alone.
+    @State private var openMonths: Set<Date> = []
+    @State private var showUndated = false
+    /// One "now" for the whole render, so a bucket and its month fold can't straddle
+    /// midnight and disagree.
+    private let now = Date()
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -396,37 +403,174 @@ struct ClassHubView: View {
 
     // MARK: - Work
 
+    /// The term, folded the way the Mac folds it: what's late, what's due this week, then
+    /// the rest of the semester as one closed row per month. A full course is 60 items —
+    /// a flat list of them is the density problem, not the answer. Bucketing comes from
+    /// `TermTimeline` so the phone and the Mac can never disagree about "this week".
     private func workBlock(_ project: Project) -> some View {
-        let items = store.openWork(forClass: project)
+        let tasks = store.openWork(forClass: project)
+        let byID = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let horizons = TermTimeline.byWeekHorizon(entries: TermTimeline.entries(tasks: tasks, events: []), now: now)
+        func bucket(_ h: TimeModel.WeekHorizon) -> [TermTimeline.Entry] { horizons[h] ?? [] }
+        // With nothing due this week, next week gets its own open section instead of
+        // hiding inside a month fold — and then it leaves the folds, never listed twice.
+        let showsNextWeek = bucket(.thisWeek).isEmpty && !bucket(.nextWeek).isEmpty
+        let months = TermTimeline.byMonth(
+            entries: (showsNextWeek ? [] : bucket(.nextWeek)) + bucket(.later))
+
         return section("Work", action: nil) {
-            if items.isEmpty {
+            if tasks.isEmpty {
                 Text("Nothing due yet.")
                     .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundStyle(MobileTheme.faint)
             } else {
-                ForEach(items) { task in
-                    HStack(spacing: 12) {
-                        CheckCircle(done: task.done, color: task.spaceColor) { toggle(task) }
-                        Text(task.title)
-                            .font(.system(size: 15, weight: .medium, design: .rounded))
-                            .foregroundStyle(MobileTheme.ink)
-                        Spacer(minLength: 8)
-                        let due = TaskItem.dueLabel(for: task.dueDate, allDay: task.allDay)
-                        if !due.isEmpty {
-                            Text(due)
-                                .font(.system(size: 13, weight: .medium, design: .rounded))
-                                .foregroundStyle(task.isOverdue(now: Date())
-                                                 ? AtlasTheme.Colors.danger : MobileTheme.muted)
-                        }
+                if !bucket(.overdue).isEmpty {
+                    workHeader("Overdue", count: bucket(.overdue).count, late: true)
+                    workRows(bucket(.overdue), byID: byID)
+                }
+                if !bucket(.thisWeek).isEmpty {
+                    workHeader("This week", count: bucket(.thisWeek).count)
+                    workRows(bucket(.thisWeek), byID: byID)
+                } else if bucket(.overdue).isEmpty {
+                    workHeader("This week", count: 0)
+                    Text("Nothing due this week")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundStyle(MobileTheme.faint)
+                        .padding(.vertical, 8)
+                }
+                if showsNextWeek {
+                    workHeader("Next week", count: bucket(.nextWeek).count)
+                    workRows(bucket(.nextWeek), byID: byID)
+                }
+                ForEach(months, id: \.month) { month in
+                    foldRow(title: monthTitle(month.month),
+                            subtitle: rangeLabel(month.entries),
+                            isOpen: openMonths.contains(month.month)) {
+                        toggleMonth(month.month)
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture { detail = .task(task) }
-                    .padding(.vertical, 10)
-                    .edHairlineBelow()
+                    if openMonths.contains(month.month) { workRows(month.entries, byID: byID) }
+                }
+                if !bucket(.noDate).isEmpty {
+                    let undated = bucket(.noDate)
+                    foldRow(title: "No date",
+                            subtitle: "\(undated.count) item\(undated.count == 1 ? "" : "s")",
+                            isOpen: showUndated) {
+                        withAnimation(MobileTheme.spring) { showUndated.toggle() }
+                    }
+                    if showUndated { workRows(undated, byID: byID) }
                 }
             }
         }
     }
+
+    /// "THIS WEEK · 4" — the class page's own caps label, with the count where the eye
+    /// already looks for it.
+    private func workHeader(_ title: String, count: Int, late: Bool = false) -> some View {
+        HStack(spacing: 8) {
+            Text(title).edCapsLabel()
+            Spacer(minLength: 8)
+            Text("\(count)")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(late ? AtlasTheme.Colors.danger : MobileTheme.faint)
+        }
+        .foregroundStyle(late ? AtlasTheme.Colors.danger : MobileTheme.muted)
+        .padding(.top, 14)
+        .padding(.bottom, 2)
+    }
+
+    @ViewBuilder
+    private func workRows(_ entries: [TermTimeline.Entry], byID: [UUID: TaskItem]) -> some View {
+        ForEach(entries) { entry in
+            if let task = byID[entry.id] { workRow(task) }
+        }
+    }
+
+    private func workRow(_ task: TaskItem) -> some View {
+        HStack(spacing: 12) {
+            CheckCircle(done: task.done, color: task.spaceColor) { toggle(task) }
+            Text(task.title)
+                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .foregroundStyle(MobileTheme.ink)
+            Spacer(minLength: 8)
+            let due = TaskItem.dueLabel(for: task.dueDate, allDay: task.allDay)
+            if !due.isEmpty {
+                Text(due)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(task.isOverdue(now: Date())
+                                     ? AtlasTheme.Colors.danger : MobileTheme.muted)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { detail = .task(task) }
+        .padding(.vertical, 10)
+        .edHairlineBelow()
+    }
+
+    /// "Rest of September · 2 items · SEP 8 — Show". Months start CLOSED: the whole
+    /// semester stays one tap away as a handful of rows.
+    private func foldRow(title: String, subtitle: String,
+                         isOpen: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(MobileTheme.ink)
+                    Text(subtitle)
+                        .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(MobileTheme.faint)
+                }
+                Spacer(minLength: 6)
+                Text(isOpen ? "Hide" : "Show")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MobileTheme.accentText)
+            }
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .edHairlineBelow()
+    }
+
+    private func toggleMonth(_ month: Date) {
+        MobileTheme.Haptic.tap()
+        withAnimation(MobileTheme.spring) {
+            if openMonths.contains(month) { openMonths.remove(month) } else { openMonths.insert(month) }
+        }
+    }
+
+    /// "Rest of September" for the month in progress, "October" after it, and a year once
+    /// the term crosses into one — the Mac's wording.
+    private func monthTitle(_ month: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDate(month, equalTo: now, toGranularity: .month) {
+            return "Rest of \(ClassHubView.monthFormat.string(from: month))"
+        }
+        if cal.isDate(month, equalTo: now, toGranularity: .year) {
+            return ClassHubView.monthFormat.string(from: month)
+        }
+        return ClassHubView.monthYearFormat.string(from: month)
+    }
+
+    /// "12 items · SEP 8 – SEP 30".
+    private func rangeLabel(_ entries: [TermTimeline.Entry]) -> String {
+        let count = "\(entries.count) item\(entries.count == 1 ? "" : "s")"
+        guard let first = entries.first?.date, let last = entries.last?.date else { return count }
+        let from = ClassHubView.dayFormat.string(from: first).uppercased()
+        let to = ClassHubView.dayFormat.string(from: last).uppercased()
+        return from == to ? "\(count) · \(from)" : "\(count) · \(from) – \(to)"
+    }
+
+    private static let monthFormat: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MMMM"; return f
+    }()
+    private static let monthYearFormat: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MMMM yyyy"; return f
+    }()
+    private static let dayFormat: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MMM d"; return f
+    }()
 
     private func toggle(_ task: TaskItem) {
         var updated = task

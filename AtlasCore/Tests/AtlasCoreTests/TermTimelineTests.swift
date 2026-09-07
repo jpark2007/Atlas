@@ -85,4 +85,26 @@ final class TermTimelineTests: XCTestCase {
         let entries = TermTimeline.entries(tasks: [finished], events: [], calendar: eastern)
         XCTAssertTrue(entries.isEmpty)
     }
+
+    // MARK: - The class row's badge
+
+    /// The Tasks-tab badge counts what's on you NOW — late work plus this week — never
+    /// the 60-item semester total that told a student nothing.
+    func testDueNowCountsOverdueAndThisWeekOnly() {
+        let entries = TermTimeline.entries(
+            tasks: [task("Late lab", 9, 18), task("Problem set", 9, 25), task("Final paper", 12, 10)],
+            events: [allDayEvent("Quiz 2", 9, 24)],
+            calendar: eastern)
+        let badge = TermTimeline.dueNow(entries: entries, now: now, calendar: eastern)
+        XCTAssertEqual(badge.count, 3)          // late lab + problem set + quiz; December is not "now"
+        XCTAssertTrue(badge.hasOverdue)
+    }
+
+    /// Nothing late means no red, and a week with nothing in it means no badge at all.
+    func testDueNowIsClearWithNothingLateOrThisWeek() {
+        let entries = TermTimeline.entries(tasks: [task("Final paper", 12, 10)], events: [], calendar: eastern)
+        let badge = TermTimeline.dueNow(entries: entries, now: now, calendar: eastern)
+        XCTAssertEqual(badge.count, 0)
+        XCTAssertFalse(badge.hasOverdue)
+    }
 }
