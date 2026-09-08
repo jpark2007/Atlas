@@ -17,6 +17,10 @@ struct AllDayRowView: View {
     let eventsProvider: (Date) -> [CalendarEvent]
     /// Jump the calendar to a day in Day view — the due-count cap's click target.
     var onJumpToDay: (Date) -> Void = { _ in }
+    /// Deadline-popover callbacks, forwarded to the day's due-count cap.
+    var onToggleTask: ((UUID) -> Void)? = nil
+    var onOpenTask: ((UUID) -> Void)? = nil
+    var isTaskDone: ((UUID) -> Bool)? = nil
 
     // MARK: - Helpers
 
@@ -63,7 +67,11 @@ struct AllDayRowView: View {
             // every due still draws its own hairline marker down in the column (the markers
             // are the source of truth). The cap only says HOW MANY and takes you to the day.
             if !deadlines.isEmpty {
-                DueCountCap(deadlines: deadlines, onJump: { onJumpToDay(day) })
+                DueCountCap(deadlines: deadlines,
+                            onJump: { onJumpToDay(day) },
+                            isTaskDone: isTaskDone,
+                            onToggleTask: onToggleTask,
+                            onOpenTask: onOpenTask)
             }
             ForEach(others) { event in
                 Text(event.title)
@@ -91,6 +99,9 @@ struct AllDayRowView: View {
 struct DueCountCap: View {
     let deadlines: [CalendarEvent]
     let onJump: () -> Void
+    var isTaskDone: ((UUID) -> Bool)? = nil
+    var onToggleTask: ((UUID) -> Void)? = nil
+    var onOpenTask: ((UUID) -> Void)? = nil
     @State private var showList = false
 
     private var capColor: Color {
@@ -117,7 +128,15 @@ struct DueCountCap: View {
         .help("Open this day")
         .contextMenu { Button("See what's due") { showList = true } }
         .popover(isPresented: $showList, arrowEdge: .bottom) {
-            DeadlineListPopover(deadlines: deadlines)
+            DeadlinePopover(
+                deadlines: deadlines,
+                isTaskDone: isTaskDone,
+                onToggleTask: onToggleTask,
+                onOpenTask: { id in
+                    showList = false
+                    onOpenTask?(id)
+                }
+            )
         }
     }
 }

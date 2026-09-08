@@ -133,9 +133,11 @@ extension AppState {
         let cal = Calendar.current
         var markers: [CalendarEvent] = []
         for task in tasks {
-            guard !task.done else { continue }
+            // A just-checked task keeps its marker for the linger beat (struck through) so a
+            // check-off from the deadline popover is felt before the line slides off the grid.
+            guard isVisiblyPending(task) else { continue }
             if let due = task.effectiveDueDate(calendar: cal), cal.isDate(due, inSameDayAs: day) {
-                let red = TimeModel.isDueTodayUnplanned(task, now: now)
+                let red = !task.done && TimeModel.isDueTodayUnplanned(task, now: now)
                 markers.append(CalendarEvent(
                     id: GoogleCalendarMapper.stableUUID(from: "deadline-" + task.id.uuidString),
                     title: task.title,
