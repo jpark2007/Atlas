@@ -190,10 +190,13 @@ extension MobileStore {
     /// the class row's count and the class page's Work list both read, so the badge can
     /// never disagree with what opening the class shows. `projectID` is authoritative;
     /// the name is the fallback for a task whose link predates the id column.
+    ///
+    /// A task checked off moments ago is still "open" here while it lingers, so the row
+    /// can strike through and slide out instead of vanishing mid-tap.
     func openWork(forClass klass: Project) -> [TaskItem] {
         snapshot.tasks
             .filter { task in
-                guard !task.done else { return false }
+                guard !task.done || recentlyCompleted.contains(task.id) else { return false }
                 if let pid = task.projectID { return pid == klass.id }
                 return !task.projectName.isEmpty
                     && task.projectName.caseInsensitiveCompare(klass.name) == .orderedSame

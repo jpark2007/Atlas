@@ -19,10 +19,6 @@ struct TasksView: View {
     /// Space section headers the user has folded shut, keyed by space name.
     @State private var collapsedSpaces: Set<String> = []
 
-    /// Rows checked off in this session linger ~0.9 s (strikethrough + filled
-    /// check) before sliding out, so completion is felt, not a blink.
-    @State private var justCompleted: Set<UUID> = []
-
     /// The class-hub push, driven explicitly — see `SchoolTasksSection`'s note on why
     /// the class rows can't be `NavigationLink`s from inside a List row.
     @State private var classPath: [UUID] = []
@@ -326,7 +322,7 @@ struct TasksView: View {
 
     private var openTasks: [TaskItem] {
         store.snapshot.tasks.compactMap { task in
-            guard !task.done || justCompleted.contains(task.id) else { return nil }
+            guard !task.done || store.recentlyCompleted.contains(task.id) else { return nil }
             var remapped = task
             // Kill "No Space": a task whose space matches no real one adopts the
             // fallback space, so it never lands in an orphan bucket.
@@ -427,13 +423,8 @@ struct TasksView: View {
         var updated = task
         updated.done.toggle()
         updated.completedAt = updated.done ? Date() : nil
-        if updated.done {
-            justCompleted.insert(task.id)
-            Task {
-                try? await Task.sleep(nanoseconds: 900_000_000)
-                _ = withAnimation(MobileTheme.spring) { justCompleted.remove(task.id) }
-            }
-        }
+        // The ~0.9 s linger (strikethrough + filled check before the row slides out)
+        // lives in the store now, so every list that hides done work gets it.
         Task { await store.setTaskDone(updated) }
     }
 

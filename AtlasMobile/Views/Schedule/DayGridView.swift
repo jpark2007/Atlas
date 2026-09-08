@@ -29,6 +29,11 @@ struct DayGridView: View {
     var onMoveTask: (TaskItem, Int) -> Void = { _, _ in }
     var onMoveEvent: (CalendarEvent, Int) -> Void = { _, _ in }
 
+    /// Tasks checked off moments ago (`MobileStore.recentlyCompleted`). A deadline in
+    /// here stays on its card, struck through, until the linger ends — so checking one
+    /// off in the detail sheet reads as a completion, not a disappearance.
+    var lingering: Set<UUID> = []
+
     /// False while this grid is a neighbour page in the day pager rather than the day on
     /// screen. A grid that stops being shown drops any lifted block (see `body`).
     var isShown = true
@@ -37,6 +42,8 @@ struct DayGridView: View {
     private let railWidth: CGFloat = 66
     private let minBlockHeight: CGFloat = 26
     private let gutter: CGFloat = 4
+    /// The band a deadline's rule owns — the card sits on top of it.
+    private let deadlineRowHeight: CGFloat = 16
     private let cal = Calendar.current
 
     @State private var dragBase: Int?
@@ -47,11 +54,6 @@ struct DayGridView: View {
     @State private var armedID: UUID?
     @State private var moveMinutes = 0
     @State private var moveBase: Int?
-
-    // The tapped deadline stack (nil = none) and, once a row in its sheet is picked,
-    // the task to open — handed to `onOpen` on dismiss so the two sheets don't collide.
-    @State private var openStack: DeadlineStack?
-    @State private var pendingOpen: TaskItem?
 
     private var canvasHeight: CGFloat { hourHeight * 24 }
     private var dayStart: Date { cal.startOfDay(for: day) }
@@ -71,13 +73,6 @@ struct DayGridView: View {
         // or the pager moved on and this grid is no longer the day on screen.
         .onChange(of: day) { _, _ in if armedID != nil { cancelMove() } }
         .onChange(of: isShown) { _, shown in if !shown && armedID != nil { cancelMove() } }
-        .sheet(item: $openStack, onDismiss: {
-            if let t = pendingOpen { pendingOpen = nil; onOpen(.task(t)) }
-        }) { stack in
-            DeadlineStackSheet(time: caps(minute: stack.minute), tasks: stack.tasks) {
-                pendingOpen = $0
-            }
-        }
     }
 
     // MARK: - All-day chips (pinned above the scroll)
@@ -133,7 +128,7 @@ struct DayGridView: View {
         return ZStack(alignment: .topLeading) {
             hourColumn(width: width)                                   // rail + rules (real layout = scroll anchors)
             ForEach(blocks) { blockView($0) }
-            ForEach(deadlineStacks) { deadlineMarker($0, width: width) }
+            ForEach(deadlineStacks) { deadlineCard($0, width: width) }
             if isToday { nowLine(width: width) }
             placementChip(width: width)
         }
@@ -293,7 +288,7 @@ struct DayGridView: View {
         withAnimation(MobileTheme.spring) { armedID = nil }
     }
 
-    // MARK: - Deadlines (clock-timed due tasks → red line + flag + caps title)
+    // MARK: - Deadlines (clock-timed due tasks → a hairline rule + one paper card)
 
     private struct Deadline: Identifiable {
         let task: TaskItem
@@ -318,7 +313,10 @@ struct DayGridView: View {
         tasks.compactMap { t in
             // An all-day due states no hour — it belongs in the day's undated group, and
             // its raw UTC-midnight instant would otherwise fake a clock time on the wrong day.
-            guard !t.done, t.scheduledAt == nil, !t.allDay, let due = t.dueDate,
+            // A just-checked deadline lingers on its card before sliding out (the store's
+            // `recentlyCompleted`), so a check-off in the detail sheet is felt here too.
+            guard !t.done || lingering.contains(t.id),
+                  t.scheduledAt == nil, !t.allDay, let due = t.dueDate,
                   cal.isDate(due, inSameDayAs: day), hasClockTime(due) else { return nil }
             return Deadline(task: t, minute: clampMin(minutesFromStart(due)))
         }
@@ -343,39 +341,44 @@ struct DayGridView: View {
         return stacks
     }
 
-    private func deadlineMarker(_ stack: DeadlineStack, width: CGFloat) -> some View {
+    /// The rule stays put at the deadline's own time; the card grows UPWARD off it as
+    /// a bottom-anchored overlay, so a card with five lines never pushes its own rule
+    /// off the hour it belongs to. `Color.clear` is deaf so the band can't swallow taps
+    /// meant for the blocks beneath — only the card's lines are interactive.
+    private func deadlineCard(_ stack: DeadlineStack, width: CGFloat) -> some View {
         let y = CGFloat(stack.minute) * hourHeight / 60
-        let extra = stack.tasks.count - 1
-        return VStack(alignment: .trailing, spacing: 2) {
-            HStack(spacing: 6) {
-                Text(stack.tasks[0].title)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .tracking(0.6).textCase(.uppercase)
-                    .foregroundStyle(AtlasTheme.Colors.danger)
-                    .lineLimit(1)
-                if extra > 0 {
-                    Text("+\(extra)")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .foregroundStyle(AtlasTheme.Colors.danger)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Capsule().fill(AtlasTheme.Colors.danger.opacity(0.16)))
-                        .fixedSize()
-                }
+        let column = max(0, width - railWidth - 12)
+        return Color.clear
+            .frame(width: column, height: deadlineRowHeight)
+            .allowsHitTesting(false)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(deadlineChrome(stack).opacity(0.55))
+                    .frame(height: 1.5)
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            HStack(spacing: 4) {
-                Image(systemName: "flag.fill")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(AtlasTheme.Colors.danger)
-                Rectangle().fill(AtlasTheme.Colors.danger).frame(height: 1.5)
+            .overlay(alignment: .bottomTrailing) {
+                DeadlineCard(tasks: stack.tasks,
+                             now: now,
+                             lingering: lingering,
+                             width: deadlineCardWidth(column: column),
+                             onOpen: { onOpen(.task($0)) })
+                    .padding(.bottom, 5)
             }
-        }
-        .frame(width: max(0, width - railWidth - 12), alignment: .trailing)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if extra > 0 { openStack = stack } else { onOpen(.task(stack.tasks[0])) }
-        }
-        .offset(x: railWidth, y: y - 16)
+            .offset(x: railWidth, y: y - deadlineRowHeight)
+    }
+
+    /// Capped so a long title can't run the width of an iPad page, floored so a narrow
+    /// phone still gets a readable list. iPhone (≈390 pt) lands on the cap; iPad's
+    /// wider column keeps the card the same size, hugging the right edge.
+    private func deadlineCardWidth(column: CGFloat) -> CGFloat {
+        min(300, max(150, column - 4))
+    }
+
+    /// Red is earned only by a deadline genuinely past its time and still open —
+    /// everything else wears ink (the Mac's rule for the same card).
+    private func deadlineChrome(_ stack: DeadlineStack) -> Color {
+        stack.tasks.contains { !$0.done && $0.isOverdue(now: now) }
+            ? AtlasTheme.Colors.danger : MobileTheme.muted
     }
 
     // MARK: - NOW line (today only)
@@ -607,70 +610,123 @@ struct DayGridView: View {
     }
 }
 
-/// Every deadline sharing one slot on the grid. The line itself can only show a
-/// preview, so this is where the rest of them are readable and pickable; tapping a
-/// row hands that task back to the day view, which opens the usual `ItemDetailSheet`.
-private struct DeadlineStackSheet: View {
-    let time: String
+/// The day grid's deadline card — the phone's shape of the Mac's `DueMarkerRow`
+/// end-of-day card. One paper card sitting on the deadline's rule: a small caps header,
+/// then one line per deadline (dot in the task's space color · title · time), capped at
+/// three with a "+N more" that expands in place. Red is spent only on something
+/// genuinely past its deadline and still open; a just-checked deadline lingers at the
+/// bottom, struck through, until the store's linger drops it.
+///
+/// Tapping a line opens that task's `ItemDetailSheet` — where the check circle lives —
+/// so the card is the list and no intermediate sheet is needed.
+private struct DeadlineCard: View {
     let tasks: [TaskItem]
-    let onPick: (TaskItem) -> Void
+    let now: Date
+    let lingering: Set<UUID>
+    let width: CGFloat
+    let onOpen: (TaskItem) -> Void
 
-    @Environment(\.dismiss) private var dismiss
+    @State private var expanded = false
+
+    /// How many lines the card shows before it folds the rest behind "+N more".
+    private static let collapsedLimit = 3
+
+    private func isDone(_ t: TaskItem) -> Bool { t.done }
+    private func isOverdue(_ t: TaskItem) -> Bool { !t.done && t.isOverdue(now: now) }
+
+    /// Still-open deadlines first, earliest first; a lingering check-off sinks to the bottom.
+    private var ordered: [TaskItem] {
+        tasks.sorted { a, b in
+            if a.done != b.done { return !a.done }
+            let x = a.dueDate ?? .distantFuture, y = b.dueDate ?? .distantFuture
+            return x != y ? x < y : a.title.lowercased() < b.title.lowercased()
+        }
+    }
+
+    private var visible: [TaskItem] {
+        expanded ? ordered : Array(ordered.prefix(Self.collapsedLimit))
+    }
+
+    private var hiddenCount: Int { max(0, ordered.count - Self.collapsedLimit) }
+
+    private var chrome: Color {
+        tasks.contains(where: isOverdue) ? AtlasTheme.Colors.danger : MobileTheme.muted
+    }
+
+    private var headerText: String {
+        let open = tasks.filter { !$0.done }.count
+        return open > 1 ? "\(open) Due" : "Due"
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Due \(time)").edScreenTitle()
-                    Text("\(tasks.count) deadlines").edCapsLabel()
-                }
-                Spacer()
-                Button { dismiss() } label: { Text("Close").edCapsLabel() }
-                    .buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Image(systemName: "flag.fill").font(.system(size: 8, weight: .bold))
+                Text(headerText)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .tracking(0.88).textCase(.uppercase)
+                Spacer(minLength: 0)
             }
-
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 0) {
-                    ForEach(tasks) { task in
-                        Button {
-                            onPick(task)
-                            dismiss()
-                        } label: {
-                            HStack(spacing: 12) {
-                                Circle().fill(task.spaceColor).frame(width: 8, height: 8)
-                                Text(task.title)
-                                    .font(.system(size: 15.5, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(MobileTheme.ink)
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.leading)
-                                Spacer(minLength: 8)
-                                if let due = task.dueDate, !task.allDay {
-                                    Text(Self.timeFormat.string(from: due))
-                                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                                        .foregroundStyle(AtlasTheme.Colors.danger)
-                                        .fixedSize()
-                                }
-                            }
-                            .padding(.vertical, 12)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        Rectangle().fill(MobileTheme.hairline).frame(height: 1)
-                    }
-                }
+            .foregroundStyle(chrome)
+            ForEach(visible) { task in
+                line(task)
             }
-
-            Spacer(minLength: 0)
+            if hiddenCount > 0 {
+                Button {
+                    MobileTheme.Haptic.tap()
+                    withAnimation(MobileTheme.spring) { expanded.toggle() }
+                } label: {
+                    Text(expanded ? "Show less" : "+\(hiddenCount) more")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(MobileTheme.accentText)
+                        .padding(.vertical, 2)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .padding(.horizontal, 28)
-        .padding(.top, 28)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(MobileTheme.bg.ignoresSafeArea())
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(width: width, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: MobileTheme.radiusChip, style: .continuous)
+            .fill(MobileTheme.bg))
+        .overlay(RoundedRectangle(cornerRadius: MobileTheme.radiusChip, style: .continuous)
+            .strokeBorder(chrome.opacity(0.45), lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.10), radius: 5, y: 2)
+    }
+
+    private func line(_ task: TaskItem) -> some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(task.spaceColor)
+                .frame(width: 6, height: 6)
+                .opacity(isDone(task) ? 0.5 : 1)
+            Text(task.title)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(titleColor(task))
+                .strikethrough(isDone(task), color: MobileTheme.faint)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 4)
+            if let due = task.dueDate {
+                Text(Self.timeFormat.string(from: due))
+                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                    .tracking(0.5).textCase(.uppercase)
+                    .foregroundStyle(isOverdue(task) ? AtlasTheme.Colors.danger : MobileTheme.faint)
+                    .fixedSize()
+            }
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .onTapGesture { onOpen(task) }
+    }
+
+    private func titleColor(_ task: TaskItem) -> Color {
+        if isDone(task) { return MobileTheme.faint }
+        return isOverdue(task) ? AtlasTheme.Colors.danger : MobileTheme.ink
     }
 
     private static let timeFormat: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "h:mm a"
-        return f
+        let f = DateFormatter(); f.dateFormat = "h:mm a"; return f
     }()
 }
