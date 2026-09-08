@@ -105,6 +105,10 @@ struct DayColumnView: View {
     var onMoreTime: ((UUID) -> Void)? = nil
     /// Planned-time readout for a due marker's task ("2.5h of 4h planned" / "1 session planned").
     var plannedLabel: ((UUID) -> String)? = nil
+    /// "Open task" from a deadline popover.
+    var onOpenTask: ((UUID) -> Void)? = nil
+    /// Done state of a task — a deadline popover's checkbox reads it.
+    var isTaskDone: ((UUID) -> Bool)? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -137,7 +141,10 @@ struct DayColumnView: View {
                             columnWidth: geo.size.width,
                             linkedTaskID: linkedTaskID,
                             plannedLabel: plannedLabel,
-                            onLinkTask: onLinkTask
+                            onLinkTask: onLinkTask,
+                            onToggleTask: onToggleTask,
+                            onOpenTask: onOpenTask,
+                            isTaskDone: isTaskDone
                         )
                         .frame(width: geo.size.width, alignment: .leading)
                         .offset(y: group.y - CalendarLayout.deadlineLabelHeight / 2)
@@ -440,8 +447,9 @@ struct EventTile: View {
 /// else wears ink. History markers ("was due", after a late reschedule) sit quietly at the
 /// bottom of the list, muted and faded — never a grid-wide strikethrough.
 ///
-/// Hovering (or clicking to pin) a title lights up that task's work sessions and dims
-/// everything else — the deadline↔work link, unchanged in both shapes.
+/// Hovering a title lights up that task's work sessions and dims everything else — the
+/// deadline↔work link. Clicking opens that deadline's popover (check it off, or open the
+/// task) without leaving the calendar.
 struct DueMarkerRow: View {
     let group: DueMarkerGroup
     /// Shared 60-sec clock — the only thing that can earn red here (past its deadline, still open).
@@ -452,9 +460,18 @@ struct DueMarkerRow: View {
     let linkedTaskID: UUID?
     var plannedLabel: ((UUID) -> String)? = nil
     var onLinkTask: ((UUID?) -> Void)? = nil
+    /// Check a deadline off from its popover — the same task-completion path the lists use.
+    var onToggleTask: ((UUID) -> Void)? = nil
+    /// "Open task" from the popover — routes to the task's page.
+    var onOpenTask: ((UUID) -> Void)? = nil
+    /// Done state of a deadline's task, so a just-checked line reads struck while it lingers.
+    var isTaskDone: ((UUID) -> Bool)? = nil
 
     /// End-of-day list expanded past the collapsed cap.
     @State private var expanded = false
+
+    /// The deadline whose popover is open — one at a time, anchored to its own line.
+    @State private var popoverDeadlineID: UUID?
 
     /// How many dues the card lists before it collapses the rest behind "+N more".
     static let collapsedLimit = 3
@@ -517,13 +534,15 @@ struct DueMarkerRow: View {
     }
 
     private func chip(for dl: CalendarEvent, taskID: UUID?) -> some View {
-        HStack(spacing: 4) {
+        let done = taskID.map { isTaskDone?($0) ?? false } ?? false
+        return HStack(spacing: 4) {
             if !dl.hasSpecificTime {
                 // "No time" glyph — this is due today, but no clock time was ever given.
                 Image(systemName: "clock.badge.questionmark").atlasFont(size: 8, weight: .bold)
             }
             Text("DUE \(dl.title)")
                 .atlasMono(size: 9, weight: .semibold)
+                .strikethrough(done)
                 .lineLimit(1)
             if let taskID, let plannedLabel {
                 Text(plannedLabel(taskID))
@@ -545,9 +564,10 @@ struct DueMarkerRow: View {
             onLinkTask?(inside ? taskID : nil)
         }
         .onTapGesture {
-            guard let taskID else { return }
-            onLinkTask?(linkedTaskID == taskID ? nil : taskID)
+            guard taskID != nil else { return }
+            popoverDeadlineID = dl.id
         }
+        .popover(isPresented: popoverBinding(dl), arrowEdge: .bottom) { popover(for: dl) }
         .help(dl.hasSpecificTime ? "Due" : "Due today — no time given")
     }
 
@@ -642,6 +662,7 @@ struct DueMarkerRow: View {
     private func dueLine(for dl: CalendarEvent) -> some View {
         let taskID = dl.deadlineTaskID
         let linked = taskID != nil && taskID == linkedTaskID
+        let done = taskID.map { isTaskDone?($0) ?? false } ?? false
         return HStack(spacing: 5) {
             Group {
                 if dl.isHistory {
@@ -655,7 +676,8 @@ struct DueMarkerRow: View {
             .frame(width: 9)
             Text(dl.title)
                 .atlasFont(size: 11, weight: linked ? .bold : .medium, design: .rounded)
-                .foregroundStyle(lineColor(dl))
+                .strikethrough(done)
+                .foregroundStyle(done ? AtlasTheme.Colors.textMuted : lineColor(dl))
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 4)
@@ -666,7 +688,7 @@ struct DueMarkerRow: View {
                     .fixedSize()
             }
         }
-        .opacity(dl.isHistory ? 0.6 : 1)
+        .opacity(dl.isHistory || done ? 0.6 : 1)
         .padding(.horizontal, 2)
         .padding(.vertical, 1)
         .background(linked ? AtlasTheme.wash(dl.color) : .clear,
@@ -677,9 +699,10 @@ struct DueMarkerRow: View {
             onLinkTask?(inside ? taskID : nil)
         }
         .onTapGesture {
-            guard let taskID else { return }
-            onLinkTask?(linkedTaskID == taskID ? nil : taskID)
+            guard taskID != nil else { return }
+            popoverDeadlineID = dl.id
         }
+        .popover(isPresented: popoverBinding(dl), arrowEdge: .bottom) { popover(for: dl) }
         .help(helpText(dl))
     }
 
@@ -692,6 +715,24 @@ struct DueMarkerRow: View {
         if dl.isHistory { return "was due" }
         guard showsTimes else { return nil }
         return dl.hasSpecificTime ? dl.timeLabel : "no time"
+    }
+
+    /// One-at-a-time popover presentation, keyed on the deadline the user clicked.
+    private func popoverBinding(_ dl: CalendarEvent) -> Binding<Bool> {
+        Binding(get: { popoverDeadlineID == dl.id },
+                set: { popoverDeadlineID = $0 ? dl.id : nil })
+    }
+
+    private func popover(for dl: CalendarEvent) -> some View {
+        DeadlinePopover(
+            deadlines: [dl],
+            isTaskDone: isTaskDone,
+            onToggleTask: onToggleTask,
+            onOpenTask: { id in
+                popoverDeadlineID = nil
+                onOpenTask?(id)
+            }
+        )
     }
 
     /// The full title and the planned-time readout live here, so the card itself stays a
@@ -711,33 +752,99 @@ struct DueMarkerRow: View {
     }
 }
 
-/// Compact list shown when a deadline cluster / overflow chip is expanded: one "flag · title …
-/// time" row per deadline. Shared by the grid marker, the day DUE strip, and the week cells.
-struct DeadlineListPopover: View {
+/// The calendar's ONE deadline popover — a single line's, or a whole day's.
+///
+/// Opened by clicking a due marker (one deadline) or the week's "N due" cap (all of them).
+/// Every row carries the same three moves: check it off, read whose it is and when it's due,
+/// or open the task. Checking goes through the same completion path the lists use, so the row
+/// lingers struck through before the deadline slides off the grid; the popover itself stays
+/// put until it's dismissed.
+struct DeadlinePopover: View {
     let deadlines: [CalendarEvent]
+    /// Done state of a deadline's task — drives the checkbox and the linger strike.
+    var isTaskDone: ((UUID) -> Bool)? = nil
+    var onToggleTask: ((UUID) -> Void)? = nil
+    var onOpenTask: ((UUID) -> Void)? = nil
+
+    private var isSingle: Bool { deadlines.count == 1 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             ForEach(deadlines) { dl in
-                HStack(spacing: 8) {
-                    Image(systemName: "flag.fill")
-                        .atlasFont(size: 9)
-                        .foregroundStyle(dl.color)
-                    Text(dl.title)
-                        .atlasFont(size: 13, weight: .semibold, design: .rounded)
-                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                        .lineLimit(1)
-                    if dl.hasSpecificTime {
-                        Spacer(minLength: 12)
-                        Text(dl.timeLabel)
-                            .atlasMono(size: 11, weight: .medium)
-                            .foregroundStyle(AtlasTheme.Colors.textSecondary)
-                    }
-                }
+                row(for: dl)
             }
         }
         .padding(12)
-        .frame(minWidth: 180, alignment: .leading)
+        .frame(minWidth: 230, alignment: .leading)
+    }
+
+    private func row(for dl: CalendarEvent) -> some View {
+        let taskID = dl.deadlineTaskID
+        let done = taskID.map { isTaskDone?($0) ?? false } ?? false
+        return HStack(alignment: .top, spacing: 8) {
+            leading(for: dl, taskID: taskID, done: done)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(dl.title)
+                    .atlasFont(size: 13, weight: .semibold, design: .rounded)
+                    .strikethrough(done)
+                    .foregroundStyle(done ? AtlasTheme.Colors.textMuted : AtlasTheme.Colors.textPrimary)
+                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    Text(dl.spaceName)
+                        .atlasMono(size: 10, weight: .semibold)
+                        .foregroundStyle(dl.color)
+                        .lineLimit(1)
+                    Text(dueLabel(dl))
+                        .atlasMono(size: 10, weight: .medium)
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 10)
+            if let taskID {
+                Button { onOpenTask?(taskID) } label: {
+                    Group {
+                        if isSingle {
+                            Text("Open task").atlasMono(size: 10, weight: .bold)
+                        } else {
+                            Image(systemName: "arrow.up.forward").atlasFont(size: 10, weight: .bold)
+                        }
+                    }
+                    .foregroundStyle(AtlasTheme.Colors.accentText)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Open task")
+            }
+        }
+        .opacity(done ? 0.6 : 1)
+    }
+
+    /// A live deadline gets the calendar's task checkbox; a history marker ("was due") is not
+    /// a thing you can check — it keeps the flag.
+    @ViewBuilder
+    private func leading(for dl: CalendarEvent, taskID: UUID?, done: Bool) -> some View {
+        if let taskID, !dl.isHistory {
+            Button { onToggleTask?(taskID) } label: {
+                Image(systemName: done ? "checkmark.square.fill" : "square")
+                    .atlasFont(size: 13, weight: .medium)
+                    .foregroundStyle(dl.color)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(done ? "Mark not done" : "Mark done")
+        } else {
+            Image(systemName: "flag.fill")
+                .atlasFont(size: 9)
+                .foregroundStyle(dl.color)
+                .frame(width: 14)
+        }
+    }
+
+    private func dueLabel(_ dl: CalendarEvent) -> String {
+        if dl.isHistory { return "Was due here" }
+        if dl.hasSpecificTime { return "Due \(dl.timeLabel)" }
+        return Calendar.current.isDateInToday(dl.start) ? "Due today — no time set" : "No time set"
     }
 }
 
@@ -764,6 +871,8 @@ struct DayCalendarView: View {
     var onToggleTask: ((UUID) -> Void)? = nil
     var onMoreTime: ((UUID) -> Void)? = nil
     var plannedLabel: ((UUID) -> String)? = nil
+    var onOpenTask: ((UUID) -> Void)? = nil
+    var isTaskDone: ((UUID) -> Bool)? = nil
 
     /// How far the grid is scrolled, in content points.
     @State private var scrollOffset: CGFloat = 0
@@ -834,7 +943,9 @@ struct DayCalendarView: View {
                                     onLinkTask: onLinkTask,
                                     onToggleTask: onToggleTask,
                                     onMoreTime: onMoreTime,
-                                    plannedLabel: plannedLabel
+                                    plannedLabel: plannedLabel,
+                                    onOpenTask: onOpenTask,
+                                    isTaskDone: isTaskDone
                                 )
                             }
                             .padding(.trailing, 8)
@@ -948,6 +1059,8 @@ struct WeekGridView: View {
     var onToggleTask: ((UUID) -> Void)? = nil
     var onMoreTime: ((UUID) -> Void)? = nil
     var plannedLabel: ((UUID) -> String)? = nil
+    var onOpenTask: ((UUID) -> Void)? = nil
+    var isTaskDone: ((UUID) -> Bool)? = nil
     /// The due-count cap's jump target — opens that day in Day view.
     var onJumpToDay: ((Date) -> Void)? = nil
 
@@ -972,7 +1085,10 @@ struct WeekGridView: View {
                     columnWidth: columnWidth,
                     now: now,
                     eventsProvider: eventsProvider,
-                    onJumpToDay: { onJumpToDay?($0) }
+                    onJumpToDay: { onJumpToDay?($0) },
+                    onToggleTask: onToggleTask,
+                    onOpenTask: onOpenTask,
+                    isTaskDone: isTaskDone
                 )
 
                 // ── Scrollable time grid (auto-scrolls to current hour) ───────
@@ -996,7 +1112,9 @@ struct WeekGridView: View {
                                         onLinkTask: onLinkTask,
                                         onToggleTask: onToggleTask,
                                         onMoreTime: onMoreTime,
-                                        plannedLabel: plannedLabel
+                                        plannedLabel: plannedLabel,
+                                        onOpenTask: onOpenTask,
+                                        isTaskDone: isTaskDone
                                     )
                                     .frame(width: columnWidth)
                                     if index < days.count - 1 {

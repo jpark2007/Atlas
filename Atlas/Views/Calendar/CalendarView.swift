@@ -399,7 +399,9 @@ struct CalendarView: View {
                 onLinkTask: { linkedTaskID = $0 },
                 onToggleTask: { id in withAnimation(AtlasTheme.taskCrossOut) { state.toggleTask(id) } },
                 onMoreTime: { state.addMoreTime(taskId: $0) },
-                plannedLabel: plannedLabel(for:)
+                plannedLabel: plannedLabel(for:),
+                onOpenTask: { state.route = .task($0) },
+                isTaskDone: isTaskDone(_:)
             )
         case .week:
             WeekGridView(
@@ -421,6 +423,8 @@ struct CalendarView: View {
                 onToggleTask: { id in withAnimation(AtlasTheme.taskCrossOut) { state.toggleTask(id) } },
                 onMoreTime: { state.addMoreTime(taskId: $0) },
                 plannedLabel: plannedLabel(for:),
+                onOpenTask: { state.route = .task($0) },
+                isTaskDone: isTaskDone(_:),
                 onJumpToDay: { day in
                     selectedDate = Calendar.current.startOfDay(for: day)
                     mode = .day
@@ -466,6 +470,12 @@ struct CalendarView: View {
     /// space color; only the grid tiles wear a project's own color.
     private func gridEvents(on date: Date) -> [CalendarEvent] {
         state.gridColored(filteredEvents(on: date))
+    }
+
+    /// Whether a deadline's task is checked — the popover's checkbox and the linger strike
+    /// on a just-completed due line both read it.
+    private func isTaskDone(_ taskID: UUID) -> Bool {
+        state.tasks.first(where: { $0.id == taskID })?.done ?? false
     }
 
     /// The planned-time readout a due marker carries: a fill against the task's optional
