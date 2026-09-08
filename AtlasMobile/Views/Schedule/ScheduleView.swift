@@ -369,6 +369,7 @@ struct ScheduleView: View {
                 blockMoveActive: center ? $blockMoveActive : .constant(false),
                 onMoveTask: moveTask,
                 onMoveEvent: moveEvent,
+                lingering: store.recentlyCompleted,
                 isShown: center
             )
         }

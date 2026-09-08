@@ -29,6 +29,12 @@ final class MobileStore: ObservableObject {
     /// iPhone"). Read-only, device-local and never persisted — EventKit is per-device, so
     /// no server pass can see these; `MobileStore+Calendar` merges them at display time.
     @Published var appleEvents: [CalendarEvent] = []
+    /// Tasks checked off in this session that are still lingering in pending lists —
+    /// struck through with a filled check for ~0.9 s before they slide out, so the
+    /// completion is felt rather than a row blinking away. Mirrors the Mac's
+    /// `AppState.recentlyCompleted`; every list that hides done work reads it.
+    @Published var recentlyCompleted: Set<UUID> = []
+
     /// Set only when a token refresh fails and we force a sign-out; `SignInView`
     /// surfaces it as a muted line. Cleared on the next successful `signIn`.
     @Published var authNotice: String?
@@ -52,6 +58,9 @@ final class MobileStore: ObservableObject {
 
     /// Foreground poll, mirroring the Mac's 5-minute `startBackgroundRefreshTimer`.
     private var pollTask: Task<Void, Never>?
+    /// Per-task linger timers, so a re-toggle cancels the pending removal instead of
+    /// inheriting an older one's clock.
+    private var lingerTasks: [UUID: Task<Void, Never>] = [:]
 
     private let sessionStore = SessionStore()
     private let auth = SupabaseAuth()
@@ -359,6 +368,7 @@ final class MobileStore: ObservableObject {
         if let i = snapshot.tasks.firstIndex(where: { $0.id == t.id }) {
             snapshot.tasks[i] = t
         }
+        startLinger(t)
         await persist({
             let matched = try await self.db.setTaskDone(id: t.id, done: t.done, completedAt: t.completedAt)
             if !matched { try await self.db.upsertTask(t) }   // row never landed — self-heal
@@ -367,6 +377,24 @@ final class MobileStore: ObservableObject {
             guard let prior, let i = self.snapshot.tasks.firstIndex(where: { $0.id == t.id }) else { return }
             self.snapshot.tasks[i] = prior
         })
+    }
+
+    /// The check-off linger: a task just marked done stays in pending lists for ~0.9 s
+    /// (struck through, filled check) before sliding out; un-checking drops it at once.
+    private func startLinger(_ t: TaskItem) {
+        lingerTasks[t.id]?.cancel()   // a re-toggle must not inherit the old timer
+        guard t.done else {
+            recentlyCompleted.remove(t.id)
+            lingerTasks[t.id] = nil
+            return
+        }
+        recentlyCompleted.insert(t.id)
+        lingerTasks[t.id] = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            guard !Task.isCancelled, let self else { return }
+            _ = withAnimation(MobileTheme.spring) { self.recentlyCompleted.remove(t.id) }
+            self.lingerTasks[t.id] = nil
+        }
     }
 
     func deleteTask(id: UUID) async {

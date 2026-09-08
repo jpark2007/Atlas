@@ -410,7 +410,15 @@ struct ClassHubView: View {
     private func workBlock(_ project: Project) -> some View {
         let tasks = store.openWork(forClass: project)
         let byID = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let horizons = TermTimeline.byWeekHorizon(entries: TermTimeline.entries(tasks: tasks, events: []), now: now)
+        // A row checked off a moment ago has to hold its place in the bucket while it
+        // lingers, and `TermTimeline.entries` drops done work — so it is bucketed as
+        // still-open. The row itself reads `byID`, i.e. the real (done) task, and so
+        // renders the struck-through state before sliding out.
+        let bucketed = tasks.map { t -> TaskItem in
+            guard t.done else { return t }
+            var open = t; open.done = false; return open
+        }
+        let horizons = TermTimeline.byWeekHorizon(entries: TermTimeline.entries(tasks: bucketed, events: []), now: now)
         func bucket(_ h: TimeModel.WeekHorizon) -> [TermTimeline.Entry] { horizons[h] ?? [] }
         // With nothing due this week, next week gets its own open section instead of
         // hiding inside a month fold — and then it leaves the folds, never listed twice.
@@ -482,7 +490,12 @@ struct ClassHubView: View {
     @ViewBuilder
     private func workRows(_ entries: [TermTimeline.Entry], byID: [UUID: TaskItem]) -> some View {
         ForEach(entries) { entry in
-            if let task = byID[entry.id] { workRow(task) }
+            if let task = byID[entry.id] {
+                workRow(task)
+                    // The store's linger removes the row inside a spring, and this is
+                    // what turns that into a slide-out rather than a blink.
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
         }
     }
 
@@ -491,7 +504,8 @@ struct ClassHubView: View {
             CheckCircle(done: task.done, color: task.spaceColor) { toggle(task) }
             Text(task.title)
                 .font(.system(size: 15, weight: .medium, design: .rounded))
-                .foregroundStyle(MobileTheme.ink)
+                .foregroundStyle(task.done ? MobileTheme.faint : MobileTheme.ink)
+                .strikethrough(task.done, color: MobileTheme.faint)
             Spacer(minLength: 8)
             let due = TaskItem.dueLabel(for: task.dueDate, allDay: task.allDay)
             if !due.isEmpty {
