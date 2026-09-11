@@ -2,17 +2,17 @@ import SwiftUI
 import AtlasCore
 import TipKit
 
-/// "Report a bug" subpage pushed from Settings. A short title, a description, and
-/// an optional contact email; recent in-app logs (`AtlasLog`) attach automatically.
+/// "Report a bug" subpage pushed from Settings. A short title and a description; the
+/// signed-in account's email and recent in-app logs (`AtlasLog`) attach automatically.
 /// Files into `bug_reports` via `AtlasDB` (same helper the Mac app uses), stamping
 /// the app version + platform "ios". Editorial mobile styling: paper bg, caps
 /// labels, a 1.5 pt ink-outline Send control — no card chrome.
 struct ReportBugPage: View {
     let db: AtlasDB
 
+    @EnvironmentObject private var store: MobileStore
     @State private var title = ""
     @State private var message = ""
-    @State private var contactEmail = ""
     @State private var sending = false
     @State private var sent = false
     @State private var error: String? = nil
@@ -62,20 +62,7 @@ struct ReportBugPage: View {
                     .overlay(RoundedRectangle(cornerRadius: MobileTheme.radiusControl)
                         .strokeBorder(MobileTheme.ink, lineWidth: MobileTheme.rule))
 
-                    Text("YOUR EMAIL (OPTIONAL — IN CASE THIS IS SPECIFIC TO YOUR ACCOUNT)")
-                        .edCapsLabel().textCase(nil)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    TextField("you@example.com", text: $contactEmail)
-                        .font(.system(size: 15.5, weight: .regular, design: .rounded))
-                        .foregroundStyle(MobileTheme.ink)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.emailAddress)
-                        .padding(10)
-                        .overlay(RoundedRectangle(cornerRadius: MobileTheme.radiusControl)
-                            .strokeBorder(MobileTheme.ink, lineWidth: MobileTheme.rule))
-
-                    Text("Sent with Atlas \(appVersion) · iOS · Includes recent app logs")
+                    Text("Sent with Atlas \(appVersion) · iOS · Includes recent app logs and your account email")
                         .font(.system(size: 12.5, weight: .medium, design: .rounded))
                         .foregroundStyle(MobileTheme.faint)
 
@@ -112,7 +99,7 @@ struct ReportBugPage: View {
         let text = String(trimmed.prefix(4000))
         let version = appVersion
         let titleText = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let emailText = contactEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let emailText = store.session?.user.email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let logText = String(AtlasLog.snapshot().suffix(16000))
         Task {
             do {

@@ -1444,12 +1444,17 @@ public final class AtlasDB {
     /// case at exactly one request.
     private static let pageSize = 1000
 
-    private func getAll<T: Decodable>(_ table: String, order: String? = nil) async throws -> [T] {
+    /// `tiebreak` must name column(s) that are unique per row — the table's primary key.
+    /// Most tables have an `id`; the ones keyed by `user_id` or a composite have to pass
+    /// theirs, or PostgREST rejects the request with "column <table>.id does not exist".
+    private func getAll<T: Decodable>(
+        _ table: String, order: String? = nil, tiebreak: String = "id"
+    ) async throws -> [T] {
         let sess = try await requireSession()
         // Offset paging is only correct over a TOTAL ordering: two rows sharing a
         // timestamp could otherwise swap between pages and be returned twice or not at
-        // all. `id` breaks every tie.
-        let ordering = order.map { "\($0),id" } ?? "id"
+        // all. The primary key breaks every tie.
+        let ordering = order.map { "\($0),\(tiebreak)" } ?? tiebreak
 
         var all: [T] = []
         var offset = 0
@@ -1720,14 +1725,14 @@ public final class AtlasDB {
     /// The caller's profile row, or nil if migration 0015 isn't deployed yet
     /// (callers treat nil as "profiles unavailable" and degrade silently).
     public func loadProfile() async throws -> ProfileRow? {
-        let rows: [ProfileRow] = (try? await getAll("profiles", order: "user_id")) ?? []
+        let rows: [ProfileRow] = (try? await getAll("profiles", tiebreak: "user_id")) ?? []
         return rows.first
     }
 
     /// The caller's synced settings row (0025), or nil when none has been written
     /// yet. RLS scopes the singleton to the signed-in user, so `first` is the row.
     public func loadUserSettings() async throws -> UserSettingsRow? {
-        let rows: [UserSettingsRow] = try await getAll("user_settings")
+        let rows: [UserSettingsRow] = try await getAll("user_settings", tiebreak: "user_id")
         return rows.first
     }
 
@@ -1814,7 +1819,7 @@ public final class AtlasDB {
     }
 
     public func loadProjectMembers(projectId: UUID) async throws -> [ProjectMemberRow] {
-        let all: [ProjectMemberRow] = (try? await getAll("project_members", order: "added_at")) ?? []
+        let all: [ProjectMemberRow] = (try? await getAll("project_members", order: "added_at", tiebreak: "project_id,user_id")) ?? []
         return all.filter { $0.projectId == projectId }
     }
 
@@ -1826,7 +1831,7 @@ public final class AtlasDB {
     /// `Dictionary(grouping:)` preserves element order). Best-effort: a missing
     /// table (pre-migration) yields an empty map rather than throwing.
     public func loadAllProjectMembers() async throws -> [UUID: [ProjectMemberRow]] {
-        let all: [ProjectMemberRow] = (try? await getAll("project_members", order: "added_at")) ?? []
+        let all: [ProjectMemberRow] = (try? await getAll("project_members", order: "added_at", tiebreak: "project_id,user_id")) ?? []
         return Dictionary(grouping: all, by: { $0.projectId })
     }
 
@@ -1857,7 +1862,7 @@ public final class AtlasDB {
     }
 
     public func loadSpaceMembers(spaceId: UUID) async throws -> [SpaceMemberRow] {
-        let all: [SpaceMemberRow] = (try? await getAll("space_members", order: "added_at")) ?? []
+        let all: [SpaceMemberRow] = (try? await getAll("space_members", order: "added_at", tiebreak: "space_id,user_id")) ?? []
         return all.filter { $0.spaceId == spaceId }
     }
 
@@ -1869,7 +1874,7 @@ public final class AtlasDB {
     /// `Dictionary(grouping:)` preserves element order). Best-effort: a missing
     /// table (pre-migration) yields an empty map rather than throwing.
     public func loadAllSpaceMembers() async throws -> [UUID: [SpaceMemberRow]] {
-        let all: [SpaceMemberRow] = (try? await getAll("space_members", order: "added_at")) ?? []
+        let all: [SpaceMemberRow] = (try? await getAll("space_members", order: "added_at", tiebreak: "space_id,user_id")) ?? []
         return Dictionary(grouping: all, by: { $0.spaceId })
     }
 
@@ -1967,7 +1972,7 @@ public final class AtlasDB {
     }
 
     public func loadSharingPref(kind: String, targetId: UUID) async throws -> SharingPrefRow? {
-        let all: [SharingPrefRow] = (try? await getAll("sharing_prefs")) ?? []
+        let all: [SharingPrefRow] = (try? await getAll("sharing_prefs", tiebreak: "user_id,kind,target_id")) ?? []
         return all.first { $0.kind == kind && $0.targetId == targetId }
     }
 
