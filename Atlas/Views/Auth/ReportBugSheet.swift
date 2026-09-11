@@ -2,8 +2,8 @@ import SwiftUI
 import AtlasCore
 
 /// The "Report a bug" sheet — opened from Settings → App & Help, the ⌘K command
-/// palette, the sidebar, or an error's "Report this" affordance. A short title, a
-/// description, and an optional contact email; recent in-app logs (`AtlasLog`) are
+/// palette, the sidebar, or an error's "Report this" affordance. A short title and a
+/// description; the signed-in account's email and recent in-app logs (`AtlasLog`) are
 /// attached automatically. Inserts into `bug_reports` via `AtlasDB` with the
 /// signed-in user's JWT, stamping app version + platform "macos". Follows
 /// AtlasTheme (outline controls, caps labels, flat paper).
@@ -13,10 +13,10 @@ struct ReportBugSheet: View {
     /// Optional seed for the Title field (e.g. an error message that opened this sheet).
     var prefillTitle: String? = nil
 
+    @EnvironmentObject private var auth: AuthService
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
     @State private var message = ""
-    @State private var contactEmail = ""
     @State private var sending = false
     @State private var sent = false
     @State private var error: String? = nil
@@ -73,21 +73,7 @@ struct ReportBugSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(AtlasTheme.Colors.border, lineWidth: 1))
 
-                Text("YOUR EMAIL (OPTIONAL — IN CASE THIS IS SPECIFIC TO YOUR ACCOUNT)")
-                    .atlasMono(size: 11, weight: .semibold).tracking(1.2)
-                    .foregroundStyle(AtlasTheme.Colors.textMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                TextField("you@example.com", text: $contactEmail)
-                    .textFieldStyle(.plain)
-                    .atlasFont(size: 14, design: .rounded)
-                    .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                    .tint(AtlasTheme.Colors.accent)
-                    .padding(10)
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(AtlasTheme.Colors.border, lineWidth: 1))
-
-                Text("Sent with Atlas \(appVersion) · macOS · Includes recent app logs")
+                Text("Sent with Atlas \(appVersion) · macOS · Includes recent app logs and your account email")
                     .atlasFont(size: 11, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
 
@@ -120,7 +106,7 @@ struct ReportBugSheet: View {
         let text = String(trimmed.prefix(4000))
         let version = appVersion
         let titleText = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let emailText = contactEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let emailText = auth.session?.user.email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let logText = String(AtlasLog.snapshot().suffix(16000))
         Task {
             do {
