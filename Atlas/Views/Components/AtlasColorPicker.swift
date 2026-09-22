@@ -1,10 +1,10 @@
 import SwiftUI
 import AtlasCore
 
-/// Shared color chooser used by the space and project recolor popovers: a dense
-/// grid of small swatches plus a `#RRGGBB` hex field for arbitrary colors. Emits
-/// a `Color`; callers persist it (spaces store the Color, projects serialize it to
-/// a token via `ColorToken.token(for:)` — hex round-trips as plain text).
+/// The app's one color chooser — every color pick (space, new space, project, class,
+/// new class, Apple calendar; Mac and iOS) uses it: the `AtlasTheme.Colors.palette`
+/// swatches plus a `#RRGGBB` hex field for arbitrary colors. Emits a `Color`; callers
+/// persist it via `ColorToken.token(for:)` (named tokens stay names, others hex).
 struct AtlasColorGrid: View {
     /// The currently-applied color, ringed in the grid so the user sees their pick.
     var selected: Color?
@@ -12,23 +12,13 @@ struct AtlasColorGrid: View {
 
     @State private var hexDraft: String = ""
 
-    /// A curated set of hues that read well on the cream paper background — the four
-    /// theme colors plus a wheel of muted editorial tones. Small swatches, so many
-    /// options fit without the popover growing tall.
-    private static let palette: [String] = [
-        "d97757", "c0503f", "e0655a", "b04f2f", "e08a3c", "febc2e", "d99a3c", "cbb34a",
-        "6aa84f", "5fb98e", "4f9d7a", "8bbf5c", "3f8f6f", "4aa9a2", "5bb8c4", "3f9d9d",
-        "5b9bd5", "4a7fc0", "6aa3e0", "3f6fa8", "7d7ad0", "b48ad9", "9b6fc9", "8a6fd0",
-        "d97fb0", "c96f9d", "e08ab0", "a9805f", "8a6f52", "9b8d7a", "6d6558", "211d17",
-    ]
-
     private let columns = Array(repeating: GridItem(.fixed(22), spacing: 8), count: 8)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(Self.palette, id: \.self) { hex in
-                    let color = Color(hex: hex)
+                ForEach(AtlasTheme.Colors.palette.indices, id: \.self) { i in
+                    let color = AtlasTheme.Colors.palette[i]
                     Button {
                         onPick(color)
                     } label: {

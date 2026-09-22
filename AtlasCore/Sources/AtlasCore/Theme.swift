@@ -107,6 +107,51 @@ public enum AtlasTheme {
             Color(hex: "5fa055"),   // fern
             Color(hex: "5f7a99")    // slate blue
         ]
+
+        /// The one color chooser palette (`AtlasColorGrid`) — every space, project, class and
+        /// Apple-calendar color pick offers exactly these 32, four rows of eight by hue: reds
+        /// and oranges, golds and greens, blues and purples, pinks and earth neutrals. Holds
+        /// the four named space tokens and all of `classPalette` (so existing picks and the
+        /// next-class default show as selected). Mid-tones only — no near-black — so each
+        /// reads as a dot or fill on the cream paper. Non-token picks persist as "#RRGGBB"
+        /// via `ColorToken`.
+        public static let palette: [Color] = [
+            Color(hex: "b04f2f"),   // rust
+            Color(hex: "c0503f"),   // brick
+            Color(hex: "e0655a"),   // coral
+            Color(hex: "d9736b"),   // terracotta
+            accent,                 // clay
+            Color(hex: "e08a3c"),   // tangerine
+            Color(hex: "e0952f"),   // amber
+            Color(hex: "febc2e"),   // marigold
+
+            Color(hex: "d4a72c"),   // gold
+            Color(hex: "cbb34a"),   // citron
+            Color(hex: "8f9b52"),   // moss
+            Color(hex: "8bbf5c"),   // lime
+            Color(hex: "5fa055"),   // fern
+            personal,               // green
+            Color(hex: "4f9d7a"),   // jade
+            Color(hex: "4fa8a0"),   // teal
+
+            Color(hex: "5bb8c4"),   // aqua
+            school,                 // blue
+            Color(hex: "3f6fa8"),   // cobalt
+            Color(hex: "5f7a99"),   // slate blue
+            Color(hex: "8a94d6"),   // periwinkle
+            Color(hex: "7d7ad0"),   // iris
+            Color(hex: "9b6fc9"),   // violet
+            side,                   // purple
+
+            Color(hex: "c07fb0"),   // mauve
+            Color(hex: "c96f9d"),   // orchid
+            Color(hex: "e08ab0"),   // pink
+            Color(hex: "d0708f"),   // rose
+            Color(hex: "a9805f"),   // caramel
+            Color(hex: "8a6f52"),   // walnut
+            Color(hex: "9b8d7a"),   // stone
+            Color(hex: "6d6558")    // umber
+        ]
     }
 
     /// Continuous-corner radii at Mac density.

@@ -9,18 +9,9 @@ struct NewSpaceSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String = ""
-    @State private var colorToken: String = "side"
+    @State private var color: Color = AtlasTheme.Colors.side
     /// Set when Create hits a name already taken; cleared as soon as the name changes.
     @State private var duplicateMessage: String?
-
-    /// The palette the user can pick from — the four AtlasTheme space tokens.
-    /// Token strings match `ColorToken` so persistence round-trips cleanly.
-    private let palette: [(token: String, label: String, color: Color)] = [
-        ("school",   "Blue",   AtlasTheme.Colors.school),
-        ("personal", "Green",  AtlasTheme.Colors.personal),
-        ("side",     "Purple", AtlasTheme.Colors.side),
-        ("accent",   "Orange", AtlasTheme.Colors.accent),
-    ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -87,26 +78,7 @@ struct NewSpaceSheet: View {
             }
 
             fieldGroup(label: "COLOR") {
-                HStack(spacing: 12) {
-                    ForEach(palette, id: \.token) { swatch in
-                        Button {
-                            colorToken = swatch.token
-                        } label: {
-                            Circle()
-                                .fill(swatch.color)
-                                .frame(width: 26, height: 26)
-                                .overlay(
-                                    Circle()
-                                        .stroke(AtlasTheme.Colors.textPrimary,
-                                                lineWidth: colorToken == swatch.token ? 2.5 : 0)
-                                        .padding(-3)
-                                )
-                                .help(swatch.label)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    Spacer()
-                }
+                AtlasColorGrid(selected: color) { color = $0 }
             }
         }
         .padding(24)
@@ -136,17 +108,13 @@ struct NewSpaceSheet: View {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var selectedColor: Color {
-        ColorToken.color(for: colorToken)
-    }
-
     private func save() {
         guard !trimmedName.isEmpty else { return }
         if let existing = state.existingSpace(named: trimmedName) {
             duplicateMessage = "You already have a space called \(existing.name)."
             return
         }
-        if let created = state.addSpace(name: trimmedName, color: selectedColor) {
+        if let created = state.addSpace(name: trimmedName, color: color) {
             state.expandedSpaces.insert(created.id)
         }
         dismiss()

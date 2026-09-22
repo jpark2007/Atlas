@@ -28,6 +28,25 @@ final class ColorTokenTests: XCTestCase {
         XCTAssertEqual(ColorToken.color(for: token).atlasHexString, hex)
     }
 
+    /// The shared picker palette stores only the four known names or hex (older clients
+    /// render both), round-trips every swatch, fills the 8-column grid, and still offers
+    /// every class-rotation hue and named space color.
+    func testPalettePersistsAsNamesOrHexAndCoversClassPalette() {
+        let hexes = AtlasTheme.Colors.palette.map { $0.atlasHexString }
+        XCTAssertEqual(hexes.count, 32)   // four full rows of the 8-column grid
+        XCTAssertEqual(Set(hexes).count, hexes.count)
+        for color in AtlasTheme.Colors.palette {
+            let token = ColorToken.token(for: color)
+            XCTAssertTrue(ColorToken(rawValue: token) != nil || token.hasPrefix("#"), token)
+            XCTAssertEqual(ColorToken.color(for: token).atlasHexString, color.atlasHexString)
+        }
+        let named = [AtlasTheme.Colors.school, AtlasTheme.Colors.personal,
+                     AtlasTheme.Colors.side, AtlasTheme.Colors.accent]
+        for color in AtlasTheme.Colors.classPalette + named {
+            XCTAssertTrue(hexes.contains(color.atlasHexString))
+        }
+    }
+
     func testUnknownNonHexTokenFallsBackToAccent() {
         XCTAssertEqual(ColorToken.color(for: "bogus"), AtlasTheme.Colors.accent)
     }

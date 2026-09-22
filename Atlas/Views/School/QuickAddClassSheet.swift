@@ -103,23 +103,9 @@ struct QuickAddClassSheet: View {
     private var colorField: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text("COLOR").atlasCapsLabel()
-            HStack(spacing: 8) {
-                ForEach(AtlasTheme.Colors.classPalette.map { ColorToken.token(for: $0) }, id: \.self) { token in
-                    let picked = token == colorToken
-                    Button { colorToken = token } label: {
-                        Circle()
-                            .fill(ColorToken.color(for: token))
-                            .frame(width: 18, height: 18)
-                            .overlay(Circle().strokeBorder(AtlasTheme.Colors.textPrimary,
-                                                           lineWidth: picked ? AtlasTheme.rule : 0)
-                                .padding(-3))
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                }
-                Spacer()
+            AtlasColorGrid(selected: colorToken.isEmpty ? nil : ColorToken.color(for: colorToken)) {
+                colorToken = ColorToken.token(for: $0)
             }
-            .padding(.vertical, 3)
         }
     }
 
