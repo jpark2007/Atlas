@@ -4,8 +4,9 @@
 // POST { code, action, reportId?, newCode?, email? }
 //   • Gates every call on a 4–8 digit access code whose SHA-256 hash lives in
 //     public.admin_config (constant-time hash compare). Rate-limits WRONG code
-//     attempts per IP so the short code can't be brute-forced; a call with the
-//     right code gives its hit back, so using the dashboard never locks you out.
+//     attempts per IP (6/hour) so the short code can't be brute-forced; a call
+//     with the right code is never counted, so using the dashboard never locks
+//     you out. All calls share a loose 300/hour/IP burst cap.
 //   • "stats"           → real accounts, 7/30-day actives, downloads, reports,
 //       signup attribution (0051) by source and by school.
 //       Every count comes from an exclusion-aware RPC (0049): the team and the
@@ -32,7 +33,7 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 import {
   checkRateLimit,
   clientIp,
-  refundRateLimit,
+  rateLimitCount,
   tooManyRequests,
 } from "../_shared/rate_limit.ts";
 import { corsFor } from "../_shared/cors.ts";
@@ -97,12 +98,17 @@ Deno.serve(async (req: Request) => {
   );
 
   // Rate-limit BEFORE checking the code so the short (4–8 digit) space can't be
-  // walked: 6 wrong codes/hour/IP. Every call takes an (atomic) hit up front; a
-  // call with the right code refunds it below, so only failures use the budget
-  // and a locked-out IP can't keep guessing. Keyed by IP (no user identity here).
+  // walked: 6 wrong codes/hour/IP. The wrong-code counter is only READ here and
+  // only charged below when the code is wrong, so the right code is never
+  // limited by it. The atomic all-calls cap bounds parallel guess bursts that
+  // could otherwise all pass the read before any of them is counted. Keyed by
+  // IP (no user identity here).
   const ip = clientIp(req);
-  const rl = await checkRateLimit(supabase, ip, "admin-stats", 6, 3600);
-  if (!rl.allowed) return tooManyRequests(rl.retryAfter, corsHeaders);
+  if (await rateLimitCount(supabase, ip, "admin-stats", 3600) >= 6) {
+    return tooManyRequests(3600 - (Math.floor(Date.now() / 1000) % 3600), corsHeaders);
+  }
+  const burst = await checkRateLimit(supabase, ip, "admin-stats-all", 300, 3600);
+  if (!burst.allowed) return tooManyRequests(burst.retryAfter, corsHeaders);
 
   let code = "";
   let action = "";
@@ -129,9 +135,10 @@ Deno.serve(async (req: Request) => {
   }
   const enteredHash = await sha256Hex(code);
   if (!timingSafeEqual(enteredHash, String(cfg.value))) {
+    const rl = await checkRateLimit(supabase, ip, "admin-stats", 6, 3600);
+    if (!rl.allowed) return tooManyRequests(rl.retryAfter, corsHeaders);
     return json({ error: "Invalid code" }, 401);
   }
-  await refundRateLimit(supabase, ip, "admin-stats", 3600);
 
   if (action === "change_code") {
     if (!isValidCode(newCode)) {

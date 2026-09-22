@@ -52,48 +52,32 @@ export async function checkRateLimit(
 }
 
 /**
- * Give back one hit counted by `checkRateLimit` in the current window, so an
- * endpoint can charge only the requests it cares about (admin-stats: wrong
- * codes). The hit itself stays atomic and happens first — refunding afterwards
- * means a parallel burst can never slip past the budget the way a separate
- * read-then-increment would.
- *
- * No RPC for a decrement exists, so this is a compare-and-swap on the row
- * (update … where count = what we read), retried a few times if a concurrent
- * hit moved it. Best effort: an error just leaves the hit counted.
+ * Read-only: how many hits (key, endpoint) has in the current window, without
+ * counting one. Lets an endpoint check a budget it only charges on failure
+ * (admin-stats: wrong codes), charging it afterwards with `checkRateLimit`.
+ * Fails OPEN (returns 0) on a read error, like `checkRateLimit`.
  */
-export async function refundRateLimit(
+export async function rateLimitCount(
   admin: SupabaseClient,
   key: string,
   endpoint: string,
   windowSeconds: number,
-): Promise<void> {
+): Promise<number> {
   // Same boundary rate_limit_hit floors now() to (0033).
   const windowStart = new Date(
     Math.floor(Date.now() / 1000 / windowSeconds) * windowSeconds * 1000,
   ).toISOString();
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const { data, error } = await admin
-      .from("rate_limits").select("count")
-      .eq("key", key).eq("endpoint", endpoint).eq("window_start", windowStart)
-      .maybeSingle();
-    if (error) {
-      console.error(`rate limit refund read failed (${endpoint}): ${error.message}`);
-      return;
-    }
-    const n = Number(data?.count ?? 0);
-    if (n <= 0) return;
-    const { data: updated, error: updErr } = await admin
-      .from("rate_limits").update({ count: n - 1 })
-      .eq("key", key).eq("endpoint", endpoint).eq("window_start", windowStart)
-      .eq("count", n)
-      .select("count");
-    if (updErr) {
-      console.error(`rate limit refund failed (${endpoint}): ${updErr.message}`);
-      return;
-    }
-    if (Array.isArray(updated) && updated.length) return;
+  // select("key, count"), not select("count"): PostgREST reads a bare "count"
+  // as the count() aggregate, which would report the number of rows (0/1).
+  const { data, error } = await admin
+    .from("rate_limits").select("key, count")
+    .eq("key", key).eq("endpoint", endpoint).eq("window_start", windowStart)
+    .maybeSingle();
+  if (error) {
+    console.error(`rate limit read failed (${endpoint}): ${error.message}`);
+    return 0; // fail open — never self-DoS
   }
+  return Number(data?.count ?? 0);
 }
 
 /** A friendly 429 with a Retry-After header. */
