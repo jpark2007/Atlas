@@ -10,6 +10,8 @@ struct NewSpaceSheet: View {
 
     @State private var name: String = ""
     @State private var colorToken: String = "side"
+    /// Set when Create hits a name already taken; cleared as soon as the name changes.
+    @State private var duplicateMessage: String?
 
     /// The palette the user can pick from — the four AtlasTheme space tokens.
     /// Token strings match `ColorToken` so persistence round-trips cleanly.
@@ -75,6 +77,12 @@ struct NewSpaceSheet: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
                         .onSubmit(save)
+                        .onChange(of: name) { _, _ in duplicateMessage = nil }
+                }
+                if let duplicateMessage {
+                    Text(duplicateMessage)
+                        .atlasFont(size: 12, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.warning)
                 }
             }
 
@@ -134,6 +142,10 @@ struct NewSpaceSheet: View {
 
     private func save() {
         guard !trimmedName.isEmpty else { return }
+        if let existing = state.existingSpace(named: trimmedName) {
+            duplicateMessage = "You already have a space called \(existing.name)."
+            return
+        }
         if let created = state.addSpace(name: trimmedName, color: selectedColor) {
             state.expandedSpaces.insert(created.id)
         }

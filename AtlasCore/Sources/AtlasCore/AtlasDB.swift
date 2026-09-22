@@ -2008,6 +2008,18 @@ public final class AtlasDB {
                        query: upsertQuery, extraHeaders: upsertHeaders, body: body, sess: sess)
     }
 
+    /// Deletes a space. Callers only delete EMPTY spaces (`SpaceDeletion`); the
+    /// `space_id` FKs on projects/tasks/events/notes are `on delete set null` anyway,
+    /// and `space_members` cascades. The starter seed only runs on sign-up, so a
+    /// deleted space is never re-seeded.
+    public func deleteSpace(id: UUID) async throws {
+        let sess = try await requireSession()
+        try await send(method: "DELETE", table: "spaces",
+                       query: [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")],
+                       extraHeaders: ["Prefer": "return=minimal"],
+                       sess: sess)
+    }
+
     public func upsertProject(_ p: Project) async throws {
         let sess = try await requireSession()
         guard let userId = UUID(uuidString: sess.user.id) else {

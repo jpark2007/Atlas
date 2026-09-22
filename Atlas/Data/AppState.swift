@@ -871,15 +871,23 @@ final class AppState: ObservableObject {
     /// `name` is trimmed; a blank/empty name is rejected (returns `nil` and
     /// appends nothing). The new space starts with no projects and is immediately
     /// usable as an AI routing bucket (capture context reads `state.spaces`).
+    /// A name that matches an existing space case-insensitively is rejected too —
+    /// two same-named spaces split items that reference their space by name.
     @discardableResult
     func addSpace(name: String, color: Color) -> Space? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
+        guard !trimmed.isEmpty, existingSpace(named: trimmed) == nil else { return nil }
         let space = Space(name: trimmed, color: color, projects: [])
         let sort = spaces.count
         spaces.append(space)
         Task { try? await self.db?.upsertSpace(space, sort: sort) }
         return space
+    }
+
+    /// The space whose name matches `name` ignoring case (whitespace-trimmed), if any.
+    func existingSpace(named name: String) -> Space? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return spaces.first { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }
     }
 
     /// Rename a space in place and carry every item that references it along.
@@ -935,6 +943,35 @@ final class AppState: ObservableObject {
         rederiveDerivedColors()
         let updatedSpace = spaces[si]
         Task { try? await self.db?.upsertSpace(updatedSpace, sort: si) }
+    }
+
+    /// Whether `id` may be deleted (see `SpaceDeletion`). Checks the FULL space from
+    /// `spaces` — the sidebar hands over `visibleSpaces` copies with live classes
+    /// stripped, which would read as empty.
+    func spaceDeletionVerdict(id: UUID) -> SpaceDeletion.Verdict? {
+        guard let space = spaces.first(where: { $0.id == id }) else { return nil }
+        return SpaceDeletion.verdict(for: space, allSpaces: spaces, tasks: tasks,
+                                     events: events, notes: notes, isShared: isSharedSpace(space))
+    }
+
+    /// Deletes an EMPTY space — refuses anything `spaceDeletionVerdict` doesn't allow.
+    /// A default-space setting that named it is re-pointed at the surviving default and
+    /// pushed (both are synced settings, so a bare local clear would be restored by the
+    /// next server pull) — nothing keeps routing into a ghost space.
+    func deleteSpace(id: UUID) {
+        guard spaceDeletionVerdict(id: id) == .allowed,
+              let si = spaces.firstIndex(where: { $0.id == id }) else { return }
+        let name = spaces.remove(at: si).name
+        expandedSpaces.remove(id)
+        if route == .space(id) { route = .dashboard }
+        var settingsChanged = false
+        for key in ["tasks.defaultSpaceName", "calendar.apple.defaultSpace"]
+        where UserDefaults.standard.string(forKey: key) == name {
+            UserDefaults.standard.set(defaultTaskSpaceName, forKey: key)
+            settingsChanged = true
+        }
+        if settingsChanged { pushSyncedSettings() }
+        Task { try? await self.db?.deleteSpace(id: id) }
     }
 
     // MARK: - School framework (terms + classes, 0042)
