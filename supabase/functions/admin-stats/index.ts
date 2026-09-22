@@ -3,15 +3,22 @@
 //
 // POST { code, action, reportId?, newCode?, email? }
 //   • Gates every call on a 4–8 digit access code whose SHA-256 hash lives in
-//     public.admin_config (constant-time hash compare). Rate-limits code
-//     attempts per IP so the short code can't be brute-forced.
+//     public.admin_config (constant-time hash compare). Rate-limits WRONG code
+//     attempts per IP so the short code can't be brute-forced; a call with the
+//     right code gives its hit back, so using the dashboard never locks you out.
 //   • "stats"           → real accounts, 7/30-day actives, downloads, reports,
 //       signup attribution (0051) by source and by school.
 //       Every count comes from an exclusion-aware RPC (0049): the team and the
 //       review/test accounts are never counted as users.
+//       Also: every bug report (with the account email when the reporter left
+//       no contact address), a per-user roster, version spread and week-one
+//       retention.
 //   • "resolve"         → marks bug_reports.id resolved.
 //   • "reopen"          → puts a resolved report back in the open list.
 //   • "delete"          → removes a report permanently (spam / duplicates).
+//   • "mark_fixed"      → stamps bug_reports.fixed_at (0052).
+//   • "unmark_fixed"    → clears it.
+//   • "mark_replied"    → stamps bug_reports.replied_at with now.
 //   • "change_code"     → verifies the current code, then stores the new code's hash.
 //   • "exclude_add"     → adds an email to admin_config.excluded_emails.
 //   • "exclude_remove"  → takes one back off the list.
@@ -21,8 +28,13 @@
 // access code (checked here against the DB hash) — not a JWT. No env secret.
 // =====================================================================
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { checkRateLimit, clientIp, tooManyRequests } from "../_shared/rate_limit.ts";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  checkRateLimit,
+  clientIp,
+  refundRateLimit,
+  tooManyRequests,
+} from "../_shared/rate_limit.ts";
 import { corsFor } from "../_shared/cors.ts";
 import {
   activesSeries,
@@ -47,6 +59,26 @@ const actives = (rows: unknown): ActiveCounts => {
   return { total: Number(r?.total ?? 0), mac: Number(r?.mac ?? 0), ios: Number(r?.ios ?? 0) };
 };
 
+interface ReportRow { user_id: string | null; contact_email: string | null; status: string }
+interface PingRow { user_id: string; platform: string; app_version: string | null; last_seen_at: string }
+interface AuthUser { id: string; email: string | null; created_at: string }
+
+/** Every auth user (id, email, signup), paged through the service-role admin API.
+ *  A failed page logs and returns what it has — the page loses emails, not stats. */
+async function listAllUsers(supabase: SupabaseClient): Promise<AuthUser[]> {
+  const out: AuthUser[] = [];
+  const perPage = 1000;
+  for (let page = 1; ; page++) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+    if (error) {
+      console.error("auth listUsers failed:", error.message);
+      return out;
+    }
+    for (const u of data.users) out.push({ id: u.id, email: u.email ?? null, created_at: u.created_at });
+    if (data.users.length < perPage) return out;
+  }
+}
+
 Deno.serve(async (req: Request) => {
   // Per-request: the allowed origin depends on who is calling (see _shared/cors.ts).
   const corsHeaders = corsFor(req);
@@ -65,8 +97,11 @@ Deno.serve(async (req: Request) => {
   );
 
   // Rate-limit BEFORE checking the code so the short (4–8 digit) space can't be
-  // walked: 6 attempts/hour/IP. Keyed by IP (there's no user identity here).
-  const rl = await checkRateLimit(supabase, clientIp(req), "admin-stats", 6, 3600);
+  // walked: 6 wrong codes/hour/IP. Every call takes an (atomic) hit up front; a
+  // call with the right code refunds it below, so only failures use the budget
+  // and a locked-out IP can't keep guessing. Keyed by IP (no user identity here).
+  const ip = clientIp(req);
+  const rl = await checkRateLimit(supabase, ip, "admin-stats", 6, 3600);
   if (!rl.allowed) return tooManyRequests(rl.retryAfter, corsHeaders);
 
   let code = "";
@@ -96,6 +131,7 @@ Deno.serve(async (req: Request) => {
   if (!timingSafeEqual(enteredHash, String(cfg.value))) {
     return json({ error: "Invalid code" }, 401);
   }
+  await refundRateLimit(supabase, ip, "admin-stats", 3600);
 
   if (action === "change_code") {
     if (!isValidCode(newCode)) {
@@ -188,6 +224,25 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true }, 200);
   }
 
+  // Support bookkeeping (0052): was it fixed, did the reporter hear back.
+  const STAMPS: Record<string, Record<string, string | null>> = {
+    mark_fixed: { fixed_at: new Date().toISOString() },
+    unmark_fixed: { fixed_at: null },
+    mark_replied: { replied_at: new Date().toISOString() },
+  };
+  if (action in STAMPS) {
+    if (!reportId) return json({ error: "Missing reportId" }, 400);
+    const { error } = await supabase
+      .from("bug_reports")
+      .update(STAMPS[action])
+      .eq("id", reportId);
+    if (error) {
+      console.error(`${action} failed:`, error.message);
+      return json({ error: "Could not update report" }, 500);
+    }
+    return json({ ok: true }, 200);
+  }
+
   if (action !== "stats") return json({ error: "Unknown action" }, 400);
 
   const CHART_DAYS = 90;
@@ -211,6 +266,11 @@ Deno.serve(async (req: Request) => {
     snapshotRes,
     referralRes,
     schoolRes,
+    authUsers,
+    pingRes,
+    scanRes,
+    canvasRes,
+    googleRes,
   ] = await Promise.all([
     supabase.rpc("admin_user_count"),
     supabase.rpc("admin_excluded_count"),
@@ -220,9 +280,9 @@ Deno.serve(async (req: Request) => {
     supabase.rpc("admin_actives", { win_days: 30 }),
     supabase
       .from("bug_reports")
-      .select("id, title, message, contact_email, log, platform, app_version, status, created_at, resolved_at")
-      .order("created_at", { ascending: false })
-      .limit(50),
+      .select("id, user_id, title, message, contact_email, log, platform, app_version, status, created_at, resolved_at, fixed_at, replied_at")
+      .order("created_at", { ascending: true })
+      .limit(1000),
     supabase
       .from("bug_reports")
       .select("id", { count: "exact", head: true })
@@ -236,6 +296,11 @@ Deno.serve(async (req: Request) => {
       .order("day", { ascending: true }),
     supabase.rpc("admin_referral_counts"),
     supabase.rpc("admin_school_counts"),
+    listAllUsers(supabase),
+    supabase.from("app_pings").select("user_id, platform, app_version, last_seen_at"),
+    supabase.from("syllabus_scans").select("user_id"),
+    supabase.from("canvas_connections").select("user_id"),
+    supabase.from("google_connections").select("user_id"),
   ]);
 
   const accounts = typeof countRes.data === "number" ? countRes.data : 0;
@@ -278,6 +343,72 @@ Deno.serve(async (req: Request) => {
       if (error) console.error("metric_snapshots fallback upsert failed:", error.message);
     });
 
+  // ── Support + people ──
+  // One auth-admin listing covers every email lookup below; no per-report calls.
+  const emailById = new Map(authUsers.map((u) => [u.id, u.email ?? null]));
+  const reportRows = (reportRes.data ?? []) as ReportRow[];
+  const reports = reportRows.map((r) => ({
+    ...r,
+    email: r.contact_email ?? (r.user_id ? emailById.get(r.user_id) ?? null : null),
+  }));
+
+  // Same exclusion as every count: admin_excluded_accounts is the DB predicate's
+  // own output, so the roster can't drift from the headline numbers.
+  const excludedEmails = new Set(
+    ((excludedRes.data ?? []) as { email: string | null }[])
+      .map((e) => String(e.email ?? "").toLowerCase()),
+  );
+  const realUsers = authUsers.filter((u) => !u.email || !excludedEmails.has(u.email.toLowerCase()));
+  const realIds = new Set(realUsers.map((u) => u.id));
+
+  const pings = ((pingRes.data ?? []) as PingRow[]).filter((p) => realIds.has(p.user_id));
+  const tally = (rows: unknown) => {
+    const m = new Map<string, number>();
+    for (const r of (rows ?? []) as { user_id: string }[]) m.set(r.user_id, (m.get(r.user_id) ?? 0) + 1);
+    return m;
+  };
+  const scans = tally(scanRes.data);
+  const canvas = tally(canvasRes.data);
+  const google = tally(googleRes.data);
+
+  const users = realUsers.map((u) => {
+    const own = pings.filter((p) => p.user_id === u.id);
+    const mine = reportRows.filter((r) => r.user_id === u.id);
+    return {
+      id: u.id,
+      email: u.email ?? null,
+      created_at: u.created_at,
+      platforms: own.map((p) => ({ platform: p.platform, app_version: p.app_version, last_seen_at: p.last_seen_at })),
+      last_seen_at: own.reduce<string | null>((max, p) => (!max || p.last_seen_at > max ? p.last_seen_at : max), null),
+      reports_open: mine.filter((r) => r.status === "open").length,
+      reports_total: mine.length,
+      syllabus_scans: scans.get(u.id) ?? 0,
+      canvas_connections: canvas.get(u.id) ?? 0,
+      google_connections: google.get(u.id) ?? 0,
+    };
+  }).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+
+  // Version spread: real users per platform + version, seen in the last 30 days.
+  // app_pings is keyed (user, platform), so each row is already one user.
+  const DAY = 24 * 60 * 60 * 1000;
+  const since30 = new Date(Date.now() - 30 * DAY).toISOString();
+  const spread = new Map<string, { platform: string; app_version: string | null; n: number }>();
+  for (const p of pings) {
+    if (p.last_seen_at < since30) continue;
+    const key = p.platform + "|" + (p.app_version ?? "");
+    const row = spread.get(key) ?? { platform: p.platform, app_version: p.app_version, n: 0 };
+    row.n += 1;
+    spread.set(key, row);
+  }
+  const versionSpread = [...spread.values()].sort((a, b) =>
+    a.platform.localeCompare(b.platform) || b.n - a.n);
+
+  // Week-one retention: of real users who signed up 7+ days ago, how many were
+  // still seen at least 7 days after signing up.
+  const eligible = users.filter((u) => Date.parse(u.created_at) <= Date.now() - 7 * DAY);
+  const retained = eligible.filter((u) =>
+    u.last_seen_at && Date.parse(u.last_seen_at) >= Date.parse(u.created_at) + 7 * DAY);
+
   return json({
     accounts,
     excludedCount,
@@ -286,7 +417,10 @@ Deno.serve(async (req: Request) => {
     active7: a7,
     active30: a30,
     openReports: openRes.count ?? 0,
-    reports: reportRes.data ?? [],
+    reports,
+    users,
+    versionSpread,
+    retention: { eligible: eligible.length, retained: retained.length },
     charts: {
       signups: { points: signups.points, priorTotal: signups.priorTotal },
       downloads: { points: downloads },

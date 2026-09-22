@@ -1,5 +1,11 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { checkRateLimit, clientIp, jwtSubject, tooManyRequests } from "./rate_limit.ts";
+import {
+  checkRateLimit,
+  clientIp,
+  jwtSubject,
+  refundRateLimit,
+  tooManyRequests,
+} from "./rate_limit.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // The window arithmetic itself lives in the SQL RPC (rate_limit_hit, 0033) and is
@@ -88,4 +94,57 @@ Deno.test("jwtSubject: extracts sub, null on garbage", () => {
   assertEquals(jwtSubject(`h.${payload}.sig`), "abc");
   assertEquals(jwtSubject("not-a-jwt"), null);
   assertEquals(jwtSubject(""), null);
+});
+
+/** A fake rate_limits table for refundRateLimit: scripted reads, and an update
+ *  that only lands when its `count` filter still matches (compare-and-swap). */
+function fakeTable(reads: number[], rowCountAfterRead: number[] = reads) {
+  const updates: { set: number; filters: Record<string, unknown> }[] = [];
+  let read = 0;
+  const admin = {
+    from() {
+      const filters: Record<string, unknown> = {};
+      let set: number | null = null;
+      // deno-lint-ignore no-explicit-any
+      const q: any = {
+        select: () => q,
+        update: (v: { count: number }) => { set = v.count; return q; },
+        eq: (k: string, v: unknown) => { filters[k] = v; return q; },
+        maybeSingle: () => Promise.resolve({ data: { count: reads[read] }, error: null }),
+        then: (res: (r: unknown) => void) => {
+          // the awaited update(...).select(...) chain
+          const actual = rowCountAfterRead[read++];
+          updates.push({ set: set!, filters: { ...filters } });
+          res({ data: filters.count === actual ? [{ count: set }] : [], error: null });
+        },
+      };
+      return q;
+    },
+  } as unknown as SupabaseClient;
+  return { admin, updates };
+}
+
+Deno.test("refundRateLimit: decrements the current window's row by one", async () => {
+  const { admin, updates } = fakeTable([3]);
+  await refundRateLimit(admin, "1.2.3.4", "admin-stats", 3600);
+  assertEquals(updates.length, 1);
+  assertEquals(updates[0].set, 2);
+  assertEquals(updates[0].filters.count, 3);
+  assertEquals(updates[0].filters.key, "1.2.3.4");
+  assertEquals(updates[0].filters.endpoint, "admin-stats");
+  const start = Date.parse(String(updates[0].filters.window_start));
+  assertEquals(start % 3_600_000, 0); // floored to the window boundary
+});
+
+Deno.test("refundRateLimit: retries when a concurrent hit moved the count", async () => {
+  // First read says 3 but the row is 4 by the time the update lands; retry reads 4.
+  const { admin, updates } = fakeTable([3, 4], [4, 4]);
+  await refundRateLimit(admin, "ip", "admin-stats", 3600);
+  assertEquals(updates.map((u) => u.set), [2, 3]);
+});
+
+Deno.test("refundRateLimit: never goes below zero / no row → no write", async () => {
+  const { admin, updates } = fakeTable([0]);
+  await refundRateLimit(admin, "ip", "admin-stats", 3600);
+  assertEquals(updates.length, 0);
 });

@@ -51,6 +51,51 @@ export async function checkRateLimit(
   };
 }
 
+/**
+ * Give back one hit counted by `checkRateLimit` in the current window, so an
+ * endpoint can charge only the requests it cares about (admin-stats: wrong
+ * codes). The hit itself stays atomic and happens first — refunding afterwards
+ * means a parallel burst can never slip past the budget the way a separate
+ * read-then-increment would.
+ *
+ * No RPC for a decrement exists, so this is a compare-and-swap on the row
+ * (update … where count = what we read), retried a few times if a concurrent
+ * hit moved it. Best effort: an error just leaves the hit counted.
+ */
+export async function refundRateLimit(
+  admin: SupabaseClient,
+  key: string,
+  endpoint: string,
+  windowSeconds: number,
+): Promise<void> {
+  // Same boundary rate_limit_hit floors now() to (0033).
+  const windowStart = new Date(
+    Math.floor(Date.now() / 1000 / windowSeconds) * windowSeconds * 1000,
+  ).toISOString();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data, error } = await admin
+      .from("rate_limits").select("count")
+      .eq("key", key).eq("endpoint", endpoint).eq("window_start", windowStart)
+      .maybeSingle();
+    if (error) {
+      console.error(`rate limit refund read failed (${endpoint}): ${error.message}`);
+      return;
+    }
+    const n = Number(data?.count ?? 0);
+    if (n <= 0) return;
+    const { data: updated, error: updErr } = await admin
+      .from("rate_limits").update({ count: n - 1 })
+      .eq("key", key).eq("endpoint", endpoint).eq("window_start", windowStart)
+      .eq("count", n)
+      .select("count");
+    if (updErr) {
+      console.error(`rate limit refund failed (${endpoint}): ${updErr.message}`);
+      return;
+    }
+    if (Array.isArray(updated) && updated.length) return;
+  }
+}
+
 /** A friendly 429 with a Retry-After header. */
 export function tooManyRequests(
   retryAfter: number,

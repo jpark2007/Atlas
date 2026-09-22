@@ -132,7 +132,6 @@
     border: 1px solid var(--hairline); border-radius: 12px; background: #fff;
     padding: 0.9rem 1.1rem; margin-bottom: 0.75rem;
   }
-  .report--resolved { opacity: 0.5; }
   .report__title { font-weight: 700; font-size: 1rem; color: var(--ink); margin: 0 0 0.35rem; }
   .report__email { font-size: 12px; color: var(--muted); margin: 0 0 0.5rem; }
   .report__msg { white-space: pre-wrap; word-break: break-word; margin: 0 0 0.5rem; }
@@ -169,6 +168,29 @@
   .report__delete { opacity: 0.7; }
   .report__delete:hover { opacity: 1; }
   .empty { color: var(--muted); font-style: italic; }
+  .report__stamps { font-size: 12px; color: var(--muted); margin: 0 0 0.5rem; }
+  /* Over a day old with nobody having replied: the one thing that should shout. */
+  .report__stamps .urgent { color: #a3402f; font-weight: 700; }
+  .report__group { font-size: 12px; font-weight: 700; color: var(--muted); margin: 0 0 0.5rem; }
+
+  /* ── tabs: plain show/hide sections ── */
+  .tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 2rem; }
+  .tabs button { padding: 0.45rem 0.95rem; font-size: 0.9rem; }
+  .tabs button[aria-selected="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+  /* ── users ── */
+  .users { overflow-x: auto; }
+  .users table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .users th, .users td {
+    text-align: left; padding: 0.45rem 0.6rem 0.45rem 0; border-top: 1px solid var(--hairline);
+    vertical-align: top; white-space: nowrap;
+  }
+  .users th { color: var(--muted); font-weight: 700; }
+  .users td.num, .users th.num { text-align: right; }
+  .users tr.user-row { cursor: pointer; }
+  .users tr.user-row:hover td { background: var(--ink-wash); }
+  .users tr.user-reports > td { white-space: normal; padding: 0.75rem 0; }
+  .retention__n { font-family: var(--serif); font-size: 2.2rem; font-weight: 500; letter-spacing: -0.02em; }
 
   .foot-actions { margin-top: 2.5rem; display: flex; gap: 0.75rem; align-items: center; }
   a.back { color: var(--muted); text-decoration: none; font-size: 0.9rem; }
@@ -196,6 +218,37 @@
     <div id="dash" hidden>
       <p class="lede">Live figures. Refreshes on load and after each action.</p>
 
+      <div class="tabs" role="tablist">
+        <button type="button" class="ghost" role="tab" data-tab="inbox" id="tabBtnInbox">Inbox</button>
+        <button type="button" class="ghost" role="tab" data-tab="resolved">Resolved</button>
+        <button type="button" class="ghost" role="tab" data-tab="users">Users</button>
+        <button type="button" class="ghost" role="tab" data-tab="overview">Overview</button>
+      </div>
+
+      <section class="block" data-panel="inbox">
+        <p class="kicker">Open reports · oldest first</p>
+        <div id="inbox"></div>
+      </section>
+
+      <section class="block" data-panel="resolved" hidden>
+        <p class="kicker">Resolved · newest first</p>
+        <div id="resolved"></div>
+      </section>
+
+      <section class="block" data-panel="users" hidden>
+        <p class="kicker">Users <span id="userCount"></span> · click a row for their reports</p>
+        <div class="chart users">
+          <table>
+            <thead><tr>
+              <th>Email</th><th>Signed up</th><th>Platforms</th><th>Last seen</th>
+              <th class="num">Reports</th><th class="num">Scans</th><th class="num">Canvas</th><th class="num">Google</th>
+            </tr></thead>
+            <tbody id="userRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <div data-panel="overview" hidden>
       <div class="tiles">
         <div class="tile">
           <div class="tile__n" id="tAccounts">—</div>
@@ -282,8 +335,20 @@
       </section>
 
       <section class="block">
-        <p class="kicker">Bug reports <span id="openCount"></span></p>
-        <div id="reports"></div>
+        <p class="kicker">Versions &amp; retention</p>
+        <div class="attribution">
+          <div class="chart">
+            <table>
+              <thead><tr><th>Platform</th><th>Version</th><th>Users · 30d</th></tr></thead>
+              <tbody id="versionRows"></tbody>
+            </table>
+          </div>
+          <div class="chart">
+            <span class="tile__l">Week-one retention</span>
+            <div class="retention__n" id="retPct">—</div>
+            <div class="tile__sub" id="retSub"></div>
+          </div>
+        </div>
       </section>
 
       <section class="block">
@@ -304,6 +369,7 @@
           </div>
         </details>
       </section>
+      </div>
 
       <p class="status" id="dashStatus" role="status" aria-live="polite"></p>
 
@@ -339,13 +405,17 @@
     return { ok: res.ok, status: res.status, body };
   }
 
-  function ageLabel(iso) {
+  function durLabel(iso) {
     const then = new Date(iso).getTime();
     const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
-    if (mins < 60) return mins + "m ago";
+    if (mins < 60) return mins + "m";
     const hrs = Math.round(mins / 60);
-    if (hrs < 24) return hrs + "h ago";
-    return Math.round(hrs / 24) + "d ago";
+    if (hrs < 24) return hrs + "h";
+    return Math.round(hrs / 24) + "d";
+  }
+  function ageLabel(iso) { return durLabel(iso) + " ago"; }
+  function fmtDate(iso) {
+    return iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
   }
 
   // ── hand-rolled SVG charts (no libs; ink lines on paper) ──
@@ -498,7 +568,10 @@
     return "Mac " + ((a && a.mac) ?? 0) + " · iOS " + ((a && a.ios) ?? 0);
   }
 
+  let DATA = null;
+
   function render(data) {
+    DATA = data;
     $("tAccounts").textContent = data.accounts ?? 0;
     const ex = data.excludedCount ?? 0;
     $("sAccounts").textContent = ex ? "+" + ex + " team/test excluded" : "";
@@ -511,100 +584,226 @@
     renderExcluded(data.excluded || [], ex);
     renderAttribution(data.referralCounts || [], data.schoolCounts || []);
 
-    const open = data.openReports ?? 0;
-    $("openCount").textContent = "· Open: " + open;
+    renderVersions(data.versionSpread || [], data.retention || {});
+    renderReports(data);
+    renderUsers(data);
+  }
 
-    const wrap = $("reports");
+  /// Inbox: open reports, oldest first (the list arrives oldest first).
+  /// Resolved: newest resolution first.
+  function renderReports(data) {
+    const all = data.reports || [];
+    const open = all.filter((r) => r.status !== "resolved");
+    const done = all.filter((r) => r.status === "resolved").sort((a, b) =>
+      String(b.resolved_at || b.created_at).localeCompare(String(a.resolved_at || a.created_at)));
+    $("tabBtnInbox").textContent = "Inbox (" + (data.openReports ?? open.length) + ")";
+    fillReports($("inbox"), open, "Nothing open. Inbox zero.");
+    fillReports($("resolved"), done, "Nothing resolved yet.");
+  }
+
+  function fillReports(wrap, list, emptyText) {
     wrap.innerHTML = "";
-    const reports = data.reports || [];
-    if (!reports.length) {
+    if (!list.length) {
       const p = document.createElement("p");
       p.className = "empty";
-      p.textContent = "No bug reports yet.";
+      p.textContent = emptyText;
       wrap.appendChild(p);
       return;
     }
-    for (const r of reports) {
-      const resolved = r.status === "resolved";
-      const card = document.createElement("div");
-      card.className = "report" + (resolved ? " report--resolved" : "");
+    for (const r of list) wrap.appendChild(reportCard(r));
+  }
 
-      if (r.title) {
-        const title = document.createElement("p");
-        title.className = "report__title";
-        title.textContent = r.title;
-        card.appendChild(title);
-      }
+  const DAY_MS = 24 * 60 * 60 * 1000;
 
-      if (r.contact_email) {
-        const email = document.createElement("p");
-        email.className = "report__email";
-        email.textContent = r.contact_email;
-        card.appendChild(email);
-      }
+  function reportCard(r) {
+    const resolved = r.status === "resolved";
+    const card = document.createElement("div");
+    card.className = "report";
 
-      const msg = document.createElement("p");
-      msg.className = "report__msg";
-      msg.textContent = r.message || "";
-      card.appendChild(msg);
-
-      if (r.log) {
-        const det = document.createElement("details");
-        det.className = "report__log";
-        const sum = document.createElement("summary");
-        sum.textContent = "Recent app logs";
-        const pre = document.createElement("pre");
-        pre.textContent = r.log;
-        det.appendChild(sum);
-        det.appendChild(pre);
-        card.appendChild(det);
-      }
-
-      const foot = document.createElement("div");
-      foot.className = "report__foot";
-
-      const meta = document.createElement("span");
-      meta.className = "report__meta";
-      const tag = document.createElement("span");
-      tag.className = "tag";
-      tag.textContent = (r.platform || "?") + (r.app_version ? " " + r.app_version : "");
-      meta.appendChild(tag);
-      meta.appendChild(document.createTextNode(ageLabel(r.created_at)));
-      foot.appendChild(meta);
-
-      // Actions live in one row: resolve/reopen (reversible) and delete (not).
-      const actions = document.createElement("span");
-      actions.className = "report__actions";
-
-      // A reply only exists when there is somewhere to send it.
-      if (r.contact_email) {
-        const reply = document.createElement("a");
-        reply.className = "report__reply";
-        reply.textContent = "Reply";
-        reply.href = replyMailto(r);
-        actions.appendChild(reply);
-      }
-
-      const primary = document.createElement("button");
-      primary.textContent = resolved ? "Reopen" : "Resolve";
-      primary.addEventListener("click", () =>
-        actOnReport(resolved ? "reopen" : "resolve", r.id, primary));
-      actions.appendChild(primary);
-
-      const del = document.createElement("button");
-      del.textContent = "Delete";
-      del.className = "report__delete";
-      del.addEventListener("click", () => {
-        // Permanent, so it asks. Resolve is the reversible option and sits right there.
-        if (!confirm("Delete this report for good? Resolving keeps it instead.")) return;
-        actOnReport("delete", r.id, del);
-      });
-      actions.appendChild(del);
-
-      foot.appendChild(actions);
-      card.appendChild(foot);
-      wrap.appendChild(card);
+    if (r.title) {
+      const title = document.createElement("p");
+      title.className = "report__title";
+      title.textContent = r.title;
+      card.appendChild(title);
     }
+
+    // contact_email when they left one, else the account's own address.
+    if (r.email) {
+      const email = document.createElement("p");
+      email.className = "report__email";
+      email.textContent = r.email + (r.contact_email ? "" : " · account email");
+      card.appendChild(email);
+    }
+
+    // Where it stands: how long it has waited (open) or when it was closed.
+    const stamps = document.createElement("p");
+    stamps.className = "report__stamps";
+    if (resolved) {
+      stamps.textContent = "Resolved " + fmtDate(r.resolved_at) +
+        " · Fixed " + fmtDate(r.fixed_at) + " · Replied " + fmtDate(r.replied_at);
+    } else {
+      const wait = document.createElement("span");
+      wait.textContent = "waiting " + durLabel(r.created_at);
+      if (!r.replied_at && Date.now() - new Date(r.created_at).getTime() > DAY_MS) {
+        wait.className = "urgent";
+        wait.textContent += " · no reply";
+      }
+      stamps.appendChild(wait);
+      if (r.fixed_at) stamps.appendChild(document.createTextNode(" · Fixed " + fmtDate(r.fixed_at)));
+      if (r.replied_at) stamps.appendChild(document.createTextNode(" · Replied " + fmtDate(r.replied_at)));
+    }
+    card.appendChild(stamps);
+
+    const others = r.user_id
+      ? (DATA.reports || []).filter((x) =>
+          x.user_id === r.user_id && x.id !== r.id && x.status !== "resolved").length
+      : 0;
+    if (others) {
+      const group = document.createElement("p");
+      group.className = "report__group";
+      group.textContent = others + " other open report" + (others === 1 ? "" : "s") + " from this user";
+      card.appendChild(group);
+    }
+
+    const msg = document.createElement("p");
+    msg.className = "report__msg";
+    msg.textContent = r.message || "";
+    card.appendChild(msg);
+
+    if (r.log) {
+      const det = document.createElement("details");
+      det.className = "report__log";
+      const sum = document.createElement("summary");
+      sum.textContent = "Recent app logs";
+      const pre = document.createElement("pre");
+      pre.textContent = r.log;
+      det.appendChild(sum);
+      det.appendChild(pre);
+      card.appendChild(det);
+    }
+
+    const foot = document.createElement("div");
+    foot.className = "report__foot";
+
+    const meta = document.createElement("span");
+    meta.className = "report__meta";
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = (r.platform || "?") + (r.app_version ? " " + r.app_version : "");
+    meta.appendChild(tag);
+    meta.appendChild(document.createTextNode(ageLabel(r.created_at)));
+    foot.appendChild(meta);
+
+    // Actions live in one row: resolve/reopen (reversible) and delete (not).
+    const actions = document.createElement("span");
+    actions.className = "report__actions";
+
+    // A reply only exists when there is somewhere to send it. Clicking it also
+    // stamps replied_at (fire and forget — the mailto opens either way).
+    if (r.email) {
+      const reply = document.createElement("a");
+      reply.className = "report__reply";
+      reply.textContent = "Reply";
+      reply.href = replyMailto(r);
+      reply.addEventListener("click", () => {
+        callAdmin({ code: CODE, action: "mark_replied", reportId: r.id }).then(({ ok }) => {
+          if (!ok) return;
+          r.replied_at = new Date().toISOString();
+          renderReports(DATA);
+          renderUsers(DATA);
+        }).catch(() => {});
+      });
+      actions.appendChild(reply);
+    }
+
+    // Fixed is a toggle: outlined until marked, filled once it is.
+    const fixed = document.createElement("button");
+    fixed.textContent = r.fixed_at ? "Fixed" : "Mark fixed";
+    fixed.className = r.fixed_at ? "" : "ghost";
+    fixed.setAttribute("aria-pressed", String(!!r.fixed_at));
+    fixed.addEventListener("click", () =>
+      actOnReport(r.fixed_at ? "unmark_fixed" : "mark_fixed", r.id, fixed));
+    actions.appendChild(fixed);
+
+    const primary = document.createElement("button");
+    primary.textContent = resolved ? "Reopen" : "Resolve";
+    primary.addEventListener("click", () =>
+      actOnReport(resolved ? "reopen" : "resolve", r.id, primary));
+    actions.appendChild(primary);
+
+    const del = document.createElement("button");
+    del.textContent = "Delete";
+    del.className = "report__delete";
+    del.addEventListener("click", () => {
+      // Permanent, so it asks. Resolve is the reversible option and sits right there.
+      if (!confirm("Delete this report for good? Resolving keeps it instead.")) return;
+      actOnReport("delete", r.id, del);
+    });
+    actions.appendChild(del);
+
+    foot.appendChild(actions);
+    card.appendChild(foot);
+    return card;
+  }
+
+  /// One row per real account; a click opens that user's reports underneath.
+  const OPEN_USERS = new Set();
+  function renderUsers(data) {
+    const users = data.users || [];
+    $("userCount").textContent = "· " + users.length;
+    const body = $("userRows");
+    body.innerHTML = "";
+    if (!users.length) {
+      body.appendChild(tableRow(["No users yet.", "", "", "", "", "", "", ""]));
+      return;
+    }
+    for (const u of users) {
+      const platforms = (u.platforms || [])
+        .map((p) => p.platform + (p.app_version ? " " + p.app_version : "")).join(" · ") || "—";
+      const tr = tableRow([
+        u.email || "(no email)",
+        fmtDate(u.created_at),
+        platforms,
+        u.last_seen_at ? ageLabel(u.last_seen_at) : "never",
+        u.reports_open + " open / " + u.reports_total,
+        u.syllabus_scans,
+        u.canvas_connections,
+        u.google_connections,
+      ]);
+      tr.className = "user-row";
+      Array.from(tr.children).slice(4).forEach((td) => { td.className = "num"; });
+      tr.addEventListener("click", () => {
+        if (OPEN_USERS.has(u.id)) OPEN_USERS.delete(u.id); else OPEN_USERS.add(u.id);
+        renderUsers(DATA);
+      });
+      body.appendChild(tr);
+
+      if (OPEN_USERS.has(u.id)) {
+        const row = document.createElement("tr");
+        row.className = "user-reports";
+        const td = document.createElement("td");
+        td.colSpan = 8;
+        const mine = (data.reports || []).filter((r) => r.user_id === u.id).reverse();
+        fillReports(td, mine, "No reports from this user.");
+        row.appendChild(td);
+        body.appendChild(row);
+      }
+    }
+  }
+
+  /// Which builds people are actually on (seen in 30 days), and whether week
+  /// one keeps them.
+  function renderVersions(spread, ret) {
+    const rows = $("versionRows");
+    rows.innerHTML = "";
+    if (!spread.length) rows.appendChild(tableRow(["Nobody seen in 30 days.", "", ""]));
+    for (const v of spread) rows.appendChild(tableRow([v.platform, v.app_version || "?", v.n]));
+
+    const eligible = ret.eligible ?? 0;
+    const retained = ret.retained ?? 0;
+    $("retPct").textContent = eligible ? Math.round((retained / eligible) * 100) + "%" : "—";
+    $("retSub").textContent = retained + " of " + eligible +
+      " users who signed up 7+ days ago were seen 7+ days after signup";
   }
 
   /// Raw values match AtlasCore's ReferralSource — never rename one without a
@@ -736,7 +935,7 @@
       "— Drew\n" +
       "Atlas support";
     return (
-      "mailto:" + encodeURIComponent(r.contact_email) +
+      "mailto:" + encodeURIComponent(r.email) +
       "?subject=" + encodeURIComponent("Re: your Atlas report") +
       "&body=" + encodeURIComponent(text)
     );
@@ -763,6 +962,8 @@
     resolve: "Couldn't resolve that.",
     reopen: "Couldn't reopen that.",
     delete: "Couldn't delete that.",
+    mark_fixed: "Couldn't mark that fixed.",
+    unmark_fixed: "Couldn't unmark that.",
   };
 
   /// One round-trip per report action, then a reload so the card reflects the truth
@@ -797,6 +998,21 @@
       showDashboard();
     }
   });
+
+  // ── tabs: remembered per browser; storage can be missing or throw ──
+  const TAB_KEY = "atlas_admin_tab";
+  const TABS = ["inbox", "resolved", "users", "overview"];
+  function showTab(name) {
+    document.querySelectorAll("[data-panel]").forEach((el) => { el.hidden = el.dataset.panel !== name; });
+    document.querySelectorAll(".tabs [data-tab]").forEach((b) =>
+      b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+    try { localStorage.setItem(TAB_KEY, name); } catch { /* not remembered */ }
+  }
+  document.querySelectorAll(".tabs [data-tab]").forEach((b) =>
+    b.addEventListener("click", () => showTab(b.dataset.tab)));
+  let savedTab = null;
+  try { savedTab = localStorage.getItem(TAB_KEY); } catch { /* default */ }
+  showTab(TABS.includes(savedTab) ? savedTab : "inbox");
 
   $("refreshBtn").addEventListener("click", () => loadStats($("dashStatus")));
 
