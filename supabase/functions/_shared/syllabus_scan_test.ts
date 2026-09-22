@@ -6,6 +6,7 @@ import {
   MAX_MEETING_BLOCKS,
   MAX_POLICIES,
   normalizeClasses,
+  scanDateContext,
 } from "./syllabus_scan.ts";
 
 // The model call is network + money; these cover the pure shaping around it —
@@ -445,4 +446,23 @@ Deno.test("a schedule document with no grading text gets no class_info card", ()
   assertEquals("classInfo" in out[0], false);
   assertEquals("meetingPattern" in out[0], false);
   assertEquals((out[0].items as unknown[]).length, 2);
+});
+
+// Bug report 2026-09-18: a pasted syllabus into a term with no dates came back with
+// every assignment overdue. With no term window the prompt carried NO reference date,
+// so a yearless "Sept 21" got whatever year the model assumed. The prompt must anchor
+// the year on the student's today, with or without a term window.
+Deno.test("scanDateContext anchors yearless dates on today when there is no term window", () => {
+  const block = scanDateContext(undefined, undefined, "2026-09-18");
+  assertStringIncludes(block, "Today is 2026-09-18");
+  assertStringIncludes(block, "without a year");
+  assertStringIncludes(block, "2026-06-20"); // today - 90 days: the earliest a yearless date may land
+  assertStringIncludes(block, "OMIT the date but KEEP the item");
+});
+
+Deno.test("scanDateContext keeps the term window and still states today", () => {
+  const block = scanDateContext("2026-09-02", "2026-12-18", "2026-09-18");
+  assertStringIncludes(block, "Term window: 2026-09-02 → 2026-12-18");
+  assertStringIncludes(block, "Today is 2026-09-18");
+  assertStringIncludes(block, "inside the term window");
 });

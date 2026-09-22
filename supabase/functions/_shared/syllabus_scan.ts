@@ -53,6 +53,40 @@ function isBareDay(value: unknown): boolean {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
 }
 
+/**
+ * The prompt's date-grounding paragraph. `today` is the student's LOCAL date
+ * ("YYYY-MM-DD", from `localToday`).
+ *
+ * A syllabus usually prints "Sept 21", not "Sept 21, 2026". Before 2026-09-18 the
+ * prompt carried no reference date at all, so with no term window a yearless date got
+ * whatever year the model assumed — and a whole pasted syllabus landed in the past,
+ * every assignment overdue. Today is now always stated, and a yearless date resolves
+ * into the one-year span starting 90 days before today: a syllabus is scanned for the
+ * current or next term, and 90 days back still covers work from a term already under
+ * way, while the span's 365 days give every month-day exactly one year.
+ */
+export function scanDateContext(
+  termStart: string | undefined,
+  termEnd: string | undefined,
+  today: string,
+): string {
+  const [y, m, d] = today.split("-").map(Number);
+  const earliest = new Date(Date.UTC(y, m - 1, d) - 90 * 86400000).toISOString().slice(0, 10);
+  const todayLine = `Today is ${today} (the student's local date).`;
+  if (termStart || termEnd) {
+    return `${todayLine} Term window: ${termStart ?? "(unknown start)"} → ${termEnd ?? "(unknown end)"}.
+Use it to resolve relative references ("Week 3", "the Monday after break") into real
+dates, counting from the term start. A date printed without a year takes the year that
+puts it inside the term window. If the reference is ambiguous or the window is
+missing, OMIT the date but KEEP the item.`;
+  }
+  return `${todayLine} No term window was provided. Use only dates the document states
+outright. A date printed without a year ("Sept 21", "10/3") belongs to the term being
+scanned: give it the year that places it on or after ${earliest} and within one year of
+that — never an earlier year.
+For relative references ("Week 3") OMIT the date but KEEP the item.`;
+}
+
 /** Byte length of a base64 payload, without allocating the decoded bytes. */
 export function base64ByteLength(b64: string): number {
   const clean = b64.replace(/\s/g, "");

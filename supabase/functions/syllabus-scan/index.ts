@@ -67,7 +67,13 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkRateLimit, tooManyRequests } from "../_shared/rate_limit.ts";
-import { applyCaps, base64ByteLength, normalizeClasses } from "../_shared/syllabus_scan.ts";
+import { localToday } from "../_shared/capture_normalize.ts";
+import {
+  applyCaps,
+  base64ByteLength,
+  normalizeClasses,
+  scanDateContext,
+} from "../_shared/syllabus_scan.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -115,21 +121,16 @@ function jsonResponse(body: unknown, status: number, extra: Record<string, strin
 }
 
 /**
- * The scan prompt. Dates are grounded on the term window + the user's timezone:
- * a syllabus says "Week 3" or "Sept 12" and only the term window turns that into
- * a real instant. When the term window can't settle it, the item is KEPT with no
- * date — the review list lets the user fill it in — never guessed.
+ * The scan prompt. Dates are grounded on today, the term window and the user's
+ * timezone: a syllabus says "Week 3" or "Sept 12" and only today + the term window
+ * turn that into a real instant (see `scanDateContext`). When they can't settle it,
+ * the item is KEPT with no date — the review list lets the user fill it in — never
+ * guessed.
  */
 function buildSystemPrompt(termStart: string | undefined,
                            termEnd: string | undefined,
                            timezone: string): string {
-  const termBlock = termStart || termEnd
-    ? `Term window: ${termStart ?? "(unknown start)"} → ${termEnd ?? "(unknown end)"}.
-Use it to resolve relative references ("Week 3", "the Monday after break") into real
-dates, counting from the term start. If the reference is ambiguous or the window is
-missing, OMIT the date but KEEP the item.`
-    : `No term window was provided. Use only dates the document states outright; for
-relative references ("Week 3") OMIT the date but KEEP the item.`;
+  const termBlock = scanDateContext(termStart, termEnd, localToday(new Date(), timezone));
 
   return `You read a college syllabus or class schedule — as page images, or as the text of
 a course page pasted in — and extract its structure.

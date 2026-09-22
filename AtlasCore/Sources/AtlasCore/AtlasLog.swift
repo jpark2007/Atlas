@@ -34,4 +34,16 @@ public enum AtlasLog {
         lock.lock(); defer { lock.unlock() }
         return lines.joined(separator: "\n")
     }
+
+    /// What a bug report attaches as its `log`: one context line (time zone, locale, OS),
+    /// then the newest buffered lines, within the column's 16,000-character limit. Never
+    /// empty — the buffer only records failures, so a clean session used to send no log at
+    /// all, and a date bug's report then left the reporter's time zone to guesswork.
+    public static func reportAttachment(timeZone: TimeZone = .current) -> String {
+        let context = "context: tz=\(timeZone.identifier) locale=\(Locale.current.identifier) "
+            + "os=\(ProcessInfo.processInfo.operatingSystemVersionString)"
+        let tail = snapshot()
+        guard !tail.isEmpty else { return context }
+        return context + "\n" + String(tail.suffix(max(0, 16000 - context.count - 1)))
+    }
 }

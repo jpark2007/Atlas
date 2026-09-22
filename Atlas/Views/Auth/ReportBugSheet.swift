@@ -107,14 +107,14 @@ struct ReportBugSheet: View {
         let version = appVersion
         let titleText = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let emailText = auth.session?.user.email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let logText = String(AtlasLog.snapshot().suffix(16000))
+        let logText = AtlasLog.reportAttachment()
         Task {
             do {
                 try await db.insertBugReport(
                     message: text, appVersion: version, platform: "macos",
                     title: titleText.isEmpty ? nil : String(titleText.prefix(200)),
                     contactEmail: emailText.isEmpty ? nil : String(emailText.prefix(320)),
-                    log: logText.isEmpty ? nil : logText)
+                    log: logText)
                 sent = true
             } catch {
                 self.error = "Couldn't send — check your connection and try again."
