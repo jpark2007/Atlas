@@ -937,6 +937,35 @@ final class AppState: ObservableObject {
         Task { try? await self.db?.upsertSpace(updatedSpace, sort: si) }
     }
 
+    /// Whether `id` may be deleted (see `SpaceDeletion`). Checks the FULL space from
+    /// `spaces` — the sidebar hands over `visibleSpaces` copies with live classes
+    /// stripped, which would read as empty.
+    func spaceDeletionVerdict(id: UUID) -> SpaceDeletion.Verdict? {
+        guard let space = spaces.first(where: { $0.id == id }) else { return nil }
+        return SpaceDeletion.verdict(for: space, allSpaces: spaces, tasks: tasks,
+                                     events: events, notes: notes, isShared: isSharedSpace(space))
+    }
+
+    /// Deletes an EMPTY space — refuses anything `spaceDeletionVerdict` doesn't allow.
+    /// A default-space setting that named it is re-pointed at the surviving default and
+    /// pushed (both are synced settings, so a bare local clear would be restored by the
+    /// next server pull) — nothing keeps routing into a ghost space.
+    func deleteSpace(id: UUID) {
+        guard spaceDeletionVerdict(id: id) == .allowed,
+              let si = spaces.firstIndex(where: { $0.id == id }) else { return }
+        let name = spaces.remove(at: si).name
+        expandedSpaces.remove(id)
+        if route == .space(id) { route = .dashboard }
+        var settingsChanged = false
+        for key in ["tasks.defaultSpaceName", "calendar.apple.defaultSpace"]
+        where UserDefaults.standard.string(forKey: key) == name {
+            UserDefaults.standard.set(defaultTaskSpaceName, forKey: key)
+            settingsChanged = true
+        }
+        if settingsChanged { pushSyncedSettings() }
+        Task { try? await self.db?.deleteSpace(id: id) }
+    }
+
     // MARK: - School framework (terms + classes, 0042)
 
     /// Every project across every space, flattened. Classes are `projects` rows, so

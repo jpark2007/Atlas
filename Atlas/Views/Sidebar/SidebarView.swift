@@ -16,6 +16,10 @@ struct SidebarView: View {
     /// Drives the create-Space sheet (top-level bucket).
     @State private var presentNewSpace = false
 
+    /// The space awaiting delete confirmation, and why a delete was refused.
+    @State private var spacePendingDelete: Space?
+    @State private var deleteBlockedReason: String?
+
     /// Drives the pending-invites inbox sheet.
     @State private var presentInvites = false
 
@@ -138,6 +142,23 @@ struct SidebarView: View {
         }
         .sheet(isPresented: $presentInvites) {
             InviteInboxSheet()
+        }
+        .alert("Delete “\(spacePendingDelete?.name ?? "")”?",
+               isPresented: Binding(get: { spacePendingDelete != nil },
+                                    set: { if !$0 { spacePendingDelete = nil } }),
+               presenting: spacePendingDelete) { space in
+            Button("Delete", role: .destructive) { state.deleteSpace(id: space.id) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("The space is empty. This can't be undone.")
+        }
+        .alert("Can't delete this space",
+               isPresented: Binding(get: { deleteBlockedReason != nil },
+                                    set: { if !$0 { deleteBlockedReason = nil } }),
+               presenting: deleteBlockedReason) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { reason in
+            Text(reason)
         }
         // An .ics opened with Atlas from Finder. Presented here rather than inside the
         // School section so the file always lands somewhere, School shown or not.
@@ -377,6 +398,17 @@ struct SidebarView: View {
                     newProjectTarget = NewProjectTarget(spaceName: space.name)
                 } label: {
                     Label("Add Project…", systemImage: "plus")
+                }
+                Divider()
+                Button(role: .destructive) {
+                    guard let verdict = state.spaceDeletionVerdict(id: space.id) else { return }
+                    if let reason = verdict.blockedReason {
+                        deleteBlockedReason = reason
+                    } else {
+                        spacePendingDelete = space
+                    }
+                } label: {
+                    Label("Delete Space…", systemImage: "trash")
                 }
             }
 
