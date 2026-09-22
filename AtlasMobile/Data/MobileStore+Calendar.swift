@@ -51,16 +51,22 @@ extension MobileStore {
         let end = cal.date(byAdding: .day, value: 8, to: cal.startOfDay(for: day)) ?? day
         let hidden = AppleCalendarSelection.decode(
             UserDefaults.standard.string(forKey: AppleCalendarSelection.hiddenKey) ?? "")
+        let colors = AppleCalendarSelection.decodeColors(
+            UserDefaults.standard.string(forKey: AppleCalendarSelection.colorsKey) ?? "")
         appleEvents = eventKit.fetchEvents(start: start, end: end,
                                            defaultSpaceName: appleDefaultSpaceName,
-                                           hiddenCalendarIds: hidden)
+                                           hiddenCalendarIds: hidden,
+                                           colorOverrides: colors)
     }
 
-    /// The space an Apple event lands in: the user's first space, so it renders in the
-    /// filter like everything else. Its `source` stays `.apple` — attribution is never
-    /// rewritten by the space it displays under.
+    /// The space an Apple event lands in: the Mac's "Apple events land in" choice
+    /// (`apple_calendar_default_space`, pulled by `SettingsSyncService`) when that space
+    /// exists, else the user's first space. Its `source` stays `.apple` — attribution is
+    /// never rewritten by the space it displays under.
     private var appleDefaultSpaceName: String {
-        snapshot.spaces.first?.name ?? "Personal"
+        let stored = UserDefaults.standard.string(forKey: "calendar.apple.defaultSpace") ?? ""
+        if snapshot.spaces.contains(where: { $0.name == stored }) { return stored }
+        return snapshot.spaces.first?.name ?? "Personal"
     }
 
     // MARK: - The display pool

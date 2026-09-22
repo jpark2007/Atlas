@@ -21,6 +21,24 @@ enum AppleCalendarSelection {
     static func encode(_ ids: Set<String>) -> String {
         ids.sorted().joined(separator: "\n")
     }
+
+    /// Per-calendar color overrides from the Settings swatch: calendar id → `ColorToken`
+    /// string. Same device-local storage as the hide list. A calendar with no entry
+    /// wears its own Apple color.
+    static let colorsKey = "calendar.apple.calendarColors"
+
+    static func decodeColors(_ raw: String) -> [String: String] {
+        var colors: [String: String] = [:]
+        for line in raw.split(separator: "\n") {
+            let parts = line.split(separator: "\t", maxSplits: 1)
+            if parts.count == 2 { colors[String(parts[0])] = String(parts[1]) }
+        }
+        return colors
+    }
+
+    static func encodeColors(_ colors: [String: String]) -> String {
+        colors.keys.sorted().map { "\($0)\t\(colors[$0] ?? "")" }.joined(separator: "\n")
+    }
 }
 
 /// Apple Calendar on iPhone — **read only** (Phase 3, "Apple Calendar from iPhone").
@@ -50,20 +68,29 @@ final class MobileEventKitService {
 
     /// Every calendar Atlas can read, sorted for display — the picker's source list.
     /// Empty when access isn't full.
-    func readableCalendars() -> [(id: String, title: String)] {
+    func readableCalendars() -> [(id: String, title: String, color: Color)] {
         guard hasAccess else { return [] }
         return store.calendars(for: .event)
-            .map { (id: $0.calendarIdentifier, title: $0.title) }
+            .map { (id: $0.calendarIdentifier, title: $0.title, color: Self.appleColor(of: $0)) }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    /// The calendar's own Apple color, or the neutral grey when it has none.
+    static func appleColor(of calendar: EKCalendar?) -> Color {
+        calendar?.cgColor.map { Color(cgColor: $0) } ?? AtlasTheme.Colors.textSecondary
     }
 
     /// Apple Calendar events in `start..<end`, mapped to read-only `.apple` events.
     /// The stable id mirrors the Mac's derivation, so the same on-device event keys the
     /// same UUID on both platforms.
-    /// - Parameter hiddenCalendarIds: EKCalendar identifiers the user unchecked in
-    ///   Settings. Empty ⇒ every calendar is read.
+    /// - Parameters:
+    ///   - hiddenCalendarIds: EKCalendar identifiers the user unchecked in Settings.
+    ///     Empty ⇒ every calendar is read.
+    ///   - colorOverrides: calendar id → `ColorToken` from Settings; any calendar not in
+    ///     it wears its Apple color.
     func fetchEvents(start: Date, end: Date, defaultSpaceName: String,
-                     hiddenCalendarIds: Set<String> = []) -> [CalendarEvent] {
+                     hiddenCalendarIds: Set<String> = [],
+                     colorOverrides: [String: String] = [:]) -> [CalendarEvent] {
         guard hasAccess else { return [] }
         let visible = store.calendars(for: .event)
             .filter { !hiddenCalendarIds.contains($0.calendarIdentifier) }
@@ -77,7 +104,9 @@ final class MobileEventKitService {
                 subtitle: ekEvent.calendar?.title ?? "",
                 start: ekEvent.isAllDay ? Self.canonicalAllDayStart(ekEvent.startDate) : ekEvent.startDate,
                 end: ekEvent.isAllDay ? Self.canonicalAllDayEnd(rawEnd) : rawEnd,
-                color: AtlasTheme.Colors.textSecondary,
+                // The user's Settings override, else the Apple calendar's own color.
+                color: colorOverrides[ekEvent.calendar?.calendarIdentifier ?? ""]
+                    .map { ColorToken.color(for: $0) } ?? Self.appleColor(of: ekEvent.calendar),
                 spaceName: defaultSpaceName,
                 notes: ekEvent.notes,
                 isAllDay: ekEvent.isAllDay,

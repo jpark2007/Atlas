@@ -64,6 +64,10 @@ struct SettingsView: View {
     /// Which Apple calendars show in Atlas — same device-local semantics as the Mac's
     /// picker (`AppleCalendarSelection`).
     @AppStorage(AppleCalendarSelection.hiddenKey) private var appleHiddenCalendarIds = ""
+    /// Per-calendar color overrides — device-local, same reason.
+    @AppStorage(AppleCalendarSelection.colorsKey) private var appleCalendarColors = ""
+    /// The Apple calendar whose color popover is open, if any.
+    @State private var recoloringAppleCalendar: String?
 
     // Delete-account state (mirrors the Mac SettingsView pattern).
     @State private var showDeleteConfirm = false
@@ -532,22 +536,43 @@ struct SettingsView: View {
         let cals = store.eventKit.readableCalendars()
         if store.appleCalendarEnabled && cals.count > 1 {
             let hidden = AppleCalendarSelection.decode(appleHiddenCalendarIds)
+            let colors = AppleCalendarSelection.decodeColors(appleCalendarColors)
             VStack(alignment: .leading, spacing: 10) {
                 Text("Choose which Apple calendars show in Atlas. This phone only.")
                     .font(.system(size: 12.5, weight: .medium, design: .rounded))
                     .foregroundStyle(MobileTheme.faint)
+                Text("Colors apply to this device only. Apple gives each calendar a different ID on every device.")
+                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(MobileTheme.faint)
+                    .fixedSize(horizontal: false, vertical: true)
                 ForEach(cals, id: \.id) { cal in
                     let shown = !hidden.contains(cal.id)
-                    Button { toggleAppleCalendar(cal.id) } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: shown ? "checkmark.square.fill" : "square")
-                                .foregroundStyle(shown ? MobileTheme.ink : MobileTheme.faint)
-                            Text(cal.title).rowLabel().lineLimit(1)
-                            Spacer()
+                    HStack(spacing: 10) {
+                        Button { toggleAppleCalendar(cal.id) } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: shown ? "checkmark.square.fill" : "square")
+                                    .foregroundStyle(shown ? MobileTheme.ink : MobileTheme.faint)
+                                Text(cal.title).rowLabel().lineLimit(1)
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
                         }
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        Button { recoloringAppleCalendar = cal.id } label: {
+                            Circle()
+                                .fill(colors[cal.id].map { ColorToken.color(for: $0) } ?? cal.color)
+                                .frame(width: 18, height: 18)
+                                .frame(width: 32, height: 32)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Change \(cal.title) color")
+                        .popover(isPresented: Binding(get: { recoloringAppleCalendar == cal.id },
+                                                      set: { if !$0 { recoloringAppleCalendar = nil } })) {
+                            appleCalendarColorPopover(cal, override: colors[cal.id])
+                                .presentationCompactAdaptation(.popover)
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
                 if hidden.count == cals.count {
                     Text("Every calendar is unchecked, so no Apple events show.")
@@ -563,6 +588,45 @@ struct SettingsView: View {
         var hidden = AppleCalendarSelection.decode(appleHiddenCalendarIds)
         if hidden.contains(id) { hidden.remove(id) } else { hidden.insert(id) }
         appleHiddenCalendarIds = AppleCalendarSelection.encode(hidden)
+        store.refreshAppleEvents(around: Date())
+    }
+
+    /// CALENDAR COLOR popover — the Mac's class color chooser (`AtlasColorGrid`, shared
+    /// into this target), with "Use Apple color" as the reset.
+    private func appleCalendarColorPopover(_ cal: (id: String, title: String, color: Color),
+                                           override: String?) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("CALENDAR COLOR").atlasCapsLabel()
+            Button { setAppleCalendarColor(cal.id, token: nil) } label: {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(cal.color)
+                        .frame(width: 22, height: 22)
+                        .overlay(
+                            Circle()
+                                .stroke(AtlasTheme.Colors.textPrimary,
+                                        lineWidth: override == nil ? 2.5 : 0)
+                                .padding(-3)
+                        )
+                    Text("Use Apple color")
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                }
+            }
+            .buttonStyle(.plain)
+            AtlasColorGrid(selected: override.map { ColorToken.color(for: $0) }) { color in
+                setAppleCalendarColor(cal.id, token: ColorToken.token(for: color))
+            }
+        }
+        .padding(16)
+    }
+
+    /// Stores (or clears, with `nil`) one Apple calendar's color override, then re-reads
+    /// Apple events so the schedule recolors at once.
+    private func setAppleCalendarColor(_ id: String, token: String?) {
+        var colors = AppleCalendarSelection.decodeColors(appleCalendarColors)
+        colors[id] = token
+        appleCalendarColors = AppleCalendarSelection.encodeColors(colors)
         store.refreshAppleEvents(around: Date())
     }
 

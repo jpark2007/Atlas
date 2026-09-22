@@ -36,6 +36,24 @@ enum AppleCalendarSelection {
     static func encode(_ ids: Set<String>) -> String {
         ids.sorted().joined(separator: "\n")
     }
+
+    /// Per-calendar color overrides from the Settings swatch: calendar id → `ColorToken`
+    /// string. Same device-local storage as the hide list. A calendar with no entry
+    /// wears its own Apple color.
+    static let colorsKey = "calendar.apple.calendarColors"
+
+    static func decodeColors(_ raw: String) -> [String: String] {
+        var colors: [String: String] = [:]
+        for line in raw.split(separator: "\n") {
+            let parts = line.split(separator: "\t", maxSplits: 1)
+            if parts.count == 2 { colors[String(parts[0])] = String(parts[1]) }
+        }
+        return colors
+    }
+
+    static func encodeColors(_ colors: [String: String]) -> String {
+        colors.keys.sorted().map { "\($0)\t\(colors[$0] ?? "")" }.joined(separator: "\n")
+    }
 }
 
 /// Thin wrapper around EventKit for reading and writing Apple Calendar events.
@@ -118,10 +136,13 @@ final class EventKitService {
     ///     mapping exists (driven by `@AppStorage("calendar.apple.defaultSpace")`).
     ///   - hiddenCalendarIds: EKCalendar identifiers the user unchecked in Settings.
     ///     Empty ⇒ every calendar is read.
+    ///   - colorOverrides: calendar id → `ColorToken` from Settings; any calendar not in
+    ///     it wears its Apple color.
     /// - Returns: Mapped events, or `[]` when access isn't full (write-only can add
     ///   events but cannot see them) or every calendar is hidden.
     func fetchEvents(start: Date, end: Date, defaultSpaceName: String,
-                     hiddenCalendarIds: Set<String> = []) async -> [CalendarEvent] {
+                     hiddenCalendarIds: Set<String> = [],
+                     colorOverrides: [String: String] = [:]) async -> [CalendarEvent] {
         let status = authorizationStatus()
         guard status == .fullAccess else { return [] }
 
@@ -150,7 +171,9 @@ final class EventKitService {
                 subtitle: ekEvent.calendar?.title ?? "",
                 start: start,
                 end: end,
-                color: AtlasTheme.Colors.textSecondary,
+                // The user's Settings override, else the Apple calendar's own color.
+                color: colorOverrides[ekEvent.calendar?.calendarIdentifier ?? ""]
+                    .map { ColorToken.color(for: $0) } ?? Self.appleColor(of: ekEvent.calendar),
                 spaceName: defaultSpaceName,
                 // Carry existing notes so an in-Atlas edit round-trips them instead of
                 // blanking the EKEvent's notes on save-back.
@@ -239,11 +262,16 @@ final class EventKitService {
 
     /// Every calendar Atlas can READ — the rows behind the per-calendar checkbox list in
     /// Settings. Empty when access isn't full.
-    func readableCalendars() -> [(id: String, title: String)] {
+    func readableCalendars() -> [(id: String, title: String, color: Color)] {
         guard authorizationStatus() == .fullAccess else { return [] }
         return store.calendars(for: .event)
-            .map { (id: $0.calendarIdentifier, title: $0.title) }
+            .map { (id: $0.calendarIdentifier, title: $0.title, color: Self.appleColor(of: $0)) }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    /// The calendar's own Apple color, or the neutral grey when it has none.
+    static func appleColor(of calendar: EKCalendar?) -> Color {
+        calendar?.cgColor.map { Color(cgColor: $0) } ?? AtlasTheme.Colors.textSecondary
     }
 
     /// The calendars the user can write to — the pickable destinations for a mirrored

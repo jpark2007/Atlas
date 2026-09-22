@@ -50,6 +50,8 @@ final class SettingsSyncService {
         static let tasksGrouping     = "tasksGrouping"       // tasks_grouping
         static let notificationPrefs = "notificationPrefs"   // notification_prefs (opaque JSON string)
         static let schoolEnabled     = "school.enabled"      // school_enabled (0042)
+        /// Mac-owned, pull-only: the phone reads it but never pushes it.
+        static let appleCalendarDefaultSpace = "calendar.apple.defaultSpace"  // apple_calendar_default_space
     }
 
     // MARK: - Pull (server wins)
@@ -69,6 +71,7 @@ final class SettingsSyncService {
             if let v = row.tasksGrouping         { d.set(v, forKey: Key.tasksGrouping) }
             if let v = row.notificationPrefsJSON { d.set(v, forKey: Key.notificationPrefs) }
             if let v = row.schoolEnabled         { d.set(v, forKey: Key.schoolEnabled) }
+            if let v = row.appleCalendarDefaultSpace { d.set(v, forKey: Key.appleCalendarDefaultSpace) }
         } catch {
             // Table not yet deployed / offline — swallow; pushes stay gated.
         }
@@ -85,7 +88,8 @@ final class SettingsSyncService {
         pushTask = nil
         lastPulledRow = nil
         hasPulledThisSession = false
-        for key in [Key.defaultSpaceName, Key.tasksGrouping, Key.notificationPrefs, Key.schoolEnabled] {
+        for key in [Key.defaultSpaceName, Key.tasksGrouping, Key.notificationPrefs, Key.schoolEnabled,
+                    Key.appleCalendarDefaultSpace] {
             Self.syncedDefaults.removeObject(forKey: key)
         }
     }
