@@ -871,15 +871,23 @@ final class AppState: ObservableObject {
     /// `name` is trimmed; a blank/empty name is rejected (returns `nil` and
     /// appends nothing). The new space starts with no projects and is immediately
     /// usable as an AI routing bucket (capture context reads `state.spaces`).
+    /// A name that matches an existing space case-insensitively is rejected too —
+    /// two same-named spaces split items that reference their space by name.
     @discardableResult
     func addSpace(name: String, color: Color) -> Space? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
+        guard !trimmed.isEmpty, existingSpace(named: trimmed) == nil else { return nil }
         let space = Space(name: trimmed, color: color, projects: [])
         let sort = spaces.count
         spaces.append(space)
         Task { try? await self.db?.upsertSpace(space, sort: sort) }
         return space
+    }
+
+    /// The space whose name matches `name` ignoring case (whitespace-trimmed), if any.
+    func existingSpace(named name: String) -> Space? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return spaces.first { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }
     }
 
     /// Rename a space in place and carry every item that references it along.
