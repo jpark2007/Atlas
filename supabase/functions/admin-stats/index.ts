@@ -3,8 +3,9 @@
 //
 // POST { code, action, reportId?, newCode?, email? }
 //   • Gates every call on a 4–8 digit access code whose SHA-256 hash lives in
-//     public.admin_config (constant-time hash compare). Rate-limits code
-//     attempts per IP so the short code can't be brute-forced.
+//     public.admin_config (constant-time hash compare). Rate-limits WRONG code
+//     attempts per IP so the short code can't be brute-forced; a call with the
+//     right code gives its hit back, so using the dashboard never locks you out.
 //   • "stats"           → real accounts, 7/30-day actives, downloads, reports,
 //       signup attribution (0051) by source and by school.
 //       Every count comes from an exclusion-aware RPC (0049): the team and the
@@ -28,7 +29,12 @@
 // =====================================================================
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { checkRateLimit, clientIp, tooManyRequests } from "../_shared/rate_limit.ts";
+import {
+  checkRateLimit,
+  clientIp,
+  refundRateLimit,
+  tooManyRequests,
+} from "../_shared/rate_limit.ts";
 import { corsFor } from "../_shared/cors.ts";
 import {
   activesSeries,
@@ -91,8 +97,11 @@ Deno.serve(async (req: Request) => {
   );
 
   // Rate-limit BEFORE checking the code so the short (4–8 digit) space can't be
-  // walked: 6 attempts/hour/IP. Keyed by IP (there's no user identity here).
-  const rl = await checkRateLimit(supabase, clientIp(req), "admin-stats", 6, 3600);
+  // walked: 6 wrong codes/hour/IP. Every call takes an (atomic) hit up front; a
+  // call with the right code refunds it below, so only failures use the budget
+  // and a locked-out IP can't keep guessing. Keyed by IP (no user identity here).
+  const ip = clientIp(req);
+  const rl = await checkRateLimit(supabase, ip, "admin-stats", 6, 3600);
   if (!rl.allowed) return tooManyRequests(rl.retryAfter, corsHeaders);
 
   let code = "";
@@ -122,6 +131,7 @@ Deno.serve(async (req: Request) => {
   if (!timingSafeEqual(enteredHash, String(cfg.value))) {
     return json({ error: "Invalid code" }, 401);
   }
+  await refundRateLimit(supabase, ip, "admin-stats", 3600);
 
   if (action === "change_code") {
     if (!isValidCode(newCode)) {
