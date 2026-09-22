@@ -393,6 +393,9 @@ codesign --force --timestamp --sign "$SIGN_ID" "$DMG_PATH" || die "signing the D
 codesign --verify --verbose=2 "$DMG_PATH" || die "DMG signature verify failed"
 DMG_SIZE="$(du -h "$DMG_PATH" | cut -f1 | tr -d ' ')"
 ok "DMG built + signed → $DMG_PATH ($DMG_SIZE)"
+# The staged .app is only the DMG's source. Leaving it in dist/ puts a second
+# "Atlas.app" in Spotlight next to the installed one, so it goes now.
+rm -rf "$EXPORT_DIR"
 
 # ── 6–7. notarize + staple ───────────────────────────────────────────────────
 if [[ "$SKIP_NOTARIZE" -eq 1 ]]; then
