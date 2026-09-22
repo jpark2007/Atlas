@@ -45,6 +45,7 @@ struct CalendarView: View {
     /// Read here ONLY so the view can re-fetch when the checkboxes change; the filter
     /// itself is applied by `AppState.refreshExternalEvents(start:end:)`.
     @AppStorage(AppleCalendarSelection.hiddenKey) private var appleHiddenCalendarIds: String = ""
+    @AppStorage(AppleCalendarSelection.colorsKey) private var appleCalendarColors: String = ""
     @AppStorage("calendar.workSessions.titlePrefix") private var workSessionPrefix: String = CalendarSync.defaultWorkSessionPrefix
     private let ekService = EventKitService()
 
@@ -152,6 +153,7 @@ struct CalendarView: View {
         }
         // Re-read immediately when the per-calendar checkboxes change in Settings.
         .onChange(of: appleHiddenCalendarIds) { _, _ in loadAppleEventsIfNeeded() }
+        .onChange(of: appleCalendarColors) { _, _ in loadAppleEventsIfNeeded() }
         // Auto-refresh so Apple-side changes (incl. deletes) surface without leaving and
         // re-entering the tab: poll every 60s while the calendar is visible, and refresh
         // immediately when the app regains focus (e.g. after you edited on your phone).

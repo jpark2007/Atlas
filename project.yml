@@ -153,6 +153,8 @@ targets:
         buildPhase: none
       # Shared app↔widget contract — compiled into both targets.
       - path: AtlasMobileWidgets/SharedSnapshot.swift
+      # The Mac's color chooser, reused for the Apple calendar color swatch.
+      - path: Atlas/Views/Components/AtlasColorPicker.swift
     dependencies:
       - package: AtlasCore
       - target: AtlasMobileWidgets

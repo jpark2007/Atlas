@@ -206,10 +206,12 @@ extension AppState {
         let defaultSpace = stored.isEmpty ? (spaces.first?.name ?? "") : stored
         let hidden = AppleCalendarSelection.decode(
             UserDefaults.standard.string(forKey: AppleCalendarSelection.hiddenKey) ?? "")
+        let colors = AppleCalendarSelection.decodeColors(
+            UserDefaults.standard.string(forKey: AppleCalendarSelection.colorsKey) ?? "")
 
         let combined = await eventKit.fetchEvents(
             start: start, end: end, defaultSpaceName: defaultSpace,
-            hiddenCalendarIds: hidden)
+            hiddenCalendarIds: hidden, colorOverrides: colors)
 
         // Drop any Apple event that is actually one of our own events we already mirrored
         // via the Atlas→Apple toggle (EventKit re-reads it next tick). Otherwise it shows

@@ -507,7 +507,12 @@ public struct CalendarEvent: Identifiable {
     /// a class's pattern, an imported exam tied to its class, or any tile the user filed
     /// under a project wears THAT project's color (see `AppState.gridColored`), read-only
     /// or not. Neutral grey is only for a read-only tile that belongs to nothing in Atlas.
-    public var rendersNeutral: Bool { isReadOnly && source != .canvas && projectID == nil }
+    ///
+    /// Apple events are exempt too: they carry their Apple calendar's own color from
+    /// ingest (`EKCalendar.cgColor`), which is exactly what should be shown.
+    public var rendersNeutral: Bool {
+        isReadOnly && source != .canvas && source != .apple && projectID == nil
+    }
 
     /// The Canvas course label this item came from (migration 0032) — the SUMMARY's
     /// trailing "[…]" bracket parsed at ingest, `nil` for non-Canvas events. Read-only

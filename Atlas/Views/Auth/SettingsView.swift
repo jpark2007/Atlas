@@ -66,13 +66,17 @@ struct SettingsView: View {
     @AppStorage("calendar.apple.writeback.calendarId") private var appleWritebackCalendarId: String = ""
     /// Which Apple calendars are hidden from Atlas — device-local, same reason.
     @AppStorage(AppleCalendarSelection.hiddenKey) private var appleHiddenCalendarIds: String = ""
+    /// Per-calendar color overrides — device-local, same reason.
+    @AppStorage(AppleCalendarSelection.colorsKey) private var appleCalendarColors: String = ""
+    /// The Apple calendar whose color popover is open, if any.
+    @State private var recoloringAppleCalendar: String?
     // Outbound push rules per object type. Work sessions default ON — reserved time IS busy
     // time — under a human-readable label the external calendar can actually show.
     @AppStorage("calendar.workSessions.push") private var workSessionPushEnabled: Bool = true
     @AppStorage("calendar.workSessions.titlePrefix") private var workSessionPrefix: String = CalendarSync.defaultWorkSessionPrefix
     @State private var appleWritableCalendars: [(id: String, title: String)] = []
     /// Every calendar Atlas could read — the per-calendar checkbox list in the Apple detail.
-    @State private var appleReadableCalendars: [(id: String, title: String)] = []
+    @State private var appleReadableCalendars: [(id: String, title: String, color: Color)] = []
     /// The LIVE EventKit grant, not a boolean guess. macOS 14 has five outcomes and
     /// write-only / denied must never render as a working connection.
     @State private var appleAccessStatus: EKAuthorizationStatus = EKEventStore.authorizationStatus(for: .event)
@@ -628,31 +632,50 @@ struct SettingsView: View {
     private var appleCalendarsPicker: some View {
         if appleReadableCalendars.count > 1 {
             let hidden = AppleCalendarSelection.decode(appleHiddenCalendarIds)
+            let colors = AppleCalendarSelection.decodeColors(appleCalendarColors)
             VStack(alignment: .leading, spacing: 8) {
                 label("CALENDARS")
                 Text("Choose which Apple calendars show in Atlas. This Mac only.")
                     .atlasFont(size: 11, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
+                Text("Colors apply to this device only. Apple gives each calendar a different ID on every device.")
+                    .atlasFont(size: 11, weight: .medium, design: .rounded)
+                    .foregroundStyle(AtlasTheme.Colors.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(appleReadableCalendars, id: \.id) { cal in
                             let shown = !hidden.contains(cal.id)
-                            Button { toggleAppleCalendar(cal.id) } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: shown ? "checkmark.square.fill" : "square")
-                                        .foregroundStyle(shown
-                                                         ? AtlasTheme.Colors.textPrimary
-                                                         : AtlasTheme.Colors.textMuted)
-                                    Text(cal.title)
-                                        .atlasFont(size: 13, design: .rounded)
-                                        .foregroundStyle(AtlasTheme.Colors.textPrimary)
-                                        .lineLimit(1)
-                                    Spacer()
+                            HStack(spacing: 10) {
+                                Button { toggleAppleCalendar(cal.id) } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: shown ? "checkmark.square.fill" : "square")
+                                            .foregroundStyle(shown
+                                                             ? AtlasTheme.Colors.textPrimary
+                                                             : AtlasTheme.Colors.textMuted)
+                                        Text(cal.title)
+                                            .atlasFont(size: 13, design: .rounded)
+                                            .foregroundStyle(AtlasTheme.Colors.textPrimary)
+                                            .lineLimit(1)
+                                        Spacer()
+                                    }
+                                    .contentShape(Rectangle())
+                                    .padding(.vertical, 6)
                                 }
-                                .contentShape(Rectangle())
-                                .padding(.vertical, 6)
+                                .buttonStyle(.plain)
+                                Button { recoloringAppleCalendar = cal.id } label: {
+                                    Circle()
+                                        .fill(colors[cal.id].map { ColorToken.color(for: $0) } ?? cal.color)
+                                        .frame(width: 14, height: 14)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Change this calendar's color in Atlas")
+                                .popover(isPresented: Binding(get: { recoloringAppleCalendar == cal.id },
+                                                              set: { if !$0 { recoloringAppleCalendar = nil } }),
+                                         arrowEdge: .trailing) {
+                                    appleCalendarColorPopover(cal, override: colors[cal.id])
+                                }
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -690,11 +713,50 @@ struct SettingsView: View {
         appleHiddenCalendarIds = AppleCalendarSelection.encode(hidden)
     }
 
+    /// CALENDAR COLOR popover — the class color chooser (`SchoolSidebarSection`), with
+    /// "Use Apple color" in place of "Inherit space color".
+    private func appleCalendarColorPopover(_ cal: (id: String, title: String, color: Color),
+                                           override: String?) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("CALENDAR COLOR").atlasCapsLabel()
+            Button { setAppleCalendarColor(cal.id, token: nil) } label: {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(cal.color)
+                        .frame(width: 22, height: 22)
+                        .overlay(
+                            Circle()
+                                .stroke(AtlasTheme.Colors.textPrimary,
+                                        lineWidth: override == nil ? 2.5 : 0)
+                                .padding(-3)
+                        )
+                    Text("Use Apple color")
+                        .atlasFont(size: 13, weight: .medium, design: .rounded)
+                        .foregroundStyle(AtlasTheme.Colors.textSecondary)
+                }
+            }
+            .buttonStyle(.plain)
+            AtlasColorGrid(selected: override.map { ColorToken.color(for: $0) }) { color in
+                setAppleCalendarColor(cal.id, token: ColorToken.token(for: color))
+            }
+        }
+        .padding(16)
+    }
+
+    /// Stores (or clears, with `nil`) one Apple calendar's color override. The Calendar
+    /// tab watches the key and re-reads Apple events, so the grid recolors at once.
+    private func setAppleCalendarColor(_ id: String, token: String?) {
+        var colors = AppleCalendarSelection.decodeColors(appleCalendarColors)
+        colors[id] = token
+        appleCalendarColors = AppleCalendarSelection.encodeColors(colors)
+    }
+
     private func disconnectApple() {
         appleCalendarEnabled = false
         appleWritebackEnabled = false
         appleWritebackCalendarId = ""
         appleHiddenCalendarIds = ""
+        appleCalendarColors = ""
         appleWritableCalendars = []
         appleReadableCalendars = []
         state.externalEvents = []
