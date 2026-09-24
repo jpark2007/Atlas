@@ -21,6 +21,14 @@
       month-view freeze, so users must not be able to skip it.
     -->
     <item>
+      <title>0.14.2</title>
+      <pubDate>Thu, 24 Sep 2026 15:57:57 +0000</pubDate>
+      <sparkle:version>0.14.2</sparkle:version>
+      <sparkle:shortVersionString>0.14.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://www.atlaslm.net/downloads/Atlas-0.14.2.dmg" length="10207672" type="application/x-apple-diskimage" sparkle:edSignature="gDtXWtPFIQtYr6ZPmfVI6ENpFmnle8B0z392zNCSEUcLefT7O8sF9SPoU0A1ty4ZuNrmr7B4Kiu4XZRqAXJoBw==" />
+    </item>
+    <item>
       <title>0.14.1</title>
       <pubDate>Fri, 11 Sep 2026 13:15:56 +0000</pubDate>
       <sparkle:version>0.14.1</sparkle:version>
