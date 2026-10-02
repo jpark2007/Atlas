@@ -28,7 +28,7 @@ struct ReportBugPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if sent {
-                    Text("Thanks — your report was sent. We read every one.")
+                    Text("Thanks — your feedback was sent. We read every one.")
                         .font(.system(size: 15.5, weight: .medium, design: .rounded))
                         .foregroundStyle(MobileTheme.ink)
                 } else {
@@ -42,12 +42,12 @@ struct ReportBugPage: View {
                         .overlay(RoundedRectangle(cornerRadius: MobileTheme.radiusControl)
                             .strokeBorder(MobileTheme.ink, lineWidth: MobileTheme.rule))
 
-                    Text("WHAT WENT WRONG?")
+                    Text("DETAILS")
                         .edCapsLabel().textCase(nil)
 
                     ZStack(alignment: .topLeading) {
                         if message.isEmpty {
-                            Text("Describe the bug — what you did and what happened.")
+                            Text("A bug, an idea, anything — tell us what happened or what would help.")
                                 .font(.system(size: 15.5, weight: .regular, design: .rounded))
                                 .foregroundStyle(MobileTheme.faint)
                                 .padding(.horizontal, 5).padding(.vertical, 8)
@@ -88,7 +88,7 @@ struct ReportBugPage: View {
             .padding(.top, 12)
         }
         .background(MobileTheme.bg.ignoresSafeArea())
-        .navigationTitle("Report a bug")
+        .navigationTitle("Send feedback")
         .navigationBarTitleDisplayMode(.inline)
     }
 

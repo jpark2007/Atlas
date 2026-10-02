@@ -15,6 +15,7 @@ final class SessionStore {
     private let keychainService = KeychainStore.Service.supabase
     private let keychainAccount = "session"
     private let api = SupabaseAuth()
+    private var refreshTask: Task<SupabaseSession?, Never>?
 
     /// The last-known session (restored at init, updated on save/clear).
     private(set) var session: SupabaseSession?
@@ -68,11 +69,22 @@ final class SessionStore {
 
     /// Unconditionally exchange the refresh token for a new session. Used to recover
     /// from a 401. Returns nil when the refresh token itself is rejected.
+    ///
+    /// Concurrent callers share one in-flight refresh (mirrors the Mac's `AuthService`):
+    /// GoTrue rotates refresh tokens, so parallel refreshes with the same token can
+    /// revoke the session.
     func forceRefresh() async -> SupabaseSession? {
         guard let current = session else { return nil }
-        guard let fresh = try? await api.refresh(refreshToken: current.refreshToken) else { return nil }
-        save(fresh)
-        return fresh
+        if let inFlight = refreshTask { return await inFlight.value }
+        let task = Task { () -> SupabaseSession? in
+            guard let fresh = try? await api.refresh(refreshToken: current.refreshToken) else { return nil }
+            save(fresh)
+            return fresh
+        }
+        refreshTask = task
+        let result = await task.value
+        refreshTask = nil
+        return result
     }
 
     private func isExpired(_ session: SupabaseSession) -> Bool {

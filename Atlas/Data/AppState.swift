@@ -537,6 +537,9 @@ final class AppState: ObservableObject {
             loadedUserID = userID
 
         } catch {
+            // Signed out mid-load (e.g. the server rejected the session and
+            // `resetForSignOut` already ran): keep the gate closed and stop here.
+            guard bootstrappedUser == userID else { return }
             // A load failure must not leave another dataset (the seed MockData or a
             // previous account's rows) on screen. Blank to the correct-but-empty user
             // and open the gate anyway so the UI isn't stuck on the loading spinner.

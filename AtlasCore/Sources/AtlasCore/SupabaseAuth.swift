@@ -48,8 +48,18 @@ public struct SupabaseSession: Codable, Equatable {
 /// Error surfaced from the GoTrue REST API (`{ "error_description": ... }` or `{ "msg": ... }`).
 public struct SupabaseAuthError: LocalizedError {
     public let message: String
+    /// HTTP status from GoTrue; nil for client-side failures.
+    public let status: Int?
     public var errorDescription: String? { message }
-    public init(message: String) { self.message = message }
+    public init(message: String, status: Int? = nil) {
+        self.message = message
+        self.status = status
+    }
+
+    /// GoTrue answers a dead refresh token (revoked, already used, signed out
+    /// elsewhere) with 400 invalid_grant. Unlike offline, a 429 or a 5xx, retrying
+    /// can never succeed — the user has to sign in again.
+    public var isRefreshTokenRejected: Bool { status == 400 }
 }
 
 // MARK: - REST client
@@ -79,7 +89,8 @@ public struct SupabaseAuth {
             throw SupabaseAuthError(message: "No response from server.")
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw SupabaseAuthError(message: Self.errorMessage(from: data, status: http.statusCode))
+            throw SupabaseAuthError(message: Self.errorMessage(from: data, status: http.statusCode),
+                                    status: http.statusCode)
         }
         return data
     }
@@ -136,8 +147,11 @@ public struct SupabaseAuth {
         return try decodeSession(data)
     }
 
+    /// Ends only THIS device's session. GoTrue's default scope is global, which would
+    /// also kill the user's other devices' logins.
     public func signOut(accessToken: String) async {
-        _ = try? await request("logout", bearer: accessToken)
+        _ = try? await request("logout", bearer: accessToken,
+                               query: [.init(name: "scope", value: "local")])
     }
 
     /// PKCE authorize URL for a browser OAuth provider (Google) via

@@ -31,7 +31,7 @@ struct ReportBugSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("Report a bug")
+                Text("Send feedback")
                     .atlasFont(size: 18, weight: .semibold, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
                 Spacer()
@@ -41,7 +41,7 @@ struct ReportBugSheet: View {
             }
 
             if sent {
-                Text("Thanks — your report was sent. We read every one.")
+                Text("Thanks — your feedback was sent. We read every one.")
                     .atlasFont(size: 14, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textPrimary)
             } else {
@@ -58,7 +58,7 @@ struct ReportBugSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(AtlasTheme.Colors.border, lineWidth: 1))
 
-                Text("WHAT WENT WRONG?")
+                Text("DETAILS")
                     .atlasMono(size: 11, weight: .semibold).tracking(1.2)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
 

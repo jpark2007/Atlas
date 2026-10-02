@@ -2041,8 +2041,8 @@ struct SettingsView: View {
 
             settingsRow(icon: "ant",
                         tint: AtlasTheme.Colors.accent,
-                        name: "Report a bug",
-                        detail: "Hit a snag? Send it straight to us — no email needed.",
+                        name: "Send feedback",
+                        detail: "A bug or an idea? Send it straight to us — no email needed.",
                         onTap: { showReportBug = true }) {
                 disclosureChevron(false)
             }

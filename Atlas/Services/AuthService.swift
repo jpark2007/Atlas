@@ -92,9 +92,16 @@ final class AuthService: ObservableObject {
         }
         if let inFlight = refreshTask { return await inFlight.value }
         let task = Task { () -> SupabaseSession? in
-            guard let fresh = try? await api.refresh(refreshToken: current.refreshToken) else { return nil }
-            persist(fresh)
-            return fresh
+            do {
+                let fresh = try await api.refresh(refreshToken: current.refreshToken)
+                persist(fresh)
+                return fresh
+            } catch let error as SupabaseAuthError where error.isRefreshTokenRejected {
+                expireSession(rejected: current)
+                return nil
+            } catch {
+                return nil   // offline / server hiccup — keep the session, retry next call
+            }
         }
         refreshTask = task
         let result = await task.value
@@ -104,6 +111,17 @@ final class AuthService: ObservableObject {
 
     func validAccessToken() async -> String? {
         await validSession()?.accessToken
+    }
+
+    /// The server rejected the refresh token, so it can never work again. Drop to the
+    /// sign-in gate instead of staying "signed in" with nothing able to load. Skipped
+    /// if the user already signed in fresh while the refresh was in flight.
+    private func expireSession(rejected: SupabaseSession) {
+        guard session?.refreshToken == rejected.refreshToken else { return }
+        clearStoredSession()
+        session = nil
+        state = .signedOut
+        errorMessage = "Your session expired — please sign in again."
     }
 
     private func persist(_ session: SupabaseSession) {

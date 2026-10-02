@@ -217,7 +217,7 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .rowStyle()
-                navRow("Report a bug") { ReportBugPage(db: store.db) }
+                navRow("Send feedback") { ReportBugPage(db: store.db) }
                     .onboardingTip(bugTip, when: AtlasBuild.isBeta)
             } footer: {
                 footer("Currently on \(Self.appVersion)")

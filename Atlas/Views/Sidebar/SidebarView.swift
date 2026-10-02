@@ -247,7 +247,7 @@ struct SidebarView: View {
                     .atlasFont(size: 12, weight: .medium)
                     .frame(width: 24)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
-                Text("Report a bug")
+                Text("Send feedback")
                     .atlasFont(size: 13, weight: .medium, design: .rounded)
                     .foregroundStyle(AtlasTheme.Colors.textMuted)
                 Spacer()

@@ -428,7 +428,7 @@ struct CommandPaletteOverlay: View {
                               state.presentEventEditor = true
                           }),
 
-            PaletteAction(id: "report-bug", title: "Report a Bug", subtitle: "Send us what went wrong",
+            PaletteAction(id: "report-bug", title: "Send Feedback", subtitle: "Report a bug or share an idea",
                           icon: "ant",
                           run: { state.reportBug() })
         ]

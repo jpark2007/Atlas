@@ -68,6 +68,12 @@ struct AtlasApp: App {
         // window toolbar (controls included); that line has been removed.
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
+        // Standard Mac spot for Sparkle: Atlas → Check for Updates…, under About.
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { updater.checkForUpdates() }
+            }
+        }
 
         // Menu-bar item: the Atlas mark normally; the live MM:SS countdown while a
         // focus session runs — visible even when Atlas isn't frontmost. Clicking it
